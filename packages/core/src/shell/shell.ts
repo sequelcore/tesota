@@ -1,14 +1,14 @@
-import type { ReadonlyFooterDataProvider, Theme as PiTheme } from "@earendil-works/pi-coding-agent";
 import {
-  type Component, Container, Editor, type Focusable, getKeybindings, Input, Loader, matchesKey, ScrollView, type SelectItem, SelectList,
+  type Component, Container, Editor, type Focusable, Input, Loader, matchesKey, ScrollView, type SelectItem, SelectList,
   type Terminal, type TerminalColors, Text, TuiAltScreen, type TuiAltScreenOptions, TuiMainScreen, VStack,
 } from "@earendil-works/pi-tui";
+import type { FooterData } from "../../../../src/contract.ts";
 import type { SessionEvent } from "../loop.ts";
 import type { EngineSession } from "../session.ts";
 import type { TuiMode } from "../settings.ts";
 import { copyToClipboard } from "./clipboard.ts";
 import { expandKey, type Surface } from "./surface.ts";
-import type { ShellTheme } from "./theme.ts";
+import type { ShellTheme } from "../../../../src/theme.ts";
 import { Transcript } from "./transcript.ts";
 
 /** The fullscreen renderer that draws every cell on every frame, for terminals that leave stale fragments otherwise. */
@@ -32,7 +32,7 @@ export interface ShellOptions {
   /** What the session's extensions draw (#446): header, editor, footer, working indicator, messages and tools. */
   readonly surface?: Surface;
   /** What an extension's footer reads besides the session. */
-  readonly footerData?: ReadonlyFooterDataProvider;
+  readonly footerData?: FooterData;
   /** Turns to the next permission mode, on Shift+Tab (#449). */
   readonly nextMode?: () => void;
   /** Opens the sessions' dashboard, on Ctrl+T (#455). */
@@ -112,7 +112,6 @@ export function startShell(options: ShellOptions): Shell {
 
   /** The shown session's surface: each session's extensions draw on their own (#455). */
   let surface = options.surface;
-  const look = theme as unknown as PiTheme;
   let expanded = false;
   const document = new Container();
   const none = new Map();
@@ -155,14 +154,14 @@ export function startShell(options: ShellOptions): Shell {
     mounted.header = surface?.header;
     header.clear();
     header.addChild(surface?.header === undefined ? new Text(theme.fg("dim", `tesota-core · ${session.workspace.cwd}`), 1, 1)
-      : surface.header(tui, look));
+      : surface.header(tui, theme));
   };
   const mountEditor = (): void => {
     if (mounted.editor === surface?.editor && editorSlot.children.length > 0) return;
     mounted.editor = surface?.editor;
     const text = editor.getText();
     editor = surface?.editor === undefined ? new Editor(tui, theme.editor)
-      : surface.editor(tui, theme.editor, getKeybindings() as never) as unknown as Editor;
+      : surface.editor(tui, theme.editor);
     editor.setText(text);
     editor.onSubmit = submit;
     editorSlot.clear();
@@ -175,7 +174,7 @@ export function startShell(options: ShellOptions): Shell {
     for (const dispose of disposers.splice(0)) dispose();
     footerSlot.clear();
     if (surface?.footer === undefined || options.footerData === undefined) { footerSlot.addChild(footer); return; }
-    const drawn = surface.footer(tui, look, options.footerData);
+    const drawn = surface.footer(tui, theme, options.footerData);
     if (drawn.dispose !== undefined) disposers.push(() => { drawn.dispose?.(); });
     footerSlot.addChild(drawn);
   };

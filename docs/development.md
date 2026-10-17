@@ -11,20 +11,18 @@ registry packages; lifecycle scripts are disabled.
 
 | Command | Purpose |
 | --- | --- |
-| `bun run build` | Empty `dist/` and compile the `tesota` launcher to it; `npm pack` runs it first |
 | `bun run typecheck` | Check source and test types |
-| `bun run test` | Build and run the tests |
+| `bun run test` | Run the verification layer's tests with Vitest |
 | `bun run lint` | Lint source and tests without fixes; reject warnings |
 | `bun run check` | Run the complete repository gate, including the engine's |
 | `bun run formal:check` | Prove the LemmaScript rules in `src/verification/` and `packages/core/src/`; requires Dafny |
 | `bun run --cwd packages/core check` | Typecheck the engine, run its tests with `bun test`, and check its performance budgets |
 | `bun run --cwd packages/core budget --report` | Measure the engine's startup, binary size, scripted loop, syncs, and session resume without failing, to set or revise a limit in `packages/core/budgets.json` |
-| `bun run live:eval` | Run the registered cases live through Pi on the operator's sign-in (`evaluation/live.ts`); uses model quota |
+| `bun run live:eval` | Run the registered cases live through Pi on the operator's sign-in (`evaluation/live.ts`); uses model quota. The evaluation still runs on Pi, a development dependency, until it moves to the engine ([#464](https://github.com/sequelcore/tesota/issues/464)) |
 | `bun run findings:eval` | Measure review findings turned into reproduction tests on the registered cases (`evaluation/findings.ts`); uses model quota |
 | `bun run swesmith:eval` | The same on SWE-smith's JavaScript bugs, with the fix step, operator cases and a reviewer that proposes checks (`evaluation/swesmith.ts`); uses model quota, Claude Code for its review sources, and Docker |
 
-`bun run check` never calls a live model; `bun run live:eval` does, after
-`bun run build`, and writes its results to the file `--out` names, outside
+`bun run check` never calls a live model; `bun run live:eval` does, and writes its results to the file `--out` names, outside
 the repository, as do the findings evaluations. `bun run swesmith:eval` runs
 each repository's tests in its SWE-smith image through the runner image
 `docker build -t tesota-swesmith:9b74ac0 evaluation/swesmith` builds, under
@@ -32,25 +30,21 @@ each repository's tests in its SWE-smith image through the runner image
 JSON lines first and named with `--data`. The check's tests that prove files run
 only where Dafny is installed. CI installs Dafny from `mise.toml` on Ubuntu
 and Windows, so those tests run there, and `bun run formal:check` runs after
-the check. The launcher tests run
-the compiled launcher and the Pi it finds. Run `bun run check`,
+the check. Run `bun run check`,
 `bun run formal:check` when a proved rule changed, and `git diff --check`
 before completing a change. Report what actually ran; passing checks, live
 observations and human acceptance are different claims.
 
-The engine, `@tesota/core` in `packages/core`, is being built in slices
-([#432](https://github.com/sequelcore/tesota/issues/432)).
-`src/contract.ts` defines the contract Tesota uses from its
-host, and the conformance tests check each engine against it, with Pi as the
-reference. `src/` takes the extension API from it, so Tesota's own
-extension compiles and runs unchanged on either engine: Pi loads it as an
-extension, `@tesota/core` as the session's verifier. Until the shell exists,
-the part of the terminal interface Tesota calls is typed from Pi, and the
-engine, with no shell, does nothing with it, as Pi's print mode. A guarantee
-Tesota needs and Pi lacks is tested as expected to fail on Pi; a test of a
-capability `@tesota/core` has not built yet is skipped, naming the slice
-that brings it. The loop and tool tests run the
-same scripts on both engines and check effects, not wording. The engine's
+`tesota` is the engine, `@tesota/core` in `packages/core`
+([#432](https://github.com/sequelcore/tesota/issues/432)), and `src/` the
+verification layer it runs as each session's verifier. `src/contract.ts`
+defines what the verification uses from the engine: the session's events,
+the tools, model access and what it draws through the shell; the
+conformance tests check the engine against it, their expectations first
+taken from Pi's behavior. The engine gives `src/` its version, key names and
+the shell checks run in (`src/host.ts`), so `src/` never imports the engine;
+the root tests give a test host (`tests/host.ts`). The loop and tool tests
+check effects, not wording. The engine's
 shell tool is PowerShell on Windows (PowerShell 7 when installed, otherwise
 Windows PowerShell 5.1; CI runs both) and bash elsewhere; its process
 handling is `src/process.ts`, shared with the verifiers. A session is one
@@ -67,7 +61,7 @@ pi-ai's built-in providers (`model-access.ts`), authorized by its own
 credentials in `~/.tesota/auth.json`, written under the same lock and whole
 or not at all, and by API keys in the environment; Pi's credentials are
 never read. The chosen model, thinking level and terminal mode are in
-`~/.tesota/settings.json`. `tesota-core` with no argument opens the
+`~/.tesota/settings.json`. `tesota` with no argument opens the
 engine's shell (`packages/core/src/shell/`) on pi-tui: fullscreen by
 default, with search and in-app copy, writing the conversation to the
 scrollback when it ends; inline as a setting and over SSH to Windows; on
@@ -137,9 +131,8 @@ is synced before it runs and before anything acts on its result, and
 session format 2 refuses a run recorded as completed without its
 verifier's settlement. The session tests kill a process running one, also
 while it settles, to check recovery; that shows what survives a killed
-process, not a power cut. The inventory test
-fails when `src/` starts using a part of Pi that is not in the contract, an
-engine export, `pi-ai`, or the shell. The budget check compiles the engine
+process, not a power cut. The inventory test fails when Tesota imports a
+Pi package other than `pi-ai`, `pi-tui` or `pi-mcp`. The budget check compiles the engine
 with code splitting, like a release, so the loop loads only when used, and
 fails a pull request when its median
 `--version` startup, its binary size, its scripted loop's median time or
@@ -151,37 +144,27 @@ syncs, timed apart: what they take is the system's and the disk's. A sync's
 time, 0.3 ms on one machine and 10 ms on another, is only reported; its
 number, which the code decides, has the limit.
 
-Tesota is a Pi package. Pi loads its extension from `src/extension.ts`, which
-the `pi` manifest in `package.json` names. The `tesota` command, built to
-`dist/cli.js`, finds the Pi installed beside it, or else the one the first
-`pi` on PATH runs, checks it against the minimum version in
-`peerDependencies`, and runs it with the package loaded. It runs Pi's script
-with Node and never a package manager's shim, such as npm's `pi.cmd`, so the
-operator's arguments never pass through a shell; a `pi` that is not an
-installed Pi package, such as a standalone binary, is not used. It refuses to
-start when an extension file the manifest names is missing, since Pi would
-skip it without a word and open without Tesota.
-Pi is an optional peer dependency, never a runtime dependency, so the package
-uses the operator's Pi; the development copy in `devDependencies` must meet
-the minimum, which a test checks. `typebox`, which Pi supplies to extensions,
-is an optional peer for the same reason. `lemmascript` is a runtime
+`tesota -p "<request>"` runs one request without the shell and prints the
+answer (`print.ts`); `tesota receipt` writes the last receipt of the
+folder's sessions for a pull request (`src/pull-request-receipt.ts`, reading
+sessions through `session-store.ts`). Until a release, run it from this
+checkout: `bun link` in `packages/core` puts `tesota` on the PATH, running the
+checkout's source with Bun; `bun unlink` there removes it. A compiled binary
+does not carry the grammars in `grammars/` or LemmaScript's `lsc`, which
+verification reads from the checkout, so the release packages those.
+The project's checks are written for a POSIX shell (`inFolder`), so the gate
+runs them in Git's bash on Windows and bash elsewhere, while the agent's
+own shell tool is PowerShell on Windows. `lemmascript` is a runtime
 dependency: `prove` and the gate run its `lsc` with the operator's Dafny in
 the project itself, as described under "Adding a capability".
 `web-tree-sitter` is a runtime dependency that reads the languages Tesota
 has a grammar for. The grammars themselves are development dependencies,
-pinned exactly; the package ships only each one's `.wasm`, in `grammars/`,
-not the native add-on and install script its package carries, and a test
-fails when a shipped file differs from the pinned package's. The `files`
-list in `package.json` names what the package ships: the extension's sources
-and the compiled launcher, each with what it imports, the grammars, the
-themes, the terminal schemes and the notices. A module added to either goes into that
-list too; a test packs the package and fails when a packed file imports one
-that is not packed, or when anything else is packed. The
+pinned exactly, kept as each one's `.wasm` in `grammars/`, and a test fails
+when a kept file differs from the pinned package's. The
 [verification design](design/verification.md) describes the gate, its
 rungs and the receipt, and [receipt v1](receipt-v1.md) the receipt's format.
 The tests that prove files run only where Dafny is installed; the gate's tests script the proofs and the
-model instead and run real commands. Build before `bun link`; later builds
-refresh that linked executable, and `bun unlink` removes it. The lint rule
+model instead and run real commands. The lint rule
 limits cyclomatic complexity to 20 in `src` and `tests` with no file
 exceptions.
 
@@ -193,8 +176,7 @@ default. Prefer an existing owner, keep one owner per behavior, and add
 modules only for implemented consumers. There are no external consumers of
 Tesota's internal contracts: obsolete code and documentation are removed, not
 kept behind aliases or compatibility paths. Pure decision rules that can be
-stated precisely, such as the minimum Pi version, test origins and proof
-coverage, carry LemmaScript specifications and are proved by
+stated precisely, such as test origins, proof coverage and permissions, carry LemmaScript specifications and are proved by
 `bun run formal:check`.
 
 A rule's proof lives in its `.dfy`: the program LemmaScript generates, kept

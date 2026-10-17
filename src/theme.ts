@@ -1,11 +1,12 @@
 import {
-  backgroundAnsi, type Color, type EditorTheme, foregroundAnsi, type MarkdownTheme, parseColor, type SelectListTheme,
+  backgroundAnsi, type Color, foregroundAnsi, parseColor, type SelectListTheme,
   type TerminalColorMode,
 } from "@earendil-works/pi-tui";
-import dark from "../../../../themes/tesota-dark.json" with { type: "json" };
-import light from "../../../../themes/tesota-light.json" with { type: "json" };
+import type { Theme, ThemeColor } from "./contract.js";
+import dark from "../themes/tesota-dark.json" with { type: "json" };
+import light from "../themes/tesota-light.json" with { type: "json" };
 
-/** A theme file as Tesota ships them, in Pi's format: named colors, and tokens that use them or a color of their own. */
+/** A theme file as Tesota ships them: named colors, and tokens that use them or a color of their own. */
 interface ThemeFile {
   readonly name: string;
   readonly appearance: string;
@@ -14,33 +15,10 @@ interface ThemeFile {
 }
 
 /** The colors the shell draws with, by token; a token a theme lacks draws in the terminal's own color. */
-export type ThemeToken = keyof typeof dark.colors;
+export type ThemeToken = ThemeColor;
 
-/**
- * How the shell styles text (#444): Tesota's theme for the terminal's
- * appearance, in the colors the terminal can show. Tesota's own interface
- * reads it as Pi's theme (#446): its colors, appearance and color mode, and
- * the escape that starts a background.
- */
-export interface ShellTheme {
-  readonly name: string;
-  readonly appearance: "dark" | "light";
-  readonly colors: Readonly<Record<string, Color>>;
-  getColorMode(): TerminalColorMode;
-  getBgAnsi(token: ThemeToken): string;
-  /** Turns to the theme for a light or dark terminal; what is drawn after uses it. */
-  use(appearance: "dark" | "light"): void;
-  fg(token: ThemeToken, text: string): string;
-  bg(token: ThemeToken, text: string): string;
-  bold(text: string): string;
-  italic(text: string): string;
-  underline(text: string): string;
-  inverse(text: string): string;
-  strikethrough(text: string): string;
-  readonly markdown: MarkdownTheme;
-  readonly editor: EditorTheme;
-  readonly selectList: SelectListTheme;
-}
+/** How the shell styles text (#444): Tesota's theme for the terminal's appearance, in the colors the terminal can show. */
+export type ShellTheme = Theme;
 
 const wrap = (on: string, off: string) => (text: string): string => `\x1b[${on}m${text}\x1b[${off}m`;
 

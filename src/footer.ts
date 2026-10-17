@@ -1,7 +1,6 @@
 import { homedir } from "node:os";
 import { posix, sep } from "node:path";
-import type { ReadonlyFooterDataProvider, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
-import type { ContextUsage } from "./contract.js";
+import type { ContextUsage, FooterData, Theme, ThemeColor } from "./contract.js";
 import { type Component, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { GateProgress, GateStatus, Tally } from "./gate.js";
 import { addedAssumptions, allEvidence, type Receipt, receiptDecisions, verified } from "./receipt.js";
@@ -167,14 +166,14 @@ function row(left: string, right: string | undefined, width: number): string {
  */
 export class EvidenceFooter implements Component {
   readonly #theme: Theme;
-  readonly #data: ReadonlyFooterDataProvider;
+  readonly #data: FooterData;
   readonly #progress: GateProgress;
   readonly #session: FooterSession;
   readonly #unsubscribe: () => void;
   readonly #unwatchBranch: () => void;
   #timer: ReturnType<typeof setInterval> | undefined;
 
-  constructor(theme: Theme, data: ReadonlyFooterDataProvider, progress: GateProgress, session: FooterSession,
+  constructor(theme: Theme, data: FooterData, progress: GateProgress, session: FooterSession,
     requestRender: () => void) {
     this.#theme = theme;
     this.#data = data;

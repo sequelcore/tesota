@@ -1,10 +1,10 @@
 import { readFileSync } from "node:fs";
-import type { Theme } from "@earendil-works/pi-coding-agent";
 import { type Color, colorToRgb, foregroundAnsi, MouseRegion, type TerminalColorMode, type TerminalColors,
   truncateToWidth, type TUI, type TuiMouseEvent, type TuiMouseEventResult, visibleWidth, type Component }
   from "@earendil-works/pi-tui";
 import { MARK_MAX_COLUMNS, MARK_MAX_ROWS, MARK_STAGE_ROWS_PER_60_COLUMNS, markLighting, renderMark,
   renderTumbleweed, type MarkCell, type MarkColors, type Rgb } from "./welcome-mark.js";
+import type { Theme } from "./contract.js";
 
 /** The scene's length: the wind rising and falling, and on a replay the tumbleweed's pass. */
 export const WELCOME_SCENE_MS = 9_000;
@@ -18,7 +18,9 @@ export const WELCOME_TAGLINE = "Shows evidence that the change does what you ask
  * appearance's usual one, the canvas Tesota's palettes are drawn for. */
 const fallbackBackground: Readonly<Record<"dark" | "light", Rgb>> = { dark: [32, 32, 32], light: [237, 237, 229] };
 
-function rgb(color: Color): Rgb {
+/** A color as red, green and blue; one the theme leaves to the terminal is drawn mid-grey, since the mark needs a value. */
+function rgb(color: Color | undefined): Rgb {
+  if (color === undefined) return [128, 128, 128];
   const { r, g, b } = colorToRgb(color);
   return [r, g, b];
 }

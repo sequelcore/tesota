@@ -8,7 +8,7 @@ import { loopRounds, scripted } from "../measure.ts";
 import { createSession } from "../session.ts";
 import { startShell } from "./shell.ts";
 import { createSurface, shellHost } from "./surface.ts";
-import { shellTheme } from "./theme.ts";
+import { shellTheme } from "../../../../src/theme.ts";
 
 /** A terminal that keeps only when it was first drawn on, for measuring the shell without one. */
 class CountingTerminal implements Terminal {

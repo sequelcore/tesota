@@ -1,21 +1,18 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Theme } from "@earendil-works/pi-coding-agent";
 import { stripTerminalSequences, type TerminalColorMode, type TerminalColors, type TerminalColorScheme, type TuiMouseEvent,
   visibleWidth } from "@earendil-works/pi-tui";
-import { beforeAll, expect, it } from "vitest";
+import { expect, it } from "vitest";
+import type { Theme } from "../src/contract.js";
+import { shellTheme } from "../src/theme.js";
 import { mountWelcomeHeader, TUMBLEWEED_FRAME_MS, tumbleweedFrames, WELCOME_FRAME_MS, WELCOME_SCENE_MS, WELCOME_TAGLINE,
   WelcomeHeader, themeMarkColors, type WelcomeHeaderOptions } from "../src/welcome-header.js";
-import { loadThemes, packageRoot, themeIn } from "./pi-themes.js";
-
+const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const braille = /[\u2801-\u28ff]/u;
-let themes = new Map<string, Theme>();
-
-beforeAll(async () => { themes = await loadThemes(); });
 
 function theme(name: string, mode: TerminalColorMode = "truecolor"): Theme {
-  return themeIn(themes, name, mode);
+  return shellTheme(name === "tesota-light" ? "light" : "dark", mode);
 }
 
 function header(options: Partial<WelcomeHeaderOptions> & { name?: string } = {}) {
@@ -70,26 +67,20 @@ function stage(lines: readonly string[]): string {
   return lines.map((line) => stripTerminalSequences(line)).filter((line) => braille.test(line)).join("\n");
 }
 
-/** Every theme the package ships, with the appearance it is drawn for. */
-const shipped = { "tesota-dark": "dark", "tesota-light": "light", vesper: "dark", sequel: "dark", automata: "light",
-  phosphor: "dark" } as const;
+/** The themes Tesota ships: one for a dark terminal and one for a light one. */
+const shipped = { "tesota-dark": "dark", "tesota-light": "light" } as const;
 
-it("ships each of its palettes, and only those, as a Pi theme for its appearance", () => {
+it("ships a theme for each appearance, and only those", () => {
   expect(readdirSync(join(packageRoot, "themes")).toSorted()).toEqual(Object.keys(shipped).map((name) => `${name}.json`)
     .toSorted());
   for (const [name, appearance] of Object.entries(shipped)) expect(theme(name).appearance).toBe(appearance);
 });
 
-it.each(Object.keys(shipped))("gives %s every color Pi's theme schema requires, and nothing it does not know", (name) => {
-  // Pi's command line validates themes strictly, but its loader only does so there; the schema it ships decides.
-  const pi = dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent")));
-  const schema = JSON.parse(readFileSync(join(pi, "..", "schemas", "theme.schema.json"), "utf8")) as
-    { properties: Record<string, unknown> & { colors: { required: string[]; properties: Record<string, unknown> } } };
-  const json = JSON.parse(readFileSync(join(packageRoot, "themes", `${name}.json`), "utf8")) as
-    Record<string, unknown> & { colors: Record<string, unknown> };
-  expect(Object.keys(json).filter((key) => !(key in schema.properties))).toEqual([]);
-  expect(schema.properties.colors.required.filter((color) => !(color in json.colors))).toEqual([]);
-  expect(Object.keys(json.colors).filter((color) => !(color in schema.properties.colors.properties))).toEqual([]);
+it("gives both themes the same tokens, each a color the terminal can show", () => {
+  const tokens = (name: string): string[] => Object.keys((JSON.parse(readFileSync(join(packageRoot, "themes", `${name}.json`), "utf8")) as
+    { colors: Record<string, unknown> }).colors).toSorted();
+  expect(tokens("tesota-light")).toEqual(tokens("tesota-dark"));
+  for (const name of Object.keys(shipped)) expect(Object.keys(theme(name).colors).toSorted()).toEqual(tokens(name));
 });
 
 it("draws the tree centered above Tesota's name, folder and purpose", () => {
@@ -279,7 +270,7 @@ it("never writes a folder's control characters to the terminal", () => {
 });
 
 it.each([["Tesota Dark", "tesota-dark"], ["Tesota Light", "tesota-light"]])(
-  "draws the %s terminal scheme in the same colors for every terminal, on its Pi theme's canvas", (scheme, name) => {
+  "draws the %s terminal scheme in the same colors for every terminal, on its theme's canvas", (scheme, name) => {
     const schemes = join(packageRoot, "terminal-schemes");
     const windows = (JSON.parse(readFileSync(join(schemes, "windows-terminal", "tesota.json"), "utf8")) as
       { schemes: Record<string, string>[] }).schemes.find((entry) => entry["name"] === scheme)!;
@@ -302,7 +293,7 @@ it.each([["Tesota Dark", "tesota-dark"], ["Tesota Light", "tesota-light"]])(
     }
   });
 
-it("rolls the tumbleweed as Pi's working indicator, four cells wide, in the theme's colors and color mode", () => {
+it("rolls the tumbleweed as the working indicator, four cells wide, in the theme's colors and color mode", () => {
   const frames = tumbleweedFrames(theme("tesota-dark"));
   expect(frames).toHaveLength(20);
   expect(TUMBLEWEED_FRAME_MS).toBeGreaterThan(0);

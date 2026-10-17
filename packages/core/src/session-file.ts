@@ -198,6 +198,33 @@ export interface ReadSession {
  */
 export function readSessionFile(path: string): ReadSession {
   const bytes = readFileSync(path);
+  const { header, entries, take, end } = wholeLines(path, bytes);
+  const remainder = bytes.subarray(end + 1);
+  if (remainder.length === 0) return { header, entries, tail: "whole" };
+  const fd = openSync(path, "r+");
+  try {
+    const whole = take(remainder.toString("utf8"));
+    if (whole) writeSync(fd, "\n", bytes.length);
+    else ftruncateSync(fd, end + 1);
+    fsyncSync(fd);
+    return { header, entries, tail: whole ? "unterminated" : "torn" };
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/**
+ * A session read by someone other than its writer, as `tesota receipt`
+ * reads one (#463): its whole lines only, and the file left as it is, since
+ * its writer may be appending the last line now.
+ */
+export function peekSessionFile(path: string): Omit<ReadSession, "tail"> {
+  const { header, entries } = wholeLines(path, readFileSync(path));
+  return { header, entries };
+}
+
+/** The header and entries of a session's whole lines, `take` to read one more entry, and where the last whole line ends. */
+function wholeLines(path: string, bytes: Buffer): { header: SessionHeader; entries: SessionEntry[]; take: (line: string) => boolean; end: number } {
   const end = bytes.lastIndexOf(0x0a);
   const lines = end < 0 ? [] : bytes.subarray(0, end).toString("utf8").split("\n");
   const [first, ...rest] = lines;
@@ -216,18 +243,7 @@ export function readSessionFile(path: string): ReadSession {
   for (const [index, line] of rest.entries()) {
     if (!take(line)) throw new SessionFileError(path, `has a broken entry on line ${index + 2}.`);
   }
-  const remainder = bytes.subarray(end + 1);
-  if (remainder.length === 0) return { header, entries, tail: "whole" };
-  const fd = openSync(path, "r+");
-  try {
-    const whole = take(remainder.toString("utf8"));
-    if (whole) writeSync(fd, "\n", bytes.length);
-    else ftruncateSync(fd, end + 1);
-    fsyncSync(fd);
-    return { header, entries, tail: whole ? "unterminated" : "torn" };
-  } finally {
-    closeSync(fd);
-  }
+  return { header, entries, take, end };
 }
 
 /** Where a session's entries go: appended in order, and made durable at each `sync`. */

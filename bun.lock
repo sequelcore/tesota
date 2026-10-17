@@ -21,20 +21,13 @@
         "typescript": "7.0.2",
         "vitest": "4.1.11",
       },
-      "peerDependencies": {
-        "@earendil-works/pi-coding-agent": ">=1.1.0",
-        "@earendil-works/pi-tui": "*",
-        "typebox": "*",
-      },
-      "optionalPeers": [
-        "@earendil-works/pi-coding-agent",
-        "@earendil-works/pi-tui",
-        "typebox",
-      ],
     },
     "packages/core": {
       "name": "@tesota/core",
-      "version": "0.0.0",
+      "version": "0.1.0",
+      "bin": {
+        "tesota": "src/main.ts",
+      },
       "dependencies": {
         "@earendil-works/pi-ai": "1.3.0",
         "@earendil-works/pi-mcp": "1.3.0",
@@ -42,7 +35,6 @@
         "typebox": "1.3.27",
       },
       "devDependencies": {
-        "@earendil-works/pi-coding-agent": "1.3.0",
         "@types/bun": "1.4.2",
         "@xterm/headless": "5.5.0",
         "ts-morph": "25.0.1",

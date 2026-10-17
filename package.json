@@ -5,47 +5,7 @@
   "description": "Makes your coding agent show evidence that its change does what you asked",
   "license": "Apache-2.0",
   "type": "module",
-  "keywords": [
-    "pi-package"
-  ],
-  "bin": {
-    "tesota": "dist/cli.js"
-  },
-  "files": [
-    "dist/cli.js",
-    "dist/evidence.js",
-    "dist/git.js",
-    "dist/pi-install.js",
-    "dist/projects.js",
-    "dist/pull-request-receipt.js",
-    "dist/receipt.js",
-    "dist/verification/default-theme-rule.js",
-    "dist/verification/pi-version-rule.js",
-    "dist/verification/project-rule.js",
-    "dist/verification/verdict-rule.js",
-    "src/**/*.ts",
-    "!src/cli.ts",
-    "!src/pi-install.ts",
-    "!src/pull-request-receipt.ts",
-    "!src/verification/default-theme-rule.ts",
-    "!src/verification/pi-version-rule.ts",
-    "grammars",
-    "themes",
-    "terminal-schemes",
-    "NOTICE"
-  ],
-  "pi": {
-    "extensions": [
-      "./src/extension.ts"
-    ],
-    "themes": [
-      "./themes"
-    ]
-  },
   "packageManager": "bun@1.4.2",
-  "engines": {
-    "node": ">=22.19.0"
-  },
   "devEngines": {
     "runtime": {
       "name": "node",
@@ -54,12 +14,10 @@
   },
   "trustedDependencies": [],
   "scripts": {
-    "build": "rm -rf dist && tsc -p tsconfig.build.json",
-    "prepack": "bun run build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "bun run build && vitest run",
+    "test": "vitest run",
     "lint": "oxlint --config .oxlintrc.json --deny-warnings src tests evaluation packages/core/src packages/core/scripts packages/core/tests",
-    "formal:check": "lsc check --backend=dafny src/verification/check-origin-rule.ts && lsc check --backend=dafny src/verification/comment-line-rule.ts && lsc check --backend=dafny src/verification/proof-cover-rule.ts && lsc check --backend=dafny src/verification/range-rule.ts && lsc check --backend=dafny src/verification/selection-rule.ts && lsc check --backend=dafny src/verification/pi-version-rule.ts && lsc check --backend=dafny src/verification/default-theme-rule.ts && lsc check --backend=dafny src/verification/proof-outcome-rule.ts && lsc check --backend=dafny src/verification/gate-rule.ts && lsc check --backend=dafny src/verification/weakening-rule.ts && lsc check --backend=dafny src/verification/project-rule.ts && lsc check --backend=dafny src/verification/mutation-rule.ts && lsc check --backend=dafny src/verification/footer-rule.ts && lsc check --backend=dafny src/verification/test-weakening-rule.ts && lsc check --backend=dafny src/verification/verdict-rule.ts && lsc check --backend=dafny packages/core/src/budget-rule.ts && lsc check --backend=dafny packages/core/src/truncate-rule.ts && lsc check --backend=dafny packages/core/src/edit-rule.ts && lsc check --backend=dafny packages/core/src/reconcile-rule.ts && lsc check --backend=dafny packages/core/src/settle-rule.ts && lsc check --backend=dafny packages/core/src/permission-rule.ts && lsc check --backend=dafny packages/core/src/compact-rule.ts && lsc check --backend=dafny packages/core/src/catalog-rule.ts",
+    "formal:check": "lsc check --backend=dafny src/verification/check-origin-rule.ts && lsc check --backend=dafny src/verification/comment-line-rule.ts && lsc check --backend=dafny src/verification/proof-cover-rule.ts && lsc check --backend=dafny src/verification/range-rule.ts && lsc check --backend=dafny src/verification/selection-rule.ts && lsc check --backend=dafny src/verification/proof-outcome-rule.ts && lsc check --backend=dafny src/verification/gate-rule.ts && lsc check --backend=dafny src/verification/weakening-rule.ts && lsc check --backend=dafny src/verification/project-rule.ts && lsc check --backend=dafny src/verification/mutation-rule.ts && lsc check --backend=dafny src/verification/footer-rule.ts && lsc check --backend=dafny src/verification/test-weakening-rule.ts && lsc check --backend=dafny src/verification/verdict-rule.ts && lsc check --backend=dafny packages/core/src/budget-rule.ts && lsc check --backend=dafny packages/core/src/truncate-rule.ts && lsc check --backend=dafny packages/core/src/edit-rule.ts && lsc check --backend=dafny packages/core/src/reconcile-rule.ts && lsc check --backend=dafny packages/core/src/settle-rule.ts && lsc check --backend=dafny packages/core/src/permission-rule.ts && lsc check --backend=dafny packages/core/src/compact-rule.ts && lsc check --backend=dafny packages/core/src/catalog-rule.ts",
     "live:eval": "bun evaluation/live.ts",
     "findings:eval": "bun evaluation/findings.ts",
     "swesmith:eval": "bun evaluation/swesmith.ts",
@@ -69,22 +27,6 @@
     "lemmascript": "0.6.4",
     "ts-morph": "25.0.1",
     "web-tree-sitter": "0.27.0"
-  },
-  "peerDependencies": {
-    "@earendil-works/pi-coding-agent": ">=1.1.0",
-    "@earendil-works/pi-tui": "*",
-    "typebox": "*"
-  },
-  "peerDependenciesMeta": {
-    "@earendil-works/pi-coding-agent": {
-      "optional": true
-    },
-    "@earendil-works/pi-tui": {
-      "optional": true
-    },
-    "typebox": {
-      "optional": true
-    }
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "1.3.0",

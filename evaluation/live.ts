@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { type Contract, changedContracts, contracts } from "../src/proof-guarantees.js";
 import { claimCheck } from "../src/pi-claimcheck.js";
-import { installedPi } from "../src/pi-install.js";
+import { installedPi } from "./pi.js";
 import { runProcess } from "../src/process.js";
 import type { Receipt } from "../src/receipt.js";
 import { proveFile, proveSource } from "../src/verification/lemmascript-verifier.js";

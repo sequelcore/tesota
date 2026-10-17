@@ -1,7 +1,7 @@
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, test } from "bun:test";
 import { Dashboard, type DashboardActions, type SessionRow } from "../src/shell/dashboard.ts";
-import { shellTheme } from "../src/shell/theme.ts";
+import { shellTheme } from "../../../src/theme.ts";
 
 const now = 4_000_000;
 const row = (id: string, extra: Partial<SessionRow> = {}): SessionRow => ({

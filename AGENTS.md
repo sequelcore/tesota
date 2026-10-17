@@ -3,12 +3,11 @@
 Pre-release verification layer for coding agents: it makes the agent show
 evidence that its change does what was asked, proved where it can, tested
 where it cannot, and says what it could not verify. It verifies results, not
-actions. It ships today as a Pi package and a `tesota` command that opens Pi
-with it. Under the [2026-10-15 decision](docs/decisions/2026-10-15-own-engine.md)
-it is building its own engine, `@tesota/core` on Bun, where verification is a
-mandatory step of the session lifecycle. The engine's scope is the contract
-Tesota uses from Pi; Pi's tests set the target. Model access stays in
-`pi-ai`; it does not build its own sandbox, verifier or surfaces beyond the
+actions. `tesota` runs on its own engine, `@tesota/core` on Bun
+(`packages/core`), where verification is a mandatory step of every run;
+`src/` is the verification layer, written against the contract in
+`src/contract.ts`. Model access stays in `pi-ai` and the terminal in
+`pi-tui`; it does not build its own sandbox, verifier or surfaces beyond the
 terminal shell, and adds no capability without a consumer that exists today.
 Keep changes scoped to the active roadmap item.
 
@@ -17,7 +16,7 @@ Keep changes scoped to the active roadmap item.
 - Read README.md for supported tooling and commands.
 - Read docs/roadmap.md for purpose and current scope.
 - Follow docs/development.md for documentation placement and verification.
-- Run `bun run check` for source, tests, compiled launcher behavior, and lint.
+- Run `bun run check` for source, tests, lint, and the engine's tests and budgets.
 - Preserve LICENSE, NOTICE, and retained third-party notices.
 - Keep one owner per behavior; introduce modules only for implemented consumers.
 - Give new or changed pure decision and calculation functions whose rule can be

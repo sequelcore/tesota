@@ -14,8 +14,8 @@ import { entryReceipt, isReceipt, type Receipt, type ReceiptEntry, renderReceipt
  * place the proposal leaves for what one kind of process records.
  */
 
-/** The part of Pi's session store `tesota receipt` reads: Pi's `SessionManager`. */
-export interface PiSessions {
+/** The sessions `tesota receipt` reads: those of a folder, newest first by when they changed, and each one's current branch. */
+export interface SessionStore {
   list(cwd: string): Promise<readonly { readonly path: string; readonly modified: Date }[]>;
   open(path: string): {
     getSessionId(): string;
@@ -24,7 +24,7 @@ export interface PiSessions {
 }
 
 /** The last receipt on the current branch of the most recently changed session in `cwd` that has one, and its session. */
-export async function lastReceipt(sessions: PiSessions, cwd: string): Promise<{ receipt: unknown; sessionId: string } | undefined> {
+export async function lastReceipt(sessions: SessionStore, cwd: string): Promise<{ receipt: unknown; sessionId: string } | undefined> {
   const listed = [...await sessions.list(cwd)].sort((a, b) => b.modified.getTime() - a.modified.getTime());
   for (const { path } of listed) {
     const session = sessions.open(path);
@@ -39,7 +39,7 @@ export async function lastReceipt(sessions: PiSessions, cwd: string): Promise<{ 
  * receipt a session in that folder settled with that covers this repository;
  * nothing when it covers none.
  */
-async function inWorkspace(sessions: PiSessions, cwd: string): Promise<{ receipt: unknown; sessionId: string } | undefined> {
+async function inWorkspace(sessions: SessionStore, cwd: string): Promise<{ receipt: unknown; sessionId: string } | undefined> {
   const found = await lastReceipt(sessions, dirname(cwd));
   const receipt = found !== undefined && isReceipt(found.receipt) ? unitReceipt(found.receipt, basename(cwd)) : undefined;
   return found === undefined || receipt === undefined ? undefined : { receipt, sessionId: found.sessionId };
@@ -153,7 +153,7 @@ export function receiptStatement(receipt: Receipt, subject: Subject, createdAt: 
     subject: [commitDescriptor(subject.commit, subject.repository)],
     predicateType,
     predicate: {
-      providers: [{ harness: { name: "pi", version: receipt.pi },
+      providers: [{ harness: { name: "tesota", version: receipt.engine },
         ...models.length === 0 ? {} : { languageModels: models.map((model) => ({ inferenceProvider: model })) } }],
       traceId: subject.sessionId,
       custom: { ...receipt.base === null ? {} : { baseCommit: commitDescriptor(receipt.base, subject.repository) },
@@ -181,7 +181,7 @@ export function receiptMarkdown(receipt: Receipt, subject: Subject): string {
   return [
     "## Tesota receipt",
     "",
-    `Commit ${short(subject.commit)}${receipt.base === null ? "" : `, changes from ${short(receipt.base)}`}; Pi ${receipt.pi}${model}; ` +
+    `Commit ${short(subject.commit)}${receipt.base === null ? "" : `, changes from ${short(receipt.base)}`}; Tesota ${receipt.engine}${model}; ` +
       `session \`${subject.sessionId}\`, ${receipt.startedAt} to ${receipt.settledAt}.`,
     "",
     ...subject.stale.length === 0 ? [] : [`**Not this commit's content:** what these checked has changed since they ran: ` +
@@ -203,7 +203,7 @@ export function receiptMarkdown(receipt: Receipt, subject: Subject): string {
  * last receipt as Markdown, or as the in-toto Statement with `--json`, and
  * returns the exit code.
  */
-export async function receiptCommand(args: readonly string[], cwd: string, sessions: PiSessions,
+export async function receiptCommand(args: readonly string[], cwd: string, sessions: SessionStore,
   write: { out: (text: string) => void; error: (text: string) => void }): Promise<number> {
   let json = false;
   let owner: string | undefined;
@@ -220,7 +220,7 @@ export async function receiptCommand(args: readonly string[], cwd: string, sessi
   }
   const found = await lastReceipt(sessions, cwd) ?? await inWorkspace(sessions, cwd);
   if (found === undefined) {
-    write.error("No Pi session in this folder settled with a Tesota receipt. Run tesota receipt where the session ran.\n");
+    write.error("No session in this folder settled with a Tesota receipt. Run tesota receipt where the session ran.\n");
     return 1;
   }
   if (isReceipt(found.receipt) && found.receipt.stopped !== undefined) {

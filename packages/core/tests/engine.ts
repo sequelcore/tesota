@@ -2,29 +2,6 @@ import type { Context, JsonObject, SimpleStreamOptions } from "@earendil-works/p
 import type { ExtensionAPI, ExtensionFactory, Session } from "../../../src/contract.ts";
 import type { LedgerRequest } from "../src/session.ts";
 
-/**
- * Guarantees Tesota needs that go beyond Pi's behavior. An engine that lacks
- * one runs its test as expected to fail, so the gap stays visible and a
- * change in Pi's behavior shows up as a failing test.
- */
-export type Guarantee =
-  /** A later settle handler cannot drop an earlier one's messages or cancel its send-back. */
-  | "settle-results-accumulate"
-  /** A settle handler that throws ends the run as `incomplete`, never as done. */
-  | "settle-failure-is-incomplete"
-  /** Settle handlers get an abort signal, so the operator can stop verification (#408). */
-  | "settle-can-be-cancelled"
-  /** An edit whose text matches only after normalizing whitespace or Unicode fails instead of applying. */
-  | "edit-matches-exactly";
-
-/**
- * What an engine has not built yet, with the slice of #432 that brings it:
- * `events`, extensions that handle events and settle; `tools`, the rest of
- * the extension API (registering and setting tools, the branch, settings,
- * thinking level and context usage). Both engines have both since #441.
- */
-export type Capability = "events" | "tools";
-
 /** A call to a tool with its arguments. */
 export interface ToolStep { readonly tool: string; readonly args: JsonObject }
 
@@ -45,21 +22,15 @@ export interface SessionOptions {
   /** The model's replies, in order, for the agent and for `modelRegistry.complete`. */
   readonly script: readonly ScriptStep[];
   readonly extensions: readonly ExtensionFactory[];
-  /**
-   * What verifies each run: on `@tesota/core` the session's verifier, given
-   * the ledger's request; on Pi, which has neither, one more extension. A
-   * verifier that settles every run when not given.
-   */
+  /** What verifies each run, given the ledger's request; one that settles every run when not given. */
   readonly verifier?: (pi: ExtensionAPI, request?: () => LedgerRequest | undefined) => void;
   /** Stream slowly enough for a test to act while the run is in progress. */
   readonly slow?: boolean;
 }
 
-/** An engine under test: Pi through its SDK, and `@tesota/core`. */
+/** The engine under test. */
 export interface TestEngine {
   readonly name: string;
-  readonly lacks: ReadonlySet<Guarantee>;
-  readonly pending: ReadonlyMap<Capability, string>;
   /** The name of the platform's shell tool: `powershell` on Windows, `bash` elsewhere. */
   readonly shell: "bash" | "powershell";
   createSession(options: SessionOptions): Promise<Session>;

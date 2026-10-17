@@ -1,15 +1,14 @@
 /**
- * What Tesota uses from its host, written down from Pi 1.3.0 (#433). Names
- * and shapes follow Pi's extension API, so Tesota's code runs on either
- * engine without renaming anything (#441). Only what Tesota uses is here.
- * The terminal interface (`ctx.ui`, message renderers, themes, components)
- * moves to the shell; until the shell exists (slice 6 of #432) the part
- * Tesota calls is typed from Pi (`ShellUI`, `ShellAPI`), and an engine with
- * no shell does nothing with it, as Pi's print mode. The conformance tests
- * in `tests/` check every engine against it, with Pi as the reference.
+ * What Tesota's verification uses from the engine that runs it (#433): the
+ * session's events, the tools, model access, and what it draws through the
+ * shell. Only what Tesota uses is here. Names and shapes come from Pi's
+ * extension API, where they were first written down, so an extension written
+ * for Pi reads the same. With no shell (print mode) the drawing does nothing.
  */
 import type { Api, AssistantMessage, Context, Model } from "@earendil-works/pi-ai";
-import type { ExtensionAPI as PiExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
+import type {
+  Color, Component, Editor, EditorTheme, MarkdownTheme, SelectListTheme, TerminalColorMode, TUI,
+} from "@earendil-works/pi-tui";
 import type { Static, TSchema } from "typebox";
 
 /** How a run ended, as settle handlers see it. */
@@ -123,12 +122,74 @@ export interface ModelRegistry {
   complete(model: Model<Api>, context: Context, options?: { signal?: AbortSignal }): Promise<AssistantMessage>;
 }
 
-/** What Tesota draws through the shell; temporary until the shell owns it (slice 6 of #432). */
-export type ShellUI = Pick<ExtensionUIContext, "setHeader" | "setFooter" | "setEditorComponent" | "setWorkingIndicator" | "setStatus"
-  | "theme">;
+/** A color the shell draws with, by its token in Tesota's theme files (`themes/tesota-dark.json`, `themes/tesota-light.json`). */
+export type ThemeColor = "accent" | "border" | "borderAccent" | "borderMuted" | "success" | "error" | "warning" | "muted" | "dim"
+  | "text" | "thinkingText" | "selectedBg" | "scrollbarTrack" | "scrollbarThumb" | "searchMatchBg" | "searchMatchText"
+  | "userMessageBg" | "userMessageText" | "customMessageBg" | "customMessageText" | "customMessageLabel" | "toolPendingBg"
+  | "toolSuccessBg" | "toolErrorBg" | "toolTitle" | "toolOutput" | "mdHeading" | "mdLink" | "mdLinkUrl" | "mdCode" | "mdCodeBlock"
+  | "mdCodeBlockBorder" | "mdQuote" | "mdQuoteBorder" | "mdHr" | "mdListBullet" | "toolDiffAdded" | "toolDiffRemoved"
+  | "toolDiffContext" | "syntaxComment" | "syntaxKeyword" | "syntaxFunction" | "syntaxVariable" | "syntaxString" | "syntaxNumber"
+  | "syntaxType" | "syntaxOperator" | "syntaxPunctuation" | "thinkingOff" | "thinkingMinimal" | "thinkingLow" | "thinkingMedium"
+  | "thinkingHigh" | "thinkingXhigh" | "thinkingMax" | "bashMode";
 
-/** How Tesota registers what the shell draws; temporary until the shell owns it (slice 6 of #432). */
-export type ShellAPI = Pick<PiExtensionAPI, "registerMessageRenderer">;
+/** How the shell styles text: the theme for the terminal's appearance, in the colors the terminal can show. */
+export interface Theme {
+  readonly name: string;
+  readonly appearance: "dark" | "light";
+  readonly colors: Readonly<Record<string, Color>>;
+  getColorMode(): TerminalColorMode;
+  /** The escape that starts `token`'s background. */
+  getBgAnsi(token: ThemeColor): string;
+  /** Turns to the theme for a light or dark terminal; what is drawn after uses it. */
+  use(appearance: "dark" | "light"): void;
+  fg(token: ThemeColor, text: string): string;
+  bg(token: ThemeColor, text: string): string;
+  bold(text: string): string;
+  italic(text: string): string;
+  underline(text: string): string;
+  inverse(text: string): string;
+  strikethrough(text: string): string;
+  readonly markdown: MarkdownTheme;
+  readonly editor: EditorTheme;
+  readonly selectList: SelectListTheme;
+}
+
+/** What the footer reads besides the session: the Git branch, followed as it changes, the extensions' statuses, and the providers logged in. */
+export interface FooterData {
+  getGitBranch(): string | null;
+  getExtensionStatuses(): ReadonlyMap<string, string>;
+  getAvailableProviderCount(): number;
+  /** Calls `callback` when the branch changes; the returned function stops it. */
+  onBranchChange(callback: () => void): () => void;
+}
+
+/** A component the shell mounts that may hold something to let go when it is replaced. */
+export type Mounted = Component & { dispose?(): void };
+
+/** How an extension's message is drawn: as its card, expanded or not, `outputPad` columns in; undefined draws it as plain text. */
+export type MessageRenderer = (message: { readonly customType: string; readonly content: string; readonly details?: unknown },
+  options: { readonly expanded: boolean; readonly outputPad: number }, theme: Theme) => Component | undefined;
+
+/** How an extension's tool call is drawn: its call, and its result once there is one, or `isPartial` while it runs. */
+export interface ToolDrawing<Args = unknown, Details = unknown> {
+  renderCall?(args: Args, theme: Theme, context: { readonly durationMs: number | undefined }): Component;
+  renderResult?(result: ToolResult<Details>, options: { readonly expanded: boolean; readonly isPartial: boolean }, theme: Theme): Component;
+}
+
+/** What Tesota draws through the shell, as `ctx.ui`. */
+export interface ShellUI {
+  setHeader(factory: ((tui: TUI, theme: Theme) => Mounted) | undefined): void;
+  setFooter(factory: ((tui: TUI, theme: Theme, data: FooterData) => Mounted) | undefined): void;
+  setEditorComponent(factory: ((tui: TUI, theme: EditorTheme) => Editor) | undefined): void;
+  setWorkingIndicator(options?: { frames?: string[]; intervalMs?: number }): void;
+  setStatus(key: string, text: string | undefined): void;
+  readonly theme: Theme;
+}
+
+/** How Tesota registers what the shell draws. */
+export interface ShellAPI {
+  registerMessageRenderer(customType: string, renderer: MessageRenderer): void;
+}
 
 /** What a handler knows about the session it runs in. */
 export interface ExtensionContext {
@@ -149,7 +210,7 @@ export interface ToolResult<Details = unknown> {
   isError?: boolean;
 }
 
-export interface ToolDefinition<Parameters extends TSchema = TSchema, Details = unknown> {
+export interface ToolDefinition<Parameters extends TSchema = TSchema, Details = unknown> extends ToolDrawing<Static<Parameters>, Details> {
   name: string;
   label: string;
   description: string;

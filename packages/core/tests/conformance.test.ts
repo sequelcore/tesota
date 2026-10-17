@@ -4,12 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Type } from "typebox";
 import type { ExtensionAPI, ExtensionContext, ExtensionFactory, Session } from "../../../src/contract.ts";
-import { piEngine } from "./adapters/pi.ts";
 import { tesotaEngine } from "./adapters/tesota.ts";
-import type { Capability, Guarantee, ScriptStep, TestEngine } from "./engine.ts";
+import type { ScriptStep, TestEngine } from "./engine.ts";
 
-/** Every engine Tesota can run on: Pi as the reference, and `@tesota/core`. */
-const engines: readonly TestEngine[] = [piEngine, tesotaEngine];
+/** The engine: the contract Tesota uses, as `@tesota/core` meets it. */
+const engines: readonly TestEngine[] = [tesotaEngine];
 
 const open: Session[] = [];
 afterEach(async () => { await Promise.all(open.splice(0).map((session) => session.dispose())); });
@@ -29,18 +28,6 @@ const sendBackOnce = (customType: string): ExtensionFactory => (pi) => {
 };
 
 for (const engine of engines) {
-  /** Every test here needs extensions' events; an engine without what a test needs yet skips it, naming the slice that brings it. */
-  const check = (name: string, run: () => Promise<void>, needs: Capability = "events") => {
-    const waiting = engine.pending.get(needs);
-    return waiting === undefined ? test(name, run) : test.skip(`${name} (waits for ${waiting})`, run);
-  };
-  /** A test of a guarantee this engine lacks runs as expected to fail. */
-  const guaranteed = (guarantee: Guarantee, name: string, run: () => Promise<void>) => {
-    const waiting = engine.pending.get("events");
-    return waiting !== undefined ? test.skip(`${name} (waits for ${waiting})`, run)
-      : engine.lacks.has(guarantee) ? test.failing(`${name} (${engine.name} lacks it)`, run) : test(name, run);
-  };
-
   const start = async (script: readonly ScriptStep[], extensions: readonly ExtensionFactory[], slow = false) => {
     const session = await engine.createSession({ cwd: mkdtempSync(join(tmpdir(), "tesota-core-cwd-")), script, extensions, slow });
     open.push(session);
@@ -48,7 +35,7 @@ for (const engine of engines) {
   };
 
   describe(engine.name, () => {
-    check("events arrive in order, and input handlers finish before the agent's first step", async () => {
+    test("events arrive in order, and input handlers finish before the agent's first step", async () => {
       const seen: string[] = [];
       const session = await start([{ tool: "read", args: { path: "missing.txt" } }, "done"], [(pi) => {
         pi.on("session_start", (event) => { seen.push(`session_start:${event.reason}`); });
@@ -67,7 +54,7 @@ for (const engine of engines) {
       expect(session.outcome()).toBe("completed");
     });
 
-    check("a settle handler sends the agent back once, and the agent answers again", async () => {
+    test("a settle handler sends the agent back once, and the agent answers again", async () => {
       const session = await start(["first", "second"], [sendBackOnce("gate")]);
       await session.prompt("go");
       expect(session.messages().map((message) => message.customType ?? message.role))
@@ -75,13 +62,13 @@ for (const engine of engines) {
       expect(session.lastAssistantText()).toBe("second");
     });
 
-    check("an empty result from a later settle handler keeps the earlier send-back", async () => {
+    test("an empty result from a later settle handler keeps the earlier send-back", async () => {
       const session = await start(["first", "second"], [sendBackOnce("gate"), (pi) => { pi.on("agent_before_settle", () => undefined); }]);
       await session.prompt("go");
       expect(session.lastAssistantText()).toBe("second");
     });
 
-    guaranteed("settle-results-accumulate", "a later settle handler cannot cancel an earlier send-back or drop its message", async () => {
+    test("a later settle handler cannot cancel an earlier send-back or drop its message", async () => {
       const session = await start(["first", "second", "third"], [sendBackOnce("gate"), (pi) => {
         pi.on("agent_before_settle", () => ({ entries: [], continue: false }));
       }]);
@@ -90,19 +77,19 @@ for (const engine of engines) {
       expect(session.lastAssistantText()).toBe("second");
     });
 
-    check("a settle handler that throws does not stop the run from settling", async () => {
+    test("a settle handler that throws does not stop the run from settling", async () => {
       const session = await start(["first"], [(pi) => { pi.on("agent_before_settle", () => { throw new Error("verifier crashed"); }); }]);
       await session.prompt("go");
       expect(session.lastAssistantText()).toBe("first");
     });
 
-    guaranteed("settle-failure-is-incomplete", "a settle handler that throws ends the run as incomplete", async () => {
+    test("a settle handler that throws ends the run as incomplete", async () => {
       const session = await start(["first"], [(pi) => { pi.on("agent_before_settle", () => { throw new Error("verifier crashed"); }); }]);
       await session.prompt("go");
       expect(session.outcome()).toBe("incomplete");
     });
 
-    check("an aborted run settles as aborted, and no settle handler treats it as completed", async () => {
+    test("an aborted run settles as aborted, and no settle handler treats it as completed", async () => {
       const outcomes: string[] = [];
       const session = await start(["a long answer that streams slowly enough to be stopped part of the way through"], [(pi) => {
         pi.on("agent_before_settle", (event) => { outcomes.push(event.outcome); return undefined; });
@@ -115,7 +102,7 @@ for (const engine of engines) {
       expect(outcomes).not.toContain("completed");
     });
 
-    check("handlers see the session's folder, model, context usage and branch", async () => {
+    test("handlers see the session's folder, model, context usage and branch", async () => {
       let seen: ExtensionContext | undefined;
       let branch = 0;
       const session = await start(["done"], [(pi) => {
@@ -131,9 +118,9 @@ for (const engine of engines) {
       expect(typeof seen?.mode).toBe("string");
       expect(seen?.getContextUsage()?.contextWindow).toBeGreaterThan(0);
       expect(branch).toBeGreaterThan(0);
-    }, "tools");
+    });
 
-    guaranteed("settle-can-be-cancelled", "stopping the run stops a settle handler, which is awaited, and the run ends aborted", async () => {
+    test("stopping the run stops a settle handler, which is awaited, and the run ends aborted", async () => {
       let stopped = false;
       let started: () => void = () => undefined;
       const settling = new Promise<void>((resolve) => { started = resolve; });
@@ -156,7 +143,7 @@ for (const engine of engines) {
       expect(session.outcome()).toBe("aborted");
     });
 
-    check("a verifier asks a model through the session's model registry", async () => {
+    test("a verifier asks a model through the session's model registry", async () => {
       let answer: string | undefined;
       const session = await start(["done", "the model's answer"], [(pi) => {
         pi.on("agent_before_settle", async (_event, ctx) => {
@@ -172,7 +159,7 @@ for (const engine of engines) {
       expect(answer).toBe("the model's answer");
     });
 
-    check("tools, flags and settings an extension registers and reads", async () => {
+    test("tools, flags and settings an extension registers and reads", async () => {
       let active: string[] = [];
       let flag: boolean | string | undefined = "unset";
       let quiet: boolean | string | undefined;
@@ -190,7 +177,7 @@ for (const engine of engines) {
       expect(active).toContain("echo");
       expect(flag).toBeUndefined();
       expect(quiet === undefined || ["boolean", "string"].includes(typeof quiet)).toBe(true);
-    }, "tools");
+    });
 
     /** A tool whose call fails as `how` says, or returns its text with details. */
     const tool = (name: string, how: "returns" | "fails" | "throws" = "returns", extra: object = {}): ExtensionFactory => (pi) => {
@@ -204,7 +191,7 @@ for (const engine of engines) {
     };
     const detailsOf = (entry: { readonly message?: unknown }) => (entry.message as { details?: unknown } | undefined)?.details;
 
-    check("an extension's tool runs for the model, and a resumed session keeps its details", async () => {
+    test("an extension's tool runs for the model, and a resumed session keeps its details", async () => {
       const cwd = mkdtempSync(join(tmpdir(), "tesota-core-cwd-"));
       const first = await engine.createSession({ cwd, script: [{ tool: "echo", args: { text: "hi" } }, "done"], extensions: [tool("echo")] });
       open.push(first);
@@ -222,7 +209,7 @@ for (const engine of engines) {
       expect(details).toEqual({ echoed: "hi" });
     });
 
-    check("a tool that returns an error and one that throws both fail the call", async () => {
+    test("a tool that returns an error and one that throws both fail the call", async () => {
       const session = await start([{ calls: [{ tool: "failing", args: { text: "no" } }, { tool: "throwing", args: { text: "no" } }] }, "done"],
         [tool("failing", "fails"), tool("throwing", "throws")]);
       await session.prompt("go");
@@ -230,7 +217,7 @@ for (const engine of engines) {
         .toEqual([["failing", true], ["throwing", true]]);
     });
 
-    check("a tool registered inactive cannot run until activated, and a resumed session keeps it active", async () => {
+    test("a tool registered inactive cannot run until activated, and a resumed session keeps it active", async () => {
       const cwd = mkdtempSync(join(tmpdir(), "tesota-core-cwd-"));
       const call: ScriptStep = { tool: "hidden", args: { text: "hi" } };
       const hidden = tool("hidden", "returns", { defaultActive: false });
@@ -255,7 +242,7 @@ for (const engine of engines) {
         .toEqual([true, false, false]);
     });
 
-    check("an active tool's snippet and guidelines reach the system prompt", async () => {
+    test("an active tool's snippet and guidelines reach the system prompt", async () => {
       let prompt = "";
       // Both engines send the system prompt as a system message; Pi splits it into sections.
       const systemText = (context: { messages: readonly unknown[] }) => context.messages.flatMap((message) => {
@@ -269,7 +256,7 @@ for (const engine of engines) {
       expect(prompt.split("Look up before guessing")).toHaveLength(2);
     });
 
-    check("a tool deactivated during a call still runs that call, and leaves the prompt from the next request", async () => {
+    test("a tool deactivated during a call still runs that call, and leaves the prompt from the next request", async () => {
       let prompts: string[] = [];
       // The last system message is the prompt in force: Pi adds one when the tools change.
       const systemOf = (context: { messages: readonly unknown[] }) => context.messages.flatMap((message) => {
@@ -288,7 +275,7 @@ for (const engine of engines) {
       expect(prompts.at(-1)).not.toContain("- lookup: Look a word up");
     });
 
-    check("a tool registered as the session starts keeps its activation across a resume", async () => {
+    test("a tool registered as the session starts keeps its activation across a resume", async () => {
       const cwd = mkdtempSync(join(tmpdir(), "tesota-core-cwd-"));
       const late: ExtensionFactory = (pi) => {
         pi.on("session_start", () => {
@@ -308,7 +295,7 @@ for (const engine of engines) {
       expect(resumed.messages().find((message) => message.role === "toolResult")).toMatchObject({ toolName: "late", isError: false });
     });
 
-    check("a resumed session keeps the tools it had, though an extension's default changed since", async () => {
+    test("a resumed session keeps the tools it had, though an extension's default changed since", async () => {
       const cwd = mkdtempSync(join(tmpdir(), "tesota-core-cwd-"));
       const first = await engine.createSession({ cwd, script: ["done"], extensions: [tool("helper")] });
       open.push(first);
@@ -320,7 +307,7 @@ for (const engine of engines) {
       expect(resumed.messages().find((message) => message.role === "toolResult")).toMatchObject({ toolName: "helper", isError: false });
     });
 
-    check("a failed call is failed in the tool_result event, and still failed in a resumed session", async () => {
+    test("a failed call is failed in the tool_result event, and still failed in a resumed session", async () => {
       const cwd = mkdtempSync(join(tmpdir(), "tesota-core-cwd-"));
       const events: [string, boolean][] = [];
       const watch: ExtensionFactory = (pi) => { pi.on("tool_result", (event) => { events.push([event.toolName, event.isError]); }); };
@@ -336,7 +323,7 @@ for (const engine of engines) {
         .toEqual([["failing", true], ["throwing", true]]);
     });
 
-    check("context usage after a reply is that reply's usage, and the same after a resume", async () => {
+    test("context usage after a reply is that reply's usage, and the same after a resume", async () => {
       const cwd = mkdtempSync(join(tmpdir(), "tesota-core-cwd-"));
       const usage: (number | null | undefined)[] = [];
       const read: ExtensionFactory = (pi) => {
@@ -358,7 +345,7 @@ for (const engine of engines) {
       expect(usage[3]).toBe(usage[2]);
     });
 
-    check("two sessions in one process run at the same time, each with its own messages and usage", async () => {
+    test("two sessions in one process run at the same time, each with its own messages and usage", async () => {
       const [a, b] = await Promise.all([start(["from a", "a again"], [sendBackOnce("gate-a")]), start(["from b"], [])]);
       expect(b?.stats().tokens.total).toBe(0);
       await Promise.all([a?.prompt("first"), b?.prompt("second")]);

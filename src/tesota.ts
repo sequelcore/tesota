@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import type { ExtensionAPI } from "./contract.js";
-import { filledEditor } from "./editor.js";
+import { FilledEditor } from "./editor.js";
 import { EvidenceFooter } from "./footer.js";
 import { type RecordedRequest, registerGate } from "./gate.js";
 import { registerMessages } from "./messages.js";
@@ -36,7 +36,7 @@ export default function tesota(pi: ExtensionAPI, recorded?: () => RecordedReques
         stageShare: listed ? 1 / 3 : 1 / 2 }), tui));
     // While the agent works, the scene's tumbleweed rolls where Pi shows its working indicator.
     if (ctx.mode === "tui") ctx.ui.setWorkingIndicator({ frames: tumbleweedFrames(ctx.ui.theme), intervalMs: TUMBLEWEED_FRAME_MS });
-    ctx.ui.setEditorComponent((tui, theme, keybindings) => new (filledEditor())(tui, theme, keybindings, () => ctx.ui.theme));
+    ctx.ui.setEditorComponent((tui, theme) => new FilledEditor(tui, theme, () => ctx.ui.theme));
     ctx.ui.setFooter((tui, theme, data) => new EvidenceFooter(theme, data, progress, { cwd: ctx.cwd,
       model: () => ctx.model === undefined ? "no model"
         : ctx.model.reasoning ? `${ctx.model.id} ${pi.getThinkingLevel()}` : ctx.model.id,

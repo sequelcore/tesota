@@ -1,8 +1,7 @@
 import { readFileSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
-import type { AgentToolResult, Theme, ToolDefinition as PiToolDefinition } from "@earendil-works/pi-coding-agent";
-import type { ToolDefinition, ToolResult } from "./contract.js";
+import type { Theme, ToolDefinition, ToolResult } from "./contract.js";
 import { type TObject, type TString, Type } from "typebox";
 import { type Evidence, proofSummary, quietOutput } from "./evidence.js";
 import { bold, expandHint, Rows, spread, wrapUnder } from "./messages.js";
@@ -162,7 +161,7 @@ function renderCall(args: { path?: string }, theme: Theme, context: { readonly d
  * and the contract line it points at; Dafny's output when expanded. Pi draws
  * it on its error background unless the proof passed.
  */
-function renderResult(result: AgentToolResult<ProveDetails | undefined>, options: { expanded: boolean; isPartial: boolean },
+function renderResult(result: ToolResult<ProveDetails | undefined>, options: { expanded: boolean; isPartial: boolean },
   theme: Theme): Rows {
   return new Rows((width) => {
     if (options.isPartial) return ["", theme.fg("accent", "◐ proving…")];
@@ -193,10 +192,7 @@ const parameters: TObject<{ path: TString }> = Type.Object({ path: Type.String({
  * runs alone, since the evidence must describe the files as no other tool
  * call left them mid-proof.
  */
-/** How the shell draws a call and its result; Pi's until the shell owns them (slice 6 of #432). */
-type Drawn = Pick<PiToolDefinition<typeof parameters, ProveDetails | undefined>, "renderCall" | "renderResult">;
-
-export const proveTool: ToolDefinition<typeof parameters, ProveDetails | undefined> & Drawn = {
+export const proveTool: ToolDefinition<typeof parameters, ProveDetails | undefined> = {
   name: "prove", label: "Prove",
   description: "Run LemmaScript with Dafny on one TypeScript file with //@ annotations and report whether its " +
     "contracts are proved. It first regenerates the file's .dfy proof, keeping the proof lines you added, as " +

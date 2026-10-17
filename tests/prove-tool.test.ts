@@ -2,18 +2,18 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Theme } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager, setKeybindings, stripTerminalSequences } from "@earendil-works/pi-tui";
 import { afterEach, beforeAll, expect, it } from "vitest";
 import type { Evidence } from "../src/evidence.js";
-import tesota from "../src/extension.js";
+import type { Theme } from "../src/contract.js";
+import tesota from "../src/tesota.js";
+import { shellTheme } from "../src/theme.js";
 import { hasContracts, proveTool } from "../src/prove-tool.js";
 import type { OnTrust } from "../src/verification-changes.js";
-import { loadThemes, themeIn } from "./pi-themes.js";
 
 let theme: Theme;
 beforeAll(async () => {
-  theme = themeIn(await loadThemes(), "tesota-dark");
+  theme = shellTheme("dark", "truecolor");
   setKeybindings(new KeybindingsManager({ "app.tools.expand": { defaultKeys: "ctrl+o", description: "Toggle tool output" } } as never));
 });
 
@@ -167,15 +167,15 @@ function evidence(outcome: Evidence["outcome"], output: string): Evidence {
   return { verifier: "lemmascript", claim: "", limits: "", outcome, output, durationMs: 2118, files: ["src/range.ts"], contentHash: "h" };
 }
 
-/** What Pi's shell shows for a `prove` call and its result, without escape sequences. */
+/** What the shell shows for a `prove` call and its result, without escape sequences. */
 function drawn(result: { outcome: Evidence["outcome"]; output: string; trusted?: OnTrust[] } | string, expanded = false,
   isPartial = false): string[] {
-  const context = { durationMs: isPartial ? undefined : 2118 } as never;
+  const context = { durationMs: isPartial ? undefined : 2118 };
   const call = proveTool.renderCall?.({ path: "src/range.ts" }, theme, context).render(80) ?? [];
   const shown = typeof result === "string" ? { content: [{ type: "text" as const, text: result }], details: undefined }
     : { content: [{ type: "text" as const, text: "what the agent reads" }],
       details: { path: "src/range.ts", evidence: evidence(result.outcome, result.output), trusted: result.trusted ?? [] } };
-  const rows = proveTool.renderResult?.(shown, { expanded, isPartial }, theme, context).render(80) ?? [];
+  const rows = proveTool.renderResult?.(shown, { expanded, isPartial }, theme).render(80) ?? [];
   return [...call, ...rows].map((row) => stripTerminalSequences(row).trimEnd());
 }
 

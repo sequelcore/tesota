@@ -1,11 +1,13 @@
-import type { MessageRenderOptions, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
-import type { ExtensionAPI } from "./contract.js";
+import type { ExtensionAPI, MessageRenderer, Theme, ThemeColor } from "./contract.js";
 import { host } from "./host.js";
 import { Box, type Component, sliceByColumn, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { SentBack } from "./gate.js";
 import { allEvidence, commandFinding, contractFinding, type Finding, holdsWords, isNote, isReceipt, plainName, proofFinding, type Receipt,
   receiptFindings, type UnitEvidence, verified } from "./receipt.js";
 import { decisions } from "./verification/verdict-rule.js";
+
+/** How the shell asks a message to be drawn: expanded or not, and how far in. */
+type RenderOptions = Parameters<MessageRenderer>[1];
 
 /** `line` broken at spaces into rows of `width` columns, every row after the first indented by `indent` columns. */
 export function hang(line: string, width: number, indent: number): string[] {
@@ -107,7 +109,7 @@ function section(theme: Theme, title: string, findings: readonly Finding[], labe
   return ["", theme.fg("dim", bold(title)), ...findings.flatMap((finding) => findingRows(theme, finding, label, width, expanded))];
 }
 
-function card(theme: Theme, options: MessageRenderOptions, draw: (width: number) => readonly string[]): Component {
+function card(theme: Theme, options: RenderOptions, draw: (width: number) => readonly string[]): Component {
   const box = new Box(options.outputPad, 1, (text) => theme.bg("customMessageBg", text));
   box.addChild(new Rows(draw));
   return box;
@@ -136,7 +138,7 @@ function holdsRow(theme: Theme, findings: readonly Finding[], matches: number): 
  * no note is two rows. Expanded, every finding shows its details and what
  * holds is listed.
  */
-function receiptCard(theme: Theme, receipt: Receipt, options: MessageRenderOptions): Component {
+function receiptCard(theme: Theme, receipt: Receipt, options: RenderOptions): Component {
   const findings = receiptFindings(receipt).sort(byCheck);
   const decide = findings.filter(({ standing }) => standing === "decide");
   const opinions = findings.filter(({ standing }) => standing === "opinion");
@@ -168,7 +170,7 @@ function receiptCard(theme: Theme, receipt: Receipt, options: MessageRenderOptio
       ...section(theme, unproved, gaps, label, width, options.expanded),
       ...options.expanded ? section(theme, "VERIFIED", holds, label, width, true)
         : holds.length + matches === 0 ? [] : ["", holdsRow(theme, findings, matches)],
-      "", ...options.expanded ? wrapUnder(theme.fg("dim", `From ${from} · Pi ${receipt.pi}` +
+      "", ...options.expanded ? wrapUnder(theme.fg("dim", `From ${from} · Tesota ${receipt.engine}` +
         `${receipt.model === undefined ? "" : ` · ${receipt.model}`} · check evidence, not a reviewer's acceptance`), width, 0)
         : [expandHint(theme, "for details")]];
   });
@@ -192,7 +194,7 @@ function headline(sent: SentBack): string {
  * What the gate sent back, as a card: what fails, one row each; expanded,
  * their details and the text the agent read, as it read it.
  */
-function sentBackCard(theme: Theme, sent: SentBack, content: string, options: MessageRenderOptions): Component {
+function sentBackCard(theme: Theme, sent: SentBack, content: string, options: RenderOptions): Component {
   const findings = sentBackFindings(sent);
   const label = labelWidth(findings);
   return card(theme, options, (width) => [
@@ -218,6 +220,6 @@ function text(content: string | readonly { type: string; text?: string }[]): str
 export function registerMessages(pi: ExtensionAPI): void {
   pi.registerMessageRenderer("tesota-receipt", (message, options, theme) =>
     isReceipt(message.details) ? receiptCard(theme, message.details, options) : undefined);
-  pi.registerMessageRenderer<SentBack>("tesota-gate", (message, options, theme) =>
-    message.details === undefined ? undefined : sentBackCard(theme, message.details, text(message.content), options));
+  pi.registerMessageRenderer("tesota-gate", (message, options, theme) =>
+    message.details === undefined ? undefined : sentBackCard(theme, message.details as SentBack, text(message.content), options));
 }
