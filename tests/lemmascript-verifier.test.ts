@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { contentHash } from "../src/evidence.js";
 import { annotations, proofSources, proveFile, unreadSpecification, unreadSpecifications } from "../src/verification/lemmascript-verifier.js";
@@ -81,6 +81,14 @@ it.runIf(dafny)("refutes the registered clamp base and proves its fix, bound to 
   appendFileSync(join(root, "clamp.dfy"), "\n");
   expect(contentHash([read("clamp.ts"), read("clamp.dfy")])).not.toBe(proved.contentHash);
 }, 120_000);
+
+it.runIf(dafny)("binds a proof to its files in a project reached through a link, as macOS's /var is one to /private/var (#472)", async () => {
+  const root = project({ "clamp.ts": clampFixed });
+  const link = join(mkdtempSync(join(tmpdir(), "tesota-lemmascript-link-")), "project");
+  roots.push(dirname(link));
+  symlinkSync(root, link, "junction");
+  expect(await prove(link, "clamp.ts")).toMatchObject({ outcome: "passed", files: ["clamp.ts", "clamp.dfy"] });
+}, 300_000);
 
 it.runIf(dafny)("never counts a run in which Dafny verified nothing as proved", async () => {
   const root = project({ "loose.ts": "//@ ensures \\result >= 0\nexport const a = 1;\n" });
