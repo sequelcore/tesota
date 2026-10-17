@@ -195,6 +195,10 @@ export async function runApp(options: AppOptions): Promise<void> {
         }
       }
     },
+    "/compact": async () => {
+      shell.note("Compacting…");
+      await session.compact().catch((error: unknown) => { shell.note(error instanceof Error ? error.message : String(error), "warning"); });
+    },
     "/quit": () => { shell.stop(); return Promise.resolve(); },
   };
 

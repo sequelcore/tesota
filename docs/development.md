@@ -82,7 +82,14 @@ mode (read only, ask by default, full access, Shift+Tab in the shell), then
 the operator's rules in `~/.tesota/permissions.json` and the project's in
 `.tesota/permissions.json`, which can only tighten. The proved rule
 (`permission-rule.ts`) decides, and with no one to ask a call that would
-ask is refused; each decision is recorded in the session. A run settles in two
+ask is refused; each decision is recorded in the session. Past 16,384 tokens
+below the context window, or when the provider rejects a request as too
+long, the conversation is compacted (`compact-rule.ts`, `compaction.ts`):
+everything before a verbatim tail of at least 20,000 tokens, cut at a turn,
+becomes a summary merged into the previous one, and the conversation then
+starts with the run's request and amendments exactly as given. A summary that
+fails twice or comes out larger ends the run as an error; `/compact` compacts
+between runs. A run settles in two
 phases (`loop.ts`): its extensions, whose results accumulate so none can
 drop another's message or cancel its send-back, then the verifier every
 session must have, which no extension can replace. The proved settle rule

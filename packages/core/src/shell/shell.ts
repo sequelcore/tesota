@@ -187,7 +187,11 @@ export function startShell(options: ShellOptions): Shell {
     else if (event.type === "reply") transcript.stream(event.partial);
     else if (event.type === "call") transcript.start(event.call);
     else if (event.type === "state") working(event.state);
-    else {
+    else if (event.type === "compacting") loader.setMessage("Compacting…");
+    else if (event.type === "compacted") {
+      loader.setMessage("Working…");
+      note(`Compacted the conversation: about ${event.tokensBefore.toLocaleString("en")} tokens to ${event.tokensAfter.toLocaleString("en")}.`);
+    } else {
       working(undefined);
       if (event.outcome !== "completed") note(`The run ended ${event.outcome}.`, event.outcome === "aborted" ? "warning" : "error");
       drawFooter();

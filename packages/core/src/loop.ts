@@ -1,17 +1,19 @@
 import {
   type Api, type AssistantMessage, type JsonValue, type Message, type Model, type Models, type ModelThinkingLevel, type ToolCall, type ToolResultMessage,
-  validateToolArguments,
+  isContextOverflow, validateToolArguments,
 } from "@earendil-works/pi-ai";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Base, captureBase } from "./base.ts";
 import type { BranchEntry, EntryDraft, ExtensionFactory, RunOutcome, Session, SessionOutcome, ToolDefinition } from "../../../src/contract.ts";
-import { contextUsage } from "./context-usage.ts";
+import { contextUsage, estimateTokens } from "./context-usage.ts";
 import { conversationMessage } from "./conversation.ts";
 import { createHost, type DrawingSurface, type PhaseResult } from "./extensions.ts";
 import type { Behavior, Origin, SessionWriter, SettlePhase } from "./session-file.ts";
 import { afterExtensions, afterVerifier, continuationLimit } from "./settle-rule.ts";
+import { cutPoint, shouldCompact } from "./compact-rule.ts";
+import { type FilesTouched, filesTouched, summarize, summaryMessage } from "./compaction.ts";
 import { judge, type Mode, type Rules } from "./permissions.ts";
 import type { EngineTool, ToolOutput } from "./tool.ts";
 import { codingTools } from "./tools/index.ts";
@@ -50,6 +52,12 @@ export interface LoopOptions {
    * access with no rules when not given; the floor holds either way.
    */
   readonly permissions?: Permissions;
+  /**
+   * When to compact (#451): before a request, once the conversation passes the
+   * context window less `reserve` tokens, keeping at least the last `keep`
+   * verbatim. Pi's 16,384 and 20,000 when not given.
+   */
+  readonly compaction?: { readonly reserve: number; readonly keep: number };
 }
 
 /** How a session decides what its calls may do (#449). */
@@ -82,6 +90,9 @@ export type SessionEvent =
   | { readonly type: "reply"; readonly partial: AssistantMessage }
   | { readonly type: "call"; readonly call: ToolCall }
   | { readonly type: "state"; readonly state: "working" | "settling" }
+  /** The conversation is being compacted (#451), and then was, from about `tokensBefore` tokens to `tokensAfter`. */
+  | { readonly type: "compacting" }
+  | { readonly type: "compacted"; readonly tokensBefore: number; readonly tokensAfter: number }
   | { readonly type: "ended"; readonly outcome: SessionOutcome };
 
 /** The engine's session as the loop runs it: the contract's, its conversation, and its events. */
@@ -90,6 +101,8 @@ export interface LoopSession extends Session {
   history(): readonly HistoryMessage[];
   /** Tells `listener` what happens from now on; the returned function stops it. */
   subscribe(listener: (event: SessionEvent) => void): () => void;
+  /** Compacts the conversation between runs (#451); rejects, saying why, while a run goes or when it cannot. */
+  compact(): Promise<void>;
 }
 
 /** Where a session stands: its conversation, its last run and amendment, its usage and how its last run ended. */
@@ -101,6 +114,27 @@ export interface LoopState {
   readonly outcome: SessionOutcome | undefined;
   /** The tools the model could call when the session was last written, when an extension changed them. */
   readonly activeTools?: readonly string[];
+  /** The last run's request and the amendments delivered to it, as the messages that brought them. */
+  readonly ledger?: readonly HistoryMessage[];
+  /** The last compaction (#451): its summary, the files summarized so far, and where replies count toward usage again. */
+  readonly compacted?: { readonly summary: string; readonly files: FilesTouched; readonly counted: number };
+}
+
+/**
+ * What a compacted conversation starts with (#451): the run's request and its
+ * amendments exactly as given, which no summary replaces, then the summary.
+ * It is context the model reads as the operator's; the shell does not show it.
+ */
+export function compactedHead(ledger: readonly HistoryMessage[], summary: string, files: FilesTouched,
+  tail: readonly HistoryMessage[]): CustomMessage {
+  // What the tail still holds is not repeated: the ledger's messages come in the conversation's order, so those
+  // before the first the tail holds are what it gives, the request first.
+  const kept = ledger.findIndex((message) => tail.includes(message));
+  const [request, ...added] = (kept < 0 ? ledger : ledger.slice(0, kept))
+    .map((message) => typeof message.content === "string" ? message.content : "");
+  const content = [...request === undefined ? [] : ["The operator's request, exactly as given:", request],
+    ...added.flatMap((text) => ["Added while you worked:", text]), summaryMessage(summary, files)].join("\n\n");
+  return { role: "custom", customType: "tesota.compaction", content, display: false, timestamp: Date.now() };
 }
 
 /**
@@ -125,7 +159,7 @@ export const toolResult = (call: Pick<ToolCall, "id" | "name">, output: ToolOutp
 });
 
 /** The conversation as the model reads it: a settle handler's message is context from the operator's side. */
-const modelContext = (history: readonly HistoryMessage[]): Message[] => history.map((message) =>
+export const modelContext = (history: readonly HistoryMessage[]): Message[] => history.map((message) =>
   message.role === "custom" ? { role: "user", content: message.content, timestamp: message.timestamp } : message);
 
 /**
@@ -165,6 +199,19 @@ const truncatedCall = (call: ToolCall): ToolOutput => ({
 const stoppedCall: ToolOutput = { text: "Not run: the operator stopped the agent.", isError: true };
 
 const stoppedReason = "the operator stopped the run";
+
+/** Compaction as a loop starts (#451): its margins, Pi's when not given, and what a resumed session last held. */
+function compactionAtStart(options: LoopOptions): {
+  readonly margins: { readonly reserve: number; readonly keep: number };
+  readonly ledger: HistoryMessage[];
+  readonly compacted: LoopState["compacted"];
+} {
+  return { margins: options.compaction ?? { reserve: 16_384, keep: 20_000 }, ledger: [...options.resumed?.ledger ?? []],
+    compacted: options.resumed?.compacted };
+}
+
+/** Why a compaction did not happen when the recent messages alone already reach the tail it keeps. */
+const nothingToSummarize = "the recent messages alone fill the part kept verbatim";
 
 /**
  * A session's tools and which the model may call, in the order they came
@@ -268,13 +315,24 @@ export function createLoop(options: LoopOptions): LoopSession {
   const thinkingLevel = thinkingOf(options.model, options.thinkingLevel);
   const base = options.captureBase ?? captureBase;
   const promptFor = (): string => options.systemPrompt ?? defaultPrompt(options.cwd, tools.activeTools());
+  const resumedCompaction = compactionAtStart(options);
+  const margins = resumedCompaction.margins;
+  /** The current run's request and delivered amendments, which a compaction keeps as given. */
+  let ledger = resumedCompaction.ledger;
+  let compacted = resumedCompaction.compacted;
+  /** Set when a compaction left the conversation past the margin: until another brings it under, only an overflow compacts. */
+  let stuck = false;
+  /** A compaction `/compact` started between runs, which a prompt waits for and stopping stops. */
+  let compacting: { readonly done: Promise<void>; readonly controller: AbortController } | undefined;
+  const usage = () => contextUsage(history, promptFor(), tools.activeTools().map(declaration), options.model.contextWindow,
+    compacted?.counted ?? 0);
   const host = createHost({
     cwd: options.cwd, mode: options.mode ?? "print", models: options.models, model: options.model, thinkingLevel,
     ...options.flags === undefined ? {} : { flags: options.flags },
     tools: { register: (tool) => { tools.register(tool, (signal) => host.context(signal)); }, active: tools.active,
       setActive: tools.setActive },
     branch: options.branch,
-    contextUsage: () => contextUsage(history, promptFor(), tools.activeTools().map(declaration), options.model.contextWindow),
+    contextUsage: usage,
     ...options.surface === undefined ? {} : { surface: options.surface },
   }, options.extensions ?? [], options.verifier);
   tools.restore(options.resumed?.activeTools);
@@ -324,7 +382,9 @@ export function createLoop(options: LoopOptions): LoopSession {
     queue = queue.filter((amendment) => !behaviors.includes(amendment.behavior));
     for (const { id, text } of due) {
       writer.append({ type: "delivered", run, amendment: id });
-      add({ role: "user", content: text, timestamp: Date.now() });
+      const delivered: HistoryMessage = { role: "user", content: text, timestamp: Date.now() };
+      ledger.push(delivered);
+      add(delivered);
     }
     return due.length > 0;
   }
@@ -398,20 +458,99 @@ export function createLoop(options: LoopOptions): LoopSession {
   }
 
   /**
+   * Compacts the conversation (#451): everything before the verbatim tail
+   * (`cutPoint`) is summarized by the session's model, merged into the
+   * previous summary, and replaced by the run's request and amendments as
+   * given followed by the summary. A failed summary is tried once more; one
+   * larger than what it replaced ends it. Returns why it did not compact, or
+   * nothing once it did.
+   */
+  async function compact(run: number, signal: AbortSignal): Promise<string | undefined> {
+    const head = compacted === undefined ? 0 : 1;
+    const sizes = history.map(estimateTokens);
+    const cut = cutPoint(sizes, history.map((message, index) => index >= head && message.role !== "toolResult"), margins.keep);
+    if (cut <= head) return nothingToSummarize;
+    const older = history.slice(head, cut);
+    const touched = filesTouched(older);
+    const files = {
+      changed: [...new Set([...compacted?.files.changed ?? [], ...touched.changed])],
+      read: [...new Set([...compacted?.files.read ?? [], ...touched.read])],
+    };
+    const tokensBefore = usage()?.tokens ?? sizes.reduce((sum, size) => sum + size, 0);
+    const replaced = sizes.slice(0, cut).reduce((sum, size) => sum + size, 0);
+    emit({ type: "compacting" });
+    let failure = "";
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const result = await summarize({ models: options.models, model: options.model, previous: compacted?.summary, messages: older,
+        files, signal });
+      if (result.usage !== undefined) {
+        tokens.input += result.usage.input;
+        tokens.output += result.usage.output;
+        tokens.total += result.usage.totalTokens;
+        writer.append({ type: "summary_usage", run, input: result.usage.input, output: result.usage.output,
+          total: result.usage.totalTokens });
+      }
+      if (signal.aborted) return stoppedReason;
+      if ("error" in result) { failure = result.error; continue; }
+      const head = compactedHead(ledger, result.summary, files, history.slice(cut));
+      if (estimateTokens(head) >= replaced) return "compaction failed: the summary came out larger than what it replaced";
+      const kept = history.length - cut;
+      history.splice(0, cut, head);
+      compacted = { summary: result.summary, files, counted: history.length };
+      const tokensAfter = usage()?.tokens ?? 0;
+      stuck = shouldCompact(tokensAfter, options.model.contextWindow ?? 0, margins.reserve);
+      writer.append({ type: "compaction", run, summary: result.summary, kept, read: files.read, changed: files.changed,
+        tokensBefore, tokensAfter });
+      writer.sync();
+      emit({ type: "compacted", tokensBefore, tokensAfter });
+      return undefined;
+    }
+    return `compaction failed twice: ${failure}`;
+  }
+
+  /**
+   * Compacts before a request once the conversation is past the margin, or
+   * after the provider rejected it as too long (`overflow`). Past the margin
+   * with nothing old enough to summarize the request goes as it is; after an
+   * overflow that ends the turns. Returns how they end, or nothing.
+   */
+  async function compactFor(run: number, signal: AbortSignal, overflow: boolean): Promise<Ended | undefined> {
+    const used = usage();
+    if (!overflow && (stuck || used?.tokens == null || !shouldCompact(used.tokens, used.contextWindow, margins.reserve))) {
+      return undefined;
+    }
+    const failed = await compact(run, signal);
+    if (signal.aborted) return { outcome: "aborted", reason: stoppedReason };
+    if (failed === undefined || (!overflow && failed === nothingToSummarize)) return undefined;
+    return { outcome: "error", reason: failed };
+  }
+
+  /**
    * The model's turns, until it answers without calling a tool and no input
    * waits, fails, or is stopped. After settlement sent the run back, the run
    * is at the boundary where follow-ups enter, so they enter with the steers.
    */
   async function turns(run: number, signal: AbortSignal, settled: boolean): Promise<Ended> {
     let boundary = settled;
+    let overflowed = false;
     for (;;) {
       deliver(run, boundary ? ["steer", "followUp"] : ["steer"]);
       boundary = false;
+      const due = await compactFor(run, signal, false);
+      if (due !== undefined) return due;
       // A reply's calls run with the tools its request offered, whatever extensions change meanwhile.
       const offered = tools.forRequest();
       const message = await reply(run, signal, offered);
       if (!("role" in message)) return message;
+      // A provider that rejects the conversation as too long gets it once more, compacted.
+      if (message.stopReason === "error" && !overflowed && isContextOverflow(message, options.model.contextWindow)) {
+        overflowed = true;
+        const ended = await compactFor(run, signal, true);
+        if (ended !== undefined) return ended;
+        continue;
+      }
       if (message.stopReason === "error") return { outcome: "error", reason: message.errorMessage ?? "the provider failed" };
+      overflowed = false;
       if (message.stopReason === "aborted" || signal.aborted) return { outcome: "aborted", reason: stoppedReason };
       const calls = message.content.filter((part): part is ToolCall => part.type === "toolCall");
       if (calls.length === 0) {
@@ -514,7 +653,9 @@ export function createLoop(options: LoopOptions): LoopSession {
     recorded = written.catch(() => undefined);
     await written;
     await host.input({ type: "input", text, source: origin }, signal);
-    add({ role: "user", content: text, timestamp: Date.parse(at) });
+    const asked: HistoryMessage = { role: "user", content: text, timestamp: Date.parse(at) };
+    ledger = [asked];
+    add(asked);
     let generation = 0;
     let continuations = 0;
     for (;;) {
@@ -556,6 +697,9 @@ export function createLoop(options: LoopOptions): LoopSession {
   return {
     async prompt(text, { streamingBehavior, source = "interactive" } = {}) {
       await started;
+      // Checked again after each wait, with no wait between the last check and the run's start, so a compaction
+      // asked for meanwhile cannot start under it.
+      while (compacting !== undefined) await compacting.done.catch(() => undefined);
       if (running !== undefined) {
         if (streamingBehavior === undefined) throw new Error("A prompt is already running; steer it, queue a follow-up, abort it or wait.");
         await amend(runs, text, streamingBehavior, source, controller?.signal);
@@ -579,7 +723,22 @@ export function createLoop(options: LoopOptions): LoopSession {
     },
     async abort() {
       controller?.abort();
+      compacting?.controller.abort();
       await running?.catch(() => undefined);
+      await compacting?.done.catch(() => undefined);
+    },
+    async compact() {
+      await started;
+      if (running !== undefined) throw new Error("A run is going; wait for it to end, or stop it, then compact.");
+      if (compacting !== undefined) throw new Error("The conversation is already being compacted.");
+      if (runs === 0) throw new Error("There is nothing to compact yet.");
+      const stopper = new AbortController();
+      const done = (async () => {
+        const failed = await compact(runs, stopper.signal);
+        if (failed !== undefined) throw new Error(failed === nothingToSummarize ? `Nothing to compact: ${failed}.` : failed);
+      })();
+      compacting = { done, controller: stopper };
+      try { await done; } finally { compacting = undefined; }
     },
     messages: () => history.map(conversationMessage),
     history: () => history,
@@ -592,7 +751,9 @@ export function createLoop(options: LoopOptions): LoopSession {
     outcome: () => outcome,
     dispose: () => disposed ??= (async () => {
       controller?.abort();
+      compacting?.controller.abort();
       await running?.catch(() => undefined);
+      await compacting?.done.catch(() => undefined);
       writer.close();
       if (spoolFolder !== undefined) rmSync(spoolFolder, { recursive: true, force: true, maxRetries: 3 });
     })(),

@@ -6,7 +6,7 @@ import { tesotaHome } from "../../../src/home.ts";
 import type { Base } from "./base.ts";
 import type { ExtensionAPI } from "../../../src/contract.ts";
 import { branchOf } from "./branch.ts";
-import { createLoop, type HistoryMessage, type LoopOptions, type LoopSession, type LoopState, toolResult } from "./loop.ts";
+import { compactedHead, createLoop, type HistoryMessage, type LoopOptions, type LoopSession, type LoopState, toolResult } from "./loop.ts";
 import { notRun, outcomeUnknown, repairs } from "./reconcile-rule.ts";
 import {
   type Behavior, createSessionFile, type Origin, readSessionFile, type Repair, type SessionEntry, sessionFormat, sessionVersion,
@@ -136,41 +136,56 @@ export function recovery(entries: readonly SessionEntry[]): SessionEntry[] {
  * The conversation the entries hold: requests and delivered amendments as
  * the operator's messages, replies, results, each repair as a failed
  * result placed after the other results of its reply, and the messages
- * settle handlers added; their data stays outside it.
+ * settle handlers added; their data stays outside it. A compaction replaces
+ * what came before its kept messages, as the loop did (#451); with the
+ * conversation come the last run's request and amendments, and the last
+ * compaction.
  */
-function conversation(entries: readonly SessionEntry[]): HistoryMessage[] {
+function conversation(entries: readonly SessionEntry[]): Pick<LoopState, "history" | "ledger" | "compacted"> {
   const history: HistoryMessage[] = [];
+  let ledger: HistoryMessage[] = [];
+  let compacted: LoopState["compacted"];
   const amendments = new Map<number, string>();
-  const repaired = new Map<string, HistoryMessage[]>();
+  /** Each reply by its run and its place in the run, so a repair written later finds it. */
+  const replies = new Map<string, HistoryMessage>();
   const counts = new Map<number, number>();
   for (const entry of entries) {
-    if (entry.type !== "reconciliation") continue;
-    const key = `${entry.run}:${entry.reply}`;
-    repaired.set(key, [...repaired.get(key) ?? [],
-      toolResult({ id: entry.callId, name: entry.toolName }, { text: repairText[entry.repair], isError: true }, 0)]);
-  }
-  /** Each reply's repairs follow its last result, which is where the next reply or run starts. */
-  let pending: HistoryMessage[] = [];
-  const flush = () => { history.push(...pending); pending = []; };
-  for (const entry of entries) {
-    if (entry.type === "request") { flush(); history.push({ role: "user", content: entry.text, timestamp: Date.parse(entry.at) }); }
-    else if (entry.type === "amendment") amendments.set(entry.id, entry.text);
-    else if (entry.type === "delivered") { flush(); history.push({ role: "user", content: amendments.get(entry.amendment) ?? "", timestamp: 0 }); }
-    else if (entry.type === "assistant") {
-      flush();
+    if (entry.type === "request") {
+      const asked: HistoryMessage = { role: "user", content: entry.text, timestamp: Date.parse(entry.at) };
+      ledger = [asked];
+      history.push(asked);
+    } else if (entry.type === "amendment") amendments.set(entry.id, entry.text);
+    else if (entry.type === "delivered") {
+      const delivered: HistoryMessage = { role: "user", content: amendments.get(entry.amendment) ?? "", timestamp: 0 };
+      ledger.push(delivered);
+      history.push(delivered);
+    } else if (entry.type === "reconciliation") {
+      // A repair goes after the other results of its reply, in the order repairs were written: a compaction
+      // written before it kept what the session held then, and a reply it summarized takes its repair with it.
+      const reply = replies.get(`${entry.run}:${entry.reply}`);
+      const at = reply === undefined ? -1 : history.indexOf(reply);
+      if (at < 0) continue;
+      let after = at + 1;
+      while (history[after]?.role === "toolResult") after += 1;
+      history.splice(after, 0,
+        toolResult({ id: entry.callId, name: entry.toolName }, { text: repairText[entry.repair], isError: true }, 0));
+    } else if (entry.type === "compaction") {
+      const files = { read: entry.read, changed: entry.changed };
+      const cut = Math.max(0, history.length - entry.kept);
+      history.splice(0, cut, compactedHead(ledger, entry.summary, files, history.slice(cut)));
+      compacted = { summary: entry.summary, files, counted: history.length };
+    } else if (entry.type === "assistant") {
       const index = counts.get(entry.run) ?? 0;
       counts.set(entry.run, index + 1);
+      replies.set(`${entry.run}:${index}`, entry.message);
       history.push(entry.message);
-      pending = repaired.get(`${entry.run}:${index}`) ?? [];
     } else if (entry.type === "tool_result") history.push(entry.message);
     else if (entry.type === "custom_message") {
-      flush();
       const { customType, content, display, details } = entry;
       history.push({ role: "custom", customType, content, display, ...details === undefined ? {} : { details }, timestamp: 0 });
     }
   }
-  flush();
-  return history;
+  return { history, ledger, ...compacted === undefined ? {} : { compacted } };
 }
 
 /** The ledger: each request with its amendments, from the ledger entries and the deliveries alone. */
@@ -189,6 +204,11 @@ function ledgerOf(entries: readonly SessionEntry[]): LedgerRequest[] {
 function stateOf(entries: readonly SessionEntry[]): LoopState {
   const tokens = { input: 0, output: 0, total: 0 };
   for (const entry of entries) {
+    if (entry.type === "summary_usage") {
+      tokens.input += entry.input;
+      tokens.output += entry.output;
+      tokens.total += entry.total;
+    }
     if (entry.type !== "assistant") continue;
     tokens.input += entry.message.usage.input;
     tokens.output += entry.message.usage.output;
@@ -198,7 +218,7 @@ function stateOf(entries: readonly SessionEntry[]): LoopState {
   const tools = entries.findLast((entry) => entry.type === "active_tools");
   return {
     ...tools === undefined ? {} : { activeTools: tools.names },
-    history: conversation(entries), tokens, outcome: ends.at(-1),
+    ...conversation(entries), tokens, outcome: ends.at(-1),
     runs: entries.filter((entry) => entry.type === "request").length,
     amendments: entries.filter((entry) => entry.type === "amendment").length,
   };
