@@ -1,6 +1,6 @@
 import { createModels, fauxProvider, type JsonObject, type ToolCall } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, parse } from "node:path";
 import { type Decision, decide, type RuleVerdict, strongest } from "../src/permission-rule.ts";
@@ -75,6 +75,21 @@ describe("the floor, which no mode crosses", () => {
       expect(floor(shell, { command }, "run").decision).toBe("allow");
     }
   });
+
+  test("a root with a forward slash, a secret in capitals, and a shell call that also says a harmless path", () => {
+    for (const command of ["Remove-Item -Recurse -Force C:/", "Get-Content .ENV", "type CONFIG\\.Env.local"]) {
+      expect(floor(shell, { command }, "run")).toMatchObject({ decision: "deny", by: "floor" });
+    }
+    // The shell runs `command`; a `path` beside it is not what the floor judges.
+    expect(floor(shell, { command: "Get-Content .env", path: "README.md" }, "run")).toMatchObject({ decision: "deny", by: "floor" });
+  });
+
+  test.if(process.platform !== "win32")("a link named .env is a secret, whatever it points to", () => {
+    mkdirSync(join(cwd, "config"), { recursive: true });
+    writeFileSync(join(cwd, "config", "runtime"), "KEY=1\n");
+    symlinkSync(join(cwd, "config", "runtime"), join(cwd, ".env"));
+    expect(floor("read", { path: ".env" }, "read")).toMatchObject({ decision: "deny", by: "floor" });
+  });
 });
 
 describe("rules", () => {
@@ -93,6 +108,51 @@ describe("rules", () => {
     expect(decision("write", { path: "README.md" }, "write")).toBe("ask");
     expect(decision(shell, { command: "git status --short" }, "run")).toBe("allow");
     expect(decision(shell, { command: "git push origin main" }, "run", "full")).toBe("deny");
+  });
+
+  test("a deny names a command's part on any line; an allow allows only when every part is allowed", () => {
+    const home = folder("tesota-core-permissions-home-");
+    const cwd = folder("tesota-core-permissions-project-");
+    writeFileSync(join(home, "permissions.json"), JSON.stringify({ allow: ["shell(git status*)", "shell(git diff*)"], deny: ["shell(git push*)"] }));
+    const rules = loadRules(cwd, home);
+    const decision = (command: string, mode: Mode = "ask") => judge(call(shell, { command }), "run", cwd, mode, rules, true).decision;
+    expect(decision("git status\ngit push origin dev", "full")).toBe("deny");
+    expect(decision("git status; git push origin dev", "full")).toBe("deny");
+    if (process.platform === "win32") expect(decision("Git Push origin dev", "full")).toBe("deny");
+    expect(decision("git status && git diff")).toBe("allow");
+    expect(decision("git status && Remove-Item -Recurse build")).toBe("ask");
+    expect(decision("git status | tee out.txt")).toBe("ask");
+  });
+
+  test("a folder glob keeps its folders: src/**/safe.ts names safe.ts in src and below, not unsafe.ts", () => {
+    const home = folder("tesota-core-permissions-home-");
+    const cwd = folder("tesota-core-permissions-project-");
+    writeFileSync(join(home, "permissions.json"), JSON.stringify({ allow: ["write(src/**/safe.ts)"] }));
+    const rules = loadRules(cwd, home);
+    const decision = (path: string) => judge(call("write", { path }), "write", cwd, "ask", rules, true).decision;
+    expect(decision("src/safe.ts")).toBe("allow");
+    expect(decision("src/a/b/safe.ts")).toBe("allow");
+    expect(decision("src/unsafe.ts")).toBe("ask");
+    expect(decision("src/a/unsafe.ts")).toBe("ask");
+  });
+
+  test("a rules file that cannot be read stops the session and says where, since a rule left out could be a deny", () => {
+    const home = folder("tesota-core-permissions-home-");
+    const cwd = folder("tesota-core-permissions-project-");
+    const file = join(home, "permissions.json");
+    for (const [text, said] of [["{\"ask\":\"write(*)\"}", "ask must be a list of rules"], ["{\"deny\":[17]}", "deny must be a list of rules"],
+      ["{\"deny\":[\"write(\"]}", "is not a rule"], ["{", "is not JSON"], ["[]", "does not hold permission rules"]] as const) {
+      writeFileSync(file, text);
+      expect(() => loadRules(cwd, home)).toThrow(said);
+    }
+  });
+
+  test("in read only, a write an allow rule names is refused by the mode, and recorded so", () => {
+    const home = folder("tesota-core-permissions-home-");
+    const cwd = folder("tesota-core-permissions-project-");
+    writeFileSync(join(home, "permissions.json"), JSON.stringify({ allow: ["write"] }));
+    expect(judge(call("write", { path: "a.txt" }), "write", cwd, "read", loadRules(cwd, home), true))
+      .toEqual({ decision: "deny", by: "mode", reason: "The session is read only." });
   });
 });
 
@@ -135,6 +195,21 @@ describe("the boundary every call passes", () => {
     expect(existsSync(join(refused.cwd, "b.txt"))).toBe(false);
     expect(refused.created.messages().find((message) => message.role === "toolResult")).toMatchObject({ isError: true,
       text: "Not run: The operator refused it." });
+  });
+
+  test("stopped while the operator is asked, the call does not run whatever they answer, and no intent is recorded", async () => {
+    const faux = fauxProvider();
+    faux.setResponses([write("a.txt"), "done"].map(scriptedReply));
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const cwd = folder("tesota-core-permissions-cwd-");
+    const created = createSession({ cwd, folder: folder("tesota-core-sessions-"), models, model: faux.getModel(), verifier: accepts,
+      // The operator stops the run while the dialog is open, then answers yes; stopping waits for the run, so it is not awaited here.
+      permissions: { mode: () => "ask", rules: [], ask: () => { void created.abort(); return Promise.resolve("once"); } } });
+    open.push(created);
+    await created.prompt("go");
+    expect(existsSync(join(cwd, "a.txt"))).toBe(false);
+    expect(entries(created.file).some(({ type }) => type === "call_intent")).toBe(false);
   });
 
   test("with no one to ask, a call that would ask is refused; read only refuses writes; the floor holds in full access", async () => {

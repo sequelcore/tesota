@@ -21,40 +21,57 @@ export interface Rule {
 /** The shell tools, which the rule name `shell` stands for whatever the platform's is. */
 const shells = new Set(["bash", "powershell"]);
 
-/** A glob as a pattern: `**` any path, `*` anything but a separator for paths and anything at all for commands. */
+/**
+ * A glob as a pattern: `**` any path, `**` before a slash any folders or none, `*` anything
+ * but a separator for paths and anything at all for commands. On Windows,
+ * paths and commands match in any case, as Windows reads them.
+ */
 function globPattern(glob: string, command: boolean): RegExp {
   let source = "";
   for (let k = 0; k < glob.length; k++) {
     const char = glob[k] ?? "";
-    if (char === "*" && glob[k + 1] === "*") { source += ".*"; k++; if (glob[k + 1] === "/") k++; }
+    if (char === "*" && glob[k + 1] === "*" && glob[k + 2] === "/") { source += "(?:.*/)?"; k += 2; }
+    else if (char === "*" && glob[k + 1] === "*") { source += ".*"; k++; }
     else if (char === "*") source += command ? ".*" : "[^/]*";
     else if (char === "?") source += command ? "." : "[^/]";
     else source += char.replace(/[.+^${}()|[\]\\]/gu, "\\$&");
   }
-  return new RegExp(`^${source}$`, process.platform === "win32" && !command ? "iu" : "u");
+  return new RegExp(`^${source}$`, `${process.platform === "win32" ? "i" : ""}su`);
 }
 
-/** One rule from its text, or undefined when it is not one. */
-function parseRule(text: string, verdict: Rule["verdict"]): Rule | undefined {
-  const match = /^([\w.-]+)(?:\((.*)\))?$/u.exec(text.trim());
-  if (match === null) return undefined;
+/**
+ * A command's parts, split where a shell runs one command after another:
+ * lines, `;`, `&&`, `||` and `|`. Quotes are not read, so a part may split
+ * where the shell would not; that only makes allow rules match less.
+ */
+const commandParts = (command: string): string[] =>
+  command.split(/\r?\n|;|&&|\|\||\|/u).map((part) => part.trim()).filter((part) => part !== "");
+
+/** One rule from its text; a text that is not one is an error, since a rule left out could be a deny. */
+function parseRule(text: string, verdict: Rule["verdict"], path: string): Rule {
+  const match = /^([\w.-]+)(?:\((.*)\))?$/su.exec(text.trim());
+  if (match === null) throw new Error(`${path}: "${text}" is not a rule; write tool(pattern) or a tool's name.`);
   const tool = match[1] ?? "";
   const glob = match[2];
   return { tool, verdict, pattern: glob === undefined ? undefined : globPattern(glob, tool === "shell" || shells.has(tool)) };
 }
 
-function rulesOf(file: RulesFile, verdicts: readonly Rule["verdict"][]): Rule[] {
-  return verdicts.flatMap((verdict) => (file[verdict] ?? []).flatMap((text) => {
-    const rule = parseRule(text, verdict);
-    return rule === undefined ? [] : [rule];
-  }));
-}
-
-function readRules(path: string): RulesFile {
-  if (!existsSync(path)) return {};
-  const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error(`${path} does not hold permission rules.`);
-  return parsed as RulesFile;
+/** The rules in the file at `path`, of the verdicts it may set; none when there is no file. */
+function rulesAt(path: string, verdicts: readonly Rule["verdict"][]): Rule[] {
+  if (!existsSync(path)) return [];
+  let file: unknown;
+  try { file = JSON.parse(readFileSync(path, "utf8")); } catch (error) {
+    throw new Error(`${path} is not JSON: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+  }
+  if (typeof file !== "object" || file === null || Array.isArray(file)) throw new Error(`${path} does not hold permission rules.`);
+  const said = file as Record<string, unknown>;
+  return verdicts.flatMap((verdict) => {
+    const texts = said[verdict] ?? [];
+    if (!Array.isArray(texts) || !texts.every((text) => typeof text === "string")) {
+      throw new Error(`${path}: ${verdict} must be a list of rules.`);
+    }
+    return texts.map((text) => parseRule(text, verdict, path));
+  });
 }
 
 /**
@@ -65,8 +82,8 @@ function readRules(path: string): RulesFile {
  * more.
  */
 export function loadRules(cwd: string, home: string = tesotaHome()): Rules {
-  return [...rulesOf(readRules(join(home, "permissions.json")), ["allow", "ask", "deny"]),
-    ...rulesOf(readRules(join(cwd, ".tesota", "permissions.json")), ["ask", "deny"])];
+  return [...rulesAt(join(home, "permissions.json"), ["allow", "ask", "deny"]),
+    ...rulesAt(join(cwd, ".tesota", "permissions.json"), ["ask", "deny"])];
 }
 
 /** The same path however it is spelled: absolute, its real name where it exists (Windows' short names, links), and on Windows in one case. */
@@ -99,30 +116,29 @@ const inside = (path: string, folder: string): boolean => {
 /** Commands that destroy what no request asks to destroy: a disk, the root or home folder, the system's. A net, not a guarantee. */
 const destructive: readonly RegExp[] = [
   /\brm\s+(-[a-zA-Z]*r[a-zA-Z]*\s+|-[a-zA-Z]*f[a-zA-Z]*\s+|--recursive\s+|--force\s+)+(\/|~|\$HOME|\/\*|\.\.?\/?)(\s|$)/u,
-  /\bremove-item\b[^\n]*-recurse\b[^\n]*\s(['"]?[a-z]:\\?['"]?|~|\$home|\$env:userprofile|\$env:systemroot)(\s|$)/iu,
+  /\bremove-item\b[^\n]*-recurse\b[^\n]*\s(['"]?[a-z]:[\\/]?['"]?|~|\$home|\$env:userprofile|\$env:systemroot)(\s|$)/iu,
   /\bformat(\.com)?\s+[a-z]:/iu,
   /\bmkfs(\.\w+)?\b/u,
   /\bdd\b[^\n]*\bof=\/dev\/(sd|nvme|disk|hd)/u,
-  /\b(rd|rmdir|del)\s+\/[sq][^\n]*\s[a-z]:\\?(\s|$)/iu,
+  /\b(rd|rmdir|del)\s+\/[sq][^\n]*\s[a-z]:[\\/]?(\s|$)/iu,
   /:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:/u,
 ];
 
-/** Secrets no call may touch: Tesota's credentials, SSH's keys, and `.env` files. */
-function secretPath(path: string): boolean {
-  const name = basename(path);
-  return /^\.env(\..+)?$/u.test(name) || inside(path, canonicalOnce(join(homedir(), ".ssh")))
-    || path === canonicalOnce(join(tesotaHome(), "auth.json"));
+/** Secrets no call may touch: Tesota's credentials, SSH's keys, and `.env` files, by any of the names given. */
+function secretPath(...paths: readonly string[]): boolean {
+  const ssh = canonicalOnce(join(homedir(), ".ssh"));
+  const auth = canonicalOnce(join(tesotaHome(), "auth.json"));
+  return paths.some((path) => /^\.env(\..+)?$/iu.test(basename(path)) || inside(path, ssh) || path === auth);
 }
 
 /** A command that names a secret: an `.env` file, SSH's folder, or Tesota's credentials. */
 const namesSecret = (command: string): boolean =>
-  /(^|[\s'"=/\\])\.env(\.[\w.-]+)?($|[\s'"])/u.test(command) || /[\\/]\.ssh([\\/]|\s|$)/u.test(command)
+  /(^|[\s'"=/\\])\.env(\.[\w.-]+)?($|[\s'"])/iu.test(command) || /[\\/]\.ssh([\\/]|\s|$)/u.test(command)
   || /\.tesota[\\/]auth\.json/iu.test(command);
 
-/** What a call is about, for rules and the floor: the path it reads or changes, or the command it runs. */
+/** What a call is about, for rules and the floor: the command a shell runs, or the path another tool reads or changes. */
 function subjectOf(call: ToolCall): string {
-  const args = call.arguments as Record<string, unknown>;
-  const said = args["path"] ?? args["command"];
+  const said = (call.arguments as Record<string, unknown>)[shells.has(call.name) ? "command" : "path"];
   return typeof said === "string" ? said : "";
 }
 
@@ -135,8 +151,9 @@ function floorReason(call: ToolCall, access: Access, cwd: string): string | unde
     return undefined;
   }
   if (subject === "" || (call.name !== "read" && access === "run")) return undefined;
-  const path = canonical(resolve(cwd, subject));
-  if (secretPath(path)) return "it is a secret: an .env file, SSH's keys or Tesota's credentials";
+  const asked = resolve(cwd, subject);
+  const path = canonical(asked);
+  if (secretPath(process.platform === "win32" ? asked.toLowerCase() : asked, path)) return "it is a secret: an .env file, SSH's keys or Tesota's credentials";
   if (access === "write" && !inside(path, canonicalOnce(cwd))) return "it is outside the session's folder";
   return undefined;
 }
@@ -157,13 +174,21 @@ const modeWords: Readonly<Record<Mode, string>> = { read: "read only", ask: "ask
  */
 export function judge(call: ToolCall, access: Access, cwd: string, mode: Mode, rules: Rules, present: boolean): Verdict {
   const floor = floorReason(call, access, cwd);
-  const subject = shells.has(call.name) ? subjectOf(call)
-    : subjectOf(call) === "" ? "" : relative(cwd, resolve(cwd, subjectOf(call))).split("\\").join("/");
-  const matched = rules.filter((rule) => (rule.tool === call.name || (rule.tool === "shell" && shells.has(call.name)))
-    && (rule.pattern === undefined || rule.pattern.test(subject)));
-  const rule = strongest(matched.map(({ verdict }) => verdict));
+  const shell = shells.has(call.name);
+  const subject = shell || subjectOf(call) === "" ? subjectOf(call) : relative(cwd, resolve(cwd, subjectOf(call))).split("\\").join("/");
+  // A command's parts each answer to the rules: one part a deny or ask rule names makes the whole ask or deny,
+  // and an allow rule allows the command only when every part is allowed, so `git status && rm -rf x` is not.
+  const parts = shell ? commandParts(subject) : [subject];
+  const own = rules.filter((rule) => rule.tool === call.name || (rule.tool === "shell" && shell));
+  const names = (rule: Rule, part: string): boolean => rule.pattern === undefined || rule.pattern.test(part);
+  const verdicts = own.filter((rule) => rule.verdict !== "allow" && parts.some((part) => names(rule, part)))
+    .map(({ verdict }) => verdict);
+  const allows = own.filter((rule) => rule.verdict === "allow");
+  if (parts.length > 0 && parts.every((part) => allows.some((rule) => names(rule, part)))) verdicts.push("allow");
+  const rule = strongest(verdicts);
   const decision = decide(floor !== undefined, mode, access, rule, present);
   if (floor !== undefined) return { decision, by: "floor", reason: `Tesota never allows this: ${floor}.` };
+  if (mode === "read" && access !== "read") return { decision, by: "mode", reason: "The session is read only." };
   if (rule !== "unmatched") return { decision, by: "rule", reason: `A permission rule says ${rule}.` };
   if (decision === "deny") {
     return { decision, by: "mode", reason: mode === "read" ? "The session is read only." : "No one is here to allow it." };

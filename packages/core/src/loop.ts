@@ -365,6 +365,19 @@ export function createLoop(options: LoopOptions): LoopSession {
     return decision === "allow";
   }
 
+  /** Runs `call`, allowed, with its intent on disk first; a run stopped while the operator was asked does not run it. */
+  async function runCall(run: number, call: ToolCall, signal: AbortSignal, offered: readonly EngineTool[]): Promise<ToolOutput> {
+    if (signal.aborted) return stoppedCall;
+    writer.append({ type: "call_intent", run, callId: call.id });
+    writer.sync();
+    emit({ type: "call", call });
+    await host.toolStart({ type: "tool_execution_start", toolCallId: call.id, toolName: call.name, args: call.arguments }, signal);
+    const output = await execute(offered, call, signal);
+    await host.toolResult({ type: "tool_result", toolCallId: call.id, toolName: call.name, input: call.arguments,
+      isError: output.isError }, signal);
+    return output;
+  }
+
   /**
    * Runs the reply's calls in order. Each call's intent is synced before it
    * runs, with everything appended before it, so a call that may have
@@ -377,15 +390,7 @@ export function createLoop(options: LoopOptions): LoopSession {
       if (message.stopReason === "length") output = truncatedCall(call);
       else if (signal.aborted) output = stoppedCall;
       else if (!await permitted(run, call, offered)) output = refusedCall(call);
-      else {
-        writer.append({ type: "call_intent", run, callId: call.id });
-        writer.sync();
-        emit({ type: "call", call });
-        await host.toolStart({ type: "tool_execution_start", toolCallId: call.id, toolName: call.name, args: call.arguments }, signal);
-        output = await execute(offered, call, signal);
-        await host.toolResult({ type: "tool_result", toolCallId: call.id, toolName: call.name, input: call.arguments,
-          isError: output.isError }, signal);
-      }
+      else output = await runCall(run, call, signal, offered);
       const result = toolResult(call, output);
       writer.append({ type: "tool_result", run, message: result });
       add(result);
