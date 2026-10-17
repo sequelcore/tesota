@@ -2,7 +2,7 @@ import { CustomEditor, type Theme } from "@earendil-works/pi-coding-agent";
 import { CombinedAutocompleteProvider, CURSOR_MARKER, type EditorTheme, renderFakeCursor, stripTerminalSequences, type TUI,
   type TuiMouseEvent, visibleWidth } from "@earendil-works/pi-tui";
 import { beforeAll, expect, it } from "vitest";
-import { FilledEditor, fill } from "../src/editor.js";
+import { fill, filledEditor } from "../src/editor.js";
 import { loadThemes, themeIn } from "./pi-themes.js";
 
 let theme: Theme;
@@ -14,8 +14,8 @@ const plain = (text: string) => text;
 const editorTheme: EditorTheme = { borderColor: (text) => `\x1b[35m${text}\x1b[39m`, selectList: { selectedPrefix: plain,
   selectedText: plain, description: plain, scrollInfo: plain, noMatch: plain } };
 
-function editor(text: string, rows = 40): FilledEditor {
-  const view = new FilledEditor(tui(rows), editorTheme, keys, () => theme);
+function editor(text: string, rows = 40) {
+  const view = new (filledEditor())(tui(rows), editorTheme, keys, () => theme);
   view.focused = true;
   view.setText(text);
   return view;

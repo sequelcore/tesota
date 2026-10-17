@@ -56,16 +56,20 @@ interface Material {
 const FOLIAGE: Material = { halfDepth: 0.26, bevel: 0.2 };
 const WOOD: Material = { halfDepth: 0.075, bevel: 0.07 };
 
-type Point = readonly [number, number];
+// The shapes take coordinates, not points: the scene's distance field evaluates them about 100,000 times, and an
+// array for each point and each corner held about 50 MB the process never gave back (#446).
 
-/** Signed distance to an ellipse, approximate but monotone; positive inside. */
-function ellipse([x, y]: Point, [cx, cy]: Point, [rx, ry]: Point): number {
+/** Signed distance to an ellipse centered at cx, cy with radii rx, ry, approximate but monotone; positive inside. */
+function ellipse(x: number, y: number, cx: number, cy: number, rx: number, ry: number): number {
   return (1 - Math.hypot((x - cx) / rx, (y - cy) / ry)) * Math.min(rx, ry);
 }
 
-/** A limb from a to b whose radius tapers from ra to rb; positive inside. */
-function limb([x, y]: Point, [ax, ay]: Point, [bx, by]: Point, ra: number, rb: number): number {
-  const [px, py, dx, dy] = [x - ax, y - ay, bx - ax, by - ay];
+/** A limb from ax, ay to bx, by whose radius tapers from ra to rb; positive inside. */
+function limb(x: number, y: number, ax: number, ay: number, bx: number, by: number, ra: number, rb: number): number {
+  const px = x - ax;
+  const py = y - ay;
+  const dx = bx - ax;
+  const dy = by - ay;
   const h = Math.min(1, Math.max(0, (px * dx + py * dy) / (dx * dx + dy * dy)));
   return ra + (rb - ra) * h - Math.hypot(px - dx * h, py - dy * h);
 }
@@ -76,9 +80,9 @@ function smoothMax(a: number, b: number, k: number): number {
 }
 
 /** A crown lobe with a scalloped, leafy edge. */
-function lobe(p: Point, center: Point, radii: Point, leaves: number, turn: number): number {
-  const angle = Math.atan2((p[1] - center[1]) / radii[1], (p[0] - center[0]) / radii[0]);
-  return ellipse(p, center, radii) + Math.sin(angle * leaves + turn) * 0.022;
+function lobe(x: number, y: number, cx: number, cy: number, rx: number, ry: number, leaves: number, turn: number): number {
+  const angle = Math.atan2((y - cy) / ry, (x - cx) / rx);
+  return ellipse(x, y, cx, cy, rx, ry) + Math.sin(angle * leaves + turn) * 0.022;
 }
 
 /** What a point is made of, which picks its palette. */
@@ -93,10 +97,10 @@ interface Part {
   readonly stuff: Stuff;
   /** How far the part stands in front of the trunk's plane. */
   readonly offset: number;
-  readonly shape: (p: Point) => number;
+  readonly shape: (x: number, y: number) => number;
 }
 
-const FORK: Point = [TRUNK_X, 0.22];
+const FORK_Y = 0.22;
 
 /**
  * The palo fierro as the welcome drew it: a low front crown on the left, a wide rear crown on the right and a
@@ -104,18 +108,19 @@ const FORK: Point = [TRUNK_X, 0.22];
  * own depth, so the camera's sway shows the tree's volume.
  */
 const PARTS: readonly Part[] = [
-  { material: FOLIAGE, stuff: Stuff.Foliage, offset: -0.2, shape: (p) => lobe(p, [0.34, -0.46], [0.66, 0.34], 11, 0.4) },
-  { material: FOLIAGE, stuff: Stuff.Foliage, offset: 0.02, shape: (p) => lobe(p, [-0.02, -0.62], [0.4, 0.27], 9, 1.3) },
-  { material: FOLIAGE, stuff: Stuff.Foliage, offset: 0.22, shape: (p) => lobe(p, [-0.52, -0.3], [0.44, 0.27], 10, 2.1) },
-  { material: WOOD, stuff: Stuff.Wood, offset: 0, shape: (p) => [
-    limb(p, [TRUNK_X, 0.6], FORK, 0.085, 0.065),
-    limb(p, FORK, [-0.5, -0.24], 0.06, 0.028),
-    limb(p, FORK, [0.0, -0.4], 0.05, 0.028),
-    limb(p, FORK, [0.42, -0.26], 0.06, 0.028),
-    limb(p, [TRUNK_X, 0.5], [-0.52, 0.76], 0.06, 0.02),
-    limb(p, [TRUNK_X, 0.5], [0.4, 0.76], 0.06, 0.02),
-    limb(p, [TRUNK_X, 0.56], [-0.1, GROUND], 0.07, 0.03),
-  ].reduce((a, b) => smoothMax(a, b, 0.04)) },
+  { material: FOLIAGE, stuff: Stuff.Foliage, offset: -0.2, shape: (x, y) => lobe(x, y, 0.34, -0.46, 0.66, 0.34, 11, 0.4) },
+  { material: FOLIAGE, stuff: Stuff.Foliage, offset: 0.02, shape: (x, y) => lobe(x, y, -0.02, -0.62, 0.4, 0.27, 9, 1.3) },
+  { material: FOLIAGE, stuff: Stuff.Foliage, offset: 0.22, shape: (x, y) => lobe(x, y, -0.52, -0.3, 0.44, 0.27, 10, 2.1) },
+  // The trunk, its three limbs from the fork and its roots, blended in this order.
+  { material: WOOD, stuff: Stuff.Wood, offset: 0, shape: (x, y) => {
+    let d = limb(x, y, TRUNK_X, 0.6, TRUNK_X, FORK_Y, 0.085, 0.065);
+    d = smoothMax(d, limb(x, y, TRUNK_X, FORK_Y, -0.5, -0.24, 0.06, 0.028), 0.04);
+    d = smoothMax(d, limb(x, y, TRUNK_X, FORK_Y, 0.0, -0.4, 0.05, 0.028), 0.04);
+    d = smoothMax(d, limb(x, y, TRUNK_X, FORK_Y, 0.42, -0.26, 0.06, 0.028), 0.04);
+    d = smoothMax(d, limb(x, y, TRUNK_X, 0.5, -0.52, 0.76, 0.06, 0.02), 0.04);
+    d = smoothMax(d, limb(x, y, TRUNK_X, 0.5, 0.4, 0.76, 0.06, 0.02), 0.04);
+    return smoothMax(d, limb(x, y, TRUNK_X, 0.56, -0.1, GROUND, 0.07, 0.03), 0.04);
+  } },
 ];
 
 type Vector = readonly [number, number, number];
@@ -151,6 +156,13 @@ function cross(a: Vector, b: Vector): Vector {
   return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 }
 
+/** A copy of `array` twice as long, holding what it held. */
+function grow<T extends Float64Array | Uint8Array>(array: T): T {
+  const grown = new (array.constructor as new (length: number) => T)(array.length * 2);
+  grown.set(array);
+  return grown;
+}
+
 function unit(v: Vector): Vector {
   const length = Math.hypot(v[0], v[1], v[2]) || 1;
   return [v[0] / length, v[1] / length, v[2] / length];
@@ -159,17 +171,36 @@ function unit(v: Vector): Vector {
 /** Every point of the scene, with its normal, grain and exposure to the wind. */
 function surface(): Samples {
   if (samples !== undefined) return samples;
-  const values: number[] = [];
-  const stuff: number[] = [];
-  const group: number[] = [];
+  let values = new Float64Array(SAMPLE_VALUES * 4096);
+  let stuff = new Uint8Array(4096);
+  let group = new Uint8Array(4096);
+  let count = 0;
   const push = (x: number, y: number, z: number, nx: number, ny: number, nz: number, kind: Stuff, moved: Group,
     wind: number): void => {
     // Each part of the crown sways on its own phase, set by where it stands.
     const phase = x * 2.1 + z * 3.3;
-    values.push(x, y, z, nx, ny, nz, Math.sin(x * 23 + y * 19 + GRAIN_PHASE) * 0.01, wind,
-      Math.sin(phase), Math.cos(phase), Math.sin(phase * 0.8), Math.cos(phase * 0.8));
-    stuff.push(kind);
-    group.push(moved);
+    // Typed arrays that double as they fill, not number arrays copied at the end, keep the build's garbage small (#446).
+    if (count === stuff.length) {
+      values = grow(values);
+      stuff = grow(stuff);
+      group = grow(group);
+    }
+    const k = count * SAMPLE_VALUES;
+    values[k] = x;
+    values[k + 1] = y;
+    values[k + 2] = z;
+    values[k + 3] = nx;
+    values[k + 4] = ny;
+    values[k + 5] = nz;
+    values[k + 6] = Math.sin(x * 23 + y * 19 + GRAIN_PHASE) * 0.01;
+    values[k + 7] = wind;
+    values[k + 8] = Math.sin(phase);
+    values[k + 9] = Math.cos(phase);
+    values[k + 10] = Math.sin(phase * 0.8);
+    values[k + 11] = Math.cos(phase * 0.8);
+    stuff[count] = kind;
+    group[count] = moved;
+    count++;
   };
   // The crown's tips move most in the wind and the trunk's base not at all.
   const exposure = (y: number): number => Math.min(1, Math.max(0, (0.3 - y) / 1.2)) ** 1.6;
@@ -191,7 +222,7 @@ function surface(): Samples {
     const distance = new Float32Array(GRID * GRID);
     for (let row = 0; row < GRID; row++) {
       for (let column = 0; column < GRID; column++) {
-        distance[row * GRID + column] = part.shape([column * STEP - EXTENT, row * STEP - EXTENT]);
+        distance[row * GRID + column] = part.shape(column * STEP - EXTENT, row * STEP - EXTENT);
       }
     }
     const { material, offset, stuff: kind } = part;
@@ -309,8 +340,8 @@ function surface(): Samples {
       push(point[0], point[1], point[2], nx, ny, nz, Stuff.Straw, Group.Tumbleweed, 0);
     }
   }
-  samples = { count: stuff.length, values: Float64Array.from(values), stuff: Uint8Array.from(stuff),
-    group: Uint8Array.from(group) };
+  samples = { count, values: values.slice(0, count * SAMPLE_VALUES), stuff: stuff.slice(0, count),
+    group: group.slice(0, count) };
   return samples;
 }
 

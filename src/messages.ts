@@ -1,5 +1,6 @@
-import { keyText, type MessageRenderOptions, type Theme, type ThemeColor } from "@earendil-works/pi-coding-agent";
+import type { MessageRenderOptions, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI } from "./contract.js";
+import { host } from "./host.js";
 import { Box, type Component, sliceByColumn, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { SentBack } from "./gate.js";
 import { allEvidence, commandFinding, contractFinding, type Finding, holdsWords, isNote, isReceipt, plainName, proofFinding, type Receipt,
@@ -62,7 +63,7 @@ export function bold(text: string): string {
 
 /** Pi's hint for Ctrl+O, in its words and with its name for the key, in the theme the renderer was given. */
 export function expandHint(theme: Theme, what: string): string {
-  return theme.fg("dim", keyText("app.tools.expand")) + theme.fg("muted", ` ${what}`);
+  return theme.fg("dim", host().keyText("app.tools.expand")) + theme.fg("muted", ` ${what}`);
 }
 
 /** The footer's glyphs, so the conversation and the footer say the same things the same way. */

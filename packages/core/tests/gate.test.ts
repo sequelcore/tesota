@@ -7,7 +7,9 @@ import { join } from "node:path";
 import type { Evidence } from "../../../src/evidence.ts";
 import type { ProofOutcome } from "../../../src/verification/proof-outcome-rule.ts";
 import type { ExtensionFactory } from "../../../src/contract.ts";
+import { provideHost } from "../../../src/host.ts";
 import { createSession, type EngineSession, type SessionOptions } from "../src/session.ts";
+import { shellHost } from "../src/shell/surface.ts";
 import type { ScriptStep } from "./engine.ts";
 import { scriptedReply } from "./scripted.ts";
 
@@ -26,6 +28,8 @@ mock.module("../../../src/verification/lemmascript-verifier.ts", () => ({
   proveSource: () => Promise.resolve("failed" satisfies ProofOutcome),
 }));
 const { registerGate } = await import("../../../src/gate.ts");
+// The gate runs here as the engine's shell runs it, with the shell's editor, key names, version and shell (#446).
+provideHost(shellHost());
 const { entryReceipt, isReceipt } = await import("../../../src/receipt.ts");
 type Receipt = import("../../../src/receipt.ts").Receipt;
 

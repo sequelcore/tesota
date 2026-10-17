@@ -1,6 +1,5 @@
 import type { ExtensionContext } from "./contract.js";
 import { type TSchema, Type } from "typebox";
-import { Value } from "typebox/value";
 import type { Contract } from "./proof-guarantees.js";
 
 /**
@@ -129,6 +128,8 @@ export async function recorded<T>(ctx: ModelAccess, model: NonNullable<ModelAcce
   const why = unanswered(reply, signal);
   if (why !== undefined) return why;
   const call = reply.content.find((part) => part.type === "toolCall" && part.name === name);
+  // TypeBox's checker takes about 100 ms and 24 MB to load, so it loads when a model first answers, not with Tesota (#446).
+  const { Value } = await import("typebox/value");
   return call?.type === "toolCall" && Value.Check(parameters, call.arguments) ? call.arguments as T : "the model did not record its answer";
 }
 

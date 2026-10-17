@@ -9,7 +9,7 @@ import { type Base, captureBase } from "./base.ts";
 import type { BranchEntry, EntryDraft, ExtensionFactory, RunOutcome, Session, SessionOutcome, ToolDefinition } from "../../../src/contract.ts";
 import { contextUsage } from "./context-usage.ts";
 import { conversationMessage } from "./conversation.ts";
-import { createHost, type PhaseResult } from "./extensions.ts";
+import { createHost, type DrawingSurface, type PhaseResult } from "./extensions.ts";
 import type { Behavior, Origin, SessionWriter, SettlePhase } from "./session-file.ts";
 import { afterExtensions, afterVerifier, continuationLimit } from "./settle-rule.ts";
 import type { EngineTool, ToolOutput } from "./tool.ts";
@@ -41,6 +41,8 @@ export interface LoopOptions {
   readonly thinkingLevel?: ModelThinkingLevel;
   /** The session's entries as Pi's branch shapes them, for extensions that read it. */
   readonly branch: () => BranchEntry[];
+  /** The shell the session's extensions draw on; none in print mode. */
+  readonly surface?: DrawingSurface;
 }
 
 /** A message a settle handler added: the conversation keeps it as it came, and the model reads it as the operator's. */
@@ -258,6 +260,7 @@ export function createLoop(options: LoopOptions): LoopSession {
       setActive: tools.setActive },
     branch: options.branch,
     contextUsage: () => contextUsage(history, promptFor(), tools.activeTools().map(declaration), options.model.contextWindow),
+    ...options.surface === undefined ? {} : { surface: options.surface },
   }, options.extensions ?? [], options.verifier);
   tools.restore(options.resumed?.activeTools);
   const started = host.sessionStart({ type: "session_start", reason: options.resumed === undefined ? "startup" : "resume" });

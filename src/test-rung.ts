@@ -4,13 +4,13 @@ import { type Dirent, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileS
 import { tmpdir } from "node:os";
 import { dirname, join, posix } from "node:path";
 import { promisify } from "node:util";
-import { getShellConfig } from "@earendil-works/pi-coding-agent";
 import { type Evidence, contentHash } from "./evidence.js";
 import { gitEnvironment } from "./git.js";
 import { type ProjectChecks, findProjects, owningProjects } from "./projects.js";
 import { runProcess } from "./process.js";
 import { introducedTests, readTestResults, type TestResults } from "./test-report.js";
 import { type CheckOutcome, checkOrigin } from "./verification/check-origin-rule.js";
+import { host } from "./host.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -25,8 +25,8 @@ const defaultTimeoutMs = 15 * 60_000;
  */
 export async function runShell(command: string, cwd: string, signal: AbortSignal, timeoutMs: number = defaultTimeoutMs):
   Promise<{ outcome: CommandOutcome; output: string }> {
-  let config: ReturnType<typeof getShellConfig>;
-  try { config = getShellConfig(); } catch (error) {
+  let config: ReturnType<ReturnType<typeof host>["shellConfig"]>;
+  try { config = host().shellConfig(); } catch (error) {
     return { outcome: "not_started", output: error instanceof Error ? error.message : String(error) };
   }
   if (config.commandTransport === "stdin") {
