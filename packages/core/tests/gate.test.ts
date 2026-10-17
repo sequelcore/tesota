@@ -1,7 +1,7 @@
 import { createModels, fauxProvider } from "@earendil-works/pi-ai";
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Evidence } from "../../../src/evidence.ts";
@@ -144,7 +144,9 @@ describe("the gate on @tesota/core", () => {
     const first = gated(cwd, [{ tool: "write", args: { path: "first.md", content: "# First\n" } }, "done"], { slow: true });
     const second = gated(cwd, [{ tool: "write", args: { path: "second.md", content: "# Second\n" } }, "done"], { slow: true });
     // The first holds the checkout; the second works in a worktree of it on its own branch.
-    expect(first.workspace).toEqual({ cwd, checkout: cwd });
+    // Sessions name folders by their real names; a Windows runner's temporary folder may come by its short one.
+    const real = realpathSync.native(cwd);
+    expect(first.workspace).toEqual({ cwd: real, checkout: real });
     expect(second.workspace.branch).toStartWith("tesota/");
     expect(second.workspace.cwd).not.toBe(cwd);
     await Promise.all([first.prompt("add the first note"), second.prompt("add the second note")]);
@@ -188,7 +190,7 @@ describe("the gate on @tesota/core", () => {
     open.splice(open.indexOf(holder), 1);
     await holder.dispose();
     const taker = gated(cwd, []);
-    expect(taker.workspace.cwd).toBe(cwd);
+    expect(taker.workspace.cwd).toBe(realpathSync.native(cwd));
     expect(() => openSession(file, scriptless())).toThrow("Another session is working in");
   });
 
