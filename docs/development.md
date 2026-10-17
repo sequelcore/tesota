@@ -97,7 +97,13 @@ base, diff, checks and receipt are its own. Outside Git a second session at
 once is refused. The header records the workspace, so a resumed session
 reopens it, making the worktree again if it was removed. Closing a session
 removes its worktree when nothing in it changed; otherwise Tesota says where
-the work is, and merging it is the operator's. A run settles in two
+the work is, and merging it is the operator's. The shell runs several sessions
+at once (`app.ts`), each with its own surface, so its header, editor and footer
+are its own; `/new` starts one beside the others. `/agents` or Ctrl+T opens
+the dashboard (`dashboard.ts`): each session's request, state, verification
+(`receiptStanding`), workspace and time, to attach, peek at or close. A
+background session's permission question waits until it is shown, and the
+shown session's footer says how many wait. A run settles in two
 phases (`loop.ts`): its extensions, whose results accumulate so none can
 drop another's message or cancel its send-back, then the verifier every
 session must have, which no extension can replace. The proved settle rule

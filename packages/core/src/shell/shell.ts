@@ -35,6 +35,8 @@ export interface ShellOptions {
   readonly footerData?: ReadonlyFooterDataProvider;
   /** Turns to the next permission mode, on Shift+Tab (#449). */
   readonly nextMode?: () => void;
+  /** Opens the sessions' dashboard, on Ctrl+T (#455). */
+  readonly agents?: () => void;
 }
 
 /** A line the operator types without it showing, for keys and tokens. */
@@ -61,8 +63,16 @@ export interface Shell {
   pick(title: string, items: readonly SelectItem[]): Promise<string | undefined>;
   /** Asks the operator for a line of text, hidden when `secret`; undefined when they cancel. */
   ask(message: string, options?: { readonly secret?: boolean; readonly placeholder?: string }): Promise<string | undefined>;
-  /** Shows `session` instead, its conversation drawn from its history. */
-  show(session: EngineSession): void;
+  /**
+   * Shows `session` instead, its conversation drawn from its history (#455):
+   * with its own surface when it has one, so its header, editor and footer
+   * are its own, and as working or verifying when its run is going.
+   */
+  show(session: EngineSession, surface?: Surface, state?: "working" | "settling"): void;
+  /** Shows `body` over the whole shell with the keyboard's focus; the returned function takes it away again. */
+  overlay(body: Component): () => void;
+  /** Shows the shown session's run as working, verifying or idle, when it goes on without saying so (#455). */
+  busy(state: "working" | "settling" | undefined): void;
   /** Writes a line of the shell's own into the conversation. */
   note(text: string, tone?: "muted" | "error" | "warning"): void;
   /** Draws the footer again, as `status` now says it. */
@@ -100,11 +110,14 @@ export function startShell(options: ShellOptions): Shell {
   const tui = options.mode === "inline" ? new TuiMainScreen(terminal)
     : options.fullRepaint ? new RepaintingAltScreen(terminal, false, undefined, altOptions) : new TuiAltScreen(terminal, false, undefined, altOptions);
 
-  const surface = options.surface;
+  /** The shown session's surface: each session's extensions draw on their own (#455). */
+  let surface = options.surface;
   const look = theme as unknown as PiTheme;
   let expanded = false;
   const document = new Container();
-  const transcript = new Transcript(theme, { renderers: surface?.renderers ?? new Map(), tools: surface?.tools ?? new Map(),
+  const none = new Map();
+  const transcript = new Transcript(theme, {
+    get renderers() { return surface?.renderers ?? none; }, get tools() { return surface?.tools ?? none; },
     // The shown session's folder, its worktree when it has one (#453), never the process's.
     expanded: () => expanded, get cwd() { return session.workspace.cwd; } });
   const header = new Container();
@@ -130,8 +143,12 @@ export function startShell(options: ShellOptions): Shell {
     for (const component of dock) tui.addChild(component);
   }
 
+  /** What has the keyboard over the shell, a dialog or the dashboard (#455): the editor takes it back only when nothing does. */
+  let covering: Component | undefined;
+  /** Each session's unsent text, kept while another is shown (#455). */
+  const drafts = new Map<EngineSession, string>();
   /** What each slot was last built from, so a change rebuilds only what changed and the editor keeps its text otherwise. */
-  const mounted: { header?: unknown; editor?: unknown; footer?: unknown } = {};
+  let mounted: { header?: unknown; editor?: unknown; footer?: unknown } = {};
   let disposers: (() => void)[] = [];
   const mountHeader = (): void => {
     if (mounted.header === surface?.header && header.children.length > 0) return;
@@ -150,7 +167,7 @@ export function startShell(options: ShellOptions): Shell {
     editor.onSubmit = submit;
     editorSlot.clear();
     editorSlot.addChild(editor);
-    tui.setFocus(editor);
+    if (covering === undefined) tui.setFocus(editor);
   };
   const mountFooter = (): void => {
     if (mounted.footer === surface?.footer && footerSlot.children.length > 0) return;
@@ -218,7 +235,7 @@ export function startShell(options: ShellOptions): Shell {
     send(trimmed, busy ? "steer" : undefined);
   }
   mount();
-  const unwatch = surface?.onChange(mount) ?? (() => undefined);
+  let unwatch = surface?.onChange(mount) ?? (() => undefined);
   // Tesota's theme for the terminal's own background, light or dark: when the terminal says, however late, and when it changes.
   let unfollow = (): void => undefined;
   if (surface !== undefined) {
@@ -266,6 +283,8 @@ export function startShell(options: ShellOptions): Shell {
       tui.requestRender();
       return { consume: true };
     }
+    // A dialog or the dashboard has the keyboard: Esc goes back there, and the shell's own keys wait (#455).
+    if (covering !== undefined) return undefined;
     if (matchesKey(data, "escape") && busy) { void session.abort(); return { consume: true }; }
     if (matchesKey(data, "alt+enter")) {
       const text = editor.getText().trim();
@@ -280,6 +299,7 @@ export function startShell(options: ShellOptions): Shell {
       return { consume: true };
     }
     if (matchesKey(data, "shift+tab") && options.nextMode !== undefined) { options.nextMode(); return { consume: true }; }
+    if (matchesKey(data, "ctrl+t") && options.agents !== undefined) { options.agents(); return { consume: true }; }
     return undefined;
   });
   tui.start();
@@ -291,9 +311,11 @@ export function startShell(options: ShellOptions): Shell {
       box.addChild(new Text(theme.bold(theme.fg("accent", title)), 1, 0));
       box.addChild(body);
       const handle = tui.showOverlay(box, { width: "80%", maxHeight: "60%", anchor: "center" });
+      covering = body;
       tui.setFocus(body);
       wire((value) => {
         handle.hide();
+        covering = undefined;
         tui.setFocus(editor);
         tui.requestRender();
         resolve(value);
@@ -318,15 +340,38 @@ export function startShell(options: ShellOptions): Shell {
         input.onEscape = () => { settle(undefined); };
       });
     },
-    show(next) {
+    show(next, nextSurface, state) {
       unsubscribe();
+      drafts.set(session, editor.getText());
       session = next;
       unsubscribe = session.subscribe(onEvent);
+      if (nextSurface !== undefined && nextSurface !== surface) {
+        unwatch();
+        surface = nextSurface;
+        mounted = {};
+        unwatch = surface.onChange(mount);
+        mount();
+      }
+      editor.setText(drafts.get(next) ?? "");
+      drafts.delete(next);
       transcript.load(session.history());
-      working(undefined);
+      working(state);
       drawFooter();
       tui.requestRender();
     },
+    overlay(body) {
+      const handle = tui.showOverlay(body, { width: "100%", maxHeight: "100%", anchor: "center" });
+      covering = body;
+      tui.setFocus(body);
+      tui.requestRender();
+      return () => {
+        handle.hide();
+        covering = undefined;
+        tui.setFocus(editor);
+        tui.requestRender();
+      };
+    },
+    busy: (state) => { working(state); tui.requestRender(); },
     note,
     redraw: () => { drawFooter(); tui.requestRender(); },
     stop,

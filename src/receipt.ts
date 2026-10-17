@@ -542,6 +542,18 @@ export function receiptDecisions(receipt: Receipt): number {
   return decisions(receiptFindings(receipt).map(({ standing }) => standing));
 }
 
+/**
+ * The receipt in one word, as a list of sessions shows it (#455): verified
+ * when it is clean and the run was not stopped first; failed when a proof or
+ * a command did not end proved; incomplete otherwise.
+ */
+export function receiptStanding(receipt: Receipt): "verified" | "incomplete" | "failed" {
+  if (receipt.stopped === undefined && receiptDecisions(receipt) === 0) return "verified";
+  // A folder of repositories keeps its checks in its units, as the footer reads them too.
+  const { proofs, tests } = allEvidence(receipt);
+  return [...proofs, ...tests].some(({ verdict }) => verdict !== "proved") ? "failed" : "incomplete";
+}
+
 /** The receipt as the operator reads it; `details` of its session entry carries the receipt itself. */
 export function renderReceipt(receipt: Receipt): string {
   return ["Tesota receipt", ...receiptLines(receipt)].join("\n");
