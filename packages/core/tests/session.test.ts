@@ -79,7 +79,7 @@ describe("the request ledger", () => {
     const created = session([{ tool: "probe", args: {} }, "done"], { tools: () => [probe] });
     await created.prompt("the exact request", { source: "rpc" });
     const lines = seen.trimEnd().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
-    expect(lines.map((line) => line["type"])).toEqual(["session", "request", "active_tools", "assistant", "call_intent"]);
+    expect(lines.map((line) => line["type"])).toEqual(["session", "request", "active_tools", "assistant", "permission", "call_intent"]);
     expect(lines[1]).toMatchObject({ text: "the exact request", origin: "rpc", run: 1 });
     expect(created.ledger()).toMatchObject([{ run: 1, text: "the exact request", origin: "rpc", amendments: [] }]);
   });

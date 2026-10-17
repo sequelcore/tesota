@@ -1,4 +1,5 @@
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
+import type { Mode } from "./permission-rule.ts";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -14,12 +15,15 @@ export interface Settings {
   readonly model?: string;
   readonly thinkingLevel?: ModelThinkingLevel;
   readonly tuiMode?: TuiMode;
+  /** How freely the agent may act (#449): read only, ask, or full access; ask when not set. */
+  readonly permissionMode?: Mode;
   /** This installation's id, a UUID, which some providers' login asks for. */
   readonly deviceId?: string;
 }
 
 const levels = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 const modes = new Set(["fullscreen", "inline"]);
+const permissionModes = new Set(["read", "ask", "full"]);
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 
 /** Each setting's check; a value that fails it is left out and named. */
@@ -27,6 +31,7 @@ const checks: { readonly [Name in keyof Settings]-?: (value: unknown) => boolean
   model: (value) => typeof value === "string" && /^[^/\s]+\/\S+$/u.test(value),
   thinkingLevel: (value) => levels.has(value as string),
   tuiMode: (value) => modes.has(value as string),
+  permissionMode: (value) => permissionModes.has(value as string),
   deviceId: (value) => typeof value === "string" && uuid.test(value),
 };
 

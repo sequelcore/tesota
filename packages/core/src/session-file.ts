@@ -72,6 +72,12 @@ export type SessionEntry =
    */
   | { readonly type: "settled"; readonly run: number; readonly generation: number; readonly phase: SettlePhase;
     readonly continued: boolean; readonly errors: readonly string[]; readonly registered: boolean }
+  /**
+   * Whether call `callId` of run `run` may run, and who decided it (#449):
+   * the floor, the mode, a rule, or the operator asked once or for the session.
+   */
+  | { readonly type: "permission"; readonly run: number; readonly callId: string; readonly decision: "allow" | "deny";
+    readonly by: "floor" | "mode" | "rule" | "operator" | "session"; readonly reason: string }
   /** The tools the model may call from now on, as extensions set them (#441); a resumed session restores the last. */
   | { readonly type: "active_tools"; readonly names: readonly string[] }
   /** How run `run` ended, and why when it did not complete. */
@@ -110,6 +116,8 @@ const shapes: Record<SessionEntry["type"], (entry: Record<string, unknown>) => b
   settled: (entry) => Number.isInteger(entry["generation"]) && phases.has(entry["phase"] as string) && isFlag(entry["continued"])
     && Array.isArray(entry["errors"]) && entry["errors"].every(isText) && isFlag(entry["registered"]),
   active_tools: (entry) => Array.isArray(entry["names"]) && entry["names"].every(isText),
+  permission: (entry) => isText(entry["callId"]) && (entry["decision"] === "allow" || entry["decision"] === "deny")
+    && ["floor", "mode", "rule", "operator", "session"].includes(entry["by"] as string) && isText(entry["reason"]),
   run_end: (entry) => isText(entry["outcome"]) && (entry["reason"] === undefined || isText(entry["reason"])),
 };
 

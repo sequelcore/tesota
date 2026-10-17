@@ -6,6 +6,8 @@ import { provideHost } from "../../../../src/host.ts";
 import tesota from "../../../../src/tesota.ts";
 import { fileCredentialStore } from "../credentials.ts";
 import { engineModels, loginOptions } from "../model-access.ts";
+import type { Mode } from "../permission-rule.ts";
+import { loadRules } from "../permissions.ts";
 import { createSession, type EngineSession, openSession, sessionsFolder, type Verifier } from "../session.ts";
 import { readSettings, type Settings, writeSettings } from "../settings.ts";
 import { type Shell, startShell } from "./shell.ts";
@@ -73,9 +75,30 @@ export async function runApp(options: AppOptions): Promise<void> {
   const verifier: Verifier = (pi, request) => { tesota(pi, request); };
   let providers = 0;
   let model = await chosenModel(models, settings);
-  const sessionOptions = () => ({ models, model: model ?? models.getModels()[0] as Model<Api>, verifier, surface, mode: "tui",
+  let permissionMode: Mode = settings.permissionMode ?? "ask";
+  const rules = loadRules(options.cwd);
+  // The operator answers what the mode and rules leave to them (#449): once, for this session, or no.
+  const permissions = {
+    mode: () => permissionMode,
+    rules,
+    ask: async (call: { name: string; arguments: unknown }, reason: string) => {
+      const args = call.arguments as Record<string, unknown>;
+      const about = typeof args["path"] === "string" ? args["path"] : typeof args["command"] === "string" ? args["command"] : "";
+      const answer = await shell.pick(`Allow ${call.name} ${about}`.trim(), [
+        { value: "once", label: "Yes, this once", description: reason },
+        { value: "session", label: "Yes, for this session" },
+        { value: "deny", label: "No" },
+      ]);
+      return answer === "once" || answer === "session" ? answer : "deny";
+    },
+  };
+  const sessionOptions = () => ({ models, model: model ?? models.getModels()[0] as Model<Api>, verifier, permissions, surface, mode: "tui",
     ...settings.thinkingLevel === undefined ? {} : { thinkingLevel: settings.thinkingLevel } });
   let session: EngineSession = createSession({ cwd: options.cwd, folder, ...sessionOptions() });
+  const modeNames: Readonly<Record<Mode, string>> = { read: "read only", ask: "ask", full: "full access" };
+  // The mode is a status, which Tesota's footer shows on its third row (#449).
+  const showMode = (): void => { surface.statuses.set("permissions", modeNames[permissionMode]); };
+  showMode();
   const status = (): string => [model === undefined ? "no model: /login, then /model" : label(model),
     ...settings.thinkingLevel === undefined || settings.thinkingLevel === "off" ? [] : [settings.thinkingLevel]].join(" · ");
 
@@ -178,6 +201,12 @@ export async function runApp(options: AppOptions): Promise<void> {
   shell = startShell({ terminal: options.terminal ?? new ProcessTerminal(), mode: modeFor(settings),
     fullRepaint: process.platform === "win32", theme, session, status, surface,
     footerData: footerData(options.cwd, surface, () => providers),
+    nextMode: () => {
+      permissionMode = permissionMode === "ask" ? "full" : permissionMode === "full" ? "read" : "ask";
+      save({ permissionMode });
+      showMode();
+      shell.redraw();
+    },
     command: async (text) => {
       const run = commands[text.split(/\s/u)[0] ?? ""];
       if (run === undefined) return false;

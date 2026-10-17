@@ -102,6 +102,7 @@ export function shellTool(cwd: string, shell: Shell, spool: () => string): Engin
   let runs = 0;
   const tool: EngineTool<typeof parameters> = {
     name: shell.tool,
+    access: "run",
     description: `Run a command in ${shell.label} from the session's folder. Returns stdout and stderr together and fails `
       + `when the command exits with a non-zero code. Long output keeps its end; the rest is saved to a file.`
       + (shell.label === "Windows PowerShell 5.1" ? " Windows PowerShell 5.1 has no && or ||: separate commands with ; "

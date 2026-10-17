@@ -33,6 +33,8 @@ export interface ShellOptions {
   readonly surface?: Surface;
   /** What an extension's footer reads besides the session. */
   readonly footerData?: ReadonlyFooterDataProvider;
+  /** Turns to the next permission mode, on Shift+Tab (#449). */
+  readonly nextMode?: () => void;
 }
 
 /** A line the operator types without it showing, for keys and tokens. */
@@ -63,6 +65,8 @@ export interface Shell {
   show(session: EngineSession): void;
   /** Writes a line of the shell's own into the conversation. */
   note(text: string, tone?: "muted" | "error" | "warning"): void;
+  /** Draws the footer again, as `status` now says it. */
+  redraw(): void;
   /** Ends the shell, leaving the conversation in the terminal's scrollback; settles once it has. */
   stop(): void;
   /** Settles when the shell has stopped. */
@@ -270,6 +274,7 @@ export function startShell(options: ShellOptions): Shell {
       tui.requestRender();
       return { consume: true };
     }
+    if (matchesKey(data, "shift+tab") && options.nextMode !== undefined) { options.nextMode(); return { consume: true }; }
     return undefined;
   });
   tui.start();
@@ -318,6 +323,7 @@ export function startShell(options: ShellOptions): Shell {
       tui.requestRender();
     },
     note,
+    redraw: () => { drawFooter(); tui.requestRender(); },
     stop,
     stopped,
   };

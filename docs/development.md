@@ -73,7 +73,16 @@ default, with search and in-app copy, writing the conversation to the
 scrollback when it ends; inline as a setting and over SSH to Windows; on
 Windows it repaints every cell, as ConPTY hosts need. Its tests draw it into
 an emulated terminal (`@xterm/headless`), as Pi's own are; flicker and stale
-fragments on a real Windows console still need a person to look. A run settles in two
+fragments on a real Windows console still need a person to look. Every
+tool call passes one boundary before it runs (`permissions.ts`): the
+floor no mode crosses (writing outside the session's folder, secrets such
+as `.env` files, SSH's keys and Tesota's credentials, commands that would
+destroy a disk or home folder, a pattern net and not a guarantee), then the
+mode (read only, ask by default, full access, Shift+Tab in the shell), then
+the operator's rules in `~/.tesota/permissions.json` and the project's in
+`.tesota/permissions.json`, which can only tighten. The proved rule
+(`permission-rule.ts`) decides, and with no one to ask a call that would
+ask is refused; each decision is recorded in the session. A run settles in two
 phases (`loop.ts`): its extensions, whose results accumulate so none can
 drop another's message or cancel its send-back, then the verifier every
 session must have, which no extension can replace. The proved settle rule
