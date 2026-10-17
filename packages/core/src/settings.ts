@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
 import { withLock } from "./session-lock.ts";
+import { parseJson } from "../../../src/json.ts";
 import { writeWholeJson } from "./whole-file.ts";
 
 /** How the shell draws: on the alternate screen, or into the terminal's scrollback (#432). */
@@ -54,7 +55,7 @@ export function readSettings(path: string = join(tesotaHome(), "settings.json"))
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return { settings: {}, invalid: [] };
     throw error;
   }
-  const parsed: unknown = JSON.parse(text);
+  const parsed: unknown = parseJson(text);
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error(`${path} does not hold settings.`);
   const settings: Record<string, unknown> = {};
   const invalid: string[] = [];

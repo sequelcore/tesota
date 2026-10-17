@@ -27,6 +27,11 @@ function commands(root: string): string[] {
   return suggestChecks(root).flatMap((project) => project.commands);
 }
 
+it("reads a package.json that begins with a byte-order mark, as Windows tools may write one (#470)", async () => {
+    const root = await repository({ "package.json": `\uFEFF${JSON.stringify({ scripts: { test: "node --test" } })}`, "bun.lock": "" });
+    expect(commands(root)).toEqual(["bun run test"]);
+});
+
 it("suggests a root Gradle project's check, through its wrapper when it has one", async () => {
   expect(commands(await repository({ "build.gradle.kts": "plugins { java }", "settings.gradle.kts": "", gradlew: "",
     "lib/build.gradle.kts": "" }))).toEqual(["./gradlew check"]);

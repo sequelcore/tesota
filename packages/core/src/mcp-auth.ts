@@ -9,6 +9,7 @@ import {
 import { tesotaHome } from "../../../src/home.ts";
 import type { McpOAuthConfig } from "./mcp-config.ts";
 import { withLock, withLockWhile } from "./session-lock.ts";
+import { parseJson } from "../../../src/json.ts";
 import { writeWholeJson } from "./whole-file.ts";
 
 /**
@@ -47,7 +48,7 @@ const keyOf = (server: string, url: string): string => `${server}|${new URL(url)
 
 function readStates(home: string): Record<string, McpOAuthState> {
   try {
-    const read: unknown = JSON.parse(readFileSync(authFile(home), "utf8"));
+    const read: unknown = parseJson(readFileSync(authFile(home), "utf8"));
     return typeof read === "object" && read !== null && !Array.isArray(read) ? read as Record<string, McpOAuthState> : {};
   } catch {
     return {};

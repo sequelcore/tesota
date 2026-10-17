@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
 import { lockSession, SessionLockedError, type SessionLock } from "./session-lock.ts";
+import { parseJson } from "../../../src/json.ts";
 import { writeWholeJson } from "./whole-file.ts";
 
 /** How long a write waits for another writer's lock before it gives up. */
@@ -20,7 +21,7 @@ function readStored(path: string): Stored {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
     throw error;
   }
-  const parsed: unknown = JSON.parse(text);
+  const parsed: unknown = parseJson(text);
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error(`${path} does not hold credentials.`);
   return Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, Credential] => isCredential(entry[1])));
 }

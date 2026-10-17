@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, posix, relative } from "node:path";
 import { type Evidence, contentHash } from "../evidence.js";
 import { type ProcessRun, runProcess } from "../process.js";
+import { parseJson } from "../json.js";
 import { type ProofOutcome, proofOutcome } from "./proof-outcome-rule.js";
 
 const timeoutMs = 5 * 60_000;
@@ -95,7 +96,7 @@ async function configuredProofDir(path: string): Promise<string | undefined> {
   const text = await readIfPresent(path);
   if (text === undefined) return undefined;
   try {
-    const proofDir = (JSON.parse(text) as Record<string, unknown>)["proof-dir"];
+    const proofDir = (parseJson(text) as Record<string, unknown>)["proof-dir"];
     return typeof proofDir === "string" ? proofDir : undefined;
   } catch { return undefined; }
 }

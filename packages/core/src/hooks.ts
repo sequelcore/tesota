@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { runProcess } from "../../../src/process.ts";
+import { parseJson } from "../../../src/json.ts";
 
 /**
  * Command hooks (#457), configured as Claude Code configures them, which
@@ -38,7 +39,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function readHooks(path: string): Hooks {
   if (!existsSync(path)) return {};
   let settings: unknown;
-  try { settings = JSON.parse(readFileSync(path, "utf8")); } catch (error) {
+  try { settings = parseJson(readFileSync(path, "utf8")); } catch (error) {
     throw new Error(`${path} is not JSON: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
   const hooks = isRecord(settings) ? settings["hooks"] : undefined;

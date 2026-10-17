@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
+import { parseJson } from "../../../src/json.ts";
 
 /**
  * MCP servers as `mcp.json` configures them (#459), in the `mcpServers`
@@ -153,7 +154,7 @@ function remote(common: Shared, value: Record<string, unknown>, env: NodeJS.Proc
 function readFile(path: string, cwd: string, env: NodeJS.ProcessEnv, overrides: boolean): { entries: (McpServerConfig | Override)[]; errors: string[] } {
   if (!existsSync(path)) return { entries: [], errors: [] };
   let file: unknown;
-  try { file = JSON.parse(readFileSync(path, "utf8")); } catch (error) {
+  try { file = parseJson(readFileSync(path, "utf8")); } catch (error) {
     return { entries: [], errors: [`${path} is not JSON: ${error instanceof Error ? error.message : String(error)}`] };
   }
   const servers = isRecord(file) ? file["mcpServers"] ?? {} : undefined;

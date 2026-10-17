@@ -3,6 +3,7 @@ import { readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
 import { withLock } from "./session-lock.ts";
+import { parseJson } from "../../../src/json.ts";
 import { writeWholeJson } from "./whole-file.ts";
 
 /**
@@ -30,7 +31,7 @@ function projectKey(root: string): string {
 /** Whether the operator trusted the `kind` of the project at `root` as it is now (`hash`). */
 export function trusted(root: string, kind: Trusted, hash: string, home: string = tesotaHome()): boolean {
   try {
-    const trust: unknown = JSON.parse(readFileSync(trustFile(home), "utf8"));
+    const trust: unknown = parseJson(readFileSync(trustFile(home), "utf8"));
     const project = isRecord(trust) && isRecord(trust["projects"]) ? trust["projects"][projectKey(root)] : undefined;
     return isRecord(project) && project[kind] === hash;
   } catch {
@@ -44,7 +45,7 @@ export function trust(root: string, kind: Trusted, hash: string, home: string = 
   withLock(`${trustFile(home)}.lock`, () => {
     let file: Record<string, unknown> = {};
     try {
-      const read: unknown = JSON.parse(readFileSync(trustFile(home), "utf8"));
+      const read: unknown = parseJson(readFileSync(trustFile(home), "utf8"));
       if (isRecord(read)) file = read;
     } catch { /* none yet */ }
     const projects = isRecord(file["projects"]) ? file["projects"] : {};

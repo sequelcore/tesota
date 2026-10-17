@@ -47,6 +47,11 @@ describe("reading mcp.json", () => {
   };
   const cwd = join(tmpdir(), "project");
 
+  test("a file that begins with a byte-order mark reads as any other (#470)", () => {
+    const own = write(`\uFEFF${JSON.stringify({ mcpServers: { files: { command: "files" } } })}`);
+    expect(readMcpConfig(own, undefined, cwd, {})).toMatchObject({ servers: [{ name: "files", command: "files" }], errors: [] });
+  });
+
   test("local and remote servers, environment variables, the home folder and a relative folder", () => {
     const own = write({ mcpServers: {
       files: { command: "~/bin/files", args: ["~/data", "--x"], env: { TOKEN: "${MCP_TEST_TOKEN}" }, cwd: "sub", timeout: 5 },

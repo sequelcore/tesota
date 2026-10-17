@@ -35,6 +35,13 @@ const input = { session_id: "s", cwd: tmpdir(), hook_event_name: "PreToolUse" as
 const pre = (...commands: string[]): Hooks => ({ PreToolUse: [{ hooks: commands.map((command) => ({ type: "command" as const, command })) }] });
 
 describe("reading hooks", () => {
+  test("from a settings file that begins with a byte-order mark (#470)", () => {
+    const path = join(folder("tesota-core-hooks-settings-"), "settings.json");
+    const hooks = { PreToolUse: [{ hooks: [{ type: "command", command: "guard" }] }] } as const;
+    writeFileSync(path, `\uFEFF${JSON.stringify({ hooks })}`);
+    expect(readHooks(path)).toEqual(hooks);
+  });
+
   test("from a settings file's hooks, none without the file or the key, and an error naming the file for a shape it cannot read", () => {
     const at = folder("tesota-core-hooks-settings-");
     const path = join(at, "settings.json");

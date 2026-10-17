@@ -94,6 +94,12 @@ describe("the floor, which no mode crosses", () => {
 });
 
 describe("rules", () => {
+  test("a rules file that begins with a byte-order mark reads as any other (#470)", () => {
+    const home = folder("tesota-core-permissions-home-");
+    writeFileSync(join(home, "permissions.json"), `\uFEFF${JSON.stringify({ deny: ["shell(git push*)"] })}`);
+    expect(loadRules(folder("tesota-core-permissions-project-"), home)).toHaveLength(1);
+  });
+
   test("an operator's rule allows, asks or denies by tool and pattern; a project's can only tighten", () => {
     const home = folder("tesota-core-permissions-home-");
     const cwd = folder("tesota-core-permissions-project-");
