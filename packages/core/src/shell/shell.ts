@@ -105,7 +105,8 @@ export function startShell(options: ShellOptions): Shell {
   let expanded = false;
   const document = new Container();
   const transcript = new Transcript(theme, { renderers: surface?.renderers ?? new Map(), tools: surface?.tools ?? new Map(),
-    expanded: () => expanded, cwd: process.cwd() });
+    // The shown session's folder, its worktree when it has one (#453), never the process's.
+    expanded: () => expanded, get cwd() { return session.workspace.cwd; } });
   const header = new Container();
   document.addChild(header);
   document.addChild(transcript);
@@ -136,7 +137,7 @@ export function startShell(options: ShellOptions): Shell {
     if (mounted.header === surface?.header && header.children.length > 0) return;
     mounted.header = surface?.header;
     header.clear();
-    header.addChild(surface?.header === undefined ? new Text(theme.fg("dim", `tesota-core · ${process.cwd()}`), 1, 1)
+    header.addChild(surface?.header === undefined ? new Text(theme.fg("dim", `tesota-core · ${session.workspace.cwd}`), 1, 1)
       : surface.header(tui, look));
   };
   const mountEditor = (): void => {

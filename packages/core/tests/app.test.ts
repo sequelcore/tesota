@@ -6,7 +6,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readSettings } from "../src/settings.ts";
+import { readSettings, writeSettings } from "../src/settings.ts";
 import { runApp } from "../src/shell/app.ts";
 import type { ScriptStep } from "./engine.ts";
 import { scriptedReply } from "./scripted.ts";
@@ -162,8 +162,11 @@ describe("tesota-core", () => {
     terminal.type("\x1b[Z");
     await terminal.until("read only");
     expect(readSettings(settingsPath).settings.permissionMode).toBe("read");
+    // Another Tesota saves its model meanwhile; this one's next save keeps it (#453).
+    writeSettings({ ...readSettings(settingsPath).settings, model: "faux/elsewhere" }, settingsPath);
     terminal.type("\x1b[Z");
     await terminal.untilGone("read only");
+    expect(readSettings(settingsPath).settings).toMatchObject({ permissionMode: "ask", model: "faux/elsewhere" });
     send(terminal, "/quit");
     await running;
   });
