@@ -20,8 +20,14 @@ export interface SessionHeader {
   readonly format: typeof sessionFormat;
   readonly version: typeof sessionVersion;
   readonly id: string;
+  /** The folder the session works in: its checkout, or the same folder inside its worktree (#453). */
   readonly cwd: string;
   readonly createdAt: string;
+  /** Where the session was opened, and its worktree, branch and starting commit when it has one (#453). */
+  readonly checkout?: string;
+  readonly worktree?: string;
+  readonly branch?: string;
+  readonly base?: string;
 }
 
 /** Where input came from, as Pi's input event says; an extension's text is never the operator's request. */

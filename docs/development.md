@@ -89,7 +89,15 @@ everything before a verbatim tail of at least 20,000 tokens, cut at a turn,
 becomes a summary merged into the previous one, and the conversation then
 starts with the run's request and amendments exactly as given. A summary that
 fails twice or comes out larger ends the run as an error; `/compact` compacts
-between runs. A run settles in two
+between runs. Each session is bound to its workspace when it starts
+(`workspace.ts`): the first session in a checkout holds it and works there;
+each further session in a Git repository works in its own worktree on branch
+`tesota/<session>`, in `~/.tesota/worktrees`, so its tools, permissions,
+base, diff, checks and receipt are its own. Outside Git a second session at
+once is refused. The header records the workspace, so a resumed session
+reopens it, making the worktree again if it was removed. Closing a session
+removes its worktree when nothing in it changed; otherwise Tesota says where
+the work is, and merging it is the operator's. A run settles in two
 phases (`loop.ts`): its extensions, whose results accumulate so none can
 drop another's message or cancel its send-back, then the verifier every
 session must have, which no extension can replace. The proved settle rule
