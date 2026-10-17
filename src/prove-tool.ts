@@ -7,7 +7,7 @@ import { type TObject, type TString, Type } from "typebox";
 import { type Evidence, proofSummary, quietOutput } from "./evidence.js";
 import { bold, expandHint, Rows, spread, wrapUnder } from "./messages.js";
 import { skippedWords, trustedWords } from "./receipt.js";
-import { type OnTrust, provedOnTrust } from "./verification-changes.js";
+import type { OnTrust } from "./verification-changes.js";
 import { annotations, projectFiles, proveFile, unreadSpecifications } from "./verification/lemmascript-verifier.js";
 
 /**
@@ -101,6 +101,8 @@ async function trustedIn(root: string, files: readonly string[]): Promise<OnTrus
   };
   const found = await Promise.all(files.map(async (path) => ({ path, content: await read(path),
     generated: path.endsWith(".dfy") ? await read(`${path}.gen`) : undefined })));
+  // Loaded when a proof first passes rather than with Tesota, as the gate loads its checks (#446).
+  const { provedOnTrust } = await import("./verification-changes.js");
   return provedOnTrust(found.flatMap(({ path, content, generated }) => content === undefined ? []
     : [{ path, content, ...generated === undefined ? {} : { generated } }]));
 }
