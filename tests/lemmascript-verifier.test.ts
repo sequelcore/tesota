@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { contentHash } from "../src/evidence.js";
 import { annotations, proofSources, proveFile, unreadSpecification, unreadSpecifications } from "../src/verification/lemmascript-verifier.js";
@@ -81,6 +81,28 @@ it.runIf(dafny)("refutes the registered clamp base and proves its fix, bound to 
   appendFileSync(join(root, "clamp.dfy"), "\n");
   expect(contentHash([read("clamp.ts"), read("clamp.dfy")])).not.toBe(proved.contentHash);
 }, 120_000);
+
+/** Another name for the folder `root`: its short name on Windows, as CI's `RUNNER~1`, and a link elsewhere, as macOS's `/var`. */
+function otherName(root: string): string {
+  if (process.platform === "win32") {
+    return spawnSync("cmd", ["/d", "/c", `for %I in ("${root}") do @echo %~sI`], { encoding: "utf8", windowsVerbatimArguments: true }).stdout.trim();
+  }
+  const link = join(mkdtempSync(join(tmpdir(), "tesota-lemmascript-link-")), "project");
+  roots.push(dirname(link));
+  symlinkSync(root, link);
+  return link;
+}
+
+it("maps a proof to its source in a project reached by another name, whose proof folder is not made yet (#472)", async () => {
+  const root = mkdtempSync(join(tmpdir(), "tesota-lemmascript-long-folder-"));
+  roots.push(root);
+  mkdirSync(join(root, "src"));
+  writeFileSync(join(root, "lemmascript.json"), JSON.stringify({ "proof-dir": "proofs" }));
+  writeFileSync(join(root, "src", "rule.ts"), "export const a = 1;\n");
+  const named = otherName(root);
+  expect(named).not.toBe(root);
+  expect(await proofSources(named, "proofs/src/rule.dfy", new AbortController().signal)).toEqual(["src/rule.ts"]);
+}, 60_000);
 
 it.runIf(dafny)("never counts a run in which Dafny verified nothing as proved", async () => {
   const root = project({ "loose.ts": "//@ ensures \\result >= 0\nexport const a = 1;\n" });

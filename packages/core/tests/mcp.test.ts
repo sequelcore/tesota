@@ -1,6 +1,6 @@
 import { createModels, fauxProvider } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -166,7 +166,8 @@ describe("a local server", () => {
     const servers = started([local("test", { cwd: at, env: { TESOTA_MCP_TEST: "given" } } as Partial<McpServerConfig>)]);
     await ready(servers);
     const [where, env] = (await call(servers, "mcp__test__where")).text.split("|");
-    expect(where?.toLowerCase()).toBe(at.toLowerCase());
+    // By real names: macOS reports its temporary folder as /private/var, and Windows CI's may be spelled RUNNER~1.
+    expect(realpathSync.native(where ?? "").toLowerCase()).toBe(realpathSync.native(at).toLowerCase());
     expect(env).toBe("given");
   });
 

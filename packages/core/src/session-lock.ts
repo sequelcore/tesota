@@ -25,11 +25,26 @@ function openKernel32() {
   }).symbols;
 }
 
+/**
+ * The C libraries that may hold `flock`, in order: macOS's; on Linux glibc's,
+ * then musl's, which distributions such as Alpine have instead (#472).
+ */
+function libcNames(): string[] {
+  if (process.platform === "darwin") return ["libSystem.B.dylib"];
+  return ["libc.so.6", `libc.musl-${process.arch === "arm64" ? "aarch64" : "x86_64"}.so.1`];
+}
+
 let libc: ReturnType<typeof openLibc> | undefined;
 function openLibc() {
-  return dlopen(process.platform === "darwin" ? "libSystem.B.dylib" : "libc.so.6", {
-    flock: { args: [FFIType.i32, FFIType.i32], returns: FFIType.i32 },
-  }).symbols;
+  const names = libcNames();
+  for (const [index, name] of names.entries()) {
+    try {
+      return dlopen(name, { flock: { args: [FFIType.i32, FFIType.i32], returns: FFIType.i32 } }).symbols;
+    } catch (error) {
+      if (index === names.length - 1) throw error;
+    }
+  }
+  throw new Error("No C library to lock with.");
 }
 
 /** Whether `CreateFileW` failed: Bun gives its `INVALID_HANDLE_VALUE` as the unsigned 64-bit `0xFFFFFFFFFFFFFFFF`, a bigint. */

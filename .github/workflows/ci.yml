@@ -10,7 +10,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
+        os: [windows-latest, ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
@@ -28,3 +28,19 @@ jobs:
       - run: bun --no-env-file run check
       - run: bun --no-env-file run formal:check
       - run: bun packages/core/src/main.ts --version
+  # Linux with musl, as Alpine has it (#472): the engine's sessions and their lock, and the command starting. JavaScript
+  # actions do not run in an Alpine container, so the checkout runs on the runner and the checks in Bun's Alpine image.
+  musl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Sessions and the command on Alpine
+        run: |
+          bun_version=$(node -p "require('./package.json').packageManager.split('@')[1]")
+          docker run --rm -v "$PWD:/tesota" -w /tesota "oven/bun:${bun_version}-alpine" sh -euc '
+            apk add --no-cache git
+            bun install --frozen-lockfile --ignore-scripts
+            cd packages/core
+            bun test --timeout 30000 tests/session.test.ts
+            bun src/main.ts --version'
