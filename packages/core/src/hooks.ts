@@ -1,10 +1,5 @@
-import { createHash } from "node:crypto";
-import { existsSync, readFileSync, realpathSync } from "node:fs";
-import { join } from "node:path";
-import { tesotaHome } from "../../../src/home.ts";
+import { existsSync, readFileSync } from "node:fs";
 import { runProcess } from "../../../src/process.ts";
-import { withLock } from "./session-lock.ts";
-import { writeWholeJson } from "./whole-file.ts";
 
 /**
  * Command hooks (#457), configured as Claude Code configures them, which
@@ -87,43 +82,6 @@ export function joinHooks(...all: readonly Hooks[]): Hooks {
 
 /** Whether `hooks` runs anything at all. */
 export const anyHooks = (hooks: Hooks): boolean => events.some((event) => (hooks[event]?.length ?? 0) > 0);
-
-/** A hash of what `hooks` would run, which a project's trust is given to: a change to its commands asks again. */
-export const hooksHash = (hooks: Hooks): string => createHash("sha256").update(JSON.stringify(hooks)).digest("hex");
-
-const trustFile = (home: string): string => join(home, "trust.json");
-
-/** A project by its one real name, in one case on Windows, so the same checkout is trusted however it is reached. */
-function projectKey(root: string): string {
-  let named = root;
-  try { named = realpathSync.native(root); } catch { /* as given */ }
-  return process.platform === "win32" ? named.toLowerCase() : named;
-}
-
-/** Whether the operator trusted the hooks of the project at `root` as they are now (`hash`). */
-export function trustedHooks(root: string, hash: string, home: string = tesotaHome()): boolean {
-  try {
-    const trust: unknown = JSON.parse(readFileSync(trustFile(home), "utf8"));
-    const project = isRecord(trust) && isRecord(trust["projects"]) ? trust["projects"][projectKey(root)] : undefined;
-    return isRecord(project) && project["hooks"] === hash;
-  } catch {
-    return false;
-  }
-}
-
-/** Records that the operator trusts the hooks of the project at `root` as they are now. */
-export function trustHooks(root: string, hash: string, home: string = tesotaHome()): void {
-  // Read, changed and written under a lock, so two shells trusting at once each keep the other's.
-  withLock(`${trustFile(home)}.lock`, () => {
-    let trust: Record<string, unknown> = {};
-    try {
-      const read: unknown = JSON.parse(readFileSync(trustFile(home), "utf8"));
-      if (isRecord(read)) trust = read;
-    } catch { /* none yet */ }
-    const projects = isRecord(trust["projects"]) ? trust["projects"] : {};
-    writeWholeJson(trustFile(home), { ...trust, projects: { ...projects, [projectKey(root)]: { hooks: hash } } });
-  });
-}
 
 /** Whether a group's matcher takes `tool`, as Claude Code reads one: empty or `*` for every tool, else a whole-name pattern. */
 function matches(matcher: string | undefined, tool: string): boolean {

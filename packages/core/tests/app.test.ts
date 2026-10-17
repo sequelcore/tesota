@@ -4,9 +4,10 @@ import {
 } from "@earendil-works/pi-ai";
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { readSettings, writeSettings } from "../src/settings.ts";
 import { runApp } from "../src/shell/app.ts";
 import type { ScriptStep } from "./engine.ts";
@@ -49,7 +50,7 @@ function scripted(replies: readonly ScriptStep[]): { models: MutableModels; cred
 }
 
 /** The app in a temporary folder, its settings and sessions there too, once it has drawn its first frame. */
-async function app(replies: readonly ScriptStep[] = [], { repository = false } = {}) {
+async function app(replies: readonly ScriptStep[] = [], { repository = false, mcp, projectMcp }: { repository?: boolean; mcp?: object; projectMcp?: object } = {}) {
   const terminal = new VirtualTerminal(100, 30);
   const { models, credentials } = scripted(replies);
   const settingsPath = join(folder("tesota-core-app-settings-"), "settings.json");
@@ -61,6 +62,12 @@ async function app(replies: readonly ScriptStep[] = [], { repository = false } =
     for (const args of [["init", "-q"], ["add", "-A"], ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base"]]) {
       spawnSync("git", args, { cwd });
     }
+  }
+  // The operator's MCP servers beside their settings, and the project's in its .tesota folder (#459).
+  if (mcp !== undefined) writeFileSync(join(dirname(settingsPath), "mcp.json"), JSON.stringify(mcp));
+  if (projectMcp !== undefined) {
+    mkdirSync(join(cwd, ".tesota"));
+    writeFileSync(join(cwd, ".tesota", "mcp.json"), JSON.stringify(projectMcp));
   }
   const running = runApp({ cwd, terminal, models, credentials, settingsPath, sessions });
   await terminal.until("tesota-core");
@@ -289,6 +296,37 @@ describe("tesota-core", () => {
     await terminal.untilGone("Verifying…");
     send(terminal, "/compact");
     await terminal.until("Nothing to compact");
+    send(terminal, "/quit");
+    await running;
+  });
+
+  test("your MCP servers start, the project's once trusted, and /mcp lists them and reconnects one (#459)", async () => {
+    const server = { command: process.execPath, args: [fileURLToPath(new URL("./mcp-server.mjs", import.meta.url))] };
+    const { terminal, running } = await app([], { mcp: { mcpServers: { mine: server } }, projectMcp: { mcpServers: { theirs: server } } });
+    expect(await terminal.until("This project's MCP servers would start")).toContain("theirs");
+    terminal.type(enter);
+    send(terminal, "/mcp reconnect theirs");
+    await terminal.until("theirs: connected.", 15_000);
+    send(terminal, "/mcp");
+    const listed = await terminal.until("MCP servers");
+    expect(listed).toContain("mine");
+    expect(listed).toContain("theirs");
+    terminal.type("\x1b");
+    send(terminal, "/mcp login mine");
+    await terminal.until('"mine" is a local server: it has no sign-in.');
+    send(terminal, "/quit");
+    await running;
+  });
+
+  test("/mcp with no server configured says where one goes, and a project's untrusted servers do not start (#459)", async () => {
+    const server = { command: process.execPath, args: [fileURLToPath(new URL("./mcp-server.mjs", import.meta.url))] };
+    const { terminal, running } = await app([], { projectMcp: { mcpServers: { theirs: server } } });
+    await terminal.until("This project's MCP servers would start");
+    terminal.type("\x1b[B");
+    terminal.type(enter);
+    await terminal.until("The project's MCP servers do not start in this shell.");
+    send(terminal, "/mcp");
+    await terminal.until("No MCP server is configured");
     send(terminal, "/quit");
     await running;
   });

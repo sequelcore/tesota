@@ -60,7 +60,8 @@ describe("the floor, which no mode crosses", () => {
   });
 
   test("secrets: .env files, SSH's keys and Tesota's credentials, even to read", () => {
-    for (const path of [".env", "config/.env.production", join(homedir(), ".ssh", "id_ed25519"), join(homedir(), ".tesota", "auth.json")]) {
+    for (const path of [".env", "config/.env.production", join(homedir(), ".ssh", "id_ed25519"), join(homedir(), ".tesota", "auth.json"),
+      join(homedir(), ".tesota", "mcp-auth.json"), join(homedir(), ".tesota", "mcp-auth.json.new")]) {
       expect(floor("read", { path }, "read")).toMatchObject({ decision: "deny", by: "floor" });
     }
     expect(floor("read", { path: "src/env.ts" }, "read").decision).toBe("allow");
@@ -68,7 +69,7 @@ describe("the floor, which no mode crosses", () => {
 
   test("commands that destroy a disk, the root or a home folder, or name a secret", () => {
     for (const command of ["rm -rf /", "rm -rf ~", "sudo rm -fr /*", "Remove-Item -Recurse -Force C:\\", "format C:", "mkfs.ext4 /dev/sda1",
-      "dd if=/dev/zero of=/dev/sda", ":(){ :|:& };:", "cat .env", "type C:\\Users\\me\\.ssh\\id_rsa", "Get-Content ~/.tesota/auth.json"]) {
+      "dd if=/dev/zero of=/dev/sda", ":(){ :|:& };:", "cat .env", "type C:\\Users\\me\\.ssh\\id_rsa", "Get-Content ~/.tesota/auth.json", "cat ~/.tesota/mcp-auth.json"]) {
       expect(floor(shell, { command }, "run")).toMatchObject({ decision: "deny", by: "floor" });
     }
     for (const command of ["rm -rf build", "Remove-Item -Recurse dist", "node -e \"console.log(process.env.HOME)\"", "git status"]) {

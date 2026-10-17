@@ -132,17 +132,20 @@ const destructive: readonly RegExp[] = [
   /:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:/u,
 ];
 
-/** Secrets no call may touch: Tesota's credentials, SSH's keys, and `.env` files, by any of the names given. */
+/** Secrets no call may touch: Tesota's credentials and its MCP sign-ins (#459), SSH's keys, and `.env` files, by any of the names given. */
 function secretPath(...paths: readonly string[]): boolean {
   const ssh = canonicalOnce(join(homedir(), ".ssh"));
-  const auth = canonicalOnce(join(tesotaHome(), "auth.json"));
-  return paths.some((path) => /^\.env(\..+)?$/iu.test(basename(path)) || inside(path, ssh) || path === auth);
+  const credentials = ["auth.json", "mcp-auth.json"].flatMap((name) => {
+    const file = canonicalOnce(join(tesotaHome(), name));
+    return [file, `${file}.new`];
+  });
+  return paths.some((path) => /^\.env(\..+)?$/iu.test(basename(path)) || inside(path, ssh) || credentials.includes(path));
 }
 
 /** A command that names a secret: an `.env` file, SSH's folder, or Tesota's credentials. */
 const namesSecret = (command: string): boolean =>
   /(^|[\s'"=/\\])\.env(\.[\w.-]+)?($|[\s'"])/iu.test(command) || /[\\/]\.ssh([\\/]|\s|$)/u.test(command)
-  || /\.tesota[\\/]auth\.json/iu.test(command);
+  || /\.tesota[\\/](mcp-)?auth\.json/iu.test(command);
 
 /** What a call is about, for rules and the floor: the command a shell runs, or the path another tool reads or changes. */
 function subjectOf(call: ToolCall): string {

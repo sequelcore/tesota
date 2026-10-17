@@ -3,9 +3,10 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Hooks, hooksHash, readHooks, runHooks, trustedHooks, trustHooks } from "../src/hooks.ts";
+import { type Hooks, readHooks, runHooks } from "../src/hooks.ts";
 import type { SessionEvent } from "../src/loop.ts";
 import { createSession, type EngineSession } from "../src/session.ts";
+import { trust, trusted, trustHash } from "../src/trust.ts";
 import { accepts, scriptedReply } from "./scripted.ts";
 
 /** Command hooks as Claude Code configures them (#457): reading, matching, running, deciding, trusting, and in a session. */
@@ -138,17 +139,22 @@ describe("trusting a project's hooks", () => {
   test("is kept by the project with a hash of its hooks, and asked again once they change", () => {
     const home = folder("tesota-core-hooks-home-");
     const root = folder("tesota-core-hooks-project-");
-    const hash = hooksHash(pre("guard"));
-    expect(trustedHooks(root, hash, home)).toBe(false);
-    trustHooks(root, hash, home);
-    expect(trustedHooks(root, hash, home)).toBe(true);
-    expect(trustedHooks(root, hooksHash(pre("guard --strict")), home)).toBe(false);
-    expect(trustedHooks(folder("tesota-core-hooks-other-"), hash, home)).toBe(false);
+    const hash = trustHash(pre("guard"));
+    expect(trusted(root, "hooks", hash, home)).toBe(false);
+    trust(root, "hooks", hash, home);
+    expect(trusted(root, "hooks", hash, home)).toBe(true);
+    expect(trusted(root, "hooks", trustHash(pre("guard --strict")), home)).toBe(false);
+    expect(trusted(folder("tesota-core-hooks-other-"), "hooks", hash, home)).toBe(false);
     // The same checkout in another case is the same project on Windows.
-    if (process.platform === "win32") expect(trustedHooks(root.toUpperCase(), hash, home)).toBe(true);
+    if (process.platform === "win32") expect(trusted(root.toUpperCase(), "hooks", hash, home)).toBe(true);
     // Trusting another project keeps this one's trust.
-    trustHooks(folder("tesota-core-hooks-second-"), hash, home);
-    expect(trustedHooks(root, hash, home)).toBe(true);
+    trust(folder("tesota-core-hooks-second-"), "hooks", hash, home);
+    expect(trusted(root, "hooks", hash, home)).toBe(true);
+    // Trusting the project's MCP servers keeps the trust its hooks have, and is its own.
+    expect(trusted(root, "mcp", hash, home)).toBe(false);
+    trust(root, "mcp", hash, home);
+    expect(trusted(root, "hooks", hash, home)).toBe(true);
+    expect(trusted(root, "mcp", hash, home)).toBe(true);
   });
 });
 

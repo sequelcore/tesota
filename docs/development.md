@@ -114,7 +114,17 @@ within 2% of the context window (`catalog-rule.ts`). Command hooks
 `PreToolUse` and `PostToolUse`, after the permission check, run together;
 exit 2 or a JSON block refuses, any block wins, and a hook that fails or times
 out lets the call through with a note. A project's hooks run only once the
-operator trusts them as they are (`~/.tesota/trust.json`). A run settles in two
+operator trusts them as they are (`~/.tesota/trust.json`). MCP servers
+(`mcp-config.ts`, `mcp.ts`, on Pi's MCP client) are configured as Pi configures
+them, under `mcpServers` in `~/.tesota/mcp.json` and the project's
+`.tesota/mcp.json`, which start only once trusted, as its hooks. Each
+workspace runs its own, so a session in a worktree never reaches servers
+running in another. They connect in the background; a first request waits up
+to 10 s for them. Their tools reach the model as `mcp__<server>__<tool>`, run for
+permissions whatever the server says of them, and pass the hooks; the resource
+tools only read. A remote server with no `Authorization` header signs in with
+OAuth through `/mcp` (`mcp-auth.ts`), its tokens kept in `~/.tesota/mcp-auth.json`
+and refreshed. A run settles in two
 phases (`loop.ts`): its extensions, whose results accumulate so none can
 drop another's message or cancel its send-back, then the verifier every
 session must have, which no extension can replace. The proved settle rule

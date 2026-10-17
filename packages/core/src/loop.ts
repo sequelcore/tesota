@@ -68,6 +68,16 @@ export interface LoopOptions {
   readonly hooks?: () => Hooks;
   /** The session's id, which a hook is told. */
   readonly sessionId?: string;
+  /** The MCP servers' tools (#459), read before each request; none when not given or while it gives none. */
+  readonly mcp?: () => McpTools | undefined;
+}
+
+/** The tools of the MCP servers a session reaches (#459). */
+export interface McpTools {
+  /** Their tools as the servers offer them now; a long result's whole text goes under `spool()`. */
+  tools(spool: () => string): readonly EngineTool[];
+  /** Resolves once the servers that started with them connected or failed, or a while after they started, or on `signal`. */
+  ready(signal: AbortSignal): Promise<void>;
 }
 
 /** How a session decides what its calls may do (#449). */
@@ -234,13 +244,16 @@ const nothingToSummarize = "the recent messages alone fill the part kept verbati
  * last had; a restored tool registered only later becomes active then,
  * unless a change that dropped a tool came first.
  */
-function toolbox(tools: EngineTool[], writer: SessionWriter) {
+function toolbox(given: EngineTool[], writer: SessionWriter) {
+  let tools = given;
   let active = tools.map(({ name }) => name);
   /** Restored tools not registered yet; once restored, only these become active as they register. */
   let pending = new Set<string>();
   let restored = false;
   /** The tools the last request offered, as recorded. */
   let offered: string | undefined;
+  /** The names of the MCP servers' tools in `tools` (#459). */
+  let external = new Set<string>();
   const known = (name: string): boolean => tools.some((tool) => tool.name === name);
   const activeTools = (): EngineTool[] => active.flatMap((name) => tools.filter((tool) => tool.name === name));
   return {
@@ -262,6 +275,28 @@ function toolbox(tools: EngineTool[], writer: SessionWriter) {
       offered = names.join("\n");
       active = names.filter(known);
       pending = new Set(names.filter((name) => !known(name)));
+    },
+    /**
+     * Keeps the MCP servers' tools as they offer them now (#459): a new one
+     * joins the active tools, one withdrawn goes, and none takes the
+     * name of a tool the session already has.
+     */
+    offer(current: readonly EngineTool[]): void {
+      const names = new Set(current.map(({ name }) => name));
+      tools = tools.filter(({ name }) => !external.has(name) || names.has(name));
+      active = active.filter((name) => !external.has(name) || names.has(name));
+      for (const tool of current) {
+        const at = tools.findIndex(({ name }) => name === tool.name);
+        if (at >= 0) {
+          if (external.has(tool.name)) tools[at] = tool; else names.delete(tool.name);
+          continue;
+        }
+        // A server's tool is offered whenever the server is: one configured after the session last ran joins it too.
+        tools.push(tool);
+        pending.delete(tool.name);
+        active.push(tool.name);
+      }
+      external = names;
     },
     /** The tools one model request offers, which its calls run with; recorded when they changed. */
     forRequest(): EngineTool[] {
@@ -578,6 +613,7 @@ export function createLoop(options: LoopOptions): LoopSession {
       boundary = false;
       const due = await compactFor(run, signal, false);
       if (due !== undefined) return due;
+      tools.offer(options.mcp?.()?.tools(spool) ?? []);
       // A reply's calls run with the tools its request offered, whatever extensions change meanwhile.
       const offered = tools.forRequest();
       const message = await reply(run, signal, offered);
@@ -693,6 +729,8 @@ export function createLoop(options: LoopOptions): LoopSession {
     recorded = written.catch(() => undefined);
     await written;
     await host.input({ type: "input", text, source: origin }, signal);
+    // The MCP servers starting with the session get a while to connect before the model hears of the request (#459).
+    await options.mcp?.()?.ready(signal);
     const asked: HistoryMessage = { role: "user", content: text, timestamp: Date.parse(at) };
     ledger = [asked];
     add(asked);

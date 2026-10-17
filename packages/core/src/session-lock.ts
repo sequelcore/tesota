@@ -91,6 +91,30 @@ export function withLock<T>(path: string, work: () => T): T {
   }
 }
 
+/**
+ * Runs `work`, which may wait on the network, holding the lock at `path`,
+ * waiting up to `waitMs` for another holder in this process or another
+ * (#459): an MCP token refresh, which a second at once would spend.
+ */
+export async function withLockWhile<T>(path: string, work: () => Promise<T>, waitMs: number): Promise<T> {
+  const until = Date.now() + waitMs;
+  for (;;) {
+    let lock: SessionLock;
+    try {
+      lock = lockSession(path);
+    } catch (error) {
+      if (!(error instanceof SessionLockedError) || Date.now() >= until) throw error;
+      await Bun.sleep(50);
+      continue;
+    }
+    try {
+      return await work();
+    } finally {
+      lock.release();
+    }
+  }
+}
+
 export function lockSession(path: string): SessionLock {
   return process.platform === "win32" ? lockOnWindows(path) : lockWithFlock(path);
 }
