@@ -34,7 +34,10 @@ async function app(script: readonly ScriptStep[], tokensPerSecond = 400) {
   faux.setResponses(script.map(scriptedReply));
   models.setProvider(faux.provider);
   const terminal = new VirtualTerminal(100, 44);
-  const running = runApp({ cwd, terminal, models, credentials, settingsPath: join(folder("tesota-core-interface-settings-"), "s.json"),
+  // In full access the run's writes need no answer; asking has its own tests (permissions, app).
+  const settingsPath = join(folder("tesota-core-interface-settings-"), "s.json");
+  writeFileSync(settingsPath, JSON.stringify({ permissionMode: "full" }));
+  const running = runApp({ cwd, terminal, models, credentials, settingsPath,
     sessions: folder("tesota-core-interface-sessions-") });
   await terminal.until("Tesota (v");
   terminal.type("/model");
@@ -66,7 +69,9 @@ describe("Tesota's interface on the engine", () => {
     expect(screen.filter((line) => /[⠁-⣿]/u.test(line)).length).toBeGreaterThan(4);
     expect(screen.filter((line) => line.startsWith("▌")).length).toBeGreaterThanOrEqual(3);
     expect(screen.join("\n")).toContain("● ready");
-    expect(screen.at(-1)).toContain(`(${branch})`);
+    expect(screen.at(-2)).toContain(`(${branch})`);
+    // The permission mode is a status, on the footer's third row (#449).
+    expect(screen.at(-1)).toContain("full access");
     await quit(terminal, running);
   });
 

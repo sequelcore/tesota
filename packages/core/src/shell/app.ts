@@ -96,7 +96,10 @@ export async function runApp(options: AppOptions): Promise<void> {
     ...settings.thinkingLevel === undefined ? {} : { thinkingLevel: settings.thinkingLevel } });
   let session: EngineSession = createSession({ cwd: options.cwd, folder, ...sessionOptions() });
   const modeNames: Readonly<Record<Mode, string>> = { read: "read only", ask: "ask", full: "full access" };
-  const status = (): string => [modeNames[permissionMode], model === undefined ? "no model: /login, then /model" : label(model),
+  // The mode is a status, which Tesota's footer shows on its third row (#449).
+  const showMode = (): void => { surface.statuses.set("permissions", modeNames[permissionMode]); };
+  showMode();
+  const status = (): string => [model === undefined ? "no model: /login, then /model" : label(model),
     ...settings.thinkingLevel === undefined || settings.thinkingLevel === "off" ? [] : [settings.thinkingLevel]].join(" · ");
 
   let shell: Shell;
@@ -201,6 +204,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     nextMode: () => {
       permissionMode = permissionMode === "ask" ? "full" : permissionMode === "full" ? "read" : "ask";
       save({ permissionMode });
+      showMode();
       shell.redraw();
     },
     command: async (text) => {
