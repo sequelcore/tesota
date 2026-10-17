@@ -7,7 +7,7 @@ import type { ExtensionFactory } from "../../../src/contract.ts";
 import { createSession, type EngineSession, type SessionOptions, openSession } from "./session.ts";
 
 /** Tool rounds in the measured loop: each writes a file and reads it back. */
-const loopRounds = 50;
+export const loopRounds = 50;
 
 /** Tool rounds in the resumed session: six entries each, about 1,000 in all. */
 const resumeRounds = 166;
@@ -16,7 +16,7 @@ const resumeRounds = 166;
 const settles: ExtensionFactory = (pi) => { pi.on("agent_before_settle", () => undefined); };
 
 /** A scripted model's models and model, for `rounds` rounds of write and read, then an answer, with a verifier. */
-function scripted(rounds: number) {
+export function scripted(rounds: number): Pick<SessionOptions, "models" | "model" | "verifier"> {
   const faux = fauxProvider();
   faux.setResponses([
     ...Array.from({ length: rounds }, (_, round) => [

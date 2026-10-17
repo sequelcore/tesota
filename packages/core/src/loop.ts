@@ -55,6 +55,26 @@ export interface CustomMessage {
 
 export type HistoryMessage = Message | CustomMessage;
 
+/**
+ * What a session tells the shell as it happens (#444): a message entering the
+ * conversation, the reply as it streams, a call starting, and the run's
+ * state: working, settling (its extensions and verifier), or ended.
+ */
+export type SessionEvent =
+  | { readonly type: "message"; readonly message: HistoryMessage }
+  | { readonly type: "reply"; readonly partial: AssistantMessage }
+  | { readonly type: "call"; readonly call: ToolCall }
+  | { readonly type: "state"; readonly state: "working" | "settling" }
+  | { readonly type: "ended"; readonly outcome: SessionOutcome };
+
+/** The engine's session as the loop runs it: the contract's, its conversation, and its events. */
+export interface LoopSession extends Session {
+  /** The conversation in order, as the model and the shell see it. */
+  history(): readonly HistoryMessage[];
+  /** Tells `listener` what happens from now on; the returned function stops it. */
+  subscribe(listener: (event: SessionEvent) => void): () => void;
+}
+
 /** Where a session stands: its conversation, its last run and amendment, its usage and how its last run ended. */
 export interface LoopState {
   readonly history: readonly HistoryMessage[];
@@ -207,9 +227,20 @@ type Settled = { readonly next: "continue"; readonly automatic: boolean } | { re
  * resolves once it has ended, and rejects when a write fails, after which
  * nothing further runs.
  */
-export function createLoop(options: LoopOptions): Session {
+export function createLoop(options: LoopOptions): LoopSession {
   const { writer } = options;
   const history: HistoryMessage[] = [...options.resumed?.history ?? []];
+  const listeners = new Set<(event: SessionEvent) => void>();
+  /** Tells every listener; one that throws does not stop the run. */
+  const emit = (event: SessionEvent): void => {
+    for (const listener of listeners) {
+      try { listener(event); } catch { /* the shell's failure is the shell's, never the run's */ }
+    }
+  };
+  const add = (message: HistoryMessage): void => {
+    history.push(message);
+    emit({ type: "message", message });
+  };
   const tokens = { ...options.resumed?.tokens ?? { input: 0, output: 0, total: 0 } };
   let runs = options.resumed?.runs ?? 0;
   let amendments = options.resumed?.amendments ?? 0;
@@ -255,14 +286,14 @@ export function createLoop(options: LoopOptions): Session {
       const stream = options.models.streamSimple(options.model,
         { systemPrompt: promptFor(), messages: modelContext(history), tools: offered.map(declaration) },
         { signal, ...thinkingLevel === "off" ? {} : { reasoning: thinkingLevel } });
-      for await (const _event of stream) { /* the shell will draw these; the loop needs only the result */ }
+      for await (const event of stream) if ("partial" in event) emit({ type: "reply", partial: event.partial });
       message = await stream.result();
     } catch (error) {
       return signal.aborted ? { outcome: "aborted", reason: stoppedReason }
         : { outcome: "error", reason: error instanceof Error ? error.message : String(error) };
     }
     writer.append({ type: "assistant", run, message });
-    history.push(message);
+    add(message);
     tokens.input += message.usage.input;
     tokens.output += message.usage.output;
     tokens.total += message.usage.totalTokens;
@@ -275,7 +306,7 @@ export function createLoop(options: LoopOptions): Session {
     queue = queue.filter((amendment) => !behaviors.includes(amendment.behavior));
     for (const { id, text } of due) {
       writer.append({ type: "delivered", run, amendment: id });
-      history.push({ role: "user", content: text, timestamp: Date.now() });
+      add({ role: "user", content: text, timestamp: Date.now() });
     }
     return due.length > 0;
   }
@@ -294,6 +325,7 @@ export function createLoop(options: LoopOptions): Session {
       else {
         writer.append({ type: "call_intent", run, callId: call.id });
         writer.sync();
+        emit({ type: "call", call });
         await host.toolStart({ type: "tool_execution_start", toolCallId: call.id, toolName: call.name, args: call.arguments }, signal);
         output = await execute(offered, call, signal);
         await host.toolResult({ type: "tool_result", toolCallId: call.id, toolName: call.name, input: call.arguments,
@@ -301,7 +333,7 @@ export function createLoop(options: LoopOptions): Session {
       }
       const result = toolResult(call, output);
       writer.append({ type: "tool_result", run, message: result });
-      history.push(result);
+      add(result);
     }
   }
 
@@ -340,7 +372,7 @@ export function createLoop(options: LoopOptions): Session {
       }
       const { customType, content, display, details } = entry;
       writer.append({ type: "custom_message", run, customType, content, display, ...details === undefined ? {} : { details } });
-      history.push({ role: "custom", customType, content, display, ...details === undefined ? {} : { details }, timestamp: Date.now() });
+      add({ role: "custom", customType, content, display, ...details === undefined ? {} : { details }, timestamp: Date.now() });
     }
   }
 
@@ -422,19 +454,22 @@ export function createLoop(options: LoopOptions): Session {
     recorded = written.catch(() => undefined);
     await written;
     await host.input({ type: "input", text, source: origin }, signal);
-    history.push({ role: "user", content: text, timestamp: Date.parse(at) });
+    add({ role: "user", content: text, timestamp: Date.parse(at) });
     let generation = 0;
     let continuations = 0;
     for (;;) {
       const ended = await turns(run, signal, generation > 0);
       settling = true;
+      emit({ type: "state", state: "settling" });
       const decided = await settle(run, generation, ended, continuations, signal).finally(release);
       if (decided.next === "continue") {
         generation += 1;
         if (decided.automatic) continuations += 1;
+        emit({ type: "state", state: "working" });
         continue;
       }
       outcome = decided.outcome;
+      emit({ type: "ended", outcome: decided.outcome });
       return;
     }
   }
@@ -470,6 +505,7 @@ export function createLoop(options: LoopOptions): Session {
       queue = [];
       waiting = [];
       closed = false;
+      emit({ type: "state", state: "working" });
       const current = start(++runs, text, source, controller.signal);
       running = current;
       try {
@@ -486,6 +522,8 @@ export function createLoop(options: LoopOptions): Session {
       await running?.catch(() => undefined);
     },
     messages: () => history.map(conversationMessage),
+    history: () => history,
+    subscribe: (listener) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
     lastAssistantText: () => {
       const last = history.findLast((message): message is AssistantMessage => message.role === "assistant");
       return last?.content.flatMap((part) => part.type === "text" ? [part.text] : []).join("");

@@ -26,6 +26,8 @@ export interface Measurements {
   readonly syncCount: number;
   readonly settleMs: number;
   readonly resumeMs: number;
+  readonly firstFrameMs: number;
+  readonly shellRssBytes: number;
   readonly sessionBytes: number;
 }
 export type Limits = { readonly [Name in keyof Measurements]?: number | null };
@@ -78,6 +80,8 @@ function measure(): Measurements {
       JSON.parse(started(binary, "--measure-loop")) as { loopMs: number; baseMs: number; syncMs: number; syncCount: number; settleMs: number; loopRssBytes: number });
     const resumes = Array.from({ length: loopRuns }, () =>
       JSON.parse(started(binary, "--measure-resume")) as { resumeMs: number; sessionBytes: number });
+    const shells = Array.from({ length: loopRuns }, () =>
+      JSON.parse(started(binary, "--measure-shell")) as { firstFrameMs: number; shellRssBytes: number });
     return {
       startupMs: Math.round(median(times) * 10) / 10,
       binaryBytes: statSync(binary).size,
@@ -89,6 +93,8 @@ function measure(): Measurements {
       settleMs: median(loops.map((loop) => loop.settleMs)),
       resumeMs: median(resumes.map((resume) => resume.resumeMs)),
       sessionBytes: Math.max(...resumes.map((resume) => resume.sessionBytes)),
+      firstFrameMs: median(shells.map((shell) => shell.firstFrameMs)),
+      shellRssBytes: Math.max(...shells.map((shell) => shell.shellRssBytes)),
     };
   } finally {
     rmSync(folder, { recursive: true, force: true, maxRetries: 3 });
@@ -103,7 +109,8 @@ if (import.meta.main) {
   console.log(`Budget on ${process.platform}: startup ${measured.startupMs} ms (median of ${samples}), binary ${measured.binaryBytes} bytes, `
     + `loop ${measured.loopMs} ms (median of ${loopRuns}), loop memory ${measured.loopRssBytes} bytes, `
     + `base ${measured.baseMs} ms (median of ${loopRuns}), sync ${measured.syncMs} ms (median), syncs ${measured.syncCount}, settle ${measured.settleMs} ms (median of ${loopRuns}), `
-    + `resume ${measured.resumeMs} ms (median of ${loopRuns}), session ${measured.sessionBytes} bytes`);
+    + `resume ${measured.resumeMs} ms (median of ${loopRuns}), session ${measured.sessionBytes} bytes, `
+    + `first frame ${measured.firstFrameMs} ms (median of ${loopRuns}), shell memory ${measured.shellRssBytes} bytes`);
   if (limits === undefined) {
     console.log(`No budgets for ${process.platform}; CI checks Linux and Windows.`);
   } else {
