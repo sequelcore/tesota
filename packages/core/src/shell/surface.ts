@@ -113,14 +113,16 @@ export function footerData(cwd: () => string, statuses: () => ReadonlyMap<string
 const keys: Readonly<Record<string, string>> = { "app.tools.expand": expandKey };
 
 /**
- * Git for Windows' bash, beside the `git` on the PATH (`…\Git\cmd\git.exe`
- * and `…\Git\bin\bash.exe`): never a `bash` found on the PATH alone, which
- * on Windows may be WSL's.
+ * Git for Windows' bash, in the installation of the `git` on the PATH,
+ * which may be `…\Git\cmd\git.exe`, or `…\Git\mingw64\bin\git.exe`
+ * from Git's own bash: never a `bash` found on the PATH alone, which on
+ * Windows may be WSL's.
  */
 function gitBash(): string | undefined {
   const git = Bun.which("git");
   if (git === null) return undefined;
-  return [join(dirname(dirname(git)), "bin", "bash.exe"), join(dirname(dirname(git)), "usr", "bin", "bash.exe")].find(existsSync);
+  const installs = [dirname(dirname(git)), dirname(dirname(dirname(git)))];
+  return installs.flatMap((install) => [join(install, "bin", "bash.exe"), join(install, "usr", "bin", "bash.exe")]).find(existsSync);
 }
 
 /**

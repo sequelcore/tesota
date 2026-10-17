@@ -34,6 +34,8 @@ export interface AppOptions {
   readonly settingsPath?: string;
   /** Where the sessions live; the project's folder under `~/.tesota/sessions` when not given. */
   readonly sessions?: string;
+  /** The verifier's flags, by name, as the command line gave them. */
+  readonly flags?: Readonly<Record<string, string>>;
 }
 
 const levels: readonly ModelThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -128,7 +130,7 @@ export async function runApp(options: AppOptions): Promise<void> {
   /** Settles once the servers started, or were left out; `/mcp` waits for it. */
   let serversStarted: Promise<void> = Promise.resolve();
   const sessionOptions = (live: Live) => ({ models, model: model ?? models.getModels()[0] as Model<Api>, verifier, surface: live.surface,
-    hooks: () => hooks, mcp: () => serversIn(live.session.workspace.cwd),
+    hooks: () => hooks, mcp: () => serversIn(live.session.workspace.cwd), ...options.flags === undefined ? {} : { flags: options.flags },
     mode: "tui",
     // A shown session asks at once; another waits, flagged, until the operator shows it.
     permissions: { mode: () => permissionMode, rules, ask: (call: { name: string; arguments: unknown }, reason: string) => {

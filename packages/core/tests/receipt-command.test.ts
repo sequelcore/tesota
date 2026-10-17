@@ -1,8 +1,8 @@
 import { createModels, fauxProvider } from "@earendil-works/pi-ai";
 import { afterEach, expect, it } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { EntryDraft } from "../../../src/contract.ts";
@@ -55,18 +55,31 @@ function provedReceipt(base: string, changed: Receipt["changed"] = []): Receipt 
   uncovered: [{ path: "src/rule.ts", lines: [[4, 6]] }] };
 }
 
+/** A scripted model giving `replies`, for a session. */
+function scripted(replies: readonly Parameters<typeof scriptedReply>[0][]) {
+  const faux = fauxProvider();
+  faux.setResponses(replies.map(scriptedReply));
+  const models = createModels();
+  models.setProvider(faux.provider);
+  return { models, model: faux.getModel() };
+}
+
 /**
  * An engine session in `root` with one request per receipt, each settled by
  * a verifier that records it as Tesota does: as a message, or as a custom
  * entry in print mode (#427). Returns the session's id.
  */
 async function session(root: string, receipts: readonly unknown[], kept: "message" | "entry" = "message"): Promise<string> {
-  const faux = fauxProvider();
-  faux.setResponses(receipts.map(() => scriptedReply("done")));
-  const models = createModels();
-  models.setProvider(faux.provider);
+  const created = createSession({ cwd: root, ...scripted(receipts.map(() => "done")), verifier: recording(receipts, kept) });
+  for (const _ of receipts) await created.prompt("fix it");
+  await created.dispose();
+  return basename(created.file, ".jsonl");
+}
+
+/** A verifier that settles each run with the next of `receipts`, as Tesota records one. */
+function recording(receipts: readonly unknown[], kept: "message" | "entry" = "message") {
   let settled = 0;
-  const created = createSession({ cwd: root, models, model: faux.getModel(), verifier: (pi) => {
+  return (pi: Parameters<Parameters<typeof createSession>[0]["verifier"]>[0]) => {
     pi.on("agent_before_settle", () => {
       const receipt = receipts[settled++];
       const entry: EntryDraft = kept === "message"
@@ -74,16 +87,20 @@ async function session(root: string, receipts: readonly unknown[], kept: "messag
         : { type: "custom", customType: "tesota-receipt", data: receipt };
       return { entries: [entry] };
     });
-  } });
-  for (const _ of receipts) await created.prompt("fix it");
-  await created.dispose();
-  return basename(created.file, ".jsonl");
+  };
 }
 
 const main = fileURLToPath(new URL("../src/main.ts", import.meta.url));
 
+/**
+ * `tesota receipt` as its own process, in the home this one writes sessions
+ * to: Bun on Linux keeps the home it started with, whatever the test's
+ * isolated home says, and a new process would read the other one.
+ */
 function tesota(root: string, ...args: string[]) {
-  return spawnSync(process.execPath, [main, "receipt", ...args], { cwd: root, encoding: "utf8", timeout: 60_000 });
+  const home = homedir();
+  return spawnSync(process.execPath, [main, "receipt", ...args], { cwd: root, encoding: "utf8", timeout: 60_000,
+    env: { ...process.env, HOME: home, USERPROFILE: home } });
 }
 
 it("writes the last receipt for a pull request as Markdown and as an in-toto Statement about the commit", async () => {
@@ -226,4 +243,54 @@ it("writes, in a repository of a folder of repositories, the part of that folder
   expect(markdown).not.toContain("notes");
   expect(await receiptCommand([], workspace, sessionStore, write)).toBe(1);
   expect(output.pop()).toContain("The last receipt here covers several repositories.");
+});
+
+it("leaves out a receipt whose run never ended, as when Tesota was killed after recording it", async () => {
+  const root = repository();
+  await session(root, [{ ...emptyReceipt, base: git(root, "rev-parse", "HEAD") }]);
+  const [file] = await sessionStore.list(root);
+  const lines = readFileSync(file?.path ?? "", "utf8").trimEnd().split("\n");
+  writeFileSync(file?.path ?? "", `${lines.filter((line) => !line.includes('"run_end"')).join("\n")}\n`);
+  const run = tesota(root);
+  expect(run.status).toBe(1);
+  expect(run.stderr).toContain("No session in this folder settled with a Tesota receipt.");
+}, 60_000);
+
+it("refuses a receipt from before the engine named itself, which has pi in place of engine", async () => {
+  const root = repository();
+  const { engine: _, ...older } = { ...emptyReceipt, base: git(root, "rev-parse", "HEAD") };
+  await session(root, [{ ...older, pi: "1.3.0" }]);
+  const run = tesota(root);
+  expect(run.status).toBe(1);
+  expect(run.stderr).toContain("The last receipt here came from an earlier Tesota");
+}, 60_000);
+
+it("writes a worktree session's receipt from its worktree, and never from the checkout another session holds", async () => {
+  const root = repository();
+  const base = git(root, "rev-parse", "HEAD");
+  // The first session holds the checkout, so the second works in a worktree of its own (#453).
+  const holder = createSession({ cwd: root, ...scripted([]), verifier: recording([]) });
+  const other = createSession({ cwd: root, ...scripted([{ tool: "write", args: { path: "b.txt", content: "b" } }, "done"]),
+    verifier: recording([{ ...emptyReceipt, base }]) });
+  await other.prompt("add b");
+  const worktree = other.workspace.cwd;
+  expect(other.workspace.worktree).toBeDefined();
+  await other.dispose();
+  await holder.dispose();
+  roots.push(worktree);
+  git(worktree, "add", "-A");
+  git(worktree, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "b");
+  const there = tesota(worktree);
+  expect(there.stderr).toBe("");
+  expect(there.stdout).toContain(`session \`${basename(other.file, ".jsonl")}\``);
+  expect(tesota(root).stderr).toContain("No session in this folder settled with a Tesota receipt.");
+}, 120_000);
+
+it("takes the verifier's flags with -p, and still asks for a request", () => {
+  const run = spawnSync(process.execPath, [main, "-p", "--open-cases-model", "off"], { encoding: "utf8", timeout: 60_000 });
+  expect(run.status).toBe(2);
+  expect(run.stderr).toContain("Say what to do.");
+  const unknown = spawnSync(process.execPath, [main, "--colour"], { encoding: "utf8", timeout: 60_000 });
+  expect(unknown.status).toBe(2);
+  expect(unknown.stderr).toContain("--open-cases-model");
 });

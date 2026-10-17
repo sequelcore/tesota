@@ -9,7 +9,27 @@ import manifest from "../package.json" with { type: "json" };
  * `receipt` writes the last receipt for a pull request (#463). The
  * `--measure-*` commands are what the budget check runs.
  */
-const [command, ...rest] = process.argv.slice(2);
+
+/** The verifier's flags (`gate.ts`), taken wherever they come, for the shell and `-p`. */
+const verifierFlags = new Set(["claimcheck-model", "open-cases-model"]);
+
+/** `args` without the verifier's flags, and their values by name. */
+function splitFlags(args: readonly string[]): { flags: Record<string, string>; rest: string[] } {
+  const flags: Record<string, string> = {};
+  const rest: string[] = [];
+  for (let at = 0; at < args.length; at++) {
+    const arg = args[at] ?? "";
+    const [name = "", value] = arg.startsWith("--") ? arg.slice(2).split(/=(.*)/su) : [];
+    if (!verifierFlags.has(name)) rest.push(arg);
+    else if (value !== undefined) flags[name] = value;
+    else if (args[at + 1] !== undefined) flags[name] = args[++at] ?? "";
+    else rest.push(arg);
+  }
+  return { flags, rest };
+}
+
+const { flags, rest: args } = splitFlags(process.argv.slice(2));
+const [command, ...rest] = args;
 const output = { out: (text: string) => { process.stdout.write(text); }, error: (text: string) => { process.stderr.write(text); } };
 
 /** Runs `work`, then exits with its code, or 1 when it throws, saying why. */
@@ -21,8 +41,10 @@ function exitWith(work: Promise<number | void>): void {
 }
 
 if (command === "--version") console.log(manifest.version);
-else if (command === undefined) exitWith(import("./shell/app.ts").then(({ runApp }) => runApp({ cwd: process.cwd() })));
-else if (command === "-p" || command === "--print") exitWith(import("./print.ts").then(({ runPrint }) => runPrint(rest, process.cwd(), output)));
+else if (command === undefined) exitWith(import("./shell/app.ts").then(({ runApp }) => runApp({ cwd: process.cwd(), flags })));
+else if (command === "-p" || command === "--print") {
+  exitWith(import("./print.ts").then(({ runPrint }) => runPrint(rest, process.cwd(), output, flags)));
+}
 else if (command === "receipt") {
   exitWith(Promise.all([import("../../../src/pull-request-receipt.ts"), import("./session-store.ts")])
     .then(([{ receiptCommand }, { sessionStore }]) => receiptCommand(rest, process.cwd(), sessionStore, output)));
@@ -36,6 +58,7 @@ else if (command === "--measure-loop" || command === "--measure-resume") {
 }
 else if (command === "--measure-shell") exitWith(import("./shell/measure-shell.ts").then(({ measureShell }) => measureShell()));
 else {
-  console.error(`Unknown argument ${command}. Use: tesota (the shell), tesota -p "<request>", tesota receipt [--json], tesota --version.`);
+  console.error(`Unknown argument ${command}. Use: tesota (the shell), tesota -p "<request>", tesota receipt [--json], tesota --version; ` +
+    "the shell and -p take --open-cases-model <provider>/<id>|off and --claimcheck-model <provider>/<id>.");
   process.exitCode = 2;
 }

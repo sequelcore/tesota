@@ -6,10 +6,10 @@ import tesota from "../../../src/tesota.ts";
 import { branchOf } from "./branch.ts";
 import { anyHooks, type Hooks, joinHooks } from "./hooks.ts";
 import type { McpServers } from "./mcp.ts";
-import { readMcpConfig } from "./mcp-config.ts";
+import { type McpServerConfig, readMcpConfig } from "./mcp-config.ts";
 import { chosenModel, engineModels } from "./model-access.ts";
 import { loadRules } from "./permissions.ts";
-import { createSession } from "./session.ts";
+import { createSession, type EngineSession } from "./session.ts";
 import { peekSessionFile } from "./session-file.ts";
 import { readSettings } from "./settings.ts";
 import { shellHost } from "./shell/surface.ts";
@@ -37,8 +37,12 @@ function parse(args: readonly string[]): { request: string; model?: string } | s
   return { request, ...model === undefined ? {} : { model } };
 }
 
-/** The hooks and MCP servers print mode runs: yours, and the project's once trusted in the shell; it says what it leaves out. */
-async function trustedStandards(cwd: string, settingsPath: string, write: PrintOutput): Promise<{ hooks: Hooks; servers?: McpServers }> {
+/**
+ * The hooks print mode runs and the MCP files it reads: yours, and the
+ * project's once trusted in the shell, since there is no one to ask; it says
+ * what it leaves out.
+ */
+function trustedStandards(cwd: string, settingsPath: string, write: PrintOutput): { hooks: Hooks; mcp: { own: string; project?: string } } {
   const standards = readStandards(cwd, settingsPath);
   const own = typeof standards.ownHooks === "string" ? {} : standards.ownHooks;
   const project = standards.projectHooks;
@@ -47,12 +51,10 @@ async function trustedStandards(cwd: string, settingsPath: string, write: PrintO
   }
   const untrusted = typeof project.hooks !== "string" && anyHooks(project.hooks) && !project.trusted;
   if (untrusted) write.error("The project's hooks do not run: trust them in the shell first.\n");
-  const hooks = typeof project.hooks !== "string" && project.trusted ? joinHooks(own, project.hooks) : own;
-  const mcp = readMcpConfig(standards.mcp.own, standards.mcp.trusted ? standards.mcp.project : undefined, resolve(cwd));
+  for (const error of standards.mcp.config.errors) write.error(`${error}\n`);
   if (!standards.mcp.trusted) write.error("The project's MCP servers do not start: trust them in the shell first.\n");
-  if (mcp.servers.length === 0) return { hooks };
-  const { startMcp } = await import("./mcp.ts");
-  return { hooks, servers: startMcp(mcp.servers, { cwd: resolve(cwd) }) };
+  return { hooks: typeof project.hooks !== "string" && project.trusted ? joinHooks(own, project.hooks) : own,
+    mcp: { own: standards.mcp.own, ...standards.mcp.trusted ? { project: standards.mcp.project } : {} } };
 }
 
 /** How the run ended and where its verification stands, from the receipt it settled with. */
@@ -62,17 +64,27 @@ function ending(outcome: string | undefined, file: string): string {
     + `${isReceipt(receipt) ? `, ${receiptStanding(receipt)}; tesota receipt writes it for a pull request` : ""}.\n`;
 }
 
+/** The MCP servers of the folder the session works in, its worktree's when it has one, so they never act in another session's (#459). */
+async function serversFor(session: EngineSession, mcp: { own: string; project?: string }): Promise<McpServers | undefined> {
+  const { servers }: { servers: readonly McpServerConfig[] } = readMcpConfig(mcp.own, mcp.project, session.workspace.cwd);
+  if (servers.length === 0) return undefined;
+  const { startMcp } = await import("./mcp.ts");
+  return startMcp(servers, { cwd: resolve(session.workspace.cwd) });
+}
+
 /**
  * `tesota -p "<request>"` in `cwd` (#463): one request without the shell,
- * verified as every run is, on the chosen model or `--model`. The answer
- * goes to standard output, where the verification stands and how to read
- * the receipt to standard error. It runs your hooks and MCP servers and the
- * project's only once trusted in the shell, since there is no one to ask;
- * for the same reason a call that would ask is refused. Exits 0 when the
- * run completed, 1 when it did not, 2 for arguments it does not take.
+ * verified as every run is, on the chosen model or `--model`, with the
+ * verifier's `flags`. The answer goes to standard output, where the
+ * verification stands and how to read the receipt to standard error. It runs
+ * your hooks and MCP servers and the project's only once trusted in the
+ * shell, since there is no one to ask; for the same reason a call that would
+ * ask is refused. Ctrl+C or a termination stops the run and lets go of what
+ * it holds before exiting. Exits 0 when the run completed, 1 when it did not
+ * or was stopped, 2 for arguments it does not take.
  */
 export async function runPrint(args: readonly string[], cwd: string, write: PrintOutput,
-  settingsPath: string = join(tesotaHome(), "settings.json")): Promise<number> {
+  flags: Readonly<Record<string, string>> = {}, settingsPath: string = join(tesotaHome(), "settings.json")): Promise<number> {
   const asked = parse(args);
   if (typeof asked === "string") { write.error(`${asked}\n`); return 2; }
   const { settings } = readSettings(settingsPath);
@@ -84,20 +96,29 @@ export async function runPrint(args: readonly string[], cwd: string, write: Prin
     return 1;
   }
   provideHost(shellHost());
-  const { hooks, servers } = await trustedStandards(cwd, settingsPath, write);
-  const session = createSession({ cwd, models, model, verifier: (pi, request) => { tesota(pi, request); }, mode: "print",
+  const { hooks, mcp } = trustedStandards(cwd, settingsPath, write);
+  const rules = loadRules(cwd);
+  let servers: McpServers | undefined;
+  const session = createSession({ cwd, models, model, verifier: (pi, request) => { tesota(pi, request); }, mode: "print", flags,
     hooks: () => hooks, mcp: () => servers,
-    permissions: { mode: () => settings.permissionMode ?? "ask", rules: loadRules(cwd) },
+    permissions: { mode: () => settings.permissionMode ?? "ask", rules },
     ...settings.thinkingLevel === undefined ? {} : { thinkingLevel: settings.thinkingLevel } });
+  let stopped = false;
+  const stop = (): void => { stopped = true; void session.abort(); };
+  process.once("SIGINT", stop);
+  process.once("SIGTERM", stop);
   try {
+    servers = await serversFor(session, mcp);
     await session.prompt(asked.request);
     write.out(`${session.lastAssistantText() ?? ""}\n`);
   } finally {
-    await session.dispose();
-    await servers?.close();
+    process.off("SIGINT", stop);
+    process.off("SIGTERM", stop);
+    // Each is let go of whatever the other does, so a session that fails to close never leaves its servers running.
+    await Promise.allSettled([session.dispose(), servers?.close()]);
   }
   write.error(ending(session.outcome(), session.file));
   const kept = session.kept();
   if (kept !== undefined) write.error(`${kept}\n`);
-  return session.outcome() === "completed" ? 0 : 1;
+  return session.outcome() === "completed" && !stopped ? 0 : 1;
 }

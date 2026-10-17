@@ -294,7 +294,8 @@ function weakening(change: Weakening): string {
 
 /** Whether a session entry's details hold a receipt this Tesota reads. */
 export function isReceipt(value: unknown): value is Receipt {
-  return typeof value === "object" && value !== null && Reflect.get(value, "version") === 1;
+  // A receipt from before the engine named itself (#463) has `pi` in place of `engine`: an earlier Tesota's.
+  return typeof value === "object" && value !== null && Reflect.get(value, "version") === 1 && typeof Reflect.get(value, "engine") === "string";
 }
 
 /** A session entry that may carry a receipt: a message, or a custom entry from print mode. */

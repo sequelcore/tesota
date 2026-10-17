@@ -52,8 +52,8 @@ step works.
 
 ## Requirements
 
-- **Pi:** version 1.1.0 or later, installed beside Tesota or on `PATH`.
-- **Node:** version 22.19.0 or later, which Pi 1.1 requires.
+- **Bun:** the version in `packageManager` of [package.json](package.json);
+  `tesota` runs on it.
 - **Dafny 4:** needed to prove contracts; `mise install` installs the
   version in [mise.toml](mise.toml). Without Dafny, a proof reports that it
   could not run.
@@ -64,8 +64,8 @@ step works.
   without its `.env` files. Tesota does not snapshot a home folder, a
   drive's root, or a folder with more than 20,000 files, and reports such
   changes as not verified.
-- **Bun and Node:** to build from source, the Bun in `packageManager` and
-  the Node in `devEngines` of [package.json](package.json).
+- **Node:** the version in `devEngines` of [package.json](package.json),
+  for the verification layer's tests.
 
 **Sharper test evidence (optional).** When your test command writes a JUnit
 XML report anywhere under the project, Tesota reads which tests failed
@@ -83,19 +83,20 @@ Elsewhere:
 ## Install and run
 
 Tesota 0.1.0 is an alpha and is not published yet. Install it from a
-source checkout:
+source checkout; `tesota` then runs the checkout's source with Bun:
 
 ```sh
 bun install --frozen-lockfile --ignore-scripts
 bun run check
+cd packages/core
 bun link
 ```
 
-In a checkout, `bun install` also provides Pi.
+`tesota` opens Tesota's shell in the current folder. It and
+`tesota -p` take:
 
-`tesota` opens Pi with Tesota loaded and passes every argument to Pi:
-
-- `tesota -p "<request>"` runs one request.
+- `tesota -p "<request>" [--model <provider>/<id>]` runs one request
+  without the shell, printing the answer.
 - `--claimcheck-model <provider>/<id>` sets a second model for the contract
   comparison to restate contracts with. Without it, the session's model
   restates them.
@@ -118,7 +119,7 @@ Both name who is accountable, from Git's `user.email` or from
 after the receipt, which nothing in it covers.
 [Receipt v1](docs/receipt-v1.md) specifies the format.
 
-Run `bun unlink` in the checkout to remove the command.
+Run `bun unlink` in `packages/core` to remove the command.
 
 ### LemmaScript skills
 
