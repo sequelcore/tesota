@@ -1,6 +1,6 @@
 import { type Context, createModels, fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { modelContext } from "../src/loop.ts";
@@ -121,19 +121,96 @@ describe("compaction", () => {
     await first.prompt(request);
     expect(first.outcome()).toBe("error");
     expect(entries(first.file).findLast(({ type }) => type === "run_end")?.reason).toBe("compaction failed twice: quota exhausted");
+    // A larger summary ends it at once, with no second try.
     const huge = "## Goal\n" + "too long ".repeat(5_000);
     const larger = scripted([...writes(6), { text: "done" }], [huge, "## Goal\nshort"], 3_000);
     const second = session(larger);
     await second.prompt(request);
-    expect(second.outcome()).toBe("completed");
-    expect(larger.seen.filter(({ summary }) => summary).length).toBeGreaterThanOrEqual(2);
+    expect(second.outcome()).toBe("error");
+    expect(entries(second.file).findLast(({ type }) => type === "run_end")?.reason)
+      .toBe("compaction failed: the summary came out larger than what it replaced");
+    expect(larger.seen.filter(({ summary }) => summary)).toHaveLength(1);
+  });
+
+  test("the summary's tokens count in the session's usage", async () => {
+    const model = scripted([...writes(6), { text: "done" }], ["## Goal\nwrite notes"], 3_000);
+    const created = session(model);
+    await created.prompt(request);
+    const replies = entries(created.file).filter(({ type }) => type === "assistant").length;
+    // Every request the model answered, summaries included, counts once.
+    expect(model.seen.length).toBeGreaterThan(replies);
+    expect(created.stats().tokens.total).toBeGreaterThan(0);
+  });
+
+  test("/compact is exclusive: a second one is refused and a prompt waits for it", async () => {
+    const model = scripted([...writes(3), { text: "done" }, { text: "after" }], ["## Goal\nby hand"], 1_000_000);
+    const created = session(model, { reserve: 1_000, keep: 600 });
+    await created.prompt(request);
+    const first = created.compact();
+    await expect(created.compact()).rejects.toThrow("The conversation is already being compacted.");
+    const next = created.prompt("and one more thing");
+    await first;
+    await next;
+    // The prompt's request came after the compaction, so it follows the compacted head.
+    const history = created.history();
+    expect(history[0]).toMatchObject({ customType: "tesota.compaction" });
+    expect(history.findIndex((message) => message.role === "user" && message.content === "and one more thing")).toBeGreaterThan(0);
+  });
+
+  test("a repair written after a compaction goes after its reply, and the tail the compaction kept stays whole", async () => {
+    const cwd = folder("tesota-core-compaction-cwd-");
+    const file = join(folder("tesota-core-compaction-sessions-"), "repaired.jsonl");
+    const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+    const reply = (id: string, stopReason: string) => ({ role: "assistant", content: [{ type: "toolCall", id, name: "write",
+      arguments: { path: `${id}.txt`, content: "x" } }], api: "faux", provider: "faux", model: "small", usage, stopReason, timestamp: 0 });
+    const lines = [
+      { type: "session", format: "tesota-session", version: 2, id: "repaired", cwd, createdAt: new Date(0).toISOString() },
+      { type: "request", run: 1, text: request, origin: "interactive", at: new Date(0).toISOString(), base: { units: [] } },
+      { type: "assistant", run: 1, message: reply("first", "toolUse") },
+      { type: "tool_result", run: 1, message: { role: "toolResult", toolCallId: "first", toolName: "write",
+        content: [{ type: "text", text: "written" }], isError: false, timestamp: 0 } },
+      { type: "assistant", run: 1, message: reply("second", "aborted") },
+      { type: "run_end", run: 1, outcome: "aborted", reason: "the operator stopped the run" },
+      // Compacted live with [request, first, its result, second]: the last three were kept.
+      { type: "compaction", run: 1, summary: "## Goal\nwrite", kept: 3, read: [], changed: [], tokensBefore: 100, tokensAfter: 50 },
+      // Written when the session was opened again, after the compaction.
+      { type: "reconciliation", run: 1, reply: 1, callId: "second", toolName: "write", repair: "not_run" },
+    ];
+    writeFileSync(file, `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`);
+    const model = scripted([], [], 1_000_000);
+    const resumed = openSession(file, { models: model.models, model: model.model, verifier: () => undefined });
+    open.push(resumed);
+    expect(resumed.history().map((message) => message.role === "toolResult" ? `result ${message.toolCallId}`
+      : message.role === "assistant" ? `reply ${(message.content[0] as { id: string }).id}` : message.role))
+      .toEqual(["custom", "reply first", "result first", "reply second", "result second"]);
+  });
+
+  test("a later run's request still in the tail is not repeated in the compacted head", async () => {
+    const model = scripted([...writes(3), { text: "done" }, ...writes(3), { text: "done again" }],
+      ["## Goal\nfirst", "## Goal\nsecond"], 1_000_000);
+    const created = session(model, { reserve: 1_000, keep: 600 });
+    await created.prompt(request);
+    await created.compact();
+    const second = "Now the second batch.";
+    await created.prompt(second);
+    await created.compact().catch(() => undefined);
+    const head = created.history()[0];
+    const tail = created.history().slice(1);
+    const inTail = tail.some((message) => message.role === "user" && message.content === second);
+    expect(head?.role === "custom" && head.content.includes(second)).toBe(!inTail);
   });
 
   test("/compact compacts between runs, and refuses while a run goes or with nothing to compact", async () => {
     const model = scripted([...writes(3), { text: "done" }], ["## Goal\nby hand"], 1_000_000);
     const created = session(model);
     expect(created.compact()).rejects.toThrow("There is nothing to compact yet.");
+    // Once the run's request is in the conversation, the run is going.
+    const going = new Promise<void>((resolve) => {
+      const stop = created.subscribe((event) => { if (event.type === "message") { stop(); resolve(); } });
+    });
     const running = created.prompt(request);
+    await going;
     await expect(created.compact()).rejects.toThrow("A run is going");
     await running;
     await created.compact();

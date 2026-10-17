@@ -1,4 +1,4 @@
-import type { Api, Model, Models } from "@earendil-works/pi-ai";
+import type { Api, Model, Models, Usage } from "@earendil-works/pi-ai";
 import { type HistoryMessage, modelContext } from "./loop.ts";
 
 /** What the summary model needs to condense the earlier conversation. */
@@ -66,8 +66,12 @@ function transcript(history: readonly HistoryMessage[]): string {
   }).join("\n\n");
 }
 
-/** Makes one summary request, returning provider failures or an empty reply for the caller to handle. */
-export async function summarize(request: SummaryRequest): Promise<{ readonly summary: string } | { readonly error: string }> {
+/**
+ * Makes one summary request, returning provider failures or an empty reply for the caller to handle; with the
+ * request's usage when the provider reported it, which the session counts as it counts its replies.
+ */
+export async function summarize(request: SummaryRequest):
+  Promise<({ readonly summary: string } | { readonly error: string }) & { readonly usage?: Usage }> {
   const instruction = request.previous === undefined
     ? "Write a summary of the transcript above following the summary contract."
     : "Update the previous summary with the new messages above, keeping everything still true. Merge, rather than rewrite from scratch.";
@@ -80,11 +84,12 @@ export async function summarize(request: SummaryRequest): Promise<{ readonly sum
       { systemPrompt, messages: [{ role: "user", content, timestamp: Date.now() }], tools: [] },
       { signal: request.signal });
     const result = await stream.result();
+    const usage = result.usage;
     if (result.stopReason === "error" || result.stopReason === "aborted") {
-      return { error: result.errorMessage ?? `Summary request ended with ${result.stopReason}.` };
+      return { error: result.errorMessage ?? `Summary request ended with ${result.stopReason}.`, usage };
     }
     const summary = result.content.filter((part) => part.type === "text").map((part) => part.text).join("\n").trim();
-    return summary === "" ? { error: "Summary reply was empty." } : { summary };
+    return summary === "" ? { error: "Summary reply was empty.", usage } : { summary, usage };
   } catch (error) {
     return { error: error instanceof Error ? error.message : String(error) };
   }

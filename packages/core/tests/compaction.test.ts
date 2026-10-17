@@ -70,7 +70,7 @@ test("the model receives the fixed contract and a single text transcript with bo
     { role: "toolResult", toolName: "read", toolCallId: "call-2", content: [{ type: "text", text: "b".repeat(2000) }, { type: "text", text: "omit b" }], isError: true, timestamp: 0 },
     { role: "custom", customType: "feedback", content: "Verifier feedback", display: false, timestamp: 0 },
   ] });
-  expect(await summarize(request)).toEqual({ summary: "compact summary" });
+  expect(await summarize(request)).toMatchObject({ summary: "compact summary" });
   expect(faux.state.callCount).toBe(1);
 });
 
@@ -85,32 +85,32 @@ test("a previous summary is merged with new messages instead of rewritten", asyn
     ].join("\n\n"));
     return fauxAssistantMessage("updated summary");
   }], { previous: "## Goal\nKeep the old goal", messages: [{ role: "user", content: "Add a new requirement", timestamp: 0 }] });
-  expect(await summarize(request)).toEqual({ summary: "updated summary" });
+  expect(await summarize(request)).toMatchObject({ summary: "updated summary" });
   expect(faux.state.callCount).toBe(1);
 });
 
 for (const stopReason of ["error", "aborted"] as const) {
   test("a provider result ending with " + stopReason + " returns an error without retrying", async () => {
     const { faux, request } = scripted([fauxAssistantMessage("partial summary", { stopReason, errorMessage: "provider failed" })]);
-    expect(await summarize(request)).toEqual({ error: "provider failed" });
+    expect(await summarize(request)).toMatchObject({ error: "provider failed" });
     expect(faux.state.callCount).toBe(1);
   });
 }
 
 test("a provider exception returns an error without retrying", async () => {
   const { faux, request } = scripted([() => { throw new Error("provider threw"); }]);
-  expect(await summarize(request)).toEqual({ error: "provider threw" });
+  expect(await summarize(request)).toMatchObject({ error: "provider threw" });
   expect(faux.state.callCount).toBe(1);
 });
 
 test("an aborted signal returns an error", async () => {
   const { request } = scripted([fauxAssistantMessage("should not become a summary")], { signal: AbortSignal.abort() });
-  expect(await summarize(request)).toEqual({ error: expect.any(String) });
+  expect(await summarize(request)).toMatchObject({ error: expect.any(String) });
 });
 
 test("an empty reply returns an error without retrying", async () => {
   const { faux, request } = scripted([fauxAssistantMessage(" \n\t ")]);
-  expect(await summarize(request)).toEqual({ error: "Summary reply was empty." });
+  expect(await summarize(request)).toMatchObject({ error: "Summary reply was empty." });
   expect(faux.state.callCount).toBe(1);
 });
 
@@ -129,7 +129,7 @@ test("a synchronous stream exception returns an error without retrying", async (
   const { request } = scripted([]);
   const stream = spyOn(request.models, "streamSimple").mockImplementation(() => { throw new Error("stream failed"); });
   try {
-    expect(await summarize(request)).toEqual({ error: "stream failed" });
+    expect(await summarize(request)).toMatchObject({ error: "stream failed" });
     expect(stream).toHaveBeenCalledTimes(1);
   } finally {
     stream.mockRestore();

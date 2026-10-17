@@ -146,48 +146,44 @@ function conversation(entries: readonly SessionEntry[]): Pick<LoopState, "histor
   let ledger: string[] = [];
   let compacted: LoopState["compacted"];
   const amendments = new Map<number, string>();
-  const repaired = new Map<string, HistoryMessage[]>();
+  /** Each reply by its run and its place in the run, so a repair written later finds it. */
+  const replies = new Map<string, HistoryMessage>();
   const counts = new Map<number, number>();
   for (const entry of entries) {
-    if (entry.type !== "reconciliation") continue;
-    const key = `${entry.run}:${entry.reply}`;
-    repaired.set(key, [...repaired.get(key) ?? [],
-      toolResult({ id: entry.callId, name: entry.toolName }, { text: repairText[entry.repair], isError: true }, 0)]);
-  }
-  /** Each reply's repairs follow its last result, which is where the next reply or run starts. */
-  let pending: HistoryMessage[] = [];
-  const flush = () => { history.push(...pending); pending = []; };
-  for (const entry of entries) {
     if (entry.type === "request") {
-      flush();
       ledger = [entry.text];
       history.push({ role: "user", content: entry.text, timestamp: Date.parse(entry.at) });
     } else if (entry.type === "amendment") amendments.set(entry.id, entry.text);
     else if (entry.type === "delivered") {
-      flush();
       const text = amendments.get(entry.amendment) ?? "";
       ledger.push(text);
       history.push({ role: "user", content: text, timestamp: 0 });
+    } else if (entry.type === "reconciliation") {
+      // A repair goes after the other results of its reply, in the order repairs were written: a compaction
+      // written before it kept what the session held then, and a reply it summarized takes its repair with it.
+      const reply = replies.get(`${entry.run}:${entry.reply}`);
+      const at = reply === undefined ? -1 : history.indexOf(reply);
+      if (at < 0) continue;
+      let after = at + 1;
+      while (history[after]?.role === "toolResult") after += 1;
+      history.splice(after, 0,
+        toolResult({ id: entry.callId, name: entry.toolName }, { text: repairText[entry.repair], isError: true }, 0));
     } else if (entry.type === "compaction") {
-      flush();
       const files = { read: entry.read, changed: entry.changed };
-      history.splice(0, Math.max(0, history.length - entry.kept), compactedHead(ledger, entry.summary, files));
+      const cut = Math.max(0, history.length - entry.kept);
+      history.splice(0, cut, compactedHead(ledger, entry.summary, files, history.slice(cut)));
       compacted = { summary: entry.summary, files, counted: history.length };
-    }
-    else if (entry.type === "assistant") {
-      flush();
+    } else if (entry.type === "assistant") {
       const index = counts.get(entry.run) ?? 0;
       counts.set(entry.run, index + 1);
+      replies.set(`${entry.run}:${index}`, entry.message);
       history.push(entry.message);
-      pending = repaired.get(`${entry.run}:${index}`) ?? [];
     } else if (entry.type === "tool_result") history.push(entry.message);
     else if (entry.type === "custom_message") {
-      flush();
       const { customType, content, display, details } = entry;
       history.push({ role: "custom", customType, content, display, ...details === undefined ? {} : { details }, timestamp: 0 });
     }
   }
-  flush();
   return { history, ledger, ...compacted === undefined ? {} : { compacted } };
 }
 

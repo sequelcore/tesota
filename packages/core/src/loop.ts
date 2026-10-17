@@ -125,9 +125,13 @@ export interface LoopState {
  * amendments exactly as given, which no summary replaces, then the summary.
  * It is context the model reads as the operator's; the shell does not show it.
  */
-export function compactedHead(ledger: readonly string[], summary: string, files: FilesTouched): CustomMessage {
-  const [request = "", ...added] = ledger;
-  const content = ["The operator's request, exactly as given:", request,
+export function compactedHead(ledger: readonly string[], summary: string, files: FilesTouched,
+  tail: readonly HistoryMessage[]): CustomMessage {
+  // What the tail still holds as the operator wrote it is not repeated: the ledger's texts come in order, so those
+  // left are its first ones, the request first.
+  const given = ledger.filter((text) => !tail.some((message) => message.role === "user" && message.content === text));
+  const [request, ...added] = given;
+  const content = [...request === undefined ? [] : ["The operator's request, exactly as given:", request],
     ...added.flatMap((text) => ["Added while you worked:", text]), summaryMessage(summary, files)].join("\n\n");
   return { role: "custom", customType: "tesota.compaction", content, display: false, timestamp: Date.now() };
 }
@@ -315,6 +319,10 @@ export function createLoop(options: LoopOptions): LoopSession {
   /** The current run's request and delivered amendments, which a compaction keeps as given. */
   let ledger = resumedCompaction.ledger;
   let compacted = resumedCompaction.compacted;
+  /** Set when a compaction left the conversation past the margin: until another brings it under, only an overflow compacts. */
+  let stuck = false;
+  /** A compaction `/compact` started between runs, which a prompt waits for and stopping stops. */
+  let compacting: { readonly done: Promise<void>; readonly controller: AbortController } | undefined;
   const usage = () => contextUsage(history, promptFor(), tools.activeTools().map(declaration), options.model.contextWindow,
     compacted?.counted ?? 0);
   const host = createHost({
@@ -451,8 +459,9 @@ export function createLoop(options: LoopOptions): LoopSession {
    * Compacts the conversation (#451): everything before the verbatim tail
    * (`cutPoint`) is summarized by the session's model, merged into the
    * previous summary, and replaced by the run's request and amendments as
-   * given followed by the summary. A failed or larger summary is tried once
-   * more. Returns why it did not compact, or nothing once it did.
+   * given followed by the summary. A failed summary is tried once more; one
+   * larger than what it replaced ends it. Returns why it did not compact, or
+   * nothing once it did.
    */
   async function compact(run: number, signal: AbortSignal): Promise<string | undefined> {
     const head = compacted === undefined ? 0 : 1;
@@ -472,14 +481,20 @@ export function createLoop(options: LoopOptions): LoopSession {
     for (let attempt = 0; attempt < 2; attempt++) {
       const result = await summarize({ models: options.models, model: options.model, previous: compacted?.summary, messages: older,
         files, signal });
+      if (result.usage !== undefined) {
+        tokens.input += result.usage.input;
+        tokens.output += result.usage.output;
+        tokens.total += result.usage.totalTokens;
+      }
       if (signal.aborted) return stoppedReason;
       if ("error" in result) { failure = result.error; continue; }
-      const head = compactedHead(ledger, result.summary, files);
-      if (estimateTokens(head) >= replaced) { failure = "the summary came out larger than what it replaced"; continue; }
+      const head = compactedHead(ledger, result.summary, files, history.slice(cut));
+      if (estimateTokens(head) >= replaced) return "compaction failed: the summary came out larger than what it replaced";
       const kept = history.length - cut;
       history.splice(0, cut, head);
       compacted = { summary: result.summary, files, counted: history.length };
       const tokensAfter = usage()?.tokens ?? 0;
+      stuck = shouldCompact(tokensAfter, options.model.contextWindow ?? 0, margins.reserve);
       writer.append({ type: "compaction", run, summary: result.summary, kept, read: files.read, changed: files.changed,
         tokensBefore, tokensAfter });
       writer.sync();
@@ -497,7 +512,9 @@ export function createLoop(options: LoopOptions): LoopSession {
    */
   async function compactFor(run: number, signal: AbortSignal, overflow: boolean): Promise<Ended | undefined> {
     const used = usage();
-    if (!overflow && (used?.tokens == null || !shouldCompact(used.tokens, used.contextWindow, margins.reserve))) return undefined;
+    if (!overflow && (stuck || used?.tokens == null || !shouldCompact(used.tokens, used.contextWindow, margins.reserve))) {
+      return undefined;
+    }
     const failed = await compact(run, signal);
     if (signal.aborted) return { outcome: "aborted", reason: stoppedReason };
     if (failed === undefined || (!overflow && failed === nothingToSummarize)) return undefined;
@@ -675,6 +692,7 @@ export function createLoop(options: LoopOptions): LoopSession {
   return {
     async prompt(text, { streamingBehavior, source = "interactive" } = {}) {
       await started;
+      await compacting?.done.catch(() => undefined);
       if (running !== undefined) {
         if (streamingBehavior === undefined) throw new Error("A prompt is already running; steer it, queue a follow-up, abort it or wait.");
         await amend(runs, text, streamingBehavior, source, controller?.signal);
@@ -698,15 +716,22 @@ export function createLoop(options: LoopOptions): LoopSession {
     },
     async abort() {
       controller?.abort();
+      compacting?.controller.abort();
       await running?.catch(() => undefined);
+      await compacting?.done.catch(() => undefined);
     },
     async compact() {
       await started;
       if (running !== undefined) throw new Error("A run is going; wait for it to end, or stop it, then compact.");
+      if (compacting !== undefined) throw new Error("The conversation is already being compacted.");
       if (runs === 0) throw new Error("There is nothing to compact yet.");
-      controller = new AbortController();
-      const failed = await compact(runs, controller.signal);
-      if (failed !== undefined) throw new Error(failed === nothingToSummarize ? `Nothing to compact: ${failed}.` : failed);
+      const stopper = new AbortController();
+      const done = (async () => {
+        const failed = await compact(runs, stopper.signal);
+        if (failed !== undefined) throw new Error(failed === nothingToSummarize ? `Nothing to compact: ${failed}.` : failed);
+      })();
+      compacting = { done, controller: stopper };
+      try { await done; } finally { compacting = undefined; }
     },
     messages: () => history.map(conversationMessage),
     history: () => history,
@@ -719,7 +744,9 @@ export function createLoop(options: LoopOptions): LoopSession {
     outcome: () => outcome,
     dispose: () => disposed ??= (async () => {
       controller?.abort();
+      compacting?.controller.abort();
       await running?.catch(() => undefined);
+      await compacting?.done.catch(() => undefined);
       writer.close();
       if (spoolFolder !== undefined) rmSync(spoolFolder, { recursive: true, force: true, maxRetries: 3 });
     })(),
