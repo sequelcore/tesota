@@ -6,7 +6,7 @@ import { tesotaHome } from "../../../src/home.ts";
 import type { Base } from "./base.ts";
 import type { ExtensionAPI } from "../../../src/contract.ts";
 import { branchOf } from "./branch.ts";
-import { createLoop, type HistoryMessage, type LoopOptions, type LoopSession, type LoopState, toolResult } from "./loop.ts";
+import { compactedHead, createLoop, type HistoryMessage, type LoopOptions, type LoopSession, type LoopState, toolResult } from "./loop.ts";
 import { notRun, outcomeUnknown, repairs } from "./reconcile-rule.ts";
 import {
   type Behavior, createSessionFile, type Origin, readSessionFile, type Repair, type SessionEntry, sessionFormat, sessionVersion,
@@ -136,10 +136,15 @@ export function recovery(entries: readonly SessionEntry[]): SessionEntry[] {
  * The conversation the entries hold: requests and delivered amendments as
  * the operator's messages, replies, results, each repair as a failed
  * result placed after the other results of its reply, and the messages
- * settle handlers added; their data stays outside it.
+ * settle handlers added; their data stays outside it. A compaction replaces
+ * what came before its kept messages, as the loop did (#451); with the
+ * conversation come the last run's request and amendments, and the last
+ * compaction.
  */
-function conversation(entries: readonly SessionEntry[]): HistoryMessage[] {
+function conversation(entries: readonly SessionEntry[]): Pick<LoopState, "history" | "ledger" | "compacted"> {
   const history: HistoryMessage[] = [];
+  let ledger: string[] = [];
+  let compacted: LoopState["compacted"];
   const amendments = new Map<number, string>();
   const repaired = new Map<string, HistoryMessage[]>();
   const counts = new Map<number, number>();
@@ -153,9 +158,22 @@ function conversation(entries: readonly SessionEntry[]): HistoryMessage[] {
   let pending: HistoryMessage[] = [];
   const flush = () => { history.push(...pending); pending = []; };
   for (const entry of entries) {
-    if (entry.type === "request") { flush(); history.push({ role: "user", content: entry.text, timestamp: Date.parse(entry.at) }); }
-    else if (entry.type === "amendment") amendments.set(entry.id, entry.text);
-    else if (entry.type === "delivered") { flush(); history.push({ role: "user", content: amendments.get(entry.amendment) ?? "", timestamp: 0 }); }
+    if (entry.type === "request") {
+      flush();
+      ledger = [entry.text];
+      history.push({ role: "user", content: entry.text, timestamp: Date.parse(entry.at) });
+    } else if (entry.type === "amendment") amendments.set(entry.id, entry.text);
+    else if (entry.type === "delivered") {
+      flush();
+      const text = amendments.get(entry.amendment) ?? "";
+      ledger.push(text);
+      history.push({ role: "user", content: text, timestamp: 0 });
+    } else if (entry.type === "compaction") {
+      flush();
+      const files = { read: entry.read, changed: entry.changed };
+      history.splice(0, Math.max(0, history.length - entry.kept), compactedHead(ledger, entry.summary, files));
+      compacted = { summary: entry.summary, files, counted: history.length };
+    }
     else if (entry.type === "assistant") {
       flush();
       const index = counts.get(entry.run) ?? 0;
@@ -170,7 +188,7 @@ function conversation(entries: readonly SessionEntry[]): HistoryMessage[] {
     }
   }
   flush();
-  return history;
+  return { history, ledger, ...compacted === undefined ? {} : { compacted } };
 }
 
 /** The ledger: each request with its amendments, from the ledger entries and the deliveries alone. */
@@ -198,7 +216,7 @@ function stateOf(entries: readonly SessionEntry[]): LoopState {
   const tools = entries.findLast((entry) => entry.type === "active_tools");
   return {
     ...tools === undefined ? {} : { activeTools: tools.names },
-    history: conversation(entries), tokens, outcome: ends.at(-1),
+    ...conversation(entries), tokens, outcome: ends.at(-1),
     runs: entries.filter((entry) => entry.type === "request").length,
     amendments: entries.filter((entry) => entry.type === "amendment").length,
   };

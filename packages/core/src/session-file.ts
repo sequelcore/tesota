@@ -66,6 +66,15 @@ export type SessionEntry =
   /** Data a settle handler recorded outside the conversation. */
   | { readonly type: "custom"; readonly run: number; readonly customType: string; readonly data?: unknown }
   /**
+   * The conversation was compacted during or after run `run` (#451): from
+   * then on it holds the run's request and amendments as given, `summary` in
+   * place of everything before the last `kept` messages, and those messages.
+   * `read` and `changed` are the files the summarized messages touched.
+   */
+  | { readonly type: "compaction"; readonly run: number; readonly summary: string; readonly kept: number;
+    readonly read: readonly string[]; readonly changed: readonly string[]; readonly tokensBefore: number;
+    readonly tokensAfter: number }
+  /**
    * The phase's result, after the entries it added: whether it sent the run
    * back, what its handlers threw, and for the verifier whether it had a
    * settle handler at all.
@@ -113,6 +122,9 @@ const shapes: Record<SessionEntry["type"], (entry: Record<string, unknown>) => b
   settle: (entry) => Number.isInteger(entry["generation"]) && phases.has(entry["phase"] as string) && isText(entry["outcome"]),
   custom_message: (entry) => isText(entry["customType"]) && isText(entry["content"]) && isFlag(entry["display"]),
   custom: (entry) => isText(entry["customType"]),
+  compaction: (entry) => isText(entry["summary"]) && Number.isInteger(entry["kept"]) && (entry["kept"] as number) >= 0
+    && Array.isArray(entry["read"]) && entry["read"].every(isText) && Array.isArray(entry["changed"]) && entry["changed"].every(isText)
+    && Number.isInteger(entry["tokensBefore"]) && Number.isInteger(entry["tokensAfter"]),
   settled: (entry) => Number.isInteger(entry["generation"]) && phases.has(entry["phase"] as string) && isFlag(entry["continued"])
     && Array.isArray(entry["errors"]) && entry["errors"].every(isText) && isFlag(entry["registered"]),
   active_tools: (entry) => Array.isArray(entry["names"]) && entry["names"].every(isText),

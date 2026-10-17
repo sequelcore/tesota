@@ -183,6 +183,25 @@ describe("tesota-core", () => {
     await running;
   });
 
+  test("/compact says why it cannot compact before a run, and when the recent messages alone are what it keeps", async () => {
+    const { terminal, running } = await app(["hello"]);
+    send(terminal, "/compact");
+    await terminal.until("There is nothing to compact yet.");
+    send(terminal, "/model");
+    await terminal.until("Model");
+    terminal.type(enter);
+    await terminal.until("Model: ");
+    send(terminal, "say hello");
+    await terminal.until("hello");
+    // Compacting waits for the run to settle, which ends its indicator.
+    await terminal.untilGone("Working…");
+    await terminal.untilGone("Verifying…");
+    send(terminal, "/compact");
+    await terminal.until("Nothing to compact");
+    send(terminal, "/quit");
+    await running;
+  });
+
   test("an unknown command is named, and /quit ends the shell", async () => {
     const { terminal, running } = await app();
     send(terminal, "/nope");

@@ -9,7 +9,7 @@ function contentChars(content: string | readonly (TextContent | ImageContent)[])
 }
 
 /** Pi rounds each message's character estimate up separately (#441). */
-function estimateTokens(message: HistoryMessage): number {
+export function estimateTokens(message: HistoryMessage): number {
   let chars = 0;
   if (message.role === "assistant") {
     for (const part of message.content) {
@@ -28,18 +28,19 @@ function estimateTokens(message: HistoryMessage): number {
 }
 
 /**
- * The context window's use, by Pi's token rules, before compaction (#441).
- * Without a reply to count from, the system message is estimated with the
- * tools it declares, as Pi estimates it.
+ * The context window's use, by Pi's token rules (#441). Without a reply to
+ * count from, the system message is estimated with the tools it declares, as
+ * Pi estimates it. Replies before `counted` were answers to a conversation
+ * compaction has since replaced (#451), so their usage counts nothing now.
  */
 export function contextUsage(history: readonly HistoryMessage[], systemPrompt: string, tools: readonly object[],
-  contextWindow: number | undefined): ContextUsage | undefined {
+  contextWindow: number | undefined, counted = 0): ContextUsage | undefined {
   if (contextWindow === undefined || contextWindow <= 0) return undefined;
   let trailing = 0;
   for (let index = history.length - 1; index >= 0; index--) {
     const message = history[index];
     if (message === undefined) continue;
-    if (message.role === "assistant" && message.stopReason !== "error" && message.stopReason !== "aborted") {
+    if (index >= counted && message.role === "assistant" && message.stopReason !== "error" && message.stopReason !== "aborted") {
       const usage = message.usage;
       const used = usage.totalTokens || usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
       if (used > 0) {
