@@ -3,7 +3,8 @@ import {
   type ProviderAuthInteraction,
 } from "@earendil-works/pi-ai";
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readdirSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readSettings, writeSettings } from "../src/settings.ts";
@@ -48,12 +49,19 @@ function scripted(replies: readonly ScriptStep[]): { models: MutableModels; cred
 }
 
 /** The app in a temporary folder, its settings and sessions there too, once it has drawn its first frame. */
-async function app(replies: readonly ScriptStep[] = []) {
+async function app(replies: readonly ScriptStep[] = [], { repository = false } = {}) {
   const terminal = new VirtualTerminal(100, 30);
   const { models, credentials } = scripted(replies);
   const settingsPath = join(folder("tesota-core-app-settings-"), "settings.json");
   const sessions = folder("tesota-core-app-sessions-");
   const cwd = folder("tesota-core-app-");
+  // Further sessions need a Git repository with a commit, for their own worktrees (#453).
+  if (repository) {
+    writeFileSync(join(cwd, "README.md"), "# App\n");
+    for (const args of [["init", "-q"], ["add", "-A"], ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base"]]) {
+      spawnSync("git", args, { cwd });
+    }
+  }
   const running = runApp({ cwd, terminal, models, credentials, settingsPath, sessions });
   await terminal.until("tesota-core");
   return { terminal, credentials, settingsPath, sessions, running, cwd };
@@ -96,8 +104,8 @@ describe("tesota-core", () => {
     await running;
   });
 
-  test("/new starts another session, and /resume brings the first back with its conversation", async () => {
-    const { terminal, sessions, running } = await app(["first answer"]);
+  test("/new starts another session beside the first, and the dashboard brings the first back (#455)", async () => {
+    const { terminal, sessions, running } = await app(["first answer"], { repository: true });
     send(terminal, "/model");
     await terminal.until("Model");
     terminal.type(enter);
@@ -109,10 +117,45 @@ describe("tesota-core", () => {
     send(terminal, "/new");
     await terminal.untilGone("first answer");
     expect(readdirSync(sessions).filter((name) => name.endsWith(".jsonl")).length).toBe(2);
-    send(terminal, "/resume");
+    // The first still runs: the dashboard lists both, the new one attached, and Enter on the first shows it again.
+    terminal.type("\x14");
+    await terminal.until("Sessions");
     await terminal.until("the first request");
+    terminal.type("\x1b[A");
     terminal.type(enter);
     await terminal.until("first answer");
+    send(terminal, "/quit");
+    await running;
+  });
+
+  test("a background session's question waits, flagged, until it is shown, and runs once answered (#455)", async () => {
+    const { terminal, cwd, running } = await app([{ tool: "write", args: { path: "asked.md", content: "x" } }, "written"],
+      { repository: true });
+    send(terminal, "/model");
+    await terminal.until("Model");
+    terminal.type(enter);
+    await terminal.until("Model: ");
+    // The first session asks after its request's base is recorded, by which time the second is shown.
+    send(terminal, "write it");
+    send(terminal, "/new");
+    await terminal.until("1 session waits for you");
+    expect((await terminal.screen()).join("\n")).not.toContain("Allow write");
+    terminal.type("\x14");
+    await terminal.until("waiting");
+    terminal.type("\x1b[A");
+    terminal.type(enter);
+    await terminal.until("Allow write asked.md");
+    terminal.type(enter);
+    await terminal.until("written");
+    expect(existsSync(join(cwd, "asked.md"))).toBe(true);
+    send(terminal, "/quit");
+    await running;
+  });
+
+  test("outside Git /new says why a second session cannot start, and the first stays (#455)", async () => {
+    const { terminal, running } = await app();
+    send(terminal, "/new");
+    await terminal.until("not a Git repository");
     send(terminal, "/quit");
     await running;
   });
