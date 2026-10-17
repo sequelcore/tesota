@@ -99,7 +99,8 @@ the agent or counts toward what needs you.
 
 - **A folder of repositories:** each repository the request changed is
   verified from its own commit with its own commands, and one receipt holds
-  them all.
+  them all. In your home folder or a drive's root, only the repositories
+  are verified; the other folders there are never snapshotted.
 - **A folder in no repository:** Tesota compares against a snapshot it
   keeps in `~/.tesota/snapshots`, never in your folder, and without your
   `.env` files. It doesn't snapshot a home folder, a drive's root, or a
