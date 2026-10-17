@@ -106,6 +106,18 @@ depends on the disk, so it's only reported; their number has the limit.
 New or changed limits are proposed from measurements, and need the owner's
 approval.
 
+## Binaries
+
+[build.ts](../packages/core/scripts/build.ts) is the one build: the budget
+measures its binary, and `bun packages/core/scripts/build.ts <folder>`
+builds every release target into a folder. A binary embeds LemmaScript and
+the TypeScript parser as code, and tree-sitter's runtime and grammars as
+files, so it verifies without the checkout; inside one, the verifier runs
+LemmaScript as the binary's own `__lsc` command. The binaries workflow
+builds every target on each pull request and starts each one a runner can
+run; `binary.test.ts` proves and reads source from a binary run outside the
+checkout.
+
 ## Adding a capability
 
 A capability is added for a real consumer, and one that claims to improve
