@@ -7,7 +7,8 @@ import manifest from "../package.json" with { type: "json" };
  * command loads only what it needs. With no argument it opens the shell in
  * the current folder (#444); `-p` runs one request without it, and
  * `receipt` writes the last receipt for a pull request (#463). The
- * `--measure-*` commands are what the budget check runs.
+ * `--measure-*` commands are what the budget check runs, and `__lsc` is
+ * LemmaScript for the verifier in a binary (`lsc.ts`).
  */
 
 /** The verifier's flags (`gate.ts`), taken wherever they come, for the shell and `-p`. */
@@ -57,6 +58,12 @@ else if (command === "--measure-loop" || command === "--measure-resume") {
     });
 }
 else if (command === "--measure-shell") exitWith(import("./shell/measure-shell.ts").then(({ measureShell }) => measureShell()));
+else if (command === "__lsc") {
+  import("./lsc.ts").then(({ runLsc }) => runLsc(rest)).catch((error: unknown) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}
 else {
   console.error(`Unknown argument ${command}. Use: tesota (the shell), tesota -p "<request>", tesota receipt [--json], tesota --version; ` +
     "the shell and -p take --open-cases-model <provider>/<id>|off and --claimcheck-model <provider>/<id>.");

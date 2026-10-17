@@ -1,0 +1,58 @@
+name: Tesota binaries
+# Every target a release would ship (#472), built and kept for a week; nothing is published. Each runner starts the
+# binaries it can run, and Linux runs the musl ones in Alpine.
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - run: bun packages/core/scripts/build.ts dist
+      - run: ls -l dist
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tesota-binaries
+          path: dist
+          retention-days: 7
+  start:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, binaries: "linux-x64 linux-x64-baseline", musl: "linux-x64-musl linux-x64-musl-baseline" }
+          - { os: ubuntu-24.04-arm, binaries: "linux-arm64", musl: "linux-arm64-musl" }
+          - { os: macos-latest, binaries: "darwin-arm64" }
+          - { os: windows-latest, binaries: "windows-x64.exe windows-x64-baseline.exe" }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tesota-binaries
+          path: dist
+      - name: Each binary starts
+        shell: bash
+        run: |
+          for binary in ${{ matrix.binaries }}; do
+            chmod +x "dist/tesota-$binary"
+            echo "tesota-$binary: $("dist/tesota-$binary" --version)"
+          done
+      - name: Each musl binary starts in Alpine
+        if: matrix.musl != ''
+        run: |
+          for binary in ${{ matrix.musl }}; do
+            chmod +x "dist/tesota-$binary"
+            docker run --rm -v "$PWD/dist:/dist" alpine:3.22 sh -euc "apk add --no-cache libstdc++ libgcc >/dev/null; echo tesota-$binary: \$(/dist/tesota-$binary --version)"
+          done

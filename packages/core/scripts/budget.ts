@@ -2,10 +2,11 @@ import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { withinBudget } from "../src/budget-rule.ts";
+import { build } from "./build.ts";
 
 /**
  * Performance budgets (#433, #435, #437), checked on every pull request
- * like fx's: the engine is compiled with `bun build --compile`, its
+ * like fx's: the engine is compiled as a release builds it (`build.ts`), its
  * `--version` started repeatedly, its scripted loop run (`--measure-loop`,
  * 50 rounds of write and read, with its request's base and its syncs to the
  * disk timed apart), and a session of about 1,000 entries resumed
@@ -64,12 +65,7 @@ function measure(): Measurements {
   const folder = mkdtempSync(join(tmpdir(), "tesota-core-budget-"));
   try {
     const binary = join(folder, process.platform === "win32" ? "tesota-core.exe" : "tesota-core");
-    // Splitting keeps the loop in its own chunk, loaded only when used: without it every start parsed the whole
-    // bundle, 20-25 ms more on Linux and Windows. Bytecode did the same at 3 MB more (#435).
-    const build = Bun.spawnSync(["bun", "build", "--compile", "--minify", "--format=esm", "--splitting",
-      join(import.meta.dir, "..", "src", "main.ts"),
-      "--outfile", binary], { stdout: "ignore", stderr: "pipe" });
-    if (build.exitCode !== 0) throw new Error(`bun build --compile failed:\n${build.stderr.toString()}`);
+    build(binary);
     const times: number[] = [];
     for (let run = 0; run < warmups + samples; run++) {
       const begun = performance.now();
