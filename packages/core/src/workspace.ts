@@ -45,7 +45,7 @@ const canonical = (folder: string): string => {
 };
 
 /** The folder holding `.git` (a folder, or a worktree's file) at or above `folder`, found without running Git; else `folder`. */
-function checkoutRoot(folder: string): string {
+export function checkoutRoot(folder: string): string {
   for (let at = folder; ; at = dirname(at)) {
     if (existsSync(join(at, ".git"))) return at;
     if (dirname(at) === at) return folder;

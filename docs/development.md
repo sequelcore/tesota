@@ -103,7 +103,18 @@ are its own; `/new` starts one beside the others. `/agents` or Ctrl+T opens
 the dashboard (`dashboard.ts`): each session's request, state, verification
 (`receiptStanding`), workspace and time, to attach, peek at or close. A
 background session's permission question waits until it is shown, and the
-shown session's footer says how many wait. A run settles in two
+shown session's footer says how many wait. As the other harnesses do
+(`instructions.ts`), a session's system prompt gets `~/.tesota/AGENTS.md`, then
+each folder's `AGENTS.md` (else `CLAUDE.md`) from the Git root down to the
+session's folder, and the names and descriptions of the skills in
+`~/.agents/skills`, `~/.tesota/skills` and the project's `.agents/skills`,
+within 2% of the context window (`catalog-rule.ts`). Command hooks
+(`hooks.ts`) are configured as Claude Code configures them, under `hooks` in
+`~/.tesota/settings.json` and the project's `.tesota/settings.json`:
+`PreToolUse` and `PostToolUse`, after the permission check, run together;
+exit 2 or a JSON block refuses, any block wins, and a hook that fails or times
+out lets the call through with a note. A project's hooks run only once the
+operator trusts them as they are (`~/.tesota/trust.json`). A run settles in two
 phases (`loop.ts`): its extensions, whose results accumulate so none can
 drop another's message or cancel its send-back, then the verifier every
 session must have, which no extension can replace. The proved settle rule
