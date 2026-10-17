@@ -7,7 +7,7 @@ export type ReportedStatus = "passed" | "failed" | "skipped";
 
 /**
  * The tests a check's JUnit XML reports name, merged by name
- * (docs/design/verification.md, "Tests"), with the reports each test appears
+ * (docs/concepts/verification.md, "Tests"), with the reports each test appears
  * in and the reports that were read.
  */
 export interface TestResults {

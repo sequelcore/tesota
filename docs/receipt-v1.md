@@ -5,7 +5,7 @@ This page specifies version 1 of Tesota's receipt. It is the in-toto
 `https://github.com/sequelcore/tesota/blob/main/docs/receipt-v1.md`. The
 types are defined in `src/receipt.ts` and the modules it imports. The
 Statement is built in `src/pull-request-receipt.ts`. The
-[verification design](design/verification.md) explains what each finding
+[How verification works](concepts/verification.md) explains what each finding
 means.
 
 A receipt exists in two places:

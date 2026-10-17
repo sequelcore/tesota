@@ -130,7 +130,7 @@ function paint(theme: Theme, parts: readonly EvidencePart[], level: EvidenceLeve
   return parts.filter((item) => item[level] !== "").map((item) => theme.fg(item.color, item[level])).join(theme.fg("dim", SEPARATOR));
 }
 
-/** The folder as Pi's footer shows it: under the home folder, from `~`. */
+/** A folder as the footer and the welcome header show it: under the home folder, from `~`. */
 export function homeRelative(cwd: string, home: string = homedir()): string {
   if (home === "" || !(cwd === home || cwd.startsWith(home + sep))) return cwd;
   return `~${cwd.slice(home.length)}`;

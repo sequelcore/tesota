@@ -49,7 +49,7 @@ export function testOrigin(candidate: TestStatus, base: TestStatus): CheckOrigin
 
 /**
  * The origin rule for a failing check command, with its tests
- * (docs/design/verification.md, "Tests"). A command is run again on the
+ * (docs/concepts/verification.md, "Tests"). A command is run again on the
  * candidate's base, in the same environment, only when it failed or timed out
  * on the candidate: the
  * candidate introduced the failure when the base passes, or when the base

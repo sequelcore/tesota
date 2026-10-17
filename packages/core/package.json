@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "bun test --timeout 30000",
     "budget": "bun scripts/budget.ts",
+    "screenshots": "bun scripts/screenshots.ts",
     "check": "bun run typecheck && bun run test && bun run budget"
   },
   "dependencies": {

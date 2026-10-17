@@ -1,0 +1,50 @@
+# Tesota documentation
+
+Tesota is a coding agent whose every run ends in verification: it proves
+the change where it can, tests it where it can't, and says what it couldn't
+verify, in a receipt.
+
+## Get started
+
+- [Install](get-started/install.md): requirements, installing from source,
+  signing in to a model.
+- [Your first session](get-started/first-session.md): ask for a change,
+  watch Tesota verify it, and read the receipt.
+
+## Guides
+
+- [Sessions](guides/sessions.md): the shell, several sessions at once,
+  worktrees, resuming.
+- [Verification](guides/verification.md): what Tesota checks, and how to
+  give it more to check.
+- [Receipts](guides/receipts.md): a receipt for a pull request or CI.
+- [Print mode](guides/print-mode.md): one request from a script.
+- [Permissions](guides/permissions.md): what the agent may do without
+  asking.
+- [Models](guides/models.md): signing in, choosing a model, thinking.
+- [Instructions and skills](guides/instructions-and-skills.md):
+  `AGENTS.md` and skills.
+- [Hooks](guides/hooks.md): your own commands before and after the agent's
+  tool calls.
+- [MCP servers](guides/mcp.md): tools from MCP servers.
+- [The terminal](guides/terminal.md): display modes, themes, terminal color
+  schemes and Windows.
+
+## Concepts
+
+- [Architecture](concepts/architecture.md): the engine, the verification
+  layer, sessions, and why Tesota has its own engine.
+- [How verification works](concepts/verification.md): the gate, its
+  evidence, and the rules it proves about itself.
+
+## Reference
+
+- [Commands and keys](reference/commands.md)
+- [Configuration](reference/configuration.md): every file Tesota reads.
+- [Receipt v1](receipt-v1.md): the receipt's format.
+
+## Project
+
+- [Roadmap](../ROADMAP.md)
+- [Development](development.md): building, testing and proving Tesota.
+- [Contributing](../CONTRIBUTING.md) and [Security](../SECURITY.md)

@@ -1,38 +1,38 @@
 # Security policy
 
-Tesota is pre-release software. It has no supported stable release and should
-not be treated as a security boundary: it verifies an agent's results and
-leaves what the agent may do to the harness that runs it. Current status and
-limits are documented in the [roadmap](docs/roadmap.md).
+Tesota is pre-release software, with no supported stable release. Its
+[permissions](docs/guides/permissions.md) and their floor limit what the
+agent may do, but they're a net of rules and patterns, not a sandbox:
+don't treat Tesota as a security boundary.
 
 ## Reporting a vulnerability
 
-Do not open a public issue containing exploit details, credentials, private
-repository content or retained model transcripts.
+Don't open a public issue with exploit details, credentials, private
+repository content or model transcripts.
 
-Use GitHub private vulnerability reporting when it is enabled for this
-repository. If that channel is unavailable, contact the repository maintainers
-privately through their GitHub profiles and include only enough public-safe
-information to establish a secure reporting channel.
+Use GitHub's private vulnerability reporting when it's enabled for this
+repository. Otherwise, contact the maintainers privately through their
+GitHub profiles, with only enough to set up a secure channel.
 
-Please include:
+Include:
 
-- the affected commit and platform;
-- the violated boundary and expected behavior;
+- the commit and platform;
+- the boundary crossed and what you expected;
 - a minimal reproduction without real credentials or private data;
-- observed effects and whether they persist;
-- any known workaround.
+- what happened, and whether it persists;
+- any workaround you know.
 
-High-priority reports include evidence attached to the wrong content, a change
-reported as proved or tested when it was not, weakened evidence that goes
-unreported, and credential or prompt disclosure.
+The most serious reports are: evidence attached to the wrong content; a
+change reported as proved or tested when it wasn't; weakened evidence that
+goes unreported; a tool call that crosses the permission floor; and a
+credential or prompt disclosed.
 
 ## Disclosure and scope
 
-Maintainers will first acknowledge and reproduce the report, then determine the
-affected boundary and coordinate remediation and disclosure. No response-time or
-bug-bounty commitment is made while the project is pre-release.
+Maintainers acknowledge and reproduce a report, find the boundary it
+crosses, and coordinate the fix and its disclosure. While Tesota is
+pre-release there's no response-time or bug-bounty commitment.
 
-Model mistakes, low-quality suggestions and unsupported task classes are product
-limitations rather than vulnerabilities unless they cross a confidentiality or
-evidence-integrity boundary.
+A model's mistake, a weak suggestion or an unsupported kind of task is a
+limitation of the product, not a vulnerability, unless it crosses a
+confidentiality, permission or evidence boundary.
