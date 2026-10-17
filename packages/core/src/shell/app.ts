@@ -1,7 +1,7 @@
 import type { Api, AuthInteraction, CredentialStore, Model, ModelThinkingLevel, MutableModels } from "@earendil-works/pi-ai";
 import { getTerminalColorMode, ProcessTerminal, type Terminal } from "@earendil-works/pi-tui";
 import { readdirSync, readFileSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { tesotaHome } from "../../../../src/home.ts";
 import { provideHost } from "../../../../src/host.ts";
 import { isReceipt, type Receipt, receiptStanding } from "../../../../src/receipt.ts";
@@ -10,9 +10,12 @@ import { fileCredentialStore } from "../credentials.ts";
 import { engineModels, loginOptions } from "../model-access.ts";
 import type { Mode } from "../permission-rule.ts";
 import type { HistoryMessage } from "../loop.ts";
+import type { McpServers } from "../mcp.ts";
+import { projectServers, readMcpConfig } from "../mcp-config.ts";
 import { loadRules } from "../permissions.ts";
 import { createSession, type EngineSession, openSession, sessionsFolder, type Verifier } from "../session.ts";
-import { anyHooks, type Hooks, hooksHash, joinHooks, readHooks, trustedHooks, trustHooks } from "../hooks.ts";
+import { anyHooks, type Hooks, joinHooks, readHooks } from "../hooks.ts";
+import { trust, trusted, trustHash } from "../trust.ts";
 import { readSettings, type Settings, updateSettings } from "../settings.ts";
 import { checkoutRoot } from "../workspace.ts";
 import { Dashboard, type SessionRow } from "./dashboard.ts";
@@ -119,8 +122,12 @@ export async function runApp(options: AppOptions): Promise<void> {
   };
   const own = readOr(hookFiles.own);
   let hooks: Hooks = typeof own === "string" ? {} : own;
+  /** The MCP servers every session reaches (#459), started once the project's are trusted or left out; none configured, none. */
+  let mcp: McpServers | undefined;
+  /** Settles once the servers started, or were left out; `/mcp` waits for it. */
+  let serversStarted: Promise<void> = Promise.resolve();
   const sessionOptions = (live: Live) => ({ models, model: model ?? models.getModels()[0] as Model<Api>, verifier, surface: live.surface,
-    hooks: () => hooks,
+    hooks: () => hooks, mcp: () => mcp,
     mode: "tui",
     // A shown session asks at once; another waits, flagged, until the operator shows it.
     permissions: { mode: () => permissionMode, rules, ask: (call: { name: string; arguments: unknown }, reason: string) => {
@@ -225,7 +232,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     const dashboard = new Dashboard(theme, rows, {
       attach: (id) => { hide(); const next = byId(id); if (next !== undefined) void attach(next); },
       peek: (id) => peekLines(byId(id)?.session.history() ?? []),
-      create: () => { hide(); void commands["/new"]?.(); },
+      create: () => { hide(); void commands["/new"]?.(""); },
       close: (id) => { const gone = byId(id); if (gone !== undefined) void close(gone).then(() => { shell.redraw(); }); },
       back: () => { hide(); },
     });
@@ -251,7 +258,97 @@ export async function runApp(options: AppOptions): Promise<void> {
       } else shell.note(event.message);
     },
   };
-  const commands: Readonly<Record<string, () => Promise<void>>> = {
+  /** A project's hooks run its own commands: they run only once the operator trusts them as they are now (#457). */
+  const trustProjectHooks = async (): Promise<void> => {
+    const project = readOr(hookFiles.project);
+    if (typeof project === "string") { shell.note(`The project's hooks were left out: ${project}`, "error"); return; }
+    if (!anyHooks(project)) return;
+    const root = checkoutRoot(resolve(options.cwd));
+    const hash = trustHash(project);
+    let given = trusted(root, "hooks", hash);
+    if (!given) {
+      const commands = [...new Set(Object.values(project).flatMap((groups) => groups.flatMap((group) => group.hooks.map(({ command }) => command))))];
+      const picked = await shell.pick(`This project's hooks would run: ${commands.join("; ")}`, [
+        { value: "trust", label: "Trust them", description: "kept until their commands change" },
+        { value: "skip", label: "Not now", description: "the project's hooks do not run in this shell" },
+      ]);
+      given = picked === "trust";
+      if (given) trust(root, "hooks", hash);
+      else shell.note("The project's hooks do not run in this shell.", "warning");
+    }
+    if (given) hooks = joinHooks(hooks, project);
+  };
+  /**
+   * Starts the MCP servers (#459): the operator's from beside their settings,
+   * and the project's once the operator trusts them as they are now, since
+   * they run the project's commands; without that trust only the operator's
+   * start. Their configuration errors are noted.
+   */
+  const startServers = async (): Promise<void> => {
+    const root = checkoutRoot(resolve(options.cwd));
+    const files = { own: join(dirname(hookFiles.own), "mcp.json"), project: join(root, ".tesota", "mcp.json") };
+    let config = readMcpConfig(files.own, files.project, resolve(options.cwd));
+    for (const error of config.errors) shell.note(error, "error");
+    const theirs = projectServers(config, files.project);
+    // Trust goes to the file as written, so a changed entry asks again and a changed environment variable does not.
+    const hash = theirs.length === 0 ? "" : trustHash(readFileSync(files.project, "utf8"));
+    if (theirs.length > 0 && !trusted(root, "mcp", hash)) {
+      const runs = theirs.map((server) => `${server.name} (${server.transport === "stdio" ? [server.command, ...server.args].join(" ") : server.url})`);
+      const picked = await shell.pick(`This project's MCP servers would start: ${runs.join("; ")}`, [
+        { value: "trust", label: "Trust them", description: "kept until they change" },
+        { value: "skip", label: "Not now", description: "only your own MCP servers start in this shell" },
+      ]);
+      if (picked === "trust") trust(root, "mcp", hash);
+      else {
+        config = readMcpConfig(files.own, undefined, resolve(options.cwd));
+        shell.note("The project's MCP servers do not start in this shell.", "warning");
+      }
+    }
+    if (config.servers.length === 0) return;
+    // The MCP client loads only when a server is configured, so a shell without one starts as fast as before.
+    const { startMcp } = await import("../mcp.ts");
+    mcp = startMcp(config.servers, { cwd: resolve(options.cwd), home: dirname(hookFiles.own) });
+  };
+  /**
+   * `/mcp` (#459): the servers with their state, and for one picked, or named
+   * after `login`, `logout` or `reconnect`, that action; a sign-in shows the
+   * page to open and waits for the browser's redirect.
+   */
+  const mcpCommand = async (args: string): Promise<void> => {
+    await serversStarted;
+    if (mcp === undefined) { shell.note("No MCP server is configured: add one under mcpServers in ~/.tesota/mcp.json, or the project's .tesota/mcp.json."); return; }
+    const [said, named] = args.split(/\s+/u);
+    const asked = said === "" || said === undefined ? await pickServerAction(mcp) : { action: said, name: named };
+    if (asked === undefined) return;
+    if (asked.name === undefined) { shell.note("Name the server: /mcp login <server>, /mcp logout <server> or /mcp reconnect <server>.", "warning"); return; }
+    await serverAction(mcp, asked.action, asked.name);
+  };
+  /** A server the operator picks from the list, its error shown, and what to do with it. */
+  const pickServerAction = async (servers: McpServers): Promise<{ action: string; name: string } | undefined> => {
+    const name = await shell.pick("MCP servers", servers.status().map((server) => ({ value: server.name, label: server.name,
+      description: `${server.state} · ${server.tools} ${server.tools === 1 ? "tool" : "tools"}${server.error === undefined ? "" : ` · ${firstLine(server.error)}`}` })));
+    const picked = servers.status().find((server) => server.name === name);
+    if (picked === undefined) return undefined;
+    if (picked.error !== undefined) shell.note(`${picked.name}: ${picked.error}`, picked.state === "connected" ? "muted" : "warning");
+    const action = await shell.pick(picked.name, [{ value: "reconnect", label: "Reconnect" },
+      ...picked.transport === "http" ? [{ value: "login", label: "Sign in" }, { value: "logout", label: "Sign out" }] : []]);
+    return action === undefined ? undefined : { action, name: picked.name };
+  };
+  /** Reconnects, signs in to or out of the server `name`, and says where it stands then. */
+  const serverAction = async (servers: McpServers, action: string, name: string): Promise<void> => {
+    try {
+      if (action === "reconnect") await servers.reconnect(name);
+      else if (action === "login") await servers.signIn(name, (page) => { shell.note(`Open ${page.href} to sign in to ${name}.`); }, new AbortController().signal);
+      else if (action === "logout") await servers.signOut(name);
+      else { shell.note(`/mcp ${action} is not an MCP action: login, logout or reconnect.`, "warning"); return; }
+      const now = servers.status().find((server) => server.name === name);
+      shell.note(`${name}: ${now?.state ?? "unknown"}${now?.error === undefined ? "" : ` · ${now.error}`}.`,
+        now?.state === "connected" || action === "logout" ? undefined : "warning");
+    } catch (error) {
+      shell.note(error instanceof Error ? error.message : String(error), "error");
+    }
+  };
+  const commands: Readonly<Record<string, (args: string) => Promise<void>>> = {
     "/model": async () => {
       const available = await models.getAvailable();
       if (available.length === 0) { shell.note("No provider is logged in: /login first, or set its API key.", "warning"); return; }
@@ -335,6 +432,7 @@ export async function runApp(options: AppOptions): Promise<void> {
       shell.note("Compacting…");
       await attached.session.compact().catch((error: unknown) => { shell.note(error instanceof Error ? error.message : String(error), "warning"); });
     },
+    "/mcp": async (args) => { await mcpCommand(args); },
     "/quit": () => { shell.stop(); return Promise.resolve(); },
   };
 
@@ -350,33 +448,18 @@ export async function runApp(options: AppOptions): Promise<void> {
     },
     agents,
     command: async (text) => {
-      const run = commands[text.split(/\s/u)[0] ?? ""];
+      const word = text.split(/\s/u)[0] ?? "";
+      const run = commands[word];
       if (run === undefined) return false;
-      await run();
+      await run(text.slice(word.length).trim());
       return true;
     } });
   if (read.invalid.length > 0) shell.note(`Settings left out as invalid: ${read.invalid.join(", ")}.`, "warning");
   providers = (await credentials.list()).length;
   if (typeof own === "string") shell.note(`Your hooks were left out: ${own}`, "error");
-  // A project's hooks run its own commands: they run only once the operator trusts them as they are now (#457).
-  const project = readOr(hookFiles.project);
-  if (typeof project === "string") shell.note(`The project's hooks were left out: ${project}`, "error");
-  else if (anyHooks(project)) {
-    const root = checkoutRoot(resolve(options.cwd));
-    const hash = hooksHash(project);
-    let trusted = trustedHooks(root, hash);
-    if (!trusted) {
-      const commands = [...new Set(Object.values(project).flatMap((groups) => groups.flatMap((group) => group.hooks.map(({ command }) => command))))];
-      const picked = await shell.pick(`This project's hooks would run: ${commands.join("; ")}`, [
-        { value: "trust", label: "Trust them", description: "kept until their commands change" },
-        { value: "skip", label: "Not now", description: "the project's hooks do not run in this shell" },
-      ]);
-      trusted = picked === "trust";
-      if (trusted) trustHooks(root, hash);
-      else shell.note("The project's hooks do not run in this shell.", "warning");
-    }
-    if (trusted) hooks = joinHooks(hooks, project);
-  }
+  await trustProjectHooks();
+  serversStarted = startServers();
+  await serversStarted;
   if (model === undefined) shell.note("No provider is logged in: /login, or set a provider's API key, then /model.", "warning");
   await shell.stopped;
   for (const each of lives) {
@@ -384,6 +467,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     for (const { refuse } of each.waiting.splice(0)) refuse();
   }
   await Promise.all(lives.map((each) => each.session.dispose()));
+  await mcp?.close();
   // The shell has given the terminal back: worktrees with work in them are named where the operator sees them (#453).
   for (const each of lives) {
     const kept = each.session.kept();
