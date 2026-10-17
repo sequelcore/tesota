@@ -1,13 +1,15 @@
 import {
-  createModels, fauxAssistantMessage, fauxProvider, InMemoryCredentialStore, type MutableModels, type OAuthCredential,
+  createModels, fauxProvider, InMemoryCredentialStore, type MutableModels, type OAuthCredential,
   type ProviderAuthInteraction,
 } from "@earendil-works/pi-ai";
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readdirSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readSettings } from "../src/settings.ts";
 import { runApp } from "../src/shell/app.ts";
+import type { ScriptStep } from "./engine.ts";
+import { scriptedReply } from "./scripted.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
 
 /**
@@ -18,11 +20,11 @@ const folder = (prefix: string): string => mkdtempSync(join(tmpdir(), prefix));
 const enter = "\r";
 
 /** A scripted model, and a provider that logs in by OAuth with a pasted code. */
-function scripted(replies: readonly string[]): { models: MutableModels; credentials: InMemoryCredentialStore } {
+function scripted(replies: readonly ScriptStep[]): { models: MutableModels; credentials: InMemoryCredentialStore } {
   const credentials = new InMemoryCredentialStore();
   const models = createModels({ credentials });
   const faux = fauxProvider();
-  faux.setResponses(replies.map((reply) => fauxAssistantMessage(reply)));
+  faux.setResponses(replies.map(scriptedReply));
   models.setProvider(faux.provider);
   const oauth = fauxProvider();
   models.setProvider({ ...oauth.provider, id: "scripted-login", name: "Scripted login", auth: { oauth: {
@@ -46,14 +48,15 @@ function scripted(replies: readonly string[]): { models: MutableModels; credenti
 }
 
 /** The app in a temporary folder, its settings and sessions there too, once it has drawn its first frame. */
-async function app(replies: readonly string[] = []) {
+async function app(replies: readonly ScriptStep[] = []) {
   const terminal = new VirtualTerminal(100, 30);
   const { models, credentials } = scripted(replies);
   const settingsPath = join(folder("tesota-core-app-settings-"), "settings.json");
   const sessions = folder("tesota-core-app-sessions-");
-  const running = runApp({ cwd: folder("tesota-core-app-"), terminal, models, credentials, settingsPath, sessions });
+  const cwd = folder("tesota-core-app-");
+  const running = runApp({ cwd, terminal, models, credentials, settingsPath, sessions });
   await terminal.until("tesota-core");
-  return { terminal, credentials, settingsPath, sessions, running };
+  return { terminal, credentials, settingsPath, sessions, running, cwd };
 }
 
 const send = (terminal: VirtualTerminal, text: string): void => { terminal.type(text); terminal.type(enter); };
@@ -147,6 +150,35 @@ describe("tesota-core", () => {
     terminal.type(enter);
     await terminal.until("Logged in to Scripted key.");
     expect(await credentials.read("scripted-key")).toEqual({ type: "api_key", key: "sk-secret-123" });
+    send(terminal, "/quit");
+    await running;
+  });
+
+  test("Shift+Tab turns the mode from ask to full access to read only and back, shown in the footer and saved", async () => {
+    const { terminal, settingsPath, running } = await app();
+    expect((await terminal.screen()).at(-1)).toContain("ask");
+    terminal.type("\x1b[Z");
+    await terminal.until("full access");
+    terminal.type("\x1b[Z");
+    await terminal.until("read only");
+    expect(readSettings(settingsPath).settings.permissionMode).toBe("read");
+    terminal.type("\x1b[Z");
+    await terminal.untilGone("read only");
+    send(terminal, "/quit");
+    await running;
+  });
+
+  test("in ask mode a write asks the operator, and runs once allowed", async () => {
+    const { terminal, running, cwd } = await app([{ tool: "write", args: { path: "allowed.txt", content: "x" } }, "written"]);
+    send(terminal, "/model");
+    await terminal.until("Model");
+    terminal.type(enter);
+    await terminal.until("Model: ");
+    send(terminal, "write it");
+    await terminal.until("Allow write allowed.txt");
+    terminal.type(enter);
+    await terminal.until("written");
+    expect(existsSync(join(cwd, "allowed.txt"))).toBe(true);
     send(terminal, "/quit");
     await running;
   });
