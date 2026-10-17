@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { git } from "../../../src/git.ts";
 import { takeSnapshot } from "../../../src/snapshot.ts";
 import { workspaceUnits } from "../../../src/workspace.ts";
+import { withLockWhile } from "./session-lock.ts";
 
 /**
  * One unit of the session's folder as a request found it: a repository's
@@ -41,7 +42,7 @@ export async function captureBase(cwd: string): Promise<Base> {
   for (const { folder, repository } of units) {
     const root = join(cwd, folder);
     if (repository) { found.push(await repositoryBase(folder, root)); continue; }
-    const snapshot = await takeSnapshot(root, workspace && folder === "");
+    const snapshot = await takeSnapshot(root, workspace && folder === "", withLockWhile);
     found.push("refused" in snapshot ? { folder, kind: "refused", reason: snapshot.refused }
       : { folder, kind: "snapshot", commit: snapshot.base, tooLarge: snapshot.tooLarge });
   }

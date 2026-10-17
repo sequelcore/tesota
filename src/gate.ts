@@ -613,7 +613,7 @@ async function begin(cwd: string): Promise<Start> {
   const refused = new Map<string, string>();
   for (const { folder, repository } of units) {
     if (repository) { bases.set(folder, await headCommit(join(cwd, folder))); continue; }
-    const snapshot = await takeSnapshot(join(cwd, folder), workspace && folder === "");
+    const snapshot = await takeSnapshot(join(cwd, folder), workspace && folder === "", host().withLockWhile);
     if ("refused" in snapshot) refused.set(folder, snapshot.refused);
     else { bases.set(folder, snapshot.base); tooLarge.set(folder, snapshot.tooLarge); }
   }

@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { git, useSnapshotGit } from "./git.js";
 import { tesotaHome } from "./home.js";
+import type { HostParts } from "./host.js";
 
 /**
  * How much of a folder Tesota snapshots, as pi-workspace-history bounds its
@@ -87,7 +88,8 @@ function prune(snapshots: string): void {
  * `.gitignore` names are left out, and so is every folder below it when
  * `ownFiles`. A home folder or a drive's root is never snapshotted.
  */
-export async function takeSnapshot(root: string, ownFiles: boolean, limits: SnapshotLimits = SNAPSHOT_LIMITS): Promise<Snapshot> {
+export async function takeSnapshot(root: string, ownFiles: boolean, withLockWhile: HostParts["withLockWhile"],
+  limits: SnapshotLimits = SNAPSHOT_LIMITS): Promise<Snapshot> {
   const at = resolve(root);
   // The home folder by any of its names: a session's folder comes by its real name, and a Windows home may be named short (#453).
   const real = (folder: string): string => {
@@ -100,20 +102,24 @@ export async function takeSnapshot(root: string, ownFiles: boolean, limits: Snap
   if (typeof tooLarge === "string") return { refused: tooLarge };
   const snapshots = join(tesotaHome(), "snapshots");
   const gitDir = join(snapshots, createHash("sha256").update(`${at}\0${ownFiles}`).digest("hex").slice(0, 16));
-  useSnapshotGit(at, gitDir);
-  if (!existsSync(join(gitDir, "HEAD"))) {
-    mkdirSync(gitDir, { recursive: true });
-    if (await git(at, ["init", "-q"]) === undefined || await git(at, ["config", "core.autocrlf", "false"]) === undefined) {
-      return { refused: "Git could not make a snapshot of it" };
+  mkdirSync(snapshots, { recursive: true });
+  // One writer for the store (#461): pruning also removes other folders. The lock stays outside what it prunes.
+  return withLockWhile(join(tesotaHome(), "snapshots.lock"), async () => {
+    useSnapshotGit(at, gitDir);
+    if (!existsSync(join(gitDir, "HEAD"))) {
+      mkdirSync(gitDir, { recursive: true });
+      if (await git(at, ["init", "-q"]) === undefined || await git(at, ["config", "core.autocrlf", "false"]) === undefined) {
+        return { refused: "Git could not make a snapshot of it" };
+      }
     }
-  }
-  writeFileSync(join(gitDir, "info", "exclude"), [...excludedFolders.map((name) => `${name}/`), ".env", ".env.*",
-    ...ownFiles ? ["/*/"] : [], ...tooLarge.map(exactly)].join("\n"));
-  writeFileSync(join(gitDir, "tesota-used"), at);
-  const committed = await git(at, ["-c", "advice.addEmbeddedRepo=false", "add", "-A"]) !== undefined
-    && await git(at, ["-c", "user.name=Tesota", "-c", "user.email=tesota@localhost", "commit", "-q", "--allow-empty",
-      "--no-verify", "-m", "Tesota snapshot"]) !== undefined;
-  const base = committed ? (await git(at, ["rev-parse", "HEAD"]))?.trim() : undefined;
-  prune(snapshots);
-  return base === undefined || base === "" ? { refused: "Git could not make a snapshot of it" } : { base, tooLarge };
+    writeFileSync(join(gitDir, "info", "exclude"), [...excludedFolders.map((name) => `${name}/`), ".env", ".env.*",
+      ...ownFiles ? ["/*/"] : [], ...tooLarge.map(exactly)].join("\n"));
+    writeFileSync(join(gitDir, "tesota-used"), at);
+    const committed = await git(at, ["-c", "advice.addEmbeddedRepo=false", "add", "-A"]) !== undefined
+      && await git(at, ["-c", "user.name=Tesota", "-c", "user.email=tesota@localhost", "commit", "-q", "--allow-empty",
+        "--no-verify", "-m", "Tesota snapshot"]) !== undefined;
+    const base = committed ? (await git(at, ["rev-parse", "HEAD"]))?.trim() : undefined;
+    prune(snapshots);
+    return base === undefined || base === "" ? { refused: "Git could not make a snapshot of it" } : { base, tooLarge };
+  }, 30_000);
 }
