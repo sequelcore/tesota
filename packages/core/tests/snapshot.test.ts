@@ -37,6 +37,16 @@ test("two processes snapshot one fresh folder together", async () => {
     console.log(unit.commit);
     process.disconnect();
   `;
+  // A third process, in the same home as the two (#466: this one may keep another), takes a snapshot, which registers
+  // the store's Git folder for reading, then reads both commits and counts the store's commits.
+  const reader = `
+    import { captureBase } from ${JSON.stringify(new URL("../src/base.ts", import.meta.url).href)};
+    import { git } from ${JSON.stringify(new URL("../../../src/git.ts", import.meta.url).href)};
+    const [root, ...commits] = process.argv.slice(1);
+    if ((await captureBase(root)).units[0]?.kind !== "snapshot") throw new Error("The third request has no snapshot");
+    console.log(JSON.stringify({ files: await Promise.all(commits.map((commit) => git(root, ["show", commit + ":notes.txt"]))),
+      count: (await git(root, ["rev-list", "--all", "--count"]))?.trim() }));
+  `;
   const racers = [0, 1].map(() => {
     const ready = Promise.withResolvers<void>();
     const child = Bun.spawn(["bun", "--eval", program, root], {
@@ -52,10 +62,9 @@ test("two processes snapshot one fresh folder together", async () => {
     expect(await Promise.all(racers.map(({ child }) => child.exited))).toEqual([0, 0]);
     const commits = await Promise.all(racers.map(async ({ output }) => (await output).trim()));
     expect(new Set(commits).size).toBe(2);
-    // A third request in this process also registers the snapshot's Git directory for reading it.
-    expect((await captureBase(root)).units[0]?.kind).toBe("snapshot");
-    for (const commit of commits) expect(await git(root, ["show", `${commit}:notes.txt`])).toBe("hello\n");
-    expect((await git(root, ["rev-list", "--all", "--count"]))?.trim()).toBe("3");
+    const read = Bun.spawnSync(["bun", "--eval", reader, root, ...commits], { env: { ...process.env } });
+    expect(read.exitCode).toBe(0);
+    expect(JSON.parse(read.stdout.toString())).toEqual({ files: ["hello\n", "hello\n"], count: "3" });
     expect(readdirSync(root)).toEqual(["notes.txt"]);
   } finally {
     for (const { child } of racers) child.kill();
