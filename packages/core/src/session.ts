@@ -245,7 +245,7 @@ function engineSession(file: string, release: () => void, entries: SessionEntry[
   const request = (): LedgerRequest | undefined => ledgerOf(entries).at(-1);
   let loop: LoopSession;
   try {
-    loop = createLoop({ ...options, cwd: workspace.cwd, verifier: (pi) => { options.verifier(pi, request); }, branch: () => branchOf(entries),
+    loop = createLoop({ ...options, cwd: workspace.cwd, sessionId: basename(file, ".jsonl"), verifier: (pi) => { options.verifier(pi, request); }, branch: () => branchOf(entries),
       writer: options.writer?.(recording) ?? recording, ...opened ? { resumed: stateOf(entries) } : {} });
   } catch (error) {
     // An extension or the verifier that throws as it registers leaves nothing open.

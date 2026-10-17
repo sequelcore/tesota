@@ -14,6 +14,8 @@ import type { Behavior, Origin, SessionWriter, SettlePhase } from "./session-fil
 import { afterExtensions, afterVerifier, continuationLimit } from "./settle-rule.ts";
 import { cutPoint, shouldCompact } from "./compact-rule.ts";
 import { type FilesTouched, filesTouched, summarize, summaryMessage } from "./compaction.ts";
+import { type Hooks, runHooks } from "./hooks.ts";
+import { contextFiles, instructionsText, skillCatalog, skills } from "./instructions.ts";
 import { judge, type Mode, type Rules } from "./permissions.ts";
 import type { EngineTool, ToolOutput } from "./tool.ts";
 import { codingTools } from "./tools/index.ts";
@@ -58,6 +60,14 @@ export interface LoopOptions {
    * verbatim. Pi's 16,384 and 20,000 when not given.
    */
   readonly compaction?: { readonly reserve: number; readonly keep: number };
+  /**
+   * The command hooks each call passes (#457), read when it is made, so
+   * hooks trusted while the session runs apply from then on; none when not
+   * given. They run after the permission check, so they can only refuse more.
+   */
+  readonly hooks?: () => Hooks;
+  /** The session's id, which a hook is told. */
+  readonly sessionId?: string;
 }
 
 /** How a session decides what its calls may do (#449). */
@@ -91,6 +101,8 @@ export type SessionEvent =
   | { readonly type: "call"; readonly call: ToolCall }
   | { readonly type: "state"; readonly state: "working" | "settling" }
   /** The conversation is being compacted (#451), and then was, from about `tokensBefore` tokens to `tokensAfter`. */
+  /** A line for the operator from outside the conversation: a hook's message or failure (#457). */
+  | { readonly type: "note"; readonly text: string }
   | { readonly type: "compacting" }
   | { readonly type: "compacted"; readonly tokensBefore: number; readonly tokensAfter: number }
   | { readonly type: "ended"; readonly outcome: SessionOutcome };
@@ -314,7 +326,11 @@ export function createLoop(options: LoopOptions): LoopSession {
   const tools = toolbox([...options.tools?.(spool) ?? codingTools(options.cwd, spool)], writer);
   const thinkingLevel = thinkingOf(options.model, options.thinkingLevel);
   const base = options.captureBase ?? captureBase;
-  const promptFor = (): string => options.systemPrompt ?? defaultPrompt(options.cwd, tools.activeTools());
+  // The operator's and the project's instructions and skills (#457), read once as the session starts, from its own folder.
+  const instructions = options.systemPrompt === undefined
+    ? instructionsText(contextFiles(options.cwd), skillCatalog(skills(options.cwd), options.model.contextWindow)) : "";
+  const promptFor = (): string => options.systemPrompt
+    ?? [defaultPrompt(options.cwd, tools.activeTools()), instructions].filter((part) => part !== "").join("\n\n");
   const resumedCompaction = compactionAtStart(options);
   const margins = resumedCompaction.margins;
   /** The current run's request and delivered amendments, which a compaction keeps as given. */
@@ -407,7 +423,7 @@ export function createLoop(options: LoopOptions): LoopSession {
     const key = `${call.name}\n${JSON.stringify(call.arguments)}`;
     const verdict = judge(call, access, options.cwd, permissions?.mode() ?? "full", permissions?.rules ?? [], permissions?.ask !== undefined);
     let decision: "allow" | "deny" = verdict.decision === "deny" ? "deny" : "allow";
-    let by: "floor" | "mode" | "rule" | "operator" | "session" = verdict.by;
+    let by: "floor" | "mode" | "rule" | "operator" | "session" | "hook" = verdict.by;
     let reason = verdict.reason;
     if (verdict.decision === "ask" && allowedForSession.has(key)) {
       by = "session";
@@ -439,6 +455,30 @@ export function createLoop(options: LoopOptions): LoopSession {
   }
 
   /**
+   * Runs an allowed call between its hooks (#457): `PreToolUse` hooks may
+   * still refuse it, recorded as the hook's decision; `PostToolUse` hooks
+   * see its result, and one that blocks has its reason added for the model.
+   * What hooks say for the operator is a note.
+   */
+  async function hooked(run: number, call: ToolCall, signal: AbortSignal, offered: readonly EngineTool[]): Promise<ToolOutput> {
+    const hooks = options.hooks?.();
+    if (hooks === undefined) return await runCall(run, call, signal, offered);
+    const asked = { session_id: options.sessionId ?? "", cwd: options.cwd, tool_name: call.name, tool_input: call.arguments };
+    const before = await runHooks(hooks, { ...asked, hook_event_name: "PreToolUse" }, signal);
+    for (const text of before.notes) emit({ type: "note", text });
+    if (before.blocked !== undefined) {
+      const reason = `A hook refused it: ${before.blocked}`;
+      writer.append({ type: "permission", run, callId: call.id, decision: "deny", by: "hook", reason });
+      return { text: `Not run: ${reason}`, isError: true };
+    }
+    const output = await runCall(run, call, signal, offered);
+    const after = await runHooks(hooks, { ...asked, hook_event_name: "PostToolUse",
+      tool_response: { output: output.text, isError: output.isError } }, signal);
+    for (const text of after.notes) emit({ type: "note", text });
+    return after.blocked === undefined ? output : { ...output, text: `${output.text}\n\nA hook says: ${after.blocked}` };
+  }
+
+  /**
    * Runs the reply's calls in order. Each call's intent is synced before it
    * runs, with everything appended before it, so a call that may have
    * changed files is never missing from the session.
@@ -450,7 +490,7 @@ export function createLoop(options: LoopOptions): LoopSession {
       if (message.stopReason === "length") output = truncatedCall(call);
       else if (signal.aborted) output = stoppedCall;
       else if (!await permitted(run, call, offered)) output = refusedCall(call);
-      else output = await runCall(run, call, signal, offered);
+      else output = await hooked(run, call, signal, offered);
       const result = toolResult(call, output);
       writer.append({ type: "tool_result", run, message: result });
       add(result);

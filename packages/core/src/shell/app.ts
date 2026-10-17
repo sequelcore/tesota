@@ -1,7 +1,8 @@
 import type { Api, AuthInteraction, CredentialStore, Model, ModelThinkingLevel, MutableModels } from "@earendil-works/pi-ai";
 import { getTerminalColorMode, ProcessTerminal, type Terminal } from "@earendil-works/pi-tui";
 import { readdirSync, readFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, join, resolve } from "node:path";
+import { tesotaHome } from "../../../../src/home.ts";
 import { provideHost } from "../../../../src/host.ts";
 import { isReceipt, type Receipt, receiptStanding } from "../../../../src/receipt.ts";
 import tesota from "../../../../src/tesota.ts";
@@ -11,7 +12,9 @@ import type { Mode } from "../permission-rule.ts";
 import type { HistoryMessage } from "../loop.ts";
 import { loadRules } from "../permissions.ts";
 import { createSession, type EngineSession, openSession, sessionsFolder, type Verifier } from "../session.ts";
+import { anyHooks, type Hooks, hooksHash, joinHooks, readHooks, trustedHooks, trustHooks } from "../hooks.ts";
 import { readSettings, type Settings, updateSettings } from "../settings.ts";
+import { checkoutRoot } from "../workspace.ts";
 import { Dashboard, type SessionRow } from "./dashboard.ts";
 import { type Shell, startShell } from "./shell.ts";
 import { createSurface, footerData, shellHost, type Surface } from "./surface.ts";
@@ -105,7 +108,19 @@ export async function runApp(options: AppOptions): Promise<void> {
     if (waiting === 0) attached.surface.statuses.delete("sessions");
     else attached.surface.statuses.set("sessions", `${waiting} ${waiting === 1 ? "session waits" : "sessions wait"} for you: /agents`);
   };
+  /**
+   * The command hooks every session's calls pass (#457): the operator's own,
+   * from their settings, and the project's once the operator trusts them.
+   */
+  const hookFiles = { own: options.settingsPath ?? join(tesotaHome(), "settings.json"),
+    project: join(checkoutRoot(resolve(options.cwd)), ".tesota", "settings.json") };
+  const readOr = (path: string): Hooks | string => {
+    try { return readHooks(path); } catch (error) { return error instanceof Error ? error.message : String(error); }
+  };
+  const own = readOr(hookFiles.own);
+  let hooks: Hooks = typeof own === "string" ? {} : own;
   const sessionOptions = (live: Live) => ({ models, model: model ?? models.getModels()[0] as Model<Api>, verifier, surface: live.surface,
+    hooks: () => hooks,
     mode: "tui",
     // A shown session asks at once; another waits, flagged, until the operator shows it.
     permissions: { mode: () => permissionMode, rules, ask: (call: { name: string; arguments: unknown }, reason: string) => {
@@ -342,6 +357,26 @@ export async function runApp(options: AppOptions): Promise<void> {
     } });
   if (read.invalid.length > 0) shell.note(`Settings left out as invalid: ${read.invalid.join(", ")}.`, "warning");
   providers = (await credentials.list()).length;
+  if (typeof own === "string") shell.note(`Your hooks were left out: ${own}`, "error");
+  // A project's hooks run its own commands: they run only once the operator trusts them as they are now (#457).
+  const project = readOr(hookFiles.project);
+  if (typeof project === "string") shell.note(`The project's hooks were left out: ${project}`, "error");
+  else if (anyHooks(project)) {
+    const root = checkoutRoot(resolve(options.cwd));
+    const hash = hooksHash(project);
+    let trusted = trustedHooks(root, hash);
+    if (!trusted) {
+      const commands = [...new Set(Object.values(project).flatMap((groups) => groups.flatMap((group) => group.hooks.map(({ command }) => command))))];
+      const picked = await shell.pick(`This project's hooks would run: ${commands.join("; ")}`, [
+        { value: "trust", label: "Trust them", description: "kept until their commands change" },
+        { value: "skip", label: "Not now", description: "the project's hooks do not run in this shell" },
+      ]);
+      trusted = picked === "trust";
+      if (trusted) trustHooks(root, hash);
+      else shell.note("The project's hooks do not run in this shell.", "warning");
+    }
+    if (trusted) hooks = joinHooks(hooks, project);
+  }
   if (model === undefined) shell.note("No provider is logged in: /login, or set a provider's API key, then /model.", "warning");
   await shell.stopped;
   for (const each of lives) {
