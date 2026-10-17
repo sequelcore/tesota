@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { Language, Parser } from "web-tree-sitter";
+import { inBinary } from "./binary.js";
 import { commentOnly } from "./verification/comment-line-rule.js";
 
 /**
@@ -33,7 +34,8 @@ async function language(file: string): Promise<Language> {
   await ready;
   let loaded = languages.get(file);
   if (loaded === undefined) {
-    loaded = Language.load(fileURLToPath(new URL(`../grammars/${file}`, import.meta.url)));
+    // A binary embeds each grammar beside its code, as it does tree-sitter's own runtime (#472).
+    loaded = Language.load(fileURLToPath(new URL(inBinary ? `./${file}` : `../grammars/${file}`, import.meta.url)));
     languages.set(file, loaded);
   }
   return loaded;

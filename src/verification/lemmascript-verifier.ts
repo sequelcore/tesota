@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, posix, relative } from "node:path";
 import { type Evidence, contentHash } from "../evidence.js";
 import { type ProcessRun, runProcess } from "../process.js";
+import { inBinary } from "../binary.js";
 import { parseJson } from "../json.js";
 import { type ProofOutcome, proofOutcome } from "./proof-outcome-rule.js";
 
@@ -45,10 +46,16 @@ function run(executable: string, args: readonly string[], cwd: string, signal: A
   return runProcess(executable, args, cwd, signal, timeoutMs);
 }
 
-/** Resolved when a proof runs, not when the extension loads, so Pi opens even where LemmaScript is missing. */
-function lscEntry(): string {
+/**
+ * `lsc` with `args`, run as its own process: from a checkout, its script on
+ * the runtime running Tesota, resolved when a proof runs rather than when the
+ * extension loads, so Tesota opens even where LemmaScript is missing; in a
+ * binary, which embeds LemmaScript, the binary's own `__lsc` command (#472).
+ */
+function lsc(args: readonly string[], cwd: string, signal: AbortSignal): Promise<ProcessRun> {
+  if (inBinary) return run(process.execPath, ["__lsc", ...args], cwd, signal);
   const require = createRequire(import.meta.url);
-  return join(dirname(require.resolve("lemmascript/package.json")), "tools", "dist", "lsc.js");
+  return run(process.execPath, [join(dirname(require.resolve("lemmascript/package.json")), "tools", "dist", "lsc.js"), ...args], cwd, signal);
 }
 
 /** Whether Dafny answers on this computer, which every LemmaScript proof needs. */
@@ -63,10 +70,9 @@ async function readIfPresent(path: string): Promise<string | undefined> {
 /** `lsc regen`, then `lsc check` when regen succeeded and nothing stopped it, as LemmaScript orders them. */
 async function regenThenCheck(root: string, path: string, signal: AbortSignal):
   Promise<readonly [ProcessRun, ProcessRun | undefined]> {
-  const lsc = (...command: string[]): Promise<ProcessRun> =>
-    run(process.execPath, [lscEntry(), ...command, "--backend=dafny", path], root, signal);
-  const regen = await lsc("regen", "--no-verify");
-  return [regen, regen.ended === "exited" && regen.exitCode === 0 && !signal.aborted ? await lsc("check") : undefined];
+  const command = (...name: string[]): Promise<ProcessRun> => lsc([...name, "--backend=dafny", path], root, signal);
+  const regen = await command("regen", "--no-verify");
+  return [regen, regen.ended === "exited" && regen.exitCode === 0 && !signal.aborted ? await command("check") : undefined];
 }
 
 function outcomeOf(regen: ProcessRun, check: ProcessRun | undefined, signal: AbortSignal): ProofOutcome {
@@ -103,7 +109,7 @@ function proofPath(root: string, path: string, printed: string): string {
 
 /** The folder `lsc config` says LemmaScript keeps `source`'s proof in, relative to `root`; undefined when it cannot say. */
 async function proofFolder(root: string, source: string, signal: AbortSignal): Promise<string | undefined> {
-  const config = await run(process.execPath, [lscEntry(), "config", source], root, signal);
+  const config = await lsc(["config", source], root, signal);
   if (config.ended !== "exited" || config.exitCode !== 0) return undefined;
   try {
     const { artifactDir } = JSON.parse(config.output.slice(config.output.indexOf("{"))) as { artifactDir?: unknown };

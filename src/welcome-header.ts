@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { type Color, colorToRgb, foregroundAnsi, MouseRegion, type TerminalColorMode, type TerminalColors,
   truncateToWidth, type TUI, type TuiMouseEvent, type TuiMouseEventResult, visibleWidth, type Component }
   from "@earendil-works/pi-tui";
@@ -6,6 +5,7 @@ import { MARK_MAX_COLUMNS, MARK_MAX_ROWS, MARK_STAGE_ROWS_PER_60_COLUMNS, markLi
   renderTumbleweed, type MarkCell, type MarkColors, type Rgb } from "./welcome-mark.js";
 import type { Theme } from "./contract.js";
 import { homeRelative } from "./footer.js";
+import { host } from "./host.js";
 
 /** The scene's length: the wind rising and falling, and on a replay the tumbleweed's pass. */
 export const WELCOME_SCENE_MS = 9_000;
@@ -35,15 +35,6 @@ export function themeMarkColors(theme: Theme): MarkColors {
     rim: rgb(accent), foreground: rgb(text) };
 }
 
-function packageVersion(): string {
-  try {
-    const manifest: unknown = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-    if (typeof manifest === "object" && manifest !== null && "version" in manifest &&
-      typeof manifest.version === "string") return manifest.version;
-  } catch { /* A source checkout without a manifest still has an identity. */ }
-  return "dev";
-}
-
 export interface WelcomeHeaderOptions {
   /** Asks Pi for another render. */
   readonly requestRender: () => void;
@@ -65,7 +56,8 @@ export class WelcomeHeader implements Component {
   readonly #cwd: string;
   readonly #theme: Theme;
   readonly #options: WelcomeHeaderOptions;
-  readonly #version = packageVersion();
+  /** The engine's, as a receipt records it: a binary has no package.json beside it (#472). */
+  readonly #version = host().version;
   /** How much of the scene has played, in milliseconds. */
   #played = 0;
   /** Whether the tumbleweed blows through: from the first click on, not at the opening. */

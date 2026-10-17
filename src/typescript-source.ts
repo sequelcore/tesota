@@ -12,10 +12,13 @@ let parser: typeof TypeScript | undefined;
 /**
  * The TypeScript parser LemmaScript extracts contracts with, ts-morph's.
  * Loading it takes about 250 ms, so it loads on first use, at the gate,
- * rather than with the extension.
+ * rather than with the extension. Bun has `require` in a module, and only a
+ * `require` of the package by name is one its compiler embeds in a binary
+ * (#472); Node, which runs the tests, has `createRequire` instead.
  */
 export function typescript(): typeof TypeScript {
-  parser ??= (createRequire(import.meta.url)("ts-morph") as { ts: typeof TypeScript }).ts;
+  parser ??= ((typeof require === "function" ? require("ts-morph") : createRequire(import.meta.url)("ts-morph")) as
+    { ts: typeof TypeScript }).ts;
   return parser;
 }
 

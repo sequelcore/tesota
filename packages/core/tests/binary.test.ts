@@ -1,0 +1,51 @@
+import { afterEach, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import manifest from "../package.json" with { type: "json" };
+import { build } from "../scripts/build.ts";
+
+/**
+ * A binary verifies as the checkout does (#472): built as a release builds
+ * it, and run from a folder outside the checkout, where no package or file of
+ * the repository can be found.
+ */
+const roots: string[] = [];
+afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true, maxRetries: 3 }); });
+
+function folder(prefix: string): string {
+  const root = mkdtempSync(join(tmpdir(), prefix));
+  roots.push(root);
+  return root;
+}
+
+const executable = (name: string): string => process.platform === "win32" ? `${name}.exe` : name;
+const dafny = spawnSync("dafny", ["--version"], { encoding: "utf8" }).status === 0;
+const clamp = "//@ requires low <= high\n//@ ensures low <= \\result && \\result <= high\n" +
+  "export function clamp(value: number, low: number, high: number): number {\n  if (value < low) return low;\n" +
+  "  if (value > high) return high;\n  return value;\n}\n";
+
+test("the engine's binary starts, and runs LemmaScript it embeds", () => {
+  const binary = join(folder("tesota-core-binary-"), executable("tesota"));
+  build(binary);
+  const project = folder("tesota-core-binary-project-");
+  const run = (...args: string[]) => spawnSync(binary, args, { cwd: project, encoding: "utf8" });
+  expect(run("--version").stdout.trim()).toBe(manifest.version);
+  writeFileSync(join(project, "clamp.ts"), clamp);
+  const regen = run("__lsc", "regen", "--no-verify", "--backend=dafny", "clamp.ts");
+  expect(regen.stderr).toBe("");
+  expect(regen.stdout).toContain("clamp.dfy.gen");
+}, 120_000);
+
+test("in a binary, the verifier reads TypeScript, Python and Go, and proves a contract", () => {
+  const binary = join(folder("tesota-core-binary-"), executable("verifier"));
+  build(binary, { entry: join(import.meta.dir, "binary-entry.ts") });
+  const project = folder("tesota-core-binary-project-");
+  writeFileSync(join(project, "clamp.ts"), clamp);
+  const run = spawnSync(binary, [project], { cwd: project, encoding: "utf8" });
+  expect(run.stderr).toBe("");
+  const read = JSON.parse(run.stdout) as { typescript: number[]; python: number[]; go: number[]; proof: { outcome: string; files: string[] } };
+  expect(read).toMatchObject({ typescript: [1], python: [1], go: [1] });
+  if (dafny) expect(read.proof).toEqual({ outcome: "passed", files: ["clamp.ts", "clamp.dfy"] });
+}, 300_000);
