@@ -68,6 +68,29 @@ function lockWithFlock(path: string): SessionLock {
  * or is killed, so no stale lock is left to judge by process ids, as
  * Codex's `writer_lock.rs` does with `try_lock`. The lock file stays.
  */
+/**
+ * Runs `work` holding the lock at `path`, waiting up to about a second for
+ * another holder, in this process or another (#457): a read, change and
+ * write of a shared file then never loses another's change.
+ */
+export function withLock<T>(path: string, work: () => T): T {
+  for (let tries = 0; ; tries++) {
+    let lock: SessionLock;
+    try {
+      lock = lockSession(path);
+    } catch (error) {
+      if (!(error instanceof SessionLockedError) || tries >= 100) throw error;
+      Bun.sleepSync(10);
+      continue;
+    }
+    try {
+      return work();
+    } finally {
+      lock.release();
+    }
+  }
+}
+
 export function lockSession(path: string): SessionLock {
   return process.platform === "win32" ? lockOnWindows(path) : lockWithFlock(path);
 }

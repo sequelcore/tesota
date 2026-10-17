@@ -296,3 +296,24 @@ test("a session sends the project's AGENTS.md and its skills to the model, after
   expect(prompt).toContain("release: Cut a release.");
   expect(prompt.indexOf("You are a coding agent")).toBeLessThan(prompt.indexOf("Keep each change small."));
 });
+
+test("a skill's frontmatter starts its file and ends at a --- from the first column, whatever its line endings (#457)", () => {
+  const home = mkdtempSync(join(tmpdir(), "tesota-core-instructions-frontmatter-"));
+  const cwd = mkdtempSync(join(tmpdir(), "tesota-core-instructions-frontmatter-cwd-"));
+  const skill = (name: string, content: string) => put(join(home, ".agents", "skills", name, "SKILL.md"), content);
+  skill("block", "---\nname: block\ndescription: |\n  Before\n  ---\n  after\n---\nBody.");
+  skill("windows", "﻿---\r\nname: windows\r\ndescription: Written on Windows.\r\n---\r\nBody.");
+  skill("late", "Intro.\n---\nname: late\ndescription: Not frontmatter.\n---\n");
+  const found = skills(cwd, { user: home, tesota: join(home, "none") });
+  expect(found.map(({ name }) => name)).toEqual(["block", "windows"]);
+  expect(found.find(({ name }) => name === "block")?.description).toBe("Before --- after");
+  expect(found.find(({ name }) => name === "windows")?.description).toBe("Written on Windows.");
+});
+
+test("instruction files keep within 32 KiB together: a larger one is cut and the next left out, saying so (#457)", () => {
+  const big = "a".repeat(40 * 1024);
+  const text = instructionsText([{ path: "/repo/AGENTS.md", content: big }, { path: "/repo/sub/AGENTS.md", content: "later" }], "");
+  expect(text).toContain(`[Tesota cut this file at ${32 * 1024} of its ${40 * 1024} characters.]`);
+  expect(text).toContain("# /repo/sub/AGENTS.md\n[Tesota left this file out");
+  expect(text).not.toContain("later");
+});

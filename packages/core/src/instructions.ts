@@ -2,7 +2,10 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
-import { catalogBudget } from "./catalog-rule.ts";
+import { catalogBudget, kept } from "./catalog-rule.ts";
+
+/** The characters every instruction file may take together, as Codex allows its project files (#457). */
+const instructionsBudget = 32 * 1024;
 
 /** An instruction file included in the session's system prompt (#457). */
 export interface ContextFile {
@@ -58,11 +61,14 @@ function unquote(value: string): string {
   return value.trim();
 }
 
+/** A line that opens or closes frontmatter: `---` from the first column; indented, it belongs to a value (#457). */
+const delimiter = (line: string): boolean => line.trimEnd() === "---";
+
 function skillMetadata(content: string): { readonly name: string; readonly description: string } | undefined {
-  const lines = content.split(/\r?\n/);
-  const start = lines.findIndex((line) => line.trim() === "---");
-  if (start < 0) return undefined;
-  const end = lines.findIndex((line, index) => index > start && line.trim() === "---");
+  const lines = content.replace(/^\uFEFF/u, "").split(/\r?\n/);
+  const start = 0;
+  if (!delimiter(lines[start] ?? "")) return undefined;
+  const end = lines.findIndex((line, index) => index > start && delimiter(line));
   if (end < 0) return undefined;
   let name = "";
   let description = "";
@@ -137,9 +143,21 @@ export function skillCatalog(list: readonly Skill[], contextWindow: number | und
   return "";
 }
 
-/** Instruction files in their supplied order, each named by path, followed by the skill catalog. */
+/**
+ * Instruction files in their supplied order, each named by path, followed by
+ * the skill catalog. The files keep within 32 KiB together, as Codex keeps
+ * its own (`kept`): one that would pass it is cut, and the prompt says so,
+ * since a file larger than the model's window would fail every request.
+ */
 export function instructionsText(files: readonly ContextFile[], catalog: string): string {
-  const sections = files.map((file) => "# " + file.path + "\n" + file.content);
+  let used = 0;
+  const sections = files.flatMap((file) => {
+    const keep = kept(used, file.content.length, instructionsBudget);
+    used += keep;
+    if (keep === 0) return [`# ${file.path}\n[Tesota left this file out: the instruction files already fill their ${instructionsBudget} characters.]`];
+    if (keep === file.content.length) return [`# ${file.path}\n${file.content}`];
+    return [`# ${file.path}\n${file.content.slice(0, keep)}\n[Tesota cut this file at ${keep} of its ${file.content.length} characters.]`];
+  });
   if (catalog !== "") sections.push(catalog);
   return sections.join("\n\n");
 }

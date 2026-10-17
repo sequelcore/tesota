@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
+import { runProcess } from "../../../src/process.ts";
+import { withLock } from "./session-lock.ts";
 import { writeWholeJson } from "./whole-file.ts";
 
 /**
@@ -91,11 +93,18 @@ export const hooksHash = (hooks: Hooks): string => createHash("sha256").update(J
 
 const trustFile = (home: string): string => join(home, "trust.json");
 
+/** A project by its one real name, in one case on Windows, so the same checkout is trusted however it is reached. */
+function projectKey(root: string): string {
+  let named = root;
+  try { named = realpathSync.native(root); } catch { /* as given */ }
+  return process.platform === "win32" ? named.toLowerCase() : named;
+}
+
 /** Whether the operator trusted the hooks of the project at `root` as they are now (`hash`). */
 export function trustedHooks(root: string, hash: string, home: string = tesotaHome()): boolean {
   try {
     const trust: unknown = JSON.parse(readFileSync(trustFile(home), "utf8"));
-    const project = isRecord(trust) && isRecord(trust["projects"]) ? trust["projects"][root] : undefined;
+    const project = isRecord(trust) && isRecord(trust["projects"]) ? trust["projects"][projectKey(root)] : undefined;
     return isRecord(project) && project["hooks"] === hash;
   } catch {
     return false;
@@ -104,13 +113,16 @@ export function trustedHooks(root: string, hash: string, home: string = tesotaHo
 
 /** Records that the operator trusts the hooks of the project at `root` as they are now. */
 export function trustHooks(root: string, hash: string, home: string = tesotaHome()): void {
-  let trust: Record<string, unknown> = {};
-  try {
-    const read: unknown = JSON.parse(readFileSync(trustFile(home), "utf8"));
-    if (isRecord(read)) trust = read;
-  } catch { /* none yet */ }
-  const projects = isRecord(trust["projects"]) ? trust["projects"] : {};
-  writeWholeJson(trustFile(home), { ...trust, projects: { ...projects, [root]: { hooks: hash } } });
+  // Read, changed and written under a lock, so two shells trusting at once each keep the other's.
+  withLock(`${trustFile(home)}.lock`, () => {
+    let trust: Record<string, unknown> = {};
+    try {
+      const read: unknown = JSON.parse(readFileSync(trustFile(home), "utf8"));
+      if (isRecord(read)) trust = read;
+    } catch { /* none yet */ }
+    const projects = isRecord(trust["projects"]) ? trust["projects"] : {};
+    writeWholeJson(trustFile(home), { ...trust, projects: { ...projects, [projectKey(root)]: { hooks: hash } } });
+  });
 }
 
 /** Whether a group's matcher takes `tool`, as Claude Code reads one: empty or `*` for every tool, else a whole-name pattern. */
@@ -156,30 +168,20 @@ const shellFor = (command: string): string[] => process.platform === "win32"
  * cannot start lets the call through, with a note, as Codex, Claude Code and
  * Gemini CLI let it.
  */
-async function runHook(hook: HookCommand, input: HookInput, signal: AbortSignal | undefined): Promise<Ran> {
+async function runHook(hook: HookCommand, input: HookInput, signal: AbortSignal): Promise<Ran> {
   const seconds = hook.timeout ?? defaultTimeoutSeconds;
-  let child: ReturnType<typeof Bun.spawn>;
-  try {
-    child = Bun.spawn(shellFor(hook.command), { cwd: input.cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe",
-      env: { ...process.env, TESOTA_PROJECT_DIR: input.cwd }, windowsVerbatimArguments: true });
-  } catch (error) {
-    return { note: `Hook "${hook.command}" could not start: ${error instanceof Error ? error.message : String(error)}.` };
-  }
-  const stdin = child.stdin as import("bun").FileSink;
-  stdin.write(JSON.stringify(input));
-  void stdin.end();
-  let timedOut = false;
-  const timer = setTimeout(() => { timedOut = true; child.kill(); }, seconds * 1000);
-  const stop = (): void => { child.kill(); };
-  signal?.addEventListener("abort", stop, { once: true });
-  const [code, out, err] = await Promise.all([child.exited, new Response(child.stdout as ReadableStream).text(),
-    new Response(child.stderr as ReadableStream).text()]);
-  clearTimeout(timer);
-  signal?.removeEventListener("abort", stop);
-  if (timedOut) return { note: `Hook "${hook.command}" ran past ${seconds} s and was stopped; the call went on.` };
-  if (code === 2) return { blocked: err.trim() || `Hook "${hook.command}" blocked it.` };
-  if (code !== 0) return { note: `Hook "${hook.command}" failed (exit ${code})${err.trim() === "" ? "" : `: ${err.trim()}`}; the call went on.` };
-  return decided(hook, out.trim());
+  const [shell, ...args] = shellFor(hook.command);
+  // Tesota's one process runner (#457): a hook that runs past its time is stopped with every process it started, and
+  // what it prints is kept within bounds.
+  const run = await runProcess(shell ?? "sh", args, input.cwd, signal, seconds * 1000, undefined,
+    { input: JSON.stringify(input), env: { ...process.env, TESOTA_PROJECT_DIR: input.cwd }, verbatim: true });
+  if (run.ended === "cancelled") return {};
+  if (run.ended === "not_started") return { note: `Hook "${hook.command}" could not start: ${run.output}.` };
+  if (run.ended === "timed_out") return { note: `Hook "${hook.command}" ran past ${seconds} s and was stopped; the call went on.` };
+  const err = run.stderr.trim();
+  if (run.exitCode === 2) return { blocked: err || `Hook "${hook.command}" blocked it.` };
+  if (run.exitCode !== 0) return { note: `Hook "${hook.command}" failed (exit ${run.exitCode ?? "none"})${err === "" ? "" : `: ${err}`}; the call went on.` };
+  return decided(hook, run.stdout.trim());
 }
 
 /** What a hook that exited 0 decided by its JSON output: a block, a note, both, or nothing when it wrote no JSON. */
@@ -203,10 +205,11 @@ function decided(hook: HookCommand, text: string): Ran {
  * once; any that blocks blocks the call, whatever the others said, and every
  * note is kept.
  */
-export async function runHooks(hooks: Hooks, input: HookInput, signal?: AbortSignal): Promise<HookOutcome> {
+export async function runHooks(hooks: Hooks, input: HookInput, signal: AbortSignal = new AbortController().signal): Promise<HookOutcome> {
   const matching = (hooks[input.hook_event_name] ?? []).filter((group) => matches(group.matcher, input.tool_name))
     .flatMap((group) => group.hooks);
-  if (matching.length === 0) return { notes: [] };
+  // A stopped run starts no hook: one would only hold the stop up.
+  if (matching.length === 0 || signal.aborted) return { notes: [] };
   const ran = await Promise.all(matching.map((hook) => runHook(hook, input, signal)));
   const blocked = ran.flatMap((each) => each.blocked === undefined ? [] : [each.blocked]);
   return { ...blocked.length === 0 ? {} : { blocked: blocked.join("\n") },

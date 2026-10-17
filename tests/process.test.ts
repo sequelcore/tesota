@@ -54,6 +54,6 @@ it("reports how a process ended and what it printed", async () => {
   roots.push(root);
   const signal = new AbortController().signal;
   expect(await runProcess(process.execPath, ["-e", "console.log('hi'); process.exit(3)"], root, signal, 60_000))
-    .toEqual({ ended: "exited", exitCode: 3, output: "hi\n" });
+    .toEqual({ ended: "exited", exitCode: 3, output: "hi\n", stdout: "hi\n", stderr: "" });
   expect((await runProcess(join(root, "missing"), [], root, signal, 60_000)).ended).toBe("not_started");
 });

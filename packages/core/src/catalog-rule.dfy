@@ -26,3 +26,28 @@ lemma catalogBudget_ensures(window: int)
   ensures ((window > 0) ==> (((100 * catalogBudget(window)) <= (window * 8)) && ((window * 8) < (100 * (catalogBudget(window) + 1)))))
 {
 }
+
+function kept(used: int, size: int, cap: int): int
+  requires (used >= 0)
+  requires (size >= 0)
+  requires (cap >= 0)
+  requires (used <= cap)
+{
+  if ((used + size) <= cap) then
+    size
+  else
+    (cap - used)
+}
+
+lemma kept_ensures(used: int, size: int, cap: int)
+  requires (used >= 0)
+  requires (size >= 0)
+  requires (cap >= 0)
+  requires (used <= cap)
+  ensures (0 <= kept(used, size, cap))
+  ensures (kept(used, size, cap) <= size)
+  ensures ((used + kept(used, size, cap)) <= cap)
+  ensures (((used + size) <= cap) ==> (kept(used, size, cap) == size))
+  ensures (((used + size) > cap) ==> (kept(used, size, cap) == (cap - used)))
+{
+}

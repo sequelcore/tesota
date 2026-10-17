@@ -104,6 +104,27 @@ describe("running hooks", () => {
     expect(outcome).toEqual({ blocked: "refused", notes: ["checked"] });
   });
 
+  test("a timed-out hook is stopped with what it started, even a child that holds its output open", async () => {
+    // The hook starts a child that inherits its output and lives a minute, then waits itself: only stopping the tree ends it.
+    const holder = hook(`require("node:child_process").spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"],
+      { stdio: "inherit" }); setTimeout(() => {}, 60000);`);
+    const begun = Date.now();
+    const outcome = await runHooks({ PreToolUse: [{ hooks: [{ type: "command", command: holder, timeout: 1 }] }] }, input);
+    expect(outcome.notes[0]).toContain("ran past 1 s and was stopped");
+    expect(Date.now() - begun).toBeLessThan(15_000);
+  });
+
+  test("a stopped run starts no hook, and a hook that exits before reading a large call lets it through", async () => {
+    const seen = join(folder("tesota-core-hooks-stopped-"), "ran");
+    const stopped = new AbortController();
+    stopped.abort();
+    expect(await runHooks(pre(hook(`require("node:fs").writeFileSync(${JSON.stringify(seen)}, "ran");`)), input, stopped.signal))
+      .toEqual({ notes: [] });
+    expect(existsSync(seen)).toBe(false);
+    const early = `"${process.execPath}" -e "process.exit(0)"`;
+    expect(await runHooks(pre(early), { ...input, tool_input: { content: "x".repeat(4 * 1024 * 1024) } })).toEqual({ notes: [] });
+  });
+
   test.if(existsSync(operatorGuard))("the operator's own guard refuses a force push and lets git status through", async () => {
     const guard: Hooks = { PreToolUse: [{ matcher: "bash|powershell", hooks: [{ type: "command",
       command: `py -3 "${operatorGuard}"` }] }] };
@@ -123,6 +144,11 @@ describe("trusting a project's hooks", () => {
     expect(trustedHooks(root, hash, home)).toBe(true);
     expect(trustedHooks(root, hooksHash(pre("guard --strict")), home)).toBe(false);
     expect(trustedHooks(folder("tesota-core-hooks-other-"), hash, home)).toBe(false);
+    // The same checkout in another case is the same project on Windows.
+    if (process.platform === "win32") expect(trustedHooks(root.toUpperCase(), hash, home)).toBe(true);
+    // Trusting another project keeps this one's trust.
+    trustHooks(folder("tesota-core-hooks-second-"), hash, home);
+    expect(trustedHooks(root, hash, home)).toBe(true);
   });
 });
 
