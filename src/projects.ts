@@ -1,5 +1,6 @@
 import { type Dirent, existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { parseJson } from "./json.js";
 import { below, builtIn, checkScript, keepsProjectKind, owner, pinnedIn } from "./verification/project-rule.js";
 
 /**
@@ -50,7 +51,7 @@ function kindsIn(entries: readonly string[]): { present: string[]; pinned: strin
 function declaresWorkspaces(directory: string, entries: readonly string[]): boolean {
   if (entries.includes("pnpm-workspace.yaml")) return true;
   try {
-    const manifest: unknown = JSON.parse(readFileSync(join(directory, "package.json"), "utf8"));
+    const manifest: unknown = parseJson(readFileSync(join(directory, "package.json"), "utf8"));
     return typeof manifest === "object" && manifest !== null && "workspaces" in manifest;
   } catch { return false; }
 }
@@ -99,7 +100,7 @@ function packageRunner(directory: string): string {
 /** The check scripts discovery selects from a manifest, in execution order; a non-string command is undefined. */
 export function packageCheckScripts(content: string | undefined): ReadonlyMap<string, string | undefined> {
   try {
-    const manifest: unknown = JSON.parse(content ?? "");
+    const manifest: unknown = parseJson(content ?? "");
     const scripts: unknown = typeof manifest === "object" && manifest !== null ? Reflect.get(manifest, "scripts") : undefined;
     if (typeof scripts !== "object" || scripts === null) return new Map();
     const names = Object.keys(scripts);

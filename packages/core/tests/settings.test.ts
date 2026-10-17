@@ -25,6 +25,12 @@ describe("the settings file", () => {
     expect(readSettings(path)).toEqual({ settings: { tuiMode: "fullscreen" }, invalid: ["model", "thinkingLevel"] });
   });
 
+  test("a file that begins with a byte-order mark, as Windows PowerShell 5.1 writes one, reads as any other (#470)", () => {
+    const path = fileIn();
+    writeFileSync(path, `\uFEFF${JSON.stringify({ model: "openai/gpt-6-sol", permissionMode: "full" })}`);
+    expect(readSettings(path)).toEqual({ settings: { model: "openai/gpt-6-sol", permissionMode: "full" }, invalid: [] });
+  });
+
   test("a file that is not JSON is a failure, never read as empty", () => {
     const path = fileIn();
     writeFileSync(path, "{ not json");

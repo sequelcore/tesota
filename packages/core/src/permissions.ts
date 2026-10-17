@@ -3,6 +3,7 @@ import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
+import { parseJson } from "../../../src/json.ts";
 import { type Access, type Decision, decide, type Mode, type RuleVerdict, strongest } from "./permission-rule.ts";
 
 /** Rules as an operator or a project writes them (#449): `tool(pattern)`, or a tool's name alone, by verdict. */
@@ -68,7 +69,7 @@ function parseRule(text: string, verdict: Rule["verdict"], path: string): Rule {
 function rulesAt(path: string, verdicts: readonly Rule["verdict"][]): Rule[] {
   if (!existsSync(path)) return [];
   let file: unknown;
-  try { file = JSON.parse(readFileSync(path, "utf8")); } catch (error) {
+  try { file = parseJson(readFileSync(path, "utf8")); } catch (error) {
     throw new Error(`${path} is not JSON: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
   if (typeof file !== "object" || file === null || Array.isArray(file)) throw new Error(`${path} does not hold permission rules.`);
