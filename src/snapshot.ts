@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { type Dirent, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { type Dirent, existsSync, mkdirSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { git, useSnapshotGit } from "./git.js";
@@ -89,7 +89,13 @@ function prune(snapshots: string): void {
  */
 export async function takeSnapshot(root: string, ownFiles: boolean, limits: SnapshotLimits = SNAPSHOT_LIMITS): Promise<Snapshot> {
   const at = resolve(root);
-  if (at === resolve(homedir()) || dirname(at) === at) return { refused: "Tesota does not snapshot a home folder or a drive's root" };
+  // The home folder by any of its names: a session's folder comes by its real name, and a Windows home may be named short (#453).
+  const real = (folder: string): string => {
+    let named = resolve(folder);
+    try { named = realpathSync.native(folder); } catch { /* as resolved */ }
+    return process.platform === "win32" ? named.toLowerCase() : named;
+  };
+  if (real(at) === real(homedir()) || dirname(at) === at) return { refused: "Tesota does not snapshot a home folder or a drive's root" };
   const tooLarge = scan(at, ownFiles, limits);
   if (typeof tooLarge === "string") return { refused: tooLarge };
   const snapshots = join(tesotaHome(), "snapshots");

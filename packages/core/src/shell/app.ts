@@ -9,7 +9,7 @@ import { engineModels, loginOptions } from "../model-access.ts";
 import type { Mode } from "../permission-rule.ts";
 import { loadRules } from "../permissions.ts";
 import { createSession, type EngineSession, openSession, sessionsFolder, type Verifier } from "../session.ts";
-import { readSettings, type Settings, writeSettings } from "../settings.ts";
+import { readSettings, type Settings, updateSettings } from "../settings.ts";
 import { type Shell, startShell } from "./shell.ts";
 import { createSurface, footerData, shellHost } from "./surface.ts";
 import { shellTheme } from "./theme.ts";
@@ -63,9 +63,10 @@ export async function runApp(options: AppOptions): Promise<void> {
   const models = options.models ?? engineModels(credentials);
   const read = readSettings(options.settingsPath);
   let settings = read.settings;
+  // Another Tesota may have saved since this one started: only what changed here is written over it (#453).
   const save = (change: Partial<Settings>): void => {
     settings = { ...settings, ...change };
-    writeSettings(settings, options.settingsPath);
+    updateSettings(change, options.settingsPath);
   };
   const folder = options.sessions ?? sessionsFolder(options.cwd);
   // Tesota's interface takes the shell's editor, key names, version and shell, never Pi's (#446).
@@ -106,8 +107,10 @@ export async function runApp(options: AppOptions): Promise<void> {
   /** Replaces the running session with `next`, once the old one has let go of its file. */
   const replace = async (next: () => EngineSession): Promise<void> => {
     await session.dispose();
+    const kept = session.kept();
     session = next();
     shell.show(session);
+    if (kept !== undefined) shell.note(kept, "warning");
   };
   /** The link or code the sign-in last gave, shown with its next question so the dialog never hides it. */
   let given: string | undefined;
@@ -204,7 +207,7 @@ export async function runApp(options: AppOptions): Promise<void> {
 
   shell = startShell({ terminal: options.terminal ?? new ProcessTerminal(), mode: modeFor(settings),
     fullRepaint: process.platform === "win32", theme, session, status, surface,
-    footerData: footerData(options.cwd, surface, () => providers),
+    footerData: footerData(() => session.workspace.cwd, surface, () => providers),
     nextMode: () => {
       permissionMode = permissionMode === "ask" ? "full" : permissionMode === "full" ? "read" : "ask";
       save({ permissionMode });
@@ -222,4 +225,7 @@ export async function runApp(options: AppOptions): Promise<void> {
   if (model === undefined) shell.note("No provider is logged in: /login, or set a provider's API key, then /model.", "warning");
   await shell.stopped;
   await session.dispose();
+  // The shell has given the terminal back: a worktree with work in it is named where the operator sees it (#453).
+  const kept = session.kept();
+  if (kept !== undefined) console.log(kept);
 }

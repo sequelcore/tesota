@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
+import { lockSession, SessionLockedError } from "./session-lock.ts";
 import { writeWholeJson } from "./whole-file.ts";
 
 /** How the shell draws: on the alternate screen, or into the terminal's scrollback (#432). */
@@ -69,6 +70,30 @@ export function readSettings(path: string = join(tesotaHome(), "settings.json"))
 /** Writes the operator's settings, whole or not at all. */
 export function writeSettings(settings: Settings, path: string = join(tesotaHome(), "settings.json")): void {
   writeWholeJson(path, settings);
+}
+
+/**
+ * Writes `change` over the settings as they are now (#453): read, merged and
+ * written under a lock, so two Tesotas saving at once each keep the other's
+ * change. Waits up to about a second for another's save.
+ */
+export function updateSettings(change: Partial<Settings>, path: string = join(tesotaHome(), "settings.json")): void {
+  for (let tries = 0; ; tries++) {
+    let lock: ReturnType<typeof lockSession>;
+    try {
+      lock = lockSession(`${path}.lock`);
+    } catch (error) {
+      if (!(error instanceof SessionLockedError) || tries >= 100) throw error;
+      Bun.sleepSync(10);
+      continue;
+    }
+    try {
+      writeSettings({ ...readSettings(path).settings, ...change }, path);
+      return;
+    } finally {
+      lock.release();
+    }
+  }
 }
 
 /** This installation's id, made and kept the first time a login asks for it. */

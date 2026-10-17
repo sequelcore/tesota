@@ -13,6 +13,7 @@ import {
   sessionWriter, type SessionWriter,
 } from "./session-file.ts";
 import { lockSession } from "./session-lock.ts";
+import { bindWorkspace, reopenWorkspace, type Workspace } from "./workspace.ts";
 
 /** An amendment as the ledger keeps it; `delivered` once it entered the conversation. */
 export interface LedgerAmendment {
@@ -40,6 +41,10 @@ export interface EngineSession extends LoopSession {
   readonly file: string;
   /** The requests, read from the session's ledger entries alone. */
   ledger(): readonly LedgerRequest[];
+  /** Where the session works (#453): its checkout, or a worktree of it. */
+  readonly workspace: Pick<Workspace, "cwd" | "checkout" | "worktree" | "branch">;
+  /** Once disposed, where its kept work is, when its worktree changed and so stays. */
+  kept(): string | undefined;
 }
 
 /**
@@ -229,7 +234,7 @@ function stateOf(entries: readonly SessionEntry[]): LoopState {
  * the ledger; the lock goes when it is disposed. A session opened again
  * resumes from its entries; a new one starts empty.
  */
-function engineSession(file: string, release: () => void, entries: SessionEntry[], options: OpenOptions & { readonly cwd: string },
+function engineSession(file: string, release: () => void, entries: SessionEntry[], options: OpenOptions, workspace: Workspace,
   opened: boolean): EngineSession {
   const written = sessionWriter(file);
   const recording: SessionWriter = {
@@ -240,7 +245,7 @@ function engineSession(file: string, release: () => void, entries: SessionEntry[
   const request = (): LedgerRequest | undefined => ledgerOf(entries).at(-1);
   let loop: LoopSession;
   try {
-    loop = createLoop({ ...options, verifier: (pi) => { options.verifier(pi, request); }, branch: () => branchOf(entries),
+    loop = createLoop({ ...options, cwd: workspace.cwd, verifier: (pi) => { options.verifier(pi, request); }, branch: () => branchOf(entries),
       writer: options.writer?.(recording) ?? recording, ...opened ? { resumed: stateOf(entries) } : {} });
   } catch (error) {
     // An extension or the verifier that throws as it registers leaves nothing open.
@@ -248,15 +253,26 @@ function engineSession(file: string, release: () => void, entries: SessionEntry[
     throw error;
   }
   let disposed: Promise<void> | undefined;
+  let kept: string | undefined;
+  const { cwd, checkout, worktree, branch } = workspace;
   return {
     ...loop,
     file,
     ledger: () => ledgerOf(entries),
-    dispose: () => disposed ??= loop.dispose().finally(release),
+    workspace: { cwd, checkout, ...worktree === undefined ? {} : { worktree }, ...branch === undefined ? {} : { branch } },
+    kept: () => kept,
+    dispose: () => disposed ??= loop.dispose().finally(() => {
+      release();
+      kept = workspace.release();
+    }),
   };
 }
 
-/** A new session in `options.cwd`, its file created with its header and locked by this writer. */
+/**
+ * A new session opened in `options.cwd`, bound to its workspace (#453),
+ * its file created with its header and locked by this writer. Its sessions
+ * folder is the checkout's, whichever workspace it works in.
+ */
 export function createSession(options: SessionOptions): EngineSession {
   const folder = options.folder ?? sessionsFolder(options.cwd);
   mkdirSync(folder, { recursive: true });
@@ -264,10 +280,15 @@ export function createSession(options: SessionOptions): EngineSession {
   const id = `${createdAt.replace(/[:.]/gu, "-")}-${randomUUID().slice(0, 8)}`;
   const file = join(folder, `${id}.jsonl`);
   const lock = lockSession(lockOf(file));
+  let workspace: Workspace | undefined;
   try {
-    createSessionFile(file, { type: "session", format: sessionFormat, version: sessionVersion, id, cwd: resolve(options.cwd), createdAt });
-    return engineSession(file, () => { lock.release(); }, [], options, false);
+    workspace = bindWorkspace(options.cwd, id);
+    const { cwd, checkout, worktree, branch, base } = workspace;
+    createSessionFile(file, { type: "session", format: sessionFormat, version: sessionVersion, id, cwd, createdAt, checkout,
+      ...worktree === undefined ? {} : { worktree }, ...branch === undefined ? {} : { branch }, ...base === undefined ? {} : { base } });
+    return engineSession(file, () => { lock.release(); }, [], options, workspace, false);
   } catch (error) {
+    workspace?.release();
     lock.release();
     throw error;
   }
@@ -280,8 +301,12 @@ export function createSession(options: SessionOptions): EngineSession {
  */
 export function openSession(file: string, options: OpenOptions): EngineSession {
   const lock = lockSession(lockOf(file));
+  let workspace: Workspace | undefined;
   try {
     const { header, entries } = readSessionFile(file);
+    workspace = reopenWorkspace({ cwd: header.cwd, checkout: header.checkout ?? header.cwd,
+      ...header.worktree === undefined ? {} : { worktree: header.worktree }, ...header.branch === undefined ? {} : { branch: header.branch },
+      ...header.base === undefined ? {} : { base: header.base } });
     const added = recovery(entries);
     if (added.length > 0) {
       const writer = sessionWriter(file);
@@ -292,8 +317,9 @@ export function openSession(file: string, options: OpenOptions): EngineSession {
         writer.close();
       }
     }
-    return engineSession(file, () => { lock.release(); }, [...entries, ...added], { ...options, cwd: header.cwd }, true);
+    return engineSession(file, () => { lock.release(); }, [...entries, ...added], options, workspace, true);
   } catch (error) {
+    workspace?.release();
     lock.release();
     throw error;
   }
