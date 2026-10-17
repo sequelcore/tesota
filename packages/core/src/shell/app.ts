@@ -10,7 +10,7 @@ import { fileCredentialStore } from "../credentials.ts";
 import { engineModels, loginOptions } from "../model-access.ts";
 import type { Mode } from "../permission-rule.ts";
 import type { HistoryMessage } from "../loop.ts";
-import type { McpServers } from "../mcp.ts";
+import type { McpServers, startMcp } from "../mcp.ts";
 import { projectServers, readMcpConfig } from "../mcp-config.ts";
 import { loadRules } from "../permissions.ts";
 import { createSession, type EngineSession, openSession, sessionsFolder, type Verifier } from "../session.ts";
@@ -123,11 +123,22 @@ export async function runApp(options: AppOptions): Promise<void> {
   const own = readOr(hookFiles.own);
   let hooks: Hooks = typeof own === "string" ? {} : own;
   /** The MCP servers every session reaches (#459), started once the project's are trusted or left out; none configured, none. */
-  let mcp: McpServers | undefined;
+  let mcp: { readonly start: typeof startMcp; readonly own: string; readonly project: string | undefined } | undefined;
+  /** Each workspace's servers (#459): a session in its own worktree reaches servers that run there, never in another's. */
+  const workspaces = new Map<string, McpServers | undefined>();
+  /** The servers of the workspace at `cwd`, started the first time a session there asks; none when none is configured. */
+  const serversIn = (cwd: string): McpServers | undefined => {
+    if (mcp === undefined) return undefined;
+    if (!workspaces.has(cwd)) {
+      const { servers } = readMcpConfig(mcp.own, mcp.project, cwd);
+      workspaces.set(cwd, servers.length === 0 ? undefined : mcp.start(servers, { cwd, home: dirname(hookFiles.own) }));
+    }
+    return workspaces.get(cwd);
+  };
   /** Settles once the servers started, or were left out; `/mcp` waits for it. */
   let serversStarted: Promise<void> = Promise.resolve();
   const sessionOptions = (live: Live) => ({ models, model: model ?? models.getModels()[0] as Model<Api>, verifier, surface: live.surface,
-    hooks: () => hooks, mcp: () => mcp,
+    hooks: () => hooks, mcp: () => serversIn(live.session.workspace.cwd),
     mode: "tui",
     // A shown session asks at once; another waits, flagged, until the operator shows it.
     permissions: { mode: () => permissionMode, rules, ask: (call: { name: string; arguments: unknown }, reason: string) => {
@@ -307,7 +318,9 @@ export async function runApp(options: AppOptions): Promise<void> {
     if (config.servers.length === 0) return;
     // The MCP client loads only when a server is configured, so a shell without one starts as fast as before.
     const { startMcp } = await import("../mcp.ts");
-    mcp = startMcp(config.servers, { cwd: resolve(options.cwd), home: dirname(hookFiles.own) });
+    // Every workspace reads the same files the operator answered for: the project's only when trusted.
+    mcp = { start: startMcp, own: files.own, project: theirs.length > 0 && !trusted(root, "mcp", hash) ? undefined : files.project };
+    serversIn(attached.session.workspace.cwd);
   };
   /**
    * `/mcp` (#459): the servers with their state, and for one picked, or named
@@ -316,12 +329,13 @@ export async function runApp(options: AppOptions): Promise<void> {
    */
   const mcpCommand = async (args: string): Promise<void> => {
     await serversStarted;
-    if (mcp === undefined) { shell.note("No MCP server is configured: add one under mcpServers in ~/.tesota/mcp.json, or the project's .tesota/mcp.json."); return; }
+    const servers = serversIn(attached.session.workspace.cwd);
+    if (servers === undefined) { shell.note("No MCP server is configured: add one under mcpServers in ~/.tesota/mcp.json, or the project's .tesota/mcp.json."); return; }
     const [said, named] = args.split(/\s+/u);
-    const asked = said === "" || said === undefined ? await pickServerAction(mcp) : { action: said, name: named };
+    const asked = said === "" || said === undefined ? await pickServerAction(servers) : { action: said, name: named };
     if (asked === undefined) return;
     if (asked.name === undefined) { shell.note("Name the server: /mcp login <server>, /mcp logout <server> or /mcp reconnect <server>.", "warning"); return; }
-    await serverAction(mcp, asked.action, asked.name);
+    await serverAction(servers, asked.action, asked.name);
   };
   /** A server the operator picks from the list, its error shown, and what to do with it. */
   const pickServerAction = async (servers: McpServers): Promise<{ action: string; name: string } | undefined> => {
@@ -467,7 +481,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     for (const { refuse } of each.waiting.splice(0)) refuse();
   }
   await Promise.all(lives.map((each) => each.session.dispose()));
-  await mcp?.close();
+  await Promise.all([...workspaces.values()].map((servers) => servers?.close()));
   // The shell has given the terminal back: worktrees with work in them are named where the operator sees them (#453).
   for (const each of lives) {
     const kept = each.session.kept();

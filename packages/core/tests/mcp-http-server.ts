@@ -5,7 +5,9 @@ import { createHash } from "node:crypto";
  * HTTP at `/mcp`, with its own OAuth authorization server when `oauth`:
  * discovery, dynamic registration, PKCE and refresh. Adapted from Pi's
  * `test/suite/mcp-oauth-server.ts`. Without `oauth` it takes a request whose
- * `Authorization` header is `Bearer static`, and none other.
+ * `Authorization` header is `Bearer static`, and none other. It names
+ * each session, and once restarted answers 404 to the old one, as a server
+ * that restarted does.
  */
 export interface HttpMcp {
   readonly url: string;
@@ -14,6 +16,8 @@ export interface HttpMcp {
   readonly registrations: Record<string, unknown>[];
   /** Every access token stops working, as when they expire. */
   expire(): void;
+  /** The server forgets its sessions, as when it restarts. */
+  restart(): void;
   close(): void;
 }
 
@@ -25,6 +29,7 @@ export async function startHttpMcp(options: { oauth?: boolean } = {}): Promise<H
   const challenges = new Map<string, string>();
   let issued = 0;
   let origin = "";
+  let session = 1;
 
   const json = (body: unknown, status = 200, headers: Record<string, string> = {}): Response =>
     new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } });
@@ -44,6 +49,11 @@ export async function startHttpMcp(options: { oauth?: boolean } = {}): Promise<H
         ? { "www-authenticate": `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource/mcp"` } : {} });
     }
     const message = await request.json() as { id?: number; method: string; params?: { protocolVersion?: string } };
+    const said = request.headers.get("mcp-session-id");
+    if (message.method !== "initialize" && said !== null && said !== `session-${session}`) {
+      log.push(`404 ${said}`);
+      return new Response(null, { status: 404 });
+    }
     if (message.id === undefined) return new Response(null, { status: 202 });
     let result: unknown = {};
     if (message.method === "initialize") {
@@ -54,7 +64,7 @@ export async function startHttpMcp(options: { oauth?: boolean } = {}): Promise<H
       log.push(`call ${token}`);
       result = { content: [{ type: "text", text: `token ${token}` }] };
     }
-    return json({ jsonrpc: "2.0", id: message.id, result }, 200, { "mcp-session-id": "session-1" });
+    return json({ jsonrpc: "2.0", id: message.id, result }, 200, { "mcp-session-id": `session-${session}` });
   }
 
   /** The operator approves at once: back to the client's redirect URI with a code tied to its PKCE challenge. */
@@ -76,7 +86,7 @@ export async function startHttpMcp(options: { oauth?: boolean } = {}): Promise<H
       const verified = createHash("sha256").update(params.get("code_verifier") ?? "").digest("base64url");
       if (challenge === undefined || challenge !== verified) return json({ error: "invalid_grant" }, 400);
       challenges.delete(params.get("code") ?? "");
-      log.push(`token code ${params.get("client_id") ?? ""}${params.has("client_secret") ? " with secret" : ""}`);
+      log.push(`token code ${params.get("client_id") ?? ""}${params.has("client_secret") ? ` with secret ${params.get("client_secret") ?? ""}` : ""}`);
       return json(tokens());
     }
     if (!refreshes.delete(params.get("refresh_token") ?? "")) return json({ error: "invalid_grant" }, 400);
@@ -112,6 +122,7 @@ export async function startHttpMcp(options: { oauth?: boolean } = {}): Promise<H
     log,
     registrations,
     expire: () => { valid.clear(); },
+    restart: () => { session++; },
     close: () => { void server.stop(true); },
   };
 }

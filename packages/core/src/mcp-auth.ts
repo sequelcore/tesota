@@ -1,13 +1,14 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { type AuthProvider, McpAuthRequiredError, type McpFetch } from "@earendil-works/pi-mcp";
 import {
   authorizeMcp, McpOAuthAuthorizationRequiredError, McpOAuthProvider, type McpOAuthState, type McpOAuthStateStore,
-  type OAuthClientInformationMixed, OAuthCallbackServer, parseWwwAuthenticate,
+  type OAuthChallenge, type OAuthClientInformationMixed, OAuthCallbackServer, parseWwwAuthenticate, stepUpScope,
 } from "@earendil-works/pi-mcp/oauth";
 import { tesotaHome } from "../../../src/home.ts";
 import type { McpOAuthConfig } from "./mcp-config.ts";
-import { withLock } from "./session-lock.ts";
+import { withLock, withLockWhile } from "./session-lock.ts";
 import { writeWholeJson } from "./whole-file.ts";
 
 /**
@@ -24,6 +25,8 @@ const callbackPath = "/callback";
 const refreshSkewMs = 30_000;
 /** Each request to the authorization server is bounded, so one that does not answer holds nothing up for long. */
 const requestTimeoutMs = 15_000;
+/** How long a refresh waits for another shell's refresh of the same account: longer than one request may take. */
+const refreshWaitMs = 25_000;
 
 /** Where the callback listens, and the redirect URI when its port is fixed. */
 function callbackFor(oauth: McpOAuthConfig): { host: string; redirectHost: string; port: number | undefined; path: string; fixed: string | undefined } {
@@ -87,17 +90,29 @@ function provider(url: string, store: McpOAuthStateStore, oauth: McpOAuthConfig,
 export const needsSignIn = (error: unknown): boolean =>
   error instanceof McpOAuthAuthorizationRequiredError || error instanceof McpAuthRequiredError;
 
+/** A remote server's stored credentials, as its connections send them. */
+export interface StoredAuth extends AuthProvider {
+  /** Settles once no refresh is running, so signing out or closing does not race a token being saved. */
+  settled(): Promise<void>;
+  /** What the server last said when it refused a request, for the next sign-in: where its metadata is and the scope it wants. */
+  challenge(): OAuthChallenge | undefined;
+}
+
 /**
  * The transport's credentials from what is stored: the access token,
- * refreshed when about to expire or after a 401, one refresh shared by the
- * requests that need it. With none stored, or a refresh refused, connecting
- * fails as `needsSignIn`. A server asking for more scope needs a new sign-in.
+ * refreshed when about to expire or after a 401. One refresh runs at a time
+ * for the account, in this shell and across shells, since a server that
+ * replaces refresh tokens refuses the second. With none stored, or a refresh
+ * refused, connecting fails as `needsSignIn`. A server asking for more scope
+ * needs a new sign-in.
  */
-export function storedAuth(server: string, url: string, oauth: McpOAuthConfig, home: string = tesotaHome()): AuthProvider {
+export function storedAuth(server: string, url: string, oauth: McpOAuthConfig, home: string = tesotaHome()): StoredAuth {
   const store = storeFor(server, url, home);
   let refreshing: Promise<void> | undefined;
-  /** Replaces `stale`, the token that expired or was refused; tokens that changed meanwhile are kept. */
-  const refresh = (stale: string | undefined, fetch: McpFetch = globalThis.fetch, scope?: string): Promise<void> => refreshing ??= (async () => {
+  let refused: OAuthChallenge | undefined;
+  /** Replaces `stale`, the token that expired or was refused; tokens that changed meanwhile, here or in another shell, are kept. */
+  const refresh = (stale: string | undefined, fetch: McpFetch = globalThis.fetch, scope?: string): Promise<void> => refreshing ??= withLockWhile(
+    `${authFile(home)}.${createHash("sha256").update(keyOf(server, url)).digest("hex").slice(0, 16)}.refresh`, async () => {
     const state = await store.load();
     if (state?.tokens?.access_token !== stale) return;
     if (state?.tokens?.refresh_token === undefined) throw new McpOAuthAuthorizationRequiredError();
@@ -106,7 +121,7 @@ export function storedAuth(server: string, url: string, oauth: McpOAuthConfig, h
     const result = await authorizeMcp(provider(url, store, oauth, redirectUrl, () => undefined),
       { serverUrl: url, fetch: timedFetch(fetch), ...scope === undefined ? {} : { scope } });
     if (result === "REDIRECT") throw new McpOAuthAuthorizationRequiredError();
-  })().finally(() => { refreshing = undefined; });
+  }, refreshWaitMs).finally(() => { refreshing = undefined; });
   return {
     token: async () => {
       await refreshing?.catch(() => undefined);
@@ -120,9 +135,12 @@ export function storedAuth(server: string, url: string, oauth: McpOAuthConfig, h
     },
     onUnauthorized: async (context) => {
       const challenge = parseWwwAuthenticate(context.response.headers.get("www-authenticate"));
+      refused = challenge;
       if (challenge.error === "insufficient_scope") throw new McpOAuthAuthorizationRequiredError();
       await refresh(context.token, context.fetch, challenge.scope);
     },
+    settled: async () => { await refreshing?.catch(() => undefined); },
+    challenge: () => refused,
   };
 }
 
@@ -134,7 +152,7 @@ export function storedAuth(server: string, url: string, oauth: McpOAuthConfig, h
  * it, and its callback closes either way.
  */
 export async function signIn(server: string, url: string, oauth: McpOAuthConfig, open: (page: URL) => void, signal: AbortSignal,
-  home: string = tesotaHome()): Promise<void> {
+  home: string = tesotaHome(), challenge?: OAuthChallenge): Promise<void> {
   if (signal.aborted) throw new Error("Sign-in cancelled.");
   const store = storeFor(server, url, home);
   const stored = await store.load();
@@ -150,21 +168,13 @@ export async function signIn(server: string, url: string, oauth: McpOAuthConfig,
   });
   const redirectUrl = callback.fixed ?? listener.redirectUrl;
   try {
-    if (stored !== undefined) {
-      const next: McpOAuthState = { ...stored };
-      delete next.oauthState;
-      // A registered client cannot use another redirect URI, and its tokens are its own.
-      if (oauth.clientId === undefined && !redirectsOf(stored.clientInformation).includes(redirectUrl)) {
-        delete next.clientInformation;
-        delete next.tokens;
-        delete next.tokensExpireAt;
-      }
-      await store.save(next);
-    }
+    if (stored !== undefined) await store.save(fresh(stored, oauth, redirectUrl));
     let page: URL | undefined;
     const flow = provider(url, store, oauth, redirectUrl, (at) => { page = at; });
-    const options = { serverUrl: url, fetch: timedFetch(), signal, ...oauth.scope === undefined ? {} : { scope: oauth.scope } };
-    if (await authorizeMcp(flow, options) === "AUTHORIZED") return;
+    // A server asking for more scope gets it beside what was granted, through the browser: a refresh keeps the old scope.
+    const more = challenge?.error === "insufficient_scope";
+    const options = { serverUrl: url, fetch: timedFetch(), signal, ...asked(oauth, stored, challenge) };
+    if (await authorizeMcp(flow, { ...options, skipRefresh: more }) === "AUTHORIZED") return;
     if (page === undefined) throw new Error("The server's sign-in gave no page to open.");
     const state = await flow.state();
     const expected = new URL(page.searchParams.get("redirect_uri") ?? redirectUrl);
@@ -177,6 +187,27 @@ export async function signIn(server: string, url: string, oauth: McpOAuthConfig,
   } finally {
     await listener.close();
   }
+}
+
+/** What a new sign-in keeps of `stored`: never its last `state`; a registered client and its tokens only while its redirect URI still holds. */
+function fresh(stored: McpOAuthState, oauth: McpOAuthConfig, redirectUrl: string): McpOAuthState {
+  const next: McpOAuthState = { ...stored };
+  delete next.oauthState;
+  if (oauth.clientId === undefined && !redirectsOf(stored.clientInformation).includes(redirectUrl)) {
+    delete next.clientInformation;
+    delete next.tokens;
+    delete next.tokensExpireAt;
+  }
+  return next;
+}
+
+/** Where the server said its metadata is, and the scopes to ask for: configured, challenged, and for more scope what was granted too. */
+function asked(oauth: McpOAuthConfig, stored: McpOAuthState | undefined, challenge: OAuthChallenge | undefined): { resourceMetadataUrl?: URL; scope?: string } {
+  const more = challenge?.error === "insufficient_scope";
+  const words = [oauth.scope, more ? stepUpScope(stored?.tokens?.scope, challenge.scope) : challenge?.scope]
+    .flatMap((each) => each?.split(/\s+/u).filter((word) => word !== "") ?? []);
+  return { ...challenge?.resourceMetadataUrl === undefined ? {} : { resourceMetadataUrl: challenge.resourceMetadataUrl },
+    ...words.length === 0 ? {} : { scope: [...new Set(words)].join(" ") } };
 }
 
 /** The browser's redirect to the callback, or the sign-in's stop. */

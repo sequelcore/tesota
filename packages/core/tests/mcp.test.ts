@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import type { Hooks } from "../src/hooks.ts";
 import type { McpTools } from "../src/loop.ts";
 import { type McpServers, startMcp } from "../src/mcp.ts";
-import { type McpServerConfig, readMcpConfig, readOAuthConfig, toolNames } from "../src/mcp-config.ts";
+import { type McpServerConfig, projectServers, readMcpConfig, readOAuthConfig, toolNames } from "../src/mcp-config.ts";
 import { createSession, type EngineSession } from "../src/session.ts";
 import type { EngineTool } from "../src/tool.ts";
 import { startHttpMcp } from "./mcp-http-server.ts";
@@ -51,7 +51,7 @@ describe("reading mcp.json", () => {
     const own = write({ mcpServers: {
       files: { command: "~/bin/files", args: ["~/data", "--x"], env: { TOKEN: "${MCP_TEST_TOKEN}" }, cwd: "sub", timeout: 5 },
       docs: { url: "https://example.test/mcp", headers: { Authorization: "Bearer ${MCP_TEST_TOKEN}" }, enabled: false },
-      issues: { type: "streamable-http", url: "https://example.test/issues", oauth: { clientId: "c", callbackPort: 8765 } },
+      issues: { type: "streamable-http", url: "https://example.test/issues", oauth: { clientId: "c", clientSecret: "${MCP_TEST_TOKEN}", callbackPort: 8765 } },
     } });
     const { servers, errors } = readMcpConfig(own, undefined, cwd, { MCP_TEST_TOKEN: "secret" });
     expect(errors).toEqual([]);
@@ -61,7 +61,7 @@ describe("reading mcp.json", () => {
       { name: "docs", source: own, enabled: false, timeout: 60, transport: "http", url: "https://example.test/mcp",
         headers: { Authorization: "Bearer secret" } },
       { name: "issues", source: own, enabled: true, timeout: 60, transport: "http", url: "https://example.test/issues", headers: {},
-        oauth: { clientId: "c", callbackPort: 8765 } },
+        oauth: { clientId: "c", clientSecret: "secret", callbackPort: 8765 } },
     ]);
   });
 
@@ -96,9 +96,11 @@ describe("reading mcp.json", () => {
       e: { enabled: true } } });
     const { servers, errors } = readMcpConfig(own, project, cwd);
     expect(servers.map(({ name, enabled, source }) => [name, enabled, source === project ? "project" : "own"])).toEqual([
-      ["a", true, "project"], ["b", false, "own"], ["c", true, "own"], ["d", true, "project"]]);
+      ["a", true, "project"], ["b", false, "own"], ["c", true, "project"], ["d", true, "project"]]);
     expect(servers[0]).toMatchObject({ command: "theirs" });
     expect(errors).toEqual([expect.stringContaining('"e" was left out: it turns on or off a server you have not configured')]);
+    // Turning yours on runs it at the project's word: it is the project's for trust. Turning yours off is not.
+    expect(projectServers({ servers, errors }, project).map(({ name }) => name)).toEqual(["a", "c", "d"]);
   });
 
   test("an oauth entry takes only the settings Tesota reads", () => {
@@ -112,14 +114,22 @@ describe("reading mcp.json", () => {
 
 describe("naming a server's tools", () => {
   test("as Claude Code, Codex and Pi do, within 64 characters, and apart when they would collide", () => {
-    const names = toolNames("my-server", ["search", "read.file", "read_file", "x".repeat(80)]);
-    expect(names.get("search")).toBe("mcp__my_server__search");
-    const [dotted, plain, long] = [names.get("read.file") ?? "", names.get("read_file") ?? "", names.get("x".repeat(80)) ?? ""];
+    const mine = (tool: string) => ({ server: "my-server", tool });
+    const [search, dotted, plain, long] = toolNames([mine("search"), mine("read.file"), mine("read_file"), mine("x".repeat(80))]);
+    expect(search).toBe("mcp__my_server__search");
     expect(dotted).not.toBe(plain);
     for (const name of [dotted, plain, long]) {
       expect(name).toMatch(/^mcp__my_server__[A-Za-z0-9_]+$/u);
-      expect(name.length).toBeLessThanOrEqual(64);
+      expect(name?.length).toBeLessThanOrEqual(64);
     }
+  });
+
+  test("across servers: a long server name or a `__` inside a name never gives two tools one name", () => {
+    const shared = "s".repeat(60);
+    const names = toolNames([{ server: `${shared}a`, tool: "search" }, { server: `${shared}b`, tool: "search" },
+      { server: "a__b", tool: "c" }, { server: "a", tool: "b__c" }]);
+    expect(new Set(names).size).toBe(4);
+    for (const name of names) expect(name.length).toBeLessThanOrEqual(64);
   });
 });
 
@@ -127,7 +137,7 @@ describe("a local server", () => {
   test("its tools reach the model by their names; a failure, an image and a long result reach it as text", async () => {
     const servers = started([local("test")]);
     await ready(servers);
-    expect(servers.status()).toEqual([{ name: "test", source: "test", transport: "stdio", state: "connected", tools: 10 }]);
+    expect(servers.status()).toEqual([{ name: "test", source: "test", transport: "stdio", state: "connected", tools: 11 }]);
     const echo = tool(servers, "mcp__test__echo");
     expect(echo.description).toBe("Says the text back.");
     expect(echo.parameters).toMatchObject({ type: "object", properties: { text: { type: "string" } }, required: ["text"] });
@@ -173,7 +183,7 @@ describe("a local server", () => {
     expect(await call(servers, "mcp__test__echo", { text: "back" })).toEqual({ text: "echo: back", isError: false });
     expect(servers.status()[0]?.state).toBe("connected");
     await call(servers, "mcp__test__grow");
-    for (let tries = 0; servers.status()[0]?.tools !== 11 && tries < 100; tries++) await Bun.sleep(20);
+    for (let tries = 0; servers.status()[0]?.tools !== 12 && tries < 100; tries++) await Bun.sleep(20);
     expect(servers.tools(spool).map(({ name }) => name)).toContain("mcp__test__late");
   });
 
@@ -186,6 +196,26 @@ describe("a local server", () => {
     expect(servers.tools(spool).some(({ name }) => name.startsWith("mcp__broken__") || name.startsWith("mcp__off__"))).toBe(false);
     await expect(servers.reconnect("off")).resolves.toBeUndefined();
     expect(servers.status()[2]?.state).toBe("disabled");
+  });
+
+  test("a server's protocol error reaches the model within the output limit, and what a server wrote to its errors only the operator", async () => {
+    const leaky = local("leaky", { args: ["-e", "process.stderr.write('token=hunter2'); process.exit(1)"] });
+    const servers = started([local("test"), leaky]);
+    await ready(servers);
+    const loud = await call(servers, "mcp__test__loud").catch((error: unknown) => error as Error);
+    expect(loud).toBeInstanceOf(Error);
+    expect((loud as Error).message).toContain("[Output truncated: showing the first 2000 of 3000 lines. Full output: ");
+    expect(servers.status()[1]?.error).toContain("token=hunter2");
+    const told = await call(servers, "read_mcp_resource", { server: "leaky", uri: "mem://note" }).catch((error: unknown) => error as Error);
+    expect((told as Error).message).toContain('The MCP server "leaky" is failed');
+    expect((told as Error).message).not.toContain("hunter2");
+  });
+
+  test("a server that offers only resources connects, with no tools, and its resources are read", async () => {
+    const servers = started([local("library", { env: { TESOTA_MCP_RESOURCES_ONLY: "1" } } as Partial<McpServerConfig>)]);
+    await ready(servers);
+    expect(servers.status()[0]).toMatchObject({ state: "connected", tools: 0 });
+    expect(await call(servers, "read_mcp_resource", { server: "library", uri: "mem://note" })).toEqual({ text: "a note", isError: false });
   });
 
   test("a first request waits for a server still connecting only so long, and once", async () => {
@@ -267,6 +297,30 @@ describe("a remote server", () => {
     expect(JSON.parse(readFileSync(join(home, "mcp-auth.json"), "utf8"))).toEqual({});
   });
 
+  test("two shells refresh an expired token once between them, and each goes on with the new one", async () => {
+    const server = await remote(true);
+    const home = folder("tesota-core-mcp-home-");
+    const first = started([http("issues", server.url)], { home });
+    await ready(first);
+    await first.signIn("issues", browser, new AbortController().signal);
+    const second = started([http("issues", server.url)], { home });
+    await ready(second);
+    server.expire();
+    const answers = await Promise.all([call(first, "mcp__issues__whoami"), call(second, "mcp__issues__whoami")]);
+    expect(answers.map(({ text }) => text)).toEqual(["token access-2", "token access-2"]);
+    expect(server.log.filter((line) => line === "token refresh")).toHaveLength(1);
+  });
+
+  test("a server that restarted and forgot the session is reached again on a new one", async () => {
+    const server = await remote(false);
+    const servers = started([http("keyed", server.url, { headers: { Authorization: "Bearer static" } })]);
+    await ready(servers);
+    expect(await call(servers, "mcp__keyed__whoami")).toEqual({ text: "token static", isError: false });
+    server.restart();
+    expect(await call(servers, "mcp__keyed__whoami")).toEqual({ text: "token static", isError: false });
+    expect(server.log).toContain("404 session-1");
+  });
+
   test("a configured client signs in without registering, with its secret", async () => {
     const server = await remote(true);
     const servers = started([http("issues", server.url, { oauth: { clientId: "mine", clientSecret: "s3cret" } })],
@@ -275,7 +329,7 @@ describe("a remote server", () => {
     await servers.signIn("issues", browser, new AbortController().signal);
     expect(server.registrations).toEqual([]);
     expect(server.log).toContain("authorize mine");
-    expect(server.log.some((line) => line.startsWith("token code") && line.endsWith("with secret"))).toBe(true);
+    expect(server.log).toContain("token code mine with secret s3cret");
   });
 
   test("a sign-in stopped while it waits for the browser rejects, and a local server has none", async () => {

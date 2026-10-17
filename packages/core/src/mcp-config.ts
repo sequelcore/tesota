@@ -143,7 +143,9 @@ function remote(common: Shared, value: Record<string, unknown>, env: NodeJS.Proc
   let parsed: URL;
   try { parsed = new URL(url); } catch { throw new Error("url must be a URL"); }
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") throw new Error("url must be http or https");
-  const oauth = value["oauth"] === undefined ? undefined : readOAuthConfig(value["oauth"]);
+  const read = value["oauth"] === undefined ? undefined : readOAuthConfig(value["oauth"]);
+  // A client secret is given as Pi documents it, from the environment: `"clientSecret": "${NAME}"`.
+  const oauth = read?.clientSecret === undefined ? read : { ...read, clientSecret: expanded(read.clientSecret, env) };
   return { ...common, transport: "http", url, headers: textRecord(value["headers"], "headers", env), ...oauth === undefined ? {} : { oauth } };
 }
 
@@ -188,12 +190,16 @@ export function readMcpConfig(own: string, project: string | undefined, cwd: str
     if ("transport" in server) {
       if (at < 0) servers.push(server); else servers[at] = server;
     } else if (at < 0) errors.push(`${server.source}: server "${server.name}" was left out: it turns on or off a server you have not configured`);
-    else servers[at] = { ...servers[at] as McpServerConfig, enabled: server.enabled };
+    else {
+      // Turning one of yours on runs it at the project's word, so it asks the project's trust; turning one off does not.
+      const yours = servers[at] as McpServerConfig;
+      servers[at] = { ...yours, enabled: server.enabled, ...server.enabled && !yours.enabled ? { source: server.source } : {} };
+    }
   }
   return { servers, errors };
 }
 
-/** The project's servers that run its own commands or reach its own addresses, for its trust: none for only turning yours on or off. */
+/** The project's servers that run its own commands, reach its own addresses or turn on yours, for its trust; turning yours off needs none. */
 export function projectServers(config: McpConfig, project: string): readonly McpServerConfig[] {
   return config.servers.filter((server) => server.source === project);
 }
@@ -203,18 +209,19 @@ const maxName = 64;
 const shortHash = (text: string): string => createHash("sha256").update(text).digest("hex").slice(0, 8);
 
 /**
- * The model's names for a server's tools, as Claude Code, Codex and Pi name
- * them: `mcp__<server>__<tool>`, every character but letters, digits and `_`
- * made `_`. Tools whose names then collide, or run past 64 characters, are
- * told apart by a hash of their own name.
+ * The model's names for the servers' tools, in order, as Claude Code, Codex
+ * and Pi name them: `mcp__<server>__<tool>`, every character but letters,
+ * digits and `_` made `_`. Tools whose names then collide, across all the
+ * servers, or run past 64 characters, are told apart by a hash of their
+ * server and tool.
  */
-export function toolNames(server: string, tools: readonly string[]): Map<string, string> {
-  const plain = (tool: string): string => `mcp__${server}__${tool}`.replace(/[^A-Za-z0-9_]/gu, "_");
+export function toolNames(tools: readonly { readonly server: string; readonly tool: string }[]): string[] {
+  const plain = tools.map(({ server, tool }) => `mcp__${server}__${tool}`.replace(/[^A-Za-z0-9_]/gu, "_"));
   const counts = new Map<string, number>();
-  for (const tool of tools) counts.set(plain(tool), (counts.get(plain(tool)) ?? 0) + 1);
-  return new Map(tools.map((tool) => {
-    const name = plain(tool);
-    if ((counts.get(name) ?? 0) === 1 && name.length <= maxName) return [tool, name];
-    return [tool, `${name.slice(0, maxName - 9)}_${shortHash(tool)}`];
-  }));
+  for (const name of plain) counts.set(name, (counts.get(name) ?? 0) + 1);
+  return plain.map((name, index) => {
+    if (counts.get(name) === 1 && name.length <= maxName) return name;
+    const { server, tool } = tools[index] ?? { server: "", tool: "" };
+    return `${name.slice(0, maxName - 9)}_${shortHash(`${server}\0${tool}`)}`;
+  });
 }

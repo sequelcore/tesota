@@ -117,9 +117,10 @@ out lets the call through with a note. A project's hooks run only once the
 operator trusts them as they are (`~/.tesota/trust.json`). MCP servers
 (`mcp-config.ts`, `mcp.ts`, on Pi's MCP client) are configured as Pi configures
 them, under `mcpServers` in `~/.tesota/mcp.json` and the project's
-`.tesota/mcp.json`, which start only once trusted, as its hooks. They connect
-in the background as the shell starts; a first request waits up to 10 s for
-them. Their tools reach the model as `mcp__<server>__<tool>`, run for
+`.tesota/mcp.json`, which start only once trusted, as its hooks. Each
+workspace runs its own, so a session in a worktree never reaches servers
+running in another. They connect in the background; a first request waits up
+to 10 s for them. Their tools reach the model as `mcp__<server>__<tool>`, run for
 permissions whatever the server says of them, and pass the hooks; the resource
 tools only read. A remote server with no `Authorization` header signs in with
 OAuth through `/mcp` (`mcp-auth.ts`), its tokens kept in `~/.tesota/mcp-auth.json`

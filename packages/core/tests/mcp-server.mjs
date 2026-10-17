@@ -1,6 +1,8 @@
 // A local MCP server for the engine's MCP tests (#459), over stdio: JSON-RPC
 // messages one per line. Its tools each show one behavior the client must
-// handle; `crash` exits, so the next call must connect again.
+// handle; `crash` exits, so the next call must connect again. With
+// TESOTA_MCP_RESOURCES_ONLY it offers resources and no tools at all.
+const resourcesOnly = process.env.TESOTA_MCP_RESOURCES_ONLY === "1";
 let tools = [
   { name: "echo", description: "Says the text back.", inputSchema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] } },
   { name: "fails", inputSchema: { type: "object" } },
@@ -12,6 +14,7 @@ let tools = [
   { name: "where", inputSchema: { type: "object" } },
   { name: "grow", inputSchema: { type: "object" } },
   { name: "read.only", description: "Says it only reads.", annotations: { readOnlyHint: true }, inputSchema: { type: "object" } },
+  { name: "loud", inputSchema: { type: "object" } },
 ];
 const resources = [
   { uri: "mem://note", name: "note", mimeType: "text/plain" },
@@ -23,10 +26,10 @@ const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
 
 async function answer(method, params) {
   if (method === "initialize") {
-    return { protocolVersion: params.protocolVersion, capabilities: { tools: { listChanged: true }, resources: {} },
+    return { protocolVersion: params.protocolVersion, capabilities: resourcesOnly ? { resources: {} } : { tools: { listChanged: true }, resources: {} },
       serverInfo: { name: "test", version: "1.0.0" } };
   }
-  if (method === "tools/list") return { tools };
+  if (method === "tools/list" && !resourcesOnly) return { tools };
   if (method === "resources/list") return { resources };
   if (method === "resources/templates/list") return { resourceTemplates: [{ uriTemplate: "mem://{name}", name: "any" }] };
   if (method === "resources/read") {
@@ -61,6 +64,7 @@ async function call(params) {
       send({ method: "notifications/tools/list_changed" });
       return text("grown");
     case "read.only": return text("read");
+    case "loud": throw new Error(Array.from({ length: 3000 }, (_, line) => `failure ${line + 1}`).join("\n"));
     default: return { ...text(`no tool ${params.name}`), isError: true };
   }
 }
