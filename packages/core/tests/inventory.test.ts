@@ -16,7 +16,7 @@ const owners: Record<string, "contract" | "engine" | "model" | "shell"> = {
   // The extension API, through the parts the shell draws.
   ExtensionAPI: "contract", ToolDefinition: "contract", AgentToolResult: "contract",
   // What the engine exports beside the API.
-  VERSION: "engine", getShellConfig: "engine", ShellConfig: "engine",
+  VERSION: "engine", getShellConfig: "engine",
   // pi-ai, which stays.
   Api: "model", AssistantMessage: "model", BaseModel: "model", Context: "model", Model: "model", TextContent: "model", ToolCall: "model",
   // The terminal interface.
