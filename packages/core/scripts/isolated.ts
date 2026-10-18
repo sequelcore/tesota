@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -15,7 +15,8 @@ import { join } from "node:path";
  */
 const command = process.argv.slice(2);
 if (command.length === 0) throw new Error("Usage: bun scripts/isolated.ts <command> [args...]");
-const root = mkdtempSync(join(tmpdir(), "tesota-core-isolated-"));
+// By its real name, as a session names its folder: Windows CI's temporary folder is spelled RUNNER~1, macOS's is a link.
+const root = realpathSync.native(mkdtempSync(join(tmpdir(), "tesota-core-isolated-")));
 const [home, temporary] = [root, join(root, "tmp")];
 mkdirSync(temporary);
 let code = 1;
