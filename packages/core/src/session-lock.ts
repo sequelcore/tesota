@@ -111,16 +111,20 @@ export function withLock<T>(path: string, work: () => T): T {
 /**
  * Runs `work`, which may wait on the network, holding the lock at `path`,
  * waiting up to `waitMs` for another holder in this process or another
- * (#459): an MCP token refresh, which a second at once would spend. A
- * `signal` that stops ends the wait, refused as the lock being held; work
- * that already holds the lock runs to its end, so the lock is never released
- * under it.
+ * (#459): an MCP token refresh, which a second at once would spend. A wait
+ * that runs out is refused naming the file, and a `signal` that stops ends
+ * the wait with its reason; work that already holds the lock runs to its
+ * end, so the lock is never released under it.
  */
 export async function withLockWhile<T>(path: string, work: () => Promise<T>, waitMs: number, signal?: AbortSignal): Promise<T> {
   const until = Date.now() + waitMs;
   const waiting = Schedule.spaced(50).pipe(Schedule.while(({ input }) =>
     input instanceof SessionLockedError && Date.now() < until && signal?.aborted !== true));
-  const acquire = Effect.retry(Effect.try({ try: () => lockSession(path), catch: (error) => error }), waiting);
+  const acquire = Effect.retry(Effect.try({ try: () => {
+    signal?.throwIfAborted();
+    return lockSession(path);
+  }, catch: (error) => error }), waiting).pipe(Effect.mapError((error) => signal?.aborted === true ? signal.reason as unknown
+    : error instanceof SessionLockedError ? new Error(`Another Tesota kept ${path} locked for ${waitMs / 1000} s; try again.`) : error));
   return Effect.runPromise(Effect.acquireUseRelease(acquire,
     () => Effect.tryPromise({ try: work, catch: (error) => error }),
     (lock) => Effect.sync(() => { lock.release(); })));
