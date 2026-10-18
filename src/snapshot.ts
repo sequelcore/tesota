@@ -106,7 +106,7 @@ export function homeOrDriveRoot(folder: string): boolean {
  * `ownFiles`. A home folder or a drive's root is never snapshotted.
  */
 export async function takeSnapshot(root: string, ownFiles: boolean, withLockWhile: HostParts["withLockWhile"],
-  limits: SnapshotLimits = SNAPSHOT_LIMITS): Promise<Snapshot> {
+  limits: SnapshotLimits = SNAPSHOT_LIMITS, signal?: AbortSignal): Promise<Snapshot> {
   const at = resolve(root);
   if (homeOrDriveRoot(at)) return { refused: "Tesota does not snapshot a home folder or a drive's root" };
   const tooLarge = scan(at, ownFiles, limits);
@@ -115,7 +115,12 @@ export async function takeSnapshot(root: string, ownFiles: boolean, withLockWhil
   const gitDir = join(snapshots, createHash("sha256").update(`${at}\0${ownFiles}`).digest("hex").slice(0, 16));
   mkdirSync(snapshots, { recursive: true });
   // One writer for the store (#461): pruning also removes other folders. The lock stays outside what it prunes.
+  // A stop ends the wait for the store, and no Git step starts after it; one under way is short and runs to its end.
+  const stopped = { refused: "the run was stopped before the snapshot was taken" };
+  const isStopped = (): boolean => signal?.aborted === true;
+  if (isStopped()) return stopped;
   return withLockWhile(join(tesotaHome(), "snapshots.lock"), async () => {
+    if (isStopped()) return stopped;
     useSnapshotGit(at, gitDir);
     if (!existsSync(join(gitDir, "HEAD"))) {
       mkdirSync(gitDir, { recursive: true });
@@ -126,11 +131,15 @@ export async function takeSnapshot(root: string, ownFiles: boolean, withLockWhil
     writeFileSync(join(gitDir, "info", "exclude"), [...excludedFolders.map((name) => `${name}/`), ".env", ".env.*",
       ...ownFiles ? ["/*/"] : [], ...tooLarge.map(exactly)].join("\n"));
     writeFileSync(join(gitDir, "tesota-used"), at);
+    if (isStopped()) return stopped;
     const committed = await git(at, ["-c", "advice.addEmbeddedRepo=false", "add", "-A"]) !== undefined
       && await git(at, ["-c", "user.name=Tesota", "-c", "user.email=tesota@localhost", "commit", "-q", "--allow-empty",
         "--no-verify", "-m", "Tesota snapshot"]) !== undefined;
     const base = committed ? (await git(at, ["rev-parse", "HEAD"]))?.trim() : undefined;
     prune(snapshots);
     return base === undefined || base === "" ? { refused: "Git could not make a snapshot of it" } : { base, tooLarge };
-  }, 30_000);
+  }, 30_000, signal).catch((error: unknown) => {
+    if (isStopped()) return stopped;
+    throw error;
+  });
 }

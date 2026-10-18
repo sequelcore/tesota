@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { git } from "../../../src/git.ts";
@@ -72,3 +72,36 @@ test("two processes snapshot one fresh folder together", async () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("a stop while the snapshot store is held by another ends the request at once, with no snapshot taken", async () => {
+  const { createModels, fauxProvider } = await import("@earendil-works/pi-ai");
+  const { createSession } = await import("../src/session.ts");
+  const { lockSession } = await import("../src/session-lock.ts");
+  const { tesotaHome } = await import("../../../src/home.ts");
+  const { scriptedReply, accepts } = await import("./scripted.ts");
+  const root = mkdtempSync(join(tmpdir(), "tesota-core-snapshot-"));
+  writeFileSync(join(root, "notes.txt"), "hello\n");
+  mkdirSync(tesotaHome(), { recursive: true });
+  // Another session's snapshot holds the store, which a request waits for up to 30 s.
+  const held = lockSession(join(tesotaHome(), "snapshots.lock"));
+  const faux = fauxProvider();
+  faux.setResponses(["done"].map(scriptedReply));
+  const models = createModels();
+  models.setProvider(faux.provider);
+  const session = createSession({ cwd: root, folder: mkdtempSync(join(tmpdir(), "tesota-core-sessions-")), models, model: faux.getModel(),
+    verifier: accepts });
+  try {
+    const run = session.prompt("go");
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const stopped = performance.now();
+    await session.abort();
+    await run;
+    expect(performance.now() - stopped).toBeLessThan(5_000);
+    expect(session.outcome()).toBe("aborted");
+    expect(session.ledger()[0]?.base.units).toEqual([{ folder: "", kind: "refused", reason: "the run was stopped before the snapshot was taken" }]);
+  } finally {
+    held.release();
+    await session.dispose();
+    rmSync(root, { recursive: true, force: true });
+  }
+}, 60_000);

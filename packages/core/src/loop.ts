@@ -33,7 +33,7 @@ export interface LoopOptions {
   /** What a resumed session already holds; a new session starts empty. */
   readonly resumed?: LoopState;
   /** The base of a request; the gate's units (`captureBase`) when not given. */
-  readonly captureBase?: (cwd: string) => Promise<Base>;
+  readonly captureBase?: (cwd: string, signal: AbortSignal) => Promise<Base>;
   /** The session's extensions; they settle before the verifier and cannot replace it. */
   readonly extensions?: readonly ExtensionFactory[];
   /** What verifies each run before it may complete (#439); a run whose verifier has no settle handler never completes. */
@@ -745,7 +745,7 @@ export function createLoop(options: LoopOptions): LoopSession {
   async function start(run: number, text: string, origin: Origin, signal: AbortSignal): Promise<void> {
     const at = new Date().toISOString();
     const written = (async () => {
-      writer.append({ type: "request", run, text, origin, at, base: await base(options.cwd) });
+      writer.append({ type: "request", run, text, origin, at, base: await base(options.cwd, signal) });
       writer.sync();
     })();
     recorded = written.catch(() => undefined);

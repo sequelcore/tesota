@@ -110,11 +110,15 @@ export function withLock<T>(path: string, work: () => T): T {
 /**
  * Runs `work`, which may wait on the network, holding the lock at `path`,
  * waiting up to `waitMs` for another holder in this process or another
- * (#459): an MCP token refresh, which a second at once would spend.
+ * (#459): an MCP token refresh, which a second at once would spend. A
+ * `signal` that stops ends the wait, refused as the lock being held; work
+ * that already holds the lock runs to its end, so the lock is never released
+ * under it.
  */
-export async function withLockWhile<T>(path: string, work: () => Promise<T>, waitMs: number): Promise<T> {
+export async function withLockWhile<T>(path: string, work: () => Promise<T>, waitMs: number, signal?: AbortSignal): Promise<T> {
   const until = Date.now() + waitMs;
-  const waiting = Schedule.spaced(50).pipe(Schedule.while(({ input }) => input instanceof SessionLockedError && Date.now() < until));
+  const waiting = Schedule.spaced(50).pipe(Schedule.while(({ input }) =>
+    input instanceof SessionLockedError && Date.now() < until && signal?.aborted !== true));
   const acquire = Effect.retry(Effect.try({ try: () => lockSession(path), catch: (error) => error }), waiting);
   return Effect.runPromise(Effect.acquireUseRelease(acquire,
     () => Effect.tryPromise({ try: work, catch: (error) => error }),
