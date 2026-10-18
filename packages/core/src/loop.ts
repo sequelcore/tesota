@@ -485,6 +485,7 @@ export function createLoop(options: LoopOptions): LoopSession {
     writer.sync();
     emit({ type: "call", call });
     await host.toolStart({ type: "tool_execution_start", toolCallId: call.id, toolName: call.name, args: call.arguments }, signal);
+    if (signal.aborted) return stoppedCall;
     const output = await execute(offered, call, signal);
     await host.toolResult({ type: "tool_result", toolCallId: call.id, toolName: call.name, input: call.arguments,
       isError: output.isError }, signal);

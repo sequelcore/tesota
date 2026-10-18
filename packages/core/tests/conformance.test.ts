@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Type } from "typebox";
@@ -52,6 +52,33 @@ for (const engine of engines) {
       expect(seen).toEqual(["session_start:startup", "input:go:interactive", "tool_execution_start:read",
         "tool_result:read:missing.txt:true", "agent_before_settle:completed"]);
       expect(session.outcome()).toBe("completed");
+    });
+
+    test("stopping during a tool start handler prevents the write and records a stopped call", async () => {
+      const cwd = mkdtempSync(join(tmpdir(), "tesota-core-cwd-"));
+      let entered: () => void = () => undefined;
+      let release: () => void = () => undefined;
+      const started = new Promise<void>((resolve) => { entered = resolve; });
+      const waiting = new Promise<void>((resolve) => { release = resolve; });
+      const session = await engine.createSession({ cwd,
+        script: [{ tool: "write", args: { path: "after-stop.md", content: "after stop" } }, "never reached"],
+        extensions: [(pi) => {
+          pi.on("tool_execution_start", async () => {
+            entered();
+            await waiting;
+          });
+        }],
+      });
+      open.push(session);
+      const run = session.prompt("go");
+      await started;
+      const stopping = session.abort();
+      release();
+      await Promise.all([run, stopping]);
+      expect(session.outcome()).toBe("aborted");
+      expect(existsSync(join(cwd, "after-stop.md"))).toBe(false);
+      expect(session.messages().filter((message) => message.role === "toolResult"))
+        .toMatchObject([{ toolName: "write", isError: true }]);
     });
 
     test("a settle handler sends the agent back once, and the agent answers again", async () => {
