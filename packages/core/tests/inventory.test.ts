@@ -51,7 +51,7 @@ function effectImports(): { file: string; module: string }[] {
 }
 
 test("Tesota uses only Effect's stable core modules, never one tagged unstable or experimental, nor a submodule", () => {
-  // Effect 4 tags each module's stability; an unstable or experimental one may change in a patch release (docs/development.md).
+  // Effect 4 tags each module's stability; an unstable one may break in a minor release, an experimental one in a patch (docs/development.md).
   const dist = join(dirname(createRequire(import.meta.url).resolve("effect/package.json")), "dist");
   const stability = (module: string): string => {
     try { return /@stability (\w+)/u.exec(readFileSync(join(dist, `${module}.d.ts`), "utf8"))?.[1] ?? "untagged"; }
@@ -60,4 +60,10 @@ test("Tesota uses only Effect's stable core modules, never one tagged unstable o
   const imports = effectImports();
   expect(imports.length).toBeGreaterThan(0);
   expect(imports.map((each) => ({ ...each, stability: stability(each.module) })).filter((each) => each.stability !== "stable")).toEqual([]);
+});
+
+test("Tesota imports Effect's modules by their path, never the root, which evaluates the whole package", () => {
+  const whole = /import\s+(?!type\s)[^;]*?from\s+["']effect["']|import\(\s*["']effect["']\s*\)/u;
+  expect([join(root, "src"), join(root, "packages", "core", "src")].flatMap(sources)
+    .filter((file) => whole.test(readFileSync(file, "utf8"))).map((file) => relative(root, file).replaceAll("\\", "/"))).toEqual([]);
 });

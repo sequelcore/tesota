@@ -5,7 +5,7 @@ import {
   type CallToolResult, type ListResourcesResult, type ListResourceTemplatesResult, McpClient, McpSessionExpiredError, type McpTransport, McpTimeoutError, type ReadResourceResult, StdioTransport,
   StreamableHttpTransport, type Tool, toLlmContent,
 } from "@earendil-works/pi-mcp";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { Type } from "typebox";
 import manifest from "../package.json" with { type: "json" };
 import type { McpTools } from "./loop.ts";
