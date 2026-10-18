@@ -1,5 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { Effect, Option } from "effect";
+import { Effect, Exit, Option } from "effect";
 import { join } from "node:path";
 
 /** How a process run ended: it exited, ran past its limit, was stopped, or could not start. */
@@ -43,6 +43,62 @@ function stopTree(pid: number): Promise<void> {
   return Promise.resolve();
 }
 
+/** kernel32's job functions as Bun's FFI binds them (#490). */
+interface Kernel32Jobs {
+  CreateJobObjectW(attributes: null, name: null): unknown;
+  OpenProcess(access: number, inherit: number, pid: number): unknown;
+  AssignProcessToJobObject(job: unknown, process: unknown): number;
+  TerminateJobObject(job: unknown, exitCode: number): number;
+  CloseHandle(handle: unknown): number;
+}
+
+/** A failed call's handle: null, or zero as a number or a bigint, as Bun gives a pointer. */
+const isNull = (handle: unknown): boolean => handle === null || handle === 0 || handle === 0n;
+
+// Named apart so that Node, which has no `bun:ffi` and runs the root tests, never resolves it.
+const bunFfi = "bun:ffi";
+let kernel32: Promise<Kernel32Jobs | undefined> | undefined;
+
+/**
+ * kernel32's job functions, on Windows under Bun, which runs Tesota; none
+ * under Node or elsewhere. Loaded once, when a process is first run.
+ */
+function windowsJobs(): Promise<Kernel32Jobs | undefined> {
+  kernel32 ??= (async () => {
+    if (process.platform !== "win32" || process.versions["bun"] === undefined) return undefined;
+    const { dlopen, FFIType } = await import(bunFfi) as {
+      dlopen(name: string, symbols: Record<string, { args: number[]; returns: number }>): { symbols: Kernel32Jobs };
+      FFIType: Record<"ptr" | "u32" | "i32", number>;
+    };
+    return dlopen("kernel32.dll", {
+      CreateJobObjectW: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.ptr },
+      OpenProcess: { args: [FFIType.u32, FFIType.i32, FFIType.u32], returns: FFIType.ptr },
+      AssignProcessToJobObject: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
+      TerminateJobObject: { args: [FFIType.ptr, FFIType.u32], returns: FFIType.i32 },
+      CloseHandle: { args: [FFIType.ptr], returns: FFIType.i32 },
+    }).symbols;
+  })();
+  return kernel32;
+}
+
+/**
+ * A Windows job holding the process `pid` and every process it starts, which
+ * inherit it however their parents come and go: Git's bash runs a script
+ * through a process that exits, which breaks the parent chain `taskkill /T`
+ * follows (#490). Undefined when the process could not be put in one.
+ */
+function jobFor(jobs: Kernel32Jobs, pid: number): unknown {
+  const job = jobs.CreateJobObjectW(null, null);
+  if (isNull(job)) return undefined;
+  const processSetQuota = 0x0100, processTerminate = 0x0001;
+  const handle = jobs.OpenProcess(processSetQuota | processTerminate, 0, pid);
+  const assigned = !isNull(handle) && jobs.AssignProcessToJobObject(job, handle) !== 0;
+  if (!isNull(handle)) jobs.CloseHandle(handle);
+  if (assigned) return job;
+  jobs.CloseHandle(job);
+  return undefined;
+}
+
 /** What a run collects as it goes: the end of what it printed, and the start of each stream apart. */
 interface Collected { output: string; stdout: string; stderr: string }
 
@@ -77,6 +133,7 @@ export async function runProcess(executable: string, args: readonly string[], cw
     if (got[stream].length < streamLimit) got[stream] = (got[stream] + text).slice(0, streamLimit);
     onOutput?.(chunk);
   };
+  const jobs = await windowsJobs();
   const start = Effect.sync(() => {
     const child = spawn(executable, [...args], { cwd, windowsHide: true, detached: process.platform !== "win32",
       stdio: [options.input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
@@ -88,12 +145,19 @@ export async function runProcess(executable: string, args: readonly string[], cw
       child.stdin.on("error", () => undefined);
       child.stdin.end(options.input);
     }
-    return child;
+    // Put in its job before it can start anything, so all it starts is in the job too.
+    return { child, job: jobs === undefined || child.pid === undefined ? undefined : jobFor(jobs, child.pid) };
   });
-  // Whatever ended the run, a process still running is stopped with its tree before the run reports.
-  const stop = (child: ChildProcess) => Effect.promise(() => child.exitCode === null && child.signalCode === null && child.pid !== undefined
-    ? stopTree(child.pid) : Promise.resolve());
-  const run = Effect.acquireUseRelease(start, (child) => {
+  // A run a stop or the time limit ended has its processes stopped before it reports: on Windows its whole job, however
+  // their parents came and went; elsewhere, or without a job, its tree. One that ended by itself leaves what outlived it.
+  const stop = ({ child, job }: { child: ChildProcess; job: unknown }, exit: Exit.Exit<Option.Option<number | null>, Error>) =>
+    Effect.promise(async () => {
+      const stopped = !Exit.isSuccess(exit) || Option.isNone(exit.value) || (child.exitCode === null && child.signalCode === null);
+      if (stopped && jobs !== undefined && job !== undefined) jobs.TerminateJobObject(job, 1);
+      else if (stopped && child.pid !== undefined) await stopTree(child.pid);
+      if (jobs !== undefined && job !== undefined) jobs.CloseHandle(job);
+    });
+  const run = Effect.acquireUseRelease(start, ({ child }) => {
     const ended = closed(child);
     return timeoutMs === undefined ? Effect.map(ended, Option.some) : Effect.timeoutOption(ended, timeoutMs);
   }, stop);
