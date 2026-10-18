@@ -420,6 +420,45 @@ export const SETTLED: Readonly<Record<string, { readonly request: string; readon
 };
 
 /**
+ * Requests that name a standard term, for #429, registered on 2026-10-17
+ * before any run: eight whose term's established definition and stated
+ * rules settle every case, the first being #429's own, and four that leave a
+ * case open under that definition, named in `open`, which a quieter list
+ * must still find. Labelled by a rule fixed now: a listed case is a false
+ * alarm when the request's words, or the established definition of a
+ * standard term it names, fix its result, inputs outside a domain the
+ * request names included; a case that needs an unusual reading of such a
+ * term to be open, such as clamp returning a bound for a value inside the
+ * range, is one too. It is open when two different results stay reasonable
+ * under that definition and every stated rule. It is an unusual input when it
+ * is of a kind the request never mentions. A request that overrides the
+ * usual meaning, as "clamp overridden" does, is read as it says.
+ */
+export const STANDARD: Readonly<Record<string, { readonly request: string; readonly open: readonly string[] }>> = {
+  "clamp with an explicit rule": { request: "Add a function clamp(value, min, max) in src/clamp.ts that throws when min > max, " +
+    "with a bun test in src/clamp.test.ts, and run the tests.", open: [] },
+  "clamp overridden": { request: "Add clamp(value, min, max) in src/clamp.ts that, in this API, returns min whenever min <= max " +
+    "and throws otherwise.", open: [] },
+  "absolute value": { request: "Add absolute(n) in src/math.ts that returns the absolute value of the integer n.", open: [] },
+  "greatest common divisor": { request: "Add gcd(a, b) in src/math.ts that returns the greatest common divisor of two positive integers.",
+    open: [] },
+  "median": { request: "Add median(values) in src/stats.ts that returns the median of a non-empty array of numbers.", open: [] },
+  "sorted copy": { request: "Add sorted(values) in src/lists.ts that returns a new array of the numbers in values in ascending order, " +
+    "keeping duplicates.", open: [] },
+  "leap year": { request: "Add isLeapYear(year) in src/calendar.ts that tells whether a year of the Gregorian calendar is a leap year.",
+    open: [] },
+  "factorial": { request: "Add factorial(n) in src/math.ts that returns n! for a non-negative integer n.", open: [] },
+  "mean": { request: "Add mean(values) in src/stats.ts that returns the arithmetic mean of an array of numbers.",
+    open: ["an empty array"] },
+  "round to integer": { request: "Add roundToInteger(x) in src/math.ts that rounds a number to the nearest integer.",
+    open: ["a value exactly halfway between two integers, such as 2.5 or -2.5"] },
+  "round with ties": { request: "Add roundToInteger(x) in src/math.ts that rounds a number to the nearest integer, resolving ties " +
+    "toward the even integer.", open: [] },
+  "percent change": { request: "Add percentChange(from, to) in src/finance.ts that returns the percentage change from one value to another.",
+    open: ["from is zero"] },
+};
+
+/**
  * The base's buggy function under the contract a run left: its `//@` lines
  * from `after`, then the base's declaration and body. When this fails the
  * proof, the new contract rules the bug out; undefined when the function is
