@@ -1,6 +1,6 @@
 import { createModels, fauxProvider } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -236,6 +236,56 @@ describe("a local server", () => {
     const again = Date.now();
     await ready(servers);
     expect(Date.now() - again).toBeLessThan(50);
+  });
+
+  test("a request already stopped does not wait for a server still connecting", async () => {
+    const servers = started([local("silent", { args: ["-e", "setInterval(() => {}, 1000)"] })], { waitMs: 500 });
+    const stop = new AbortController();
+    stop.abort();
+    const begun = Date.now();
+    await servers.ready(stop.signal);
+    expect(Date.now() - begun).toBeLessThan(100);
+    expect(servers.status()[0]?.state).toBe("connecting");
+  });
+
+  test("closing a server still connecting waits for its process to stop, without waiting out its request timeout", async () => {
+    const pidFile = join(folder("tesota-core-mcp-opening-"), "pid");
+    const servers = started([local("silent", {
+      args: ["-e", "process.stdin.once('data', () => { require('node:fs').writeFileSync(process.env.TESOTA_MCP_PID, String(process.pid)); }); process.stdin.resume();"],
+      env: { TESOTA_MCP_PID: pidFile },
+    })]);
+    // The child has received initialize but never answers it: close must stop a real connection in progress.
+    for (let tries = 0; !existsSync(pidFile) && tries < 100; tries++) await Bun.sleep(20);
+    const pid = Number(readFileSync(pidFile, "utf8"));
+    expect(() => process.kill(pid, 0)).not.toThrow();
+    expect(servers.status()[0]?.state).toBe("connecting");
+    const begun = Date.now();
+    await servers.close();
+    expect(Date.now() - begun).toBeLessThan(5000);
+    expect(() => process.kill(pid, 0)).toThrow();
+    expect(servers.tools(spool)).toEqual([]);
+    await servers.reconnect("silent");
+    expect(() => process.kill(pid, 0)).toThrow();
+    expect(servers.status()[0]?.state).not.toBe("connected");
+  });
+
+  test("closing during a reconnect waits for the previous connection's release", async () => {
+    const at = folder("tesota-core-mcp-reconnecting-");
+    const pidFile = join(at, "pid");
+    const closingFile = join(at, "closing");
+    const servers = started([local("test", {
+      args: ["-e", "await import(process.env.TESOTA_MCP_SERVER); process.stdin.removeAllListeners('end'); process.stdin.on('end', () => { require('node:fs').writeFileSync(process.env.TESOTA_MCP_CLOSING, 'closing'); }); require('node:fs').writeFileSync(process.env.TESOTA_MCP_PID, String(process.pid)); setInterval(() => {}, 1000);"],
+      env: { TESOTA_MCP_SERVER: new URL("./mcp-server.mjs", import.meta.url).href, TESOTA_MCP_PID: pidFile, TESOTA_MCP_CLOSING: closingFile },
+    })]);
+    await ready(servers);
+    const pid = Number(readFileSync(pidFile, "utf8"));
+    const reconnecting = servers.reconnect("test");
+    // The old server ignores stdin closing. Its transport must finish stopping it before close returns.
+    for (let tries = 0; !existsSync(closingFile) && tries < 100; tries++) await Bun.sleep(20);
+    expect(existsSync(closingFile)).toBe(true);
+    await servers.close();
+    await reconnecting;
+    expect(() => process.kill(pid, 0)).toThrow();
   });
 
   test("its resources are listed, their templates too, and read: text as text, data saved to a file", async () => {
