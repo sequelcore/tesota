@@ -1,5 +1,6 @@
 import { dlopen, FFIType, ptr } from "bun:ffi";
 import { closeSync, openSync } from "node:fs";
+import { Effect, Schedule } from "effect";
 
 /** Another writer holds the session: in this process or another. */
 export class SessionLockedError extends Error {
@@ -113,21 +114,11 @@ export function withLock<T>(path: string, work: () => T): T {
  */
 export async function withLockWhile<T>(path: string, work: () => Promise<T>, waitMs: number): Promise<T> {
   const until = Date.now() + waitMs;
-  for (;;) {
-    let lock: SessionLock;
-    try {
-      lock = lockSession(path);
-    } catch (error) {
-      if (!(error instanceof SessionLockedError) || Date.now() >= until) throw error;
-      await Bun.sleep(50);
-      continue;
-    }
-    try {
-      return await work();
-    } finally {
-      lock.release();
-    }
-  }
+  const waiting = Schedule.spaced(50).pipe(Schedule.while(({ input }) => input instanceof SessionLockedError && Date.now() < until));
+  const acquire = Effect.retry(Effect.try({ try: () => lockSession(path), catch: (error) => error }), waiting);
+  return Effect.runPromise(Effect.acquireUseRelease(acquire,
+    () => Effect.tryPromise({ try: work, catch: (error) => error }),
+    (lock) => Effect.sync(() => { lock.release(); })));
 }
 
 export function lockSession(path: string): SessionLock {
