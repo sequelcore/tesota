@@ -45,7 +45,15 @@ function scripted(steps: readonly Step[], summaries: readonly (string | { readon
   };
   faux.setResponses(Array.from({ length: 60 }, () => (context: unknown) => answer(context as Context)));
   const models = createModels();
-  models.setProvider(faux.provider);
+  // Temporary, until #484: given the session's id, pi-ai 1.3.0's scripted model counts a cached prompt's new tokens
+  // twice, which these measured windows cannot absorb, so the id is withheld from it. Remove once pi-ai counts them once.
+  const withoutSession = <Options extends { sessionId?: string }>(options?: Options) => {
+    const { sessionId: _, ...rest } = options ?? {};
+    return rest as Options;
+  };
+  models.setProvider({ ...faux.provider,
+    stream: (model, context, options) => faux.provider.stream(model, context, withoutSession(options)),
+    streamSimple: (model, context, options) => faux.provider.streamSimple(model, context, withoutSession(options)) });
   return { models, model: faux.getModel(), seen };
 }
 

@@ -412,7 +412,9 @@ export function createLoop(options: LoopOptions): LoopSession {
     try {
       const stream = options.models.streamSimple(options.model,
         { systemPrompt: promptFor(), messages: modelContext(history), tools: offered.map(declaration) },
-        { signal, ...thinkingLevel === "off" ? {} : { reasoning: thinkingLevel } });
+        // The session's id is the provider's prompt-cache key and session affinity, as Pi passed it (`prompt_cache_key` for OpenAI).
+        { signal, ...options.sessionId === undefined ? {} : { sessionId: options.sessionId },
+          ...thinkingLevel === "off" ? {} : { reasoning: thinkingLevel } });
       for await (const event of stream) if ("partial" in event) emit({ type: "reply", partial: event.partial });
       message = await stream.result();
     } catch (error) {
