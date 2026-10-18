@@ -13,3 +13,19 @@ lemma withinBudget_ensures(measured: int, limit: int)
   ensures (withinBudget(measured, limit) <==> (measured <= limit))
 {
 }
+
+function withinBudgetAfterRetry(first: int, second: int, limit: int): bool
+  requires (first >= 0)
+  requires (second >= 0)
+  requires (limit >= 0)
+{
+  (withinBudget(first, limit) || withinBudget(second, limit))
+}
+
+lemma withinBudgetAfterRetry_ensures(first: int, second: int, limit: int)
+  requires (first >= 0)
+  requires (second >= 0)
+  requires (limit >= 0)
+  ensures (withinBudgetAfterRetry(first, second, limit) <==> ((first <= limit) || (second <= limit)))
+{
+}

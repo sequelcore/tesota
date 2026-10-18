@@ -25,3 +25,27 @@ test("a platform with no limit set fails until one is measured and recorded", ()
 test("a measurement without a limit is reported, not checked", () => {
   expect(overBudget(measured({ loopMs: 99_999 }), { startupMs: 50 })).toEqual([]);
 });
+
+test("a measurement over its limit only in the first attempt passes after a retry", () => {
+  expect(overBudget(measured({ firstFrameMs: 197.4 }), { firstFrameMs: 180 }, measured({ firstFrameMs: 180 })))
+    .toEqual([]);
+});
+
+test("a measurement over its limit in both attempts fails with both values", () => {
+  expect(overBudget(measured({ firstFrameMs: 197.4 }), { firstFrameMs: 180 }, measured({ firstFrameMs: 188.2 })))
+    .toEqual(["firstFrameMs: 197.4 then 188.2 is over its limit of 180"]);
+});
+
+test("a measurement within its limit needs no retry", () => {
+  expect(overBudget(measured({ firstFrameMs: 180 }), { firstFrameMs: 180 })).toEqual([]);
+});
+
+test("a retry cannot pass a measurement with no limit set", () => {
+  expect(overBudget(measured({ firstFrameMs: 197.4 }), { firstFrameMs: null }, measured({ firstFrameMs: 0 })))
+    .toEqual(["firstFrameMs: no limit set (measured 197.4)"]);
+});
+
+test("each measurement can pass in a different attempt", () => {
+  expect(overBudget(measured({ firstFrameMs: 197.4, startupMs: 50 }), { firstFrameMs: 180, startupMs: 50 },
+    measured({ firstFrameMs: 180, startupMs: 50.1 }))).toEqual([]);
+});
