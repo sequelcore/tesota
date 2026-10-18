@@ -1,14 +1,14 @@
-import { afterAll } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { homedir, tmpdir } from "node:os";
 
 /**
- * Every test run gets a home folder of its own, so no test reads or writes
- * the operator's Pi state (`~/.pi`) or Git configuration. Set before any
- * test module loads, since modules read default paths when imported.
+ * The engine's tests run only inside `scripts/isolated.ts` (#479), which
+ * gives them a home folder and a temporary folder of their own from the
+ * start, so no test or process it spawns reads or writes the operator's
+ * `~/.tesota`, `~/.pi` or Git configuration, and nothing is left behind.
+ * Setting them here instead would miss every process a test spawns without
+ * `env`, which Bun starts with the environment this process began with.
  */
-const home = mkdtempSync(join(tmpdir(), "tesota-core-home-"));
-process.env["HOME"] = home;
-process.env["USERPROFILE"] = home;
-afterAll(() => { rmSync(home, { recursive: true, force: true, maxRetries: 3 }); });
+const root = process.env["TESOTA_ISOLATED"];
+if (root === undefined || !homedir().startsWith(root) || !tmpdir().startsWith(root)) {
+  throw new Error("Run the engine's tests with `bun run test`, which gives them a home and temporary folder of their own (scripts/isolated.ts).");
+}
