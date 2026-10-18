@@ -44,7 +44,8 @@ export interface PhaseResult {
 
 /** The events of a session, sent to its extensions and then to its verifier. */
 export interface ExtensionHost {
-  sessionStart(event: SessionStartEvent): Promise<void>;
+  /** `signal` stops when the session is disposed, which waits for these handlers. */
+  sessionStart(event: SessionStartEvent, signal: AbortSignal): Promise<void>;
   input(event: InputEvent, signal: AbortSignal | undefined): Promise<void>;
   toolStart(event: ToolExecutionStartEvent, signal: AbortSignal): Promise<void>;
   toolResult(event: ToolResultEvent, signal: AbortSignal): Promise<void>;
@@ -131,7 +132,7 @@ export function createHost(options: HostOptions, extensions: readonly ExtensionF
   }
 
   return {
-    sessionStart: (event) => emit("session_start", event, undefined),
+    sessionStart: (event, signal) => emit("session_start", event, signal),
     input: (event, signal) => emit("input", event, signal),
     toolStart: (event, signal) => emit("tool_execution_start", event, signal),
     toolResult: (event, signal) => emit("tool_result", event, signal),

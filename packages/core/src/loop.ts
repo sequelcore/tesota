@@ -239,6 +239,7 @@ const truncatedCall = (call: ToolCall): ToolOutput => ({
 const stoppedCall: ToolOutput = { text: "Not run: the operator stopped the agent.", isError: true };
 
 const stoppedReason = "the operator stopped the run";
+const disposedReason = "The session is closed; start or resume one to go on.";
 
 /** Compaction as a loop starts (#451): its margins, Pi's when not given, and what a resumed session last held. */
 function compactionAtStart(options: LoopOptions): {
@@ -405,7 +406,10 @@ export function createLoop(options: LoopOptions): LoopSession {
     ...options.surface === undefined ? {} : { surface: options.surface },
   }, options.extensions ?? [], options.verifier);
   tools.restore(options.resumed?.activeTools);
-  const started = host.sessionStart({ type: "session_start", reason: options.resumed === undefined ? "startup" : "resume" });
+  /** Stops when the session is disposed: what started with the session, its startup handlers, is told. */
+  const lifetime = new AbortController();
+  const started = host.sessionStart({ type: "session_start", reason: options.resumed === undefined ? "startup" : "resume" },
+    lifetime.signal);
   /** Prompts waiting for startup or manual compaction, which a stop refuses before they become runs. */
   const admitting = new Set<AbortController>();
   let controller: AbortController | undefined;
@@ -796,16 +800,21 @@ export function createLoop(options: LoopOptions): LoopSession {
 
   return {
     async prompt(text, { streamingBehavior, source = "interactive" } = {}) {
+      if (disposed !== undefined) throw new Error(disposedReason);
       const admission = new AbortController();
       admitting.add(admission);
+      const refused = () => {
+        if (disposed !== undefined) throw new Error(disposedReason);
+        if (admission.signal.aborted) throw new Error(stoppedReason);
+      };
       try {
         await started;
-        if (admission.signal.aborted) throw new Error(stoppedReason);
+        refused();
         // Checked again after each wait, with no wait between the last check and the run's start, so a compaction
         // asked for meanwhile cannot start under it.
         while (compacting !== undefined) {
           await compacting.done.catch(() => undefined);
-          if (admission.signal.aborted) throw new Error(stoppedReason);
+          refused();
         }
       } finally { admitting.delete(admission); }
       if (running !== undefined) {
@@ -824,6 +833,9 @@ export function createLoop(options: LoopOptions): LoopSession {
         await current;
       } catch (error) {
         outcome = "error";
+        // A failed run never settles, so its input handlers still running are stopped and finish here, as settlement's would.
+        admission.abort();
+        await Promise.all(handling);
         throw error;
       } finally {
         running = undefined;
@@ -837,7 +849,9 @@ export function createLoop(options: LoopOptions): LoopSession {
       await compacting?.done.catch(() => undefined);
     },
     async compact() {
+      if (disposed !== undefined) throw new Error(disposedReason);
       await started;
+      if (disposed !== undefined) throw new Error(disposedReason);
       if (running !== undefined) throw new Error("A run is going; wait for it to end, or stop it, then compact.");
       if (compacting !== undefined) throw new Error("The conversation is already being compacted.");
       if (runs === 0) throw new Error("There is nothing to compact yet.");
@@ -859,9 +873,12 @@ export function createLoop(options: LoopOptions): LoopSession {
     stats: () => ({ tokens: { ...tokens } }),
     outcome: () => outcome,
     dispose: () => disposed ??= (async () => {
+      lifetime.abort();
       for (const admission of admitting) admission.abort();
       controller?.abort();
       compacting?.controller.abort();
+      // Its startup handlers finish before the session's file and lock go, so none runs on after it.
+      await started;
       await running?.catch(() => undefined);
       await compacting?.done.catch(() => undefined);
       writer.close();
