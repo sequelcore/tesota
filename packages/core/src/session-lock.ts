@@ -1,6 +1,7 @@
 import { dlopen, FFIType, ptr } from "bun:ffi";
 import { closeSync, openSync } from "node:fs";
-import { Effect, Schedule } from "effect";
+import * as Effect from "effect/Effect";
+import * as Schedule from "effect/Schedule";
 
 /** Another writer holds the session: in this process or another. */
 export class SessionLockedError extends Error {

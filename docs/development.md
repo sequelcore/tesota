@@ -128,16 +128,19 @@ a stop and a time limit are interruptions rather than flags to check. Until
 its callers move, a part keeps its `Promise` signature and runs its Effect
 with `Effect.runPromise(effect, { signal })`.
 
-- **Load it when first used, on the shell's path.** Evaluating Effect costs
-  memory, and the shell's memory has a budget: code that loads with the
-  shell, as the gate does, imports Effect's types and loads its module when
-  it first runs (`loadChecks` in `src/gate.ts`). Import a module by its path
-  (`effect/Effect`); the root `effect` re-exports the whole package.
+- **Import a module by its path** (`effect/Effect`), never the root
+  `effect`, which evaluates the whole package: run from source, the root
+  costs about 35 MB, the modules Tesota uses about 16 MB.
+  `inventory.test.ts` fails on an import of the root. The shell loads those
+  modules through `src/process.ts`; code on the shell's path that would load
+  more, as the gate's checks would, loads it when first used (`loadChecks`
+  in `src/gate.ts`).
 - **An interrupted step is awaited.** `Effect.promise` abandons its promise
   when interrupted; a step that started processes aborts them and waits, as
   the gate's `step` does, so nothing runs after Tesota reports.
 - **Stable core modules only.** Effect tags each module's stability, and an
-  `unstable` or `experimental` one may change in a patch release. Every
+  `unstable` one may break in a minor release, an `experimental` one in a
+  patch release. Every
   submodule (`effect/process`, `effect/ai`, `effect/cli`, `effect/http`, …)
   is unstable in 4.0, and so are some core modules, such as `FileSystem`,
   `Path` and `Terminal`. `inventory.test.ts` fails on an import of either.

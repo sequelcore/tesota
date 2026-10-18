@@ -1,5 +1,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { Effect, Exit, Option } from "effect";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Option from "effect/Option";
 import { join } from "node:path";
 
 /** How a process run ended: it exited, ran past its limit, was stopped, or could not start. */
