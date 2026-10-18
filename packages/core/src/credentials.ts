@@ -2,7 +2,7 @@ import type { AuthOperationOptions, Credential, CredentialInfo, CredentialStore 
 import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
-import { lockSession, SessionLockedError, type SessionLock } from "./session-lock.ts";
+import { withLockWhile } from "./session-lock.ts";
 import { parseJson } from "../../../src/json.ts";
 import { writeWholeJson } from "./whole-file.ts";
 
@@ -26,19 +26,6 @@ function readStored(path: string): Stored {
   return Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, Credential] => isCredential(entry[1])));
 }
 
-/** The lock on `path`, waiting while another writer, in this process or another, holds it. */
-async function locked(path: string, signal: AbortSignal | undefined): Promise<SessionLock> {
-  const deadline = Date.now() + lockWaitMs;
-  for (;;) {
-    signal?.throwIfAborted();
-    try { return lockSession(path); } catch (error) {
-      if (!(error instanceof SessionLockedError)) throw error;
-      if (Date.now() > deadline) throw new Error(`Another Tesota kept ${path} locked for ${lockWaitMs / 1000} s; try again.`);
-    }
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-}
-
 /**
  * The engine's credentials (#443), one per provider, in `~/.tesota/auth.json`
  * unless given another file; Pi's are never read. Every write is a
@@ -52,15 +39,12 @@ export function fileCredentialStore(path: string = join(tesotaHome(), "auth.json
   async function change<T>(options: AuthOperationOptions | undefined, fn: (stored: Stored) => Promise<{ next?: Stored; result: T }>): Promise<T> {
     const run = queue.then(async () => {
       mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-      const lock = await locked(lockPath, options?.signal);
-      try {
+      return withLockWhile(lockPath, async () => {
         const { next, result } = await fn(readStored(path));
         // Readable by its owner only, where the system has modes.
         if (next !== undefined) writeWholeJson(path, next, 0o600);
         return result;
-      } finally {
-        lock.release();
-      }
+      }, lockWaitMs, options?.signal);
     });
     queue = run.catch(() => undefined);
     return run;
