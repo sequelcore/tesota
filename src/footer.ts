@@ -110,6 +110,8 @@ export function evidenceParts(status: GateStatus, now: number = performance.now(
     const words = readinessWords[status.readiness];
     return [part("● ready", "● ready", "●", status.readiness === "nothing" ? "warning" : "success"), words];
   }
+  // While the agent works nothing is ready or verified yet: the gate waits, with what it will check once the run settles.
+  if (status.step === "waiting") return [part("◌ waiting for the agent", "◌ waiting", "◌", "muted"), readinessWords[status.readiness]];
   if (status.step === "settled") return receiptParts(status.receipt);
   if (status.step === "sent_back") return [workingHeads.sent_back, ...tallyParts(status.tally)];
   const { minutes, seconds } = elapsedTime(Math.max(0, Math.floor(now - status.startedAt)));

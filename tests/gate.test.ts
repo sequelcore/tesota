@@ -215,12 +215,12 @@ it("keeps the agent working while a changed contract fails, and settles with a r
   expect(Date.parse(receipt.settledAt)).toBeGreaterThanOrEqual(Date.parse(receipt.startedAt));
 });
 
-it("publishes each step for the footer: proving, sent back, testing, measuring, settled, and ready on the next request", async () => {
+it("publishes each step for the footer: waiting, proving, sent back, testing, measuring, settled, and waiting on the next request", async () => {
   const root = project();
   const run = gate(root);
   run.progress.ready("proofs_only");
   await run.input();
-  expect(run.progress.status).toEqual({ step: "ready", readiness: "proofs_only" });
+  expect(run.progress.status).toEqual({ step: "waiting", readiness: "proofs_only" });
   writeFileSync(join(root, "src", "rule.ts"), contract.replace("return 0;", "return 1;"));
   scripted.set("src/rule.ts", { outcome: "failed", output: "1 verified, 1 error" });
   run.steps.length = 0;
@@ -242,7 +242,7 @@ it("publishes each step for the footer: proving, sent back, testing, measuring, 
   expect(run.steps[2]).toEqual({ step: "measuring", startedAt: expect.any(Number), tally: { proved: 1, notProved: 0 } });
   expect(run.progress.status).toEqual({ step: "settled", receipt });
   await run.input();
-  expect(run.progress.status).toEqual({ step: "ready", readiness: "proofs_only" });
+  expect(run.progress.status).toEqual({ step: "waiting", readiness: "proofs_only" });
 });
 
 it("leaves a receipt verifying nothing when a run is stopped after a write starts", async () => {
@@ -263,7 +263,7 @@ it("leaves a receipt verifying nothing when a run is stopped after a write start
   expect(receipt.openCases).toBeUndefined();
   expect(Date.parse(receipt.settledAt)).toBeGreaterThanOrEqual(Date.parse(receipt.startedAt));
   expect(run.progress.status).toEqual({ step: "settled", receipt });
-  expect(run.steps.map(({ step }) => step)).toEqual(["ready", "settled"]);
+  expect(run.steps.map(({ step }) => step)).toEqual(["waiting", "settled"]);
 });
 
 it.each([
@@ -282,6 +282,8 @@ it.each([
 it("leaves no receipt when an aborted run only started a read", async () => {
   const run = gate(project());
   await run.input();
+  // While the agent works, the footer says the gate waits for it, not that it is ready.
+  expect(run.progress.status).toEqual({ step: "waiting", readiness: "nothing" });
   run.tool("read");
   expect(await run.settle("aborted")).toBeUndefined();
   expect(run.progress.status).toEqual({ step: "ready", readiness: "nothing" });
