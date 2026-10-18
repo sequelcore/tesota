@@ -2,11 +2,11 @@ import { type AuthPrompt, fauxAssistantMessage, fauxProvider, InMemoryCredential
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { fileCredentialStore } from "../src/credentials.ts";
 import { chosenModel, engineModels, loginOptions } from "../src/model-access.ts";
 import { createSession, type EngineSession } from "../src/session.ts";
-import { accepts } from "./scripted.ts";
+import { accepts, scriptedReply } from "./scripted.ts";
 
 /** The models a session runs on (#443): pi-ai's catalog over the engine's credentials, never the operator's real ones. */
 const folder = (prefix: string): string => mkdtempSync(join(tmpdir(), prefix));
@@ -81,6 +81,19 @@ describe("the engine's models", () => {
     expect(await fileCredentialStore(path).read("scripted-oauth")).toMatchObject({ access: "token-1234" });
     await models.logout("scripted-oauth");
     expect(await fileCredentialStore(path).read("scripted-oauth")).toBeUndefined();
+  });
+
+  test("each request carries the session's id, which providers use as its prompt-cache key", async () => {
+    const asked: (string | undefined)[] = [];
+    const faux = fauxProvider();
+    faux.setResponses([scriptedReply({ seen: (_context, options) => { asked.push(options?.sessionId); }, reply: "done" })]);
+    const models = engineModels(new InMemoryCredentialStore());
+    models.setProvider(faux.provider);
+    const session = createSession({ cwd: folder("tesota-core-cwd-"), folder: folder("tesota-core-sessions-"), models,
+      model: faux.getModel(), verifier: accepts });
+    open.push(session);
+    await session.prompt("go");
+    expect(asked).toEqual([basename(session.file, ".jsonl")]);
   });
 
   test("a session runs on the engine's models once its provider is logged in", async () => {
