@@ -2,7 +2,7 @@ import { appendFileSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { openCases } from "../src/open-cases.js";
-import { FIRST_CONTRACT_CASES, HELD_OUT, LEFT_OPEN, OPEN_CASES, SETTLED, STANDARD } from "./cases.js";
+import { FIRST_CONTRACT_CASES, FRESH, HELD_OUT, LEFT_OPEN, OPEN_CASES, SETTLED, STANDARD } from "./cases.js";
 
 /**
  * Whether a model can list the cases a request leaves open, for #397,
@@ -36,10 +36,12 @@ import { FIRST_CONTRACT_CASES, HELD_OUT, LEFT_OPEN, OPEN_CASES, SETTLED, STANDAR
  * prompt passes when, on the `held-out`, `settled` and `standard` contexts
  * together, it meets the held-out thresholds above; the share of requests that
  * settle every case and still get any false alarm is reported beside them.
+ * The `fresh` context does the same with `FRESH`, registered after a first
+ * change was measured there, so that a second is judged on unread requests.
  * An answer's line names neither the prompt nor its version, so each prompt
  * measured writes to its own `--out`.
  *
- *   bun evaluation/open-cases.ts --out=<file> --context=request|held-out|settled|standard [--runs=<dir>] [--model=openai/gpt-6-sol]
+ *   bun evaluation/open-cases.ts --out=<file> --context=request|held-out|settled|standard|fresh [--runs=<dir>] [--model=openai/gpt-6-sol]
  */
 const option = (name: string): string | undefined =>
   process.argv.find((argument) => argument.startsWith(`--${name}=`))?.slice(name.length + 3);
@@ -48,11 +50,13 @@ const runs = option("runs");
 const context = option("context") ?? "";
 const model = option("model") ?? "openai/gpt-6-sol";
 if (out === undefined) throw new Error("Name --out=<file>, outside the repository.");
-if (!["request", "held-out", "settled", "standard"].includes(context)) throw new Error("Use --context=request, held-out, settled or standard.");
+if (!["request", "held-out", "settled", "standard", "fresh"].includes(context)) {
+  throw new Error("Use --context=request, held-out, settled, standard or fresh.");
+}
 if (context === "request" && runs === undefined) throw new Error("The request context reads #387's runs: name --runs=<dir>.");
 delete process.env["OPENAI_API_KEY"];
 
-const fresh = context === "held-out" ? HELD_OUT : context === "settled" ? SETTLED : context === "standard" ? STANDARD : undefined;
+const fresh = { "held-out": HELD_OUT, settled: SETTLED, standard: STANDARD, fresh: FRESH }[context];
 const requests = new Map<string, string>([...OPEN_CASES, ...FIRST_CONTRACT_CASES,
   ...Object.entries(fresh ?? {}).map(([name, { request }]) => ({ name, request }))].map((testCase) => [testCase.name, testCase.request]));
 

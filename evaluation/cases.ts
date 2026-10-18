@@ -459,6 +459,35 @@ export const STANDARD: Readonly<Record<string, { readonly request: string; reado
 };
 
 /**
+ * Fresh requests for #429, registered on 2026-10-17 before any run, after a
+ * first prompt change was measured on `HELD_OUT`, `SETTLED` and `STANDARD`
+ * and lost open cases there, so that a second change is judged on requests
+ * no answer has been read for: five that leave a case open, most an input
+ * the request allows but neither its words nor its terms give a result for,
+ * and five that a standard term settles. Labelled by `STANDARD`'s rule, which
+ * counts such an input as open.
+ */
+export const FRESH: Readonly<Record<string, { readonly request: string; readonly open: readonly string[] }>> = {
+  "chunk an array": { request: "Add chunk(items, size) in src/lists.ts that splits an array into consecutive groups of size elements.",
+    open: ["size zero or negative"] },
+  "split a full name": { request: "Add splitName(full) in src/names.ts that returns the first and last name of a person's full name.",
+    open: ["an empty string", "a name of one word", "a name of more than two words"] },
+  "progress percentage": { request: "Add progress(done, total) in src/progress.ts that returns how much of a task is done, as a percentage.",
+    open: ["total is zero"] },
+  "initial letter": { request: "Add initial(word) in src/text.ts that returns the first letter of a word in capitals.",
+    open: ["an empty word"] },
+  "largest number": { request: "Add maximum(values) in src/stats.ts that returns the largest number in an array.",
+    open: ["an empty array"] },
+  "reversed array": { request: "Add reversed(items) in src/lists.ts that returns a new array with the elements of items in reverse order.",
+    open: [] },
+  "prime number": { request: "Add isPrime(n) in src/math.ts that tells whether the integer n is a prime number.", open: [] },
+  "fizzbuzz": { request: "Add fizzBuzz(n) in src/game.ts that returns the FizzBuzz word for a positive integer n.", open: [] },
+  "power of two": { request: "Add isPowerOfTwo(n) in src/math.ts that tells whether a positive integer n is a power of two.", open: [] },
+  "days in a month": { request: "Add daysInMonth(year, month) in src/calendar.ts that returns how many days a month of the Gregorian " +
+    "calendar has, with month from 1 to 12.", open: [] },
+};
+
+/**
  * The base's buggy function under the contract a run left: its `//@` lines
  * from `after`, then the base's declaration and body. When this fails the
  * proof, the new contract rules the bug out; undefined when the function is
