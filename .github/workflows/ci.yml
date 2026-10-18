@@ -42,5 +42,5 @@ jobs:
             apk add --no-cache git
             bun install --frozen-lockfile --ignore-scripts
             cd packages/core
-            bun test --timeout 30000 tests/session.test.ts
+            bun run test tests/session.test.ts
             bun src/main.ts --version'

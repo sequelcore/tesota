@@ -26,7 +26,7 @@ Dependencies come from the registry, with lifecycle scripts disabled.
 | `bun run typecheck` | Types of `src`, `tests` and `evaluation` |
 | `bun run test` | The verification layer's tests, with Vitest |
 | `bun run lint` | Oxlint, rejecting warnings, without fixes |
-| `bun run --cwd packages/core check` | The engine's types, its tests with `bun test`, and its performance budgets |
+| `bun run --cwd packages/core check` | The engine's types, its tests, and its performance budgets |
 | `bun run --cwd packages/core budget --report` | Measure the budgets without failing, to set or revise a limit |
 | `bun run --cwd packages/core screenshots` | Draw the documentation's images again |
 
@@ -44,7 +44,7 @@ model, and run real commands.
 | Folder | |
 | --- | --- |
 | `packages/core/src` | The engine: `main.ts` is the `tesota` command; `loop.ts`, `session*.ts`, `permissions.ts`, `workspace.ts`, `hooks.ts`, `mcp*.ts`, `instructions.ts`, `print.ts`, and `shell/` |
-| `packages/core/tests` | The engine's tests, with `bun test`; an emulated terminal (`@xterm/headless`) for the shell |
+| `packages/core/tests` | The engine's tests, run with `bun run test` (`bun test` with a home and temporary folder of their own, removed after); an emulated terminal (`@xterm/headless`) for the shell |
 | `src` | The verification layer, written against `src/contract.ts`; the engine gives it its parts through `src/host.ts` |
 | `src/verification` | Verification's proved rules and LemmaScript runner |
 | `tests` | The verification layer's tests, with Vitest, on a test host (`tests/host.ts`) |
