@@ -118,6 +118,30 @@ builds every target on each pull request and starts each one a runner can
 run; `binary.test.ts` proves and reads source from a binary run outside the
 checkout.
 
+## Effect
+
+Code that coordinates processes, time limits, cancellation, resources or
+concurrency is written with [Effect](https://effect.website) 4, moved over
+one part at a time, each measured against the budgets; `src/process.ts` is
+the first. A resource is acquired with its release (`acquireUseRelease`), so
+a stop and a time limit are interruptions rather than flags to check. Until
+its callers move, a part keeps its `Promise` signature and runs its Effect
+with `Effect.runPromise(effect, { signal })`.
+
+- **Stable core modules only.** Effect tags each module's stability, and an
+  `unstable` or `experimental` one may change in a patch release. Every
+  submodule (`effect/process`, `effect/ai`, `effect/cli`, `effect/http`, …)
+  is unstable in 4.0, and so are some core modules, such as `FileSystem`,
+  `Path` and `Terminal`. `inventory.test.ts` fails on an import of either.
+- **Proved rules stay plain functions.** LemmaScript proves TypeScript
+  functions, not Effect programs, so a decision with a `//@` contract is
+  called from Effect code, never written in it.
+- **Write Effect 4, not 3.** Models know Effect 3 better, and the API
+  changed, for example `Effect.async` is `Effect.callback`; check a name in
+  the installed `effect` package before using it.
+- Model access stays in `pi-ai` and the terminal in `pi-tui`; Effect's own
+  `ai` and `cli` modules are not used.
+
 ## Adding a capability
 
 A capability is added for a real consumer, and one that claims to improve
