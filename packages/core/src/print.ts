@@ -109,7 +109,8 @@ export async function runPrint(args: readonly string[], cwd: string, write: Prin
   process.once("SIGTERM", stop);
   try {
     servers = await serversFor(session, mcp);
-    await session.prompt(asked.request);
+    // A request stopped before it began is refused rather than run; that is the stop, not a failure to report.
+    await session.prompt(asked.request).catch((error: unknown) => { if (!stopped) throw error; });
     write.out(`${session.lastAssistantText() ?? ""}\n`);
   } finally {
     process.off("SIGINT", stop);
