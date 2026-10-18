@@ -349,8 +349,7 @@ describe("a run that ends before the gate verifies it", () => {
     // Stopped processes are gone within moments, not the minute they wait: Linux reaps a killed orphan on its own time.
     const alive = (pid: number): boolean => { try { process.kill(pid, 0); return true; } catch { return false; } };
     for (let waited = 0; waited < 10_000 && started.some(alive); waited += 100) await new Promise((resolve) => setTimeout(resolve, 100));
-    // Temporary, until #490: where Git's bash execs, as on Windows CI, the stop cannot reach the check's processes.
-    if (process.platform !== "win32") expect(started.filter(alive)).toEqual([]);
+    expect(started.filter(alive)).toEqual([]);
   }, 60_000);
 
   test("a run that changed nothing settles with no receipt", async () => {
