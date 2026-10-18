@@ -406,6 +406,8 @@ export function createLoop(options: LoopOptions): LoopSession {
   }, options.extensions ?? [], options.verifier);
   tools.restore(options.resumed?.activeTools);
   const started = host.sessionStart({ type: "session_start", reason: options.resumed === undefined ? "startup" : "resume" });
+  /** Prompts waiting for startup or manual compaction, which a stop refuses before they become runs. */
+  const admitting = new Set<AbortController>();
   let controller: AbortController | undefined;
   let running: Promise<void> | undefined;
   /** Settles once the running request is in the ledger, so no amendment comes before it. */
@@ -794,16 +796,24 @@ export function createLoop(options: LoopOptions): LoopSession {
 
   return {
     async prompt(text, { streamingBehavior, source = "interactive" } = {}) {
-      await started;
-      // Checked again after each wait, with no wait between the last check and the run's start, so a compaction
-      // asked for meanwhile cannot start under it.
-      while (compacting !== undefined) await compacting.done.catch(() => undefined);
+      const admission = new AbortController();
+      admitting.add(admission);
+      try {
+        await started;
+        if (admission.signal.aborted) throw new Error(stoppedReason);
+        // Checked again after each wait, with no wait between the last check and the run's start, so a compaction
+        // asked for meanwhile cannot start under it.
+        while (compacting !== undefined) {
+          await compacting.done.catch(() => undefined);
+          if (admission.signal.aborted) throw new Error(stoppedReason);
+        }
+      } finally { admitting.delete(admission); }
       if (running !== undefined) {
         if (streamingBehavior === undefined) throw new Error("A prompt is already running; steer it, queue a follow-up, abort it or wait.");
         await amend(runs, text, streamingBehavior, source, controller?.signal);
         return;
       }
-      controller = new AbortController();
+      controller = admission;
       queue = [];
       waiting = [];
       closed = false;
@@ -820,6 +830,7 @@ export function createLoop(options: LoopOptions): LoopSession {
       }
     },
     async abort() {
+      for (const admission of admitting) admission.abort();
       controller?.abort();
       compacting?.controller.abort();
       await running?.catch(() => undefined);
@@ -848,6 +859,7 @@ export function createLoop(options: LoopOptions): LoopSession {
     stats: () => ({ tokens: { ...tokens } }),
     outcome: () => outcome,
     dispose: () => disposed ??= (async () => {
+      for (const admission of admitting) admission.abort();
       controller?.abort();
       compacting?.controller.abort();
       await running?.catch(() => undefined);
