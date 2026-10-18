@@ -90,7 +90,7 @@ export async function runPrint(args: readonly string[], cwd: string, write: Prin
   const { settings } = readSettings(settingsPath);
   const models = engineModels();
   const [provider, ...id] = asked.model?.split("/") ?? [];
-  const model = provider === undefined ? await chosenModel(models, settings) : models.getModel(provider, id.join("/"));
+  const model = provider === undefined ? chosenModel(models, settings) : models.getModel(provider, id.join("/"));
   if (model === undefined) {
     write.error(asked.model === undefined ? "No model: run tesota, then /login and /model.\n" : `No model ${asked.model}.\n`);
     return 1;
