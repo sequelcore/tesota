@@ -90,7 +90,8 @@ function measure(): Measurements {
       resumeMs: median(resumes.map((resume) => resume.resumeMs)),
       sessionBytes: Math.max(...resumes.map((resume) => resume.sessionBytes)),
       firstFrameMs: median(shells.map((shell) => shell.firstFrameMs)),
-      shellRssBytes: Math.max(...shells.map((shell) => shell.shellRssBytes)),
+      // The median, not the largest: one run's memory varies by about 13 MB, and a regression moves every run (#462).
+      shellRssBytes: median(shells.map((shell) => shell.shellRssBytes)),
     };
   } finally {
     rmSync(folder, { recursive: true, force: true, maxRetries: 3 });
@@ -106,7 +107,7 @@ if (import.meta.main) {
     + `loop ${measured.loopMs} ms (median of ${loopRuns}), loop memory ${measured.loopRssBytes} bytes, `
     + `base ${measured.baseMs} ms (median of ${loopRuns}), sync ${measured.syncMs} ms (median), syncs ${measured.syncCount}, settle ${measured.settleMs} ms (median of ${loopRuns}), `
     + `resume ${measured.resumeMs} ms (median of ${loopRuns}), session ${measured.sessionBytes} bytes, `
-    + `first frame ${measured.firstFrameMs} ms (median of ${loopRuns}), shell memory ${measured.shellRssBytes} bytes`);
+    + `first frame ${measured.firstFrameMs} ms (median of ${loopRuns}), shell memory ${measured.shellRssBytes} bytes (median of ${loopRuns})`);
   if (limits === undefined) {
     console.log(`No budgets for ${process.platform}; CI checks Linux and Windows.`);
   } else {
