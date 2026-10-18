@@ -62,6 +62,24 @@ describe("Tesota's interface on the engine", () => {
   beforeAll(() => { setCapabilityOverrides({ trueColor: true }); });
   afterAll(() => { setCapabilityOverrides({}); });
 
+  test("slash suggestions draw below the filled editor and Tab completes one", async () => {
+    const { terminal, running } = await app([]);
+    try {
+      terminal.type("/");
+      await terminal.until("Choose the model");
+      const screen = await terminal.screen();
+      const suggestion = screen.findIndex((line) => /model\s+Choose the model/u.test(line));
+      expect(suggestion).toBeGreaterThan(screen.findLastIndex((line) => line.startsWith("▌")));
+      expect(screen[suggestion]).toMatch(/^\s+→ model/u);
+      terminal.type("res");
+      await terminal.until("Open an earlier session");
+      terminal.type("\t");
+      expect(await terminal.untilGone("Open an earlier session")).toContain("▌  /resume");
+    } finally {
+      await quit(terminal, running);
+    }
+  });
+
   test("the welcome header draws the palo fierro, and the filled editor and evidence footer sit below", async () => {
     const { terminal, running, branch } = await app([]);
     const screen = await terminal.screen();

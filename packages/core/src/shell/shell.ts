@@ -1,5 +1,6 @@
 import {
-  type Component, Container, Editor, type Focusable, Input, Loader, matchesKey, ScrollView, type SelectItem, SelectList,
+  CombinedAutocompleteProvider, type Component, Container, Editor, type Focusable, Input, Loader, matchesKey, ScrollView, type SelectItem, SelectList,
+  type SlashCommand,
   type Terminal, type TerminalColors, Text, TuiAltScreen, type TuiAltScreenOptions, TuiMainScreen, VStack,
 } from "@earendil-works/pi-tui";
 import type { FooterData } from "../../../../src/contract.ts";
@@ -27,6 +28,8 @@ export interface ShellOptions {
   readonly status: () => string;
   /** Runs a `/command`; resolves false when there is no such command. */
   readonly command?: (text: string) => Promise<boolean>;
+  /** The commands offered in the editor, from the same definitions that run them. */
+  readonly commands?: readonly SlashCommand[];
   /** Copies selected text; the operator's clipboard when not given. Resolves true once it could be checked. */
   readonly copy?: (text: string) => Promise<boolean>;
   /** What the session's extensions draw (#446): header, editor, footer, working indicator, messages and tools. */
@@ -126,6 +129,8 @@ export function startShell(options: ShellOptions): Shell {
   const loader = new Loader(tui, (text) => theme.fg("accent", text), (text) => theme.fg("muted", text), "Working…");
   const editorSlot = new Container();
   let editor = new Editor(tui, theme.editor);
+  const autocomplete = (): CombinedAutocompleteProvider =>
+    new CombinedAutocompleteProvider([...(options.commands ?? [])], session.workspace.cwd, Bun.which("fd"));
   const footerSlot = new Container();
   const footer = new Text("", 1, 0);
   const drawFooter = (): void => { footer.setText(theme.fg("dim", options.status())); };
@@ -162,6 +167,7 @@ export function startShell(options: ShellOptions): Shell {
     const text = editor.getText();
     editor = surface?.editor === undefined ? new Editor(tui, theme.editor)
       : surface.editor(tui, theme.editor);
+    editor.setAutocompleteProvider(autocomplete());
     editor.setText(text);
     editor.onSubmit = submit;
     editorSlot.clear();
@@ -344,6 +350,7 @@ export function startShell(options: ShellOptions): Shell {
       unsubscribe();
       drafts.set(session, editor.getText());
       session = next;
+      editor.setAutocompleteProvider(autocomplete());
       unsubscribe = session.subscribe(onEvent);
       if (nextSurface !== undefined && nextSurface !== surface) {
         unwatch();

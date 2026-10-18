@@ -1,11 +1,13 @@
 import { createModels, fauxProvider } from "@earendil-works/pi-ai";
+import { Editor, type SlashCommand } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { TuiMode } from "../src/settings.ts";
 import { createSession, type EngineSession } from "../src/session.ts";
 import { type Shell, startShell } from "../src/shell/shell.ts";
+import { createSurface, type Surface } from "../src/shell/surface.ts";
 import { shellTheme } from "../../../src/theme.ts";
 import type { ScriptStep } from "./engine.ts";
 import { accepts, scriptedReply } from "./scripted.ts";
@@ -27,7 +29,7 @@ const folder = (prefix: string): string => mkdtempSync(join(tmpdir(), prefix));
 const enter = "\r";
 
 function shellOn(script: readonly ScriptStep[], mode: TuiMode = "fullscreen", size: [number, number] = [80, 24],
-  extra: { tokensPerSecond?: number; copy?: (text: string) => Promise<boolean> } = {}) {
+  extra: { tokensPerSecond?: number; copy?: (text: string) => Promise<boolean>; commands?: readonly SlashCommand[]; surface?: Surface } = {}) {
   const faux = fauxProvider({ tokensPerSecond: extra.tokensPerSecond ?? 400 });
   faux.setResponses(script.map(scriptedReply));
   const models = createModels();
@@ -36,7 +38,7 @@ function shellOn(script: readonly ScriptStep[], mode: TuiMode = "fullscreen", si
     model: faux.getModel(), verifier: accepts });
   const terminal = new VirtualTerminal(...size);
   const shell = startShell({ terminal, mode, fullRepaint: false, theme: shellTheme("dark", "truecolor"), session,
-    status: () => "scripted model", ...extra.copy === undefined ? {} : { copy: extra.copy } });
+    status: () => "scripted model", ...extra });
   open.push({ session, shell });
   return { terminal, session, shell };
 }
@@ -52,6 +54,48 @@ async function settled(session: EngineSession): Promise<void> {
 const shown = (lines: readonly string[]): string => lines.join("\n");
 
 describe("the shell", () => {
+  test("slash suggestions stay on the mounted editor when a surface replaces it", async () => {
+    const surface = createSurface(shellTheme("dark", "truecolor"));
+    const { terminal } = shellOn([], "fullscreen", [80, 24], { surface,
+      commands: [{ name: "resume", description: "Open an earlier session" }] });
+    terminal.type("/");
+    expect(await terminal.until("Open an earlier session")).toMatch(/resume\s+Open an earlier session/u);
+    terminal.type("\t");
+    expect(await terminal.untilGone("Open an earlier session")).toContain("/resume");
+    surface.ui.setEditorComponent((tui, theme) => new Editor(tui, theme));
+    expect((await terminal.screen()).join("\n")).toContain("/resume");
+    terminal.type("\x03");
+    terminal.type("/");
+    await terminal.until("Open an earlier session");
+    terminal.type("\t");
+    await terminal.untilGone("Open an earlier session");
+    surface.ui.setEditorComponent(undefined);
+    terminal.type("\x03");
+    terminal.type("/");
+    expect(await terminal.until("Open an earlier session")).toMatch(/resume\s+Open an earlier session/u);
+  });
+
+  test.skipIf(Bun.which("fd") === null)("@ suggests files in the shown session's folder, including after switching sessions", async () => {
+    const first = shellOn([]);
+    const second = shellOn([]);
+    writeFileSync(join(first.session.workspace.cwd, "first-notes.md"), "first\n");
+    writeFileSync(join(second.session.workspace.cwd, "second-notes.md"), "second\n");
+    first.terminal.type("@first-n");
+    expect(await first.terminal.until("first-notes.md")).toContain("@first-n");
+    first.terminal.type("\t");
+    await first.terminal.until("@first-notes.md");
+    first.shell.show(second.session);
+    first.terminal.type("@second-n");
+    expect(await first.terminal.until("second-notes.md")).not.toContain("first-notes.md");
+    first.terminal.type("\t");
+    await first.terminal.until("@second-notes.md");
+    first.shell.show(first.session);
+    expect(await first.terminal.until("@first-notes.md")).not.toContain("second-notes.md");
+    first.terminal.type("\x03");
+    first.terminal.type("@first-n");
+    expect(await first.terminal.until("first-notes.md")).not.toContain("second-notes.md");
+  });
+
   test("a request typed and sent shows with its answer, the editor below and the footer last", async () => {
     const { terminal, session } = shellOn(["Hello from the engine."]);
     terminal.type("hi there");

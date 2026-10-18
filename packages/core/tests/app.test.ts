@@ -77,6 +77,61 @@ async function app(replies: readonly ScriptStep[] = [], { repository = false, mc
 const send = (terminal: VirtualTerminal, text: string): void => { terminal.type(text); terminal.type(enter); };
 
 describe("tesota-core", () => {
+  test("/ lists the commands with descriptions, and the list scrolls to /quit", async () => {
+    const { terminal, running } = await app();
+    try {
+      terminal.type("/");
+      expect(await terminal.until("Choose the model")).toMatch(/model\s+Choose the model/u);
+      terminal.type("\x1b[A");
+      expect(await terminal.until("End the shell")).toMatch(/quit\s+End the shell/u);
+      terminal.type("\x03");
+      terminal.type("/mcp");
+      const screen = await terminal.until("Manage MCP servers");
+      expect(screen).toContain("[login|logout|reconnect <server>]");
+    } finally {
+      terminal.type("\x03");
+      send(terminal, "/quit");
+      await running;
+    }
+  });
+
+  test("/res narrows to /resume and Tab leaves the completed command in the input", async () => {
+    const { terminal, running } = await app();
+    try {
+      terminal.type("/");
+      await terminal.until("Choose the model");
+      terminal.type("res");
+      const screen = await terminal.until("Open an earlier session");
+      expect(screen).toMatch(/resume\s+Open an earlier session/u);
+      expect(screen).not.toContain("Choose the model");
+      expect(screen).not.toContain("End the shell");
+      terminal.type("\t");
+      expect(await terminal.untilGone("Open an earlier session")).toContain("/resume");
+      terminal.type(enter);
+      await terminal.until("No other session in this folder.");
+    } finally {
+      terminal.type("\x03");
+      send(terminal, "/quit");
+      await running;
+    }
+  });
+
+  test("Enter on a slash suggestion completes and runs it, then the dialog takes the keyboard", async () => {
+    const { terminal, running } = await app();
+    try {
+      terminal.type("/mod");
+      await terminal.until("Choose the model");
+      terminal.type(enter);
+      await terminal.until("faux/");
+      terminal.type(enter);
+      await terminal.until("Model: ");
+    } finally {
+      terminal.type("\x03");
+      send(terminal, "/quit");
+      await running;
+    }
+  });
+
   test("/model lists the available models, and the choice is saved and shown", async () => {
     const { terminal, settingsPath, running } = await app();
     send(terminal, "/model");
