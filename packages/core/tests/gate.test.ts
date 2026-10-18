@@ -246,8 +246,10 @@ describe("the gate on @tesota/core", () => {
     writeFileSync(join(cwd, "a.md"), "a\n");
     git(cwd, "add", "-A");
     git(cwd, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base");
-    const short = spawnSync("powershell", ["-NoProfile", "-Command",
-      `(New-Object -ComObject Scripting.FileSystemObject).GetFolder('${cwd}').ShortPath`], { encoding: "utf8" }).stdout.trim();
+    // From `cmd`, as `lemmascript-verifier.test.ts` takes it: PowerShell's COM call gave no name now and then (#493).
+    const named = spawnSync("cmd", ["/d", "/c", `for %I in ("${cwd}") do @echo %~sI`], { encoding: "utf8", windowsVerbatimArguments: true });
+    const short = named.stdout.trim();
+    if (short === "") throw new Error(`cmd gave no short name (status ${named.status}): ${named.stderr}`);
     expect(short).not.toBe(cwd);
     expect(existsSync(short)).toBe(true);
     gated(cwd, []);
