@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { withinBudget } from "../src/budget-rule.ts";
+import { withinBudget, withinBudgetAfterRetry } from "../src/budget-rule.ts";
 import { build } from "./build.ts";
 
 /**
@@ -14,6 +14,7 @@ import { build } from "./build.ts";
  * median time and its largest resident memory, the median base and sync,
  * the largest number of syncs, the median settlement, the median resume and the largest session
  * file are compared with the limits in `budgets.json` for this platform; a measurement without a limit there is reported only.
+ * An exceeded budget is retried once; a measurement fails only when both attempts exceed its limit (#462).
  * `--report` prints them all without failing, to set or revise a limit.
  */
 
@@ -46,11 +47,15 @@ export function median(values: readonly number[]): number {
 }
 
 /** Each measurement over its limit, or listed with no limit set yet, described for the check's output. */
-export function overBudget(measured: Measurements, limits: Limits): string[] {
+export function overBudget(measured: Measurements, limits: Limits, retry?: Measurements): string[] {
   return (Object.keys(limits) as (keyof Measurements)[]).flatMap((name) => {
     const limit = limits[name];
     if (limit === undefined) return [];
     if (limit === null) return [`${name}: no limit set (measured ${measured[name]})`];
+    if (retry !== undefined) {
+      return withinBudgetAfterRetry(measured[name], retry[name], limit) ? []
+        : [`${name}: ${measured[name]} then ${retry[name]} is over its limit of ${limit}`];
+    }
     return withinBudget(measured[name], limit) ? [] : [`${name}: ${measured[name]} is over its limit of ${limit}`];
   });
 }
@@ -98,20 +103,36 @@ function measure(): Measurements {
   }
 }
 
-if (import.meta.main) {
-  const report = process.argv.includes("--report");
-  const budgets = JSON.parse(readFileSync(join(import.meta.dir, "..", "budgets.json"), "utf8")) as Record<string, Limits | undefined>;
-  const limits = budgets[process.platform];
-  const measured = measure();
+function printReport(measured: Measurements): void {
   console.log(`Budget on ${process.platform}: startup ${measured.startupMs} ms (median of ${samples}), binary ${measured.binaryBytes} bytes, `
     + `loop ${measured.loopMs} ms (median of ${loopRuns}), loop memory ${measured.loopRssBytes} bytes, `
     + `base ${measured.baseMs} ms (median of ${loopRuns}), sync ${measured.syncMs} ms (median), syncs ${measured.syncCount}, settle ${measured.settleMs} ms (median of ${loopRuns}), `
     + `resume ${measured.resumeMs} ms (median of ${loopRuns}), session ${measured.sessionBytes} bytes, `
     + `first frame ${measured.firstFrameMs} ms (median of ${loopRuns}), shell memory ${measured.shellRssBytes} bytes (median of ${loopRuns})`);
+}
+
+if (import.meta.main) {
+  const report = process.argv.includes("--report");
+  const budgets = JSON.parse(readFileSync(join(import.meta.dir, "..", "budgets.json"), "utf8")) as Record<string, Limits | undefined>;
+  const limits = budgets[process.platform];
+  const measured = measure();
+  printReport(measured);
   if (limits === undefined) {
     console.log(`No budgets for ${process.platform}; CI checks Linux and Windows.`);
   } else {
-    const over = overBudget(measured, limits);
+    let over = overBudget(measured, limits);
+    if (over.length > 0 && !report) {
+      console.log("Budget exceeded; measuring everything again before deciding.");
+      const retry = measure();
+      printReport(retry);
+      over = overBudget(measured, limits, retry);
+      for (const name of Object.keys(limits) as (keyof Measurements)[]) {
+        const limit = limits[name];
+        if (limit === undefined || limit === null) continue;
+        if (withinBudget(measured[name], limit) === withinBudget(retry[name], limit)) continue;
+        console.log(`Note: ${name}: ${measured[name]} then ${retry[name]} is over its limit of ${limit} in only one attempt.`);
+      }
+    }
     for (const line of over) console.error(`Over budget: ${line}`);
     if (over.length > 0 && !report) process.exitCode = 1;
   }

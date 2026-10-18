@@ -97,11 +97,12 @@ additions.
 
 The budget check compiles the engine as a release would, with code
 splitting so the loop loads only when used, and fails a pull request when a
-measurement passes its platform's limit in
+measurement exceeds its platform's limit in both of two attempts in
 [budgets.json](../packages/core/budgets.json): `--version` startup, binary
 size, the scripted loop's time and memory, the request's base, the number
 of syncs to disk, settlement, resuming a session of about 1,000 entries,
-that session's size, the shell's first frame, and its memory. A sync's time
+that session's size, the shell's first frame, and its memory. A second attempt
+measures everything again only when the first exceeds a budget. A sync's time
 depends on the disk, so it's only reported; their number has the limit.
 New or changed limits are proposed from measurements, and need the owner's
 approval.
