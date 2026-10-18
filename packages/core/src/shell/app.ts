@@ -78,7 +78,7 @@ export async function runApp(options: AppOptions): Promise<void> {
   const theme = shellTheme("dark", getTerminalColorMode());
   const verifier: Verifier = (pi, request) => { tesota(pi, request); };
   let providers = 0;
-  let model = await chosenModel(models, settings);
+  let model = chosenModel(models, settings);
   let permissionMode: Mode = settings.permissionMode ?? "ask";
   const rules = loadRules(options.cwd);
   /** The operator's answer to a call the mode and rules leave to them (#449): once, for this session, or no. */
@@ -373,8 +373,7 @@ export async function runApp(options: AppOptions): Promise<void> {
       if (type !== "oauth" && type !== "api_key") return;
       try {
         await models.login(provider.id, type, interaction, loginOptions(options.settingsPath));
-        shell.note(`Logged in to ${provider.name}.`);
-        model ??= await chosenModel(models, settings);
+        shell.note(model === undefined ? `Logged in to ${provider.name}. Choose a model with /model.` : `Logged in to ${provider.name}.`);
       } catch (error) {
         shell.note(error instanceof Error ? error.message : String(error), "error");
       }

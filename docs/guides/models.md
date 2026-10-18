@@ -28,7 +28,8 @@ An API key in the environment works without `/login`, such as
 
 lists the models of every provider you can use. Your choice is saved, and
 each new session starts with it. `tesota -p "…" --model openai/gpt-6-sol`
-picks one for a single run.
+picks one for a single run. Tesota never picks a model for you: until you
+choose one, the shell's status says so, and `-p` stops and says how.
 
 ## Thinking
 

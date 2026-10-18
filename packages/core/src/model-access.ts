@@ -19,9 +19,13 @@ export function engineModels(credentials: CredentialStore = fileCredentialStore(
 /** How Tesota introduces itself to a provider's login, with this installation's id. */
 export const loginOptions = (settingsPath?: string): LoginOptions => ({ agentName: "Tesota", getDeviceId: () => deviceId(settingsPath) });
 
-/** The model the operator chose, if it still exists, else the first one with a credential, else none. */
-export async function chosenModel(models: MutableModels, settings: Settings): Promise<Model<Api> | undefined> {
+/**
+ * The model the operator chose, if it still exists, else none. Tesota never
+ * picks one for them (#425): the first a credential reaches may be one the
+ * sign-in does not serve, which failed with a provider's error; with none,
+ * the shell and `-p` say how to choose one.
+ */
+export function chosenModel(models: MutableModels, settings: Settings): Model<Api> | undefined {
   const [provider, ...id] = settings.model?.split("/") ?? [];
-  const named = provider === undefined ? undefined : models.getModel(provider, id.join("/"));
-  return named ?? (await models.getAvailable())[0];
+  return provider === undefined ? undefined : models.getModel(provider, id.join("/"));
 }

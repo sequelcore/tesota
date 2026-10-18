@@ -4,7 +4,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileCredentialStore } from "../src/credentials.ts";
-import { engineModels, loginOptions } from "../src/model-access.ts";
+import { chosenModel, engineModels, loginOptions } from "../src/model-access.ts";
 import { createSession, type EngineSession } from "../src/session.ts";
 import { accepts } from "./scripted.ts";
 
@@ -55,6 +55,16 @@ describe("the engine's models", () => {
     const models = engineModels(new InMemoryCredentialStore());
     expect((await models.getAvailable("anthropic")).length).toBeGreaterThan(0);
     expect(await models.checkAuth("anthropic")).toMatchObject({ type: "api_key" });
+  });
+
+  test("the model is the one the operator chose, never one picked for them from what a credential reaches (#425)", async () => {
+    process.env["ANTHROPIC_API_KEY"] = "sk-ant-test";
+    const models = engineModels(new InMemoryCredentialStore());
+    const [first] = await models.getAvailable("anthropic");
+    if (first === undefined) throw new Error("No model is available with the key");
+    expect(chosenModel(models, {})).toBeUndefined();
+    expect(chosenModel(models, { model: `anthropic/${first.id}` })).toMatchObject({ provider: "anthropic", id: first.id });
+    expect(chosenModel(models, { model: "anthropic/no-such-model" })).toBeUndefined();
   });
 
   test("logging in stores the credential in the engine's file, and logging out removes it", async () => {
