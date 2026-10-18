@@ -5,6 +5,7 @@ import {
   type CallToolResult, type ListResourcesResult, type ListResourceTemplatesResult, McpClient, McpSessionExpiredError, type McpTransport, McpTimeoutError, type ReadResourceResult, StdioTransport,
   StreamableHttpTransport, type Tool, toLlmContent,
 } from "@earendil-works/pi-mcp";
+import { Effect } from "effect";
 import { Type } from "typebox";
 import manifest from "../package.json" with { type: "json" };
 import type { McpTools } from "./loop.ts";
@@ -296,15 +297,12 @@ export function startMcp(configs: readonly McpServerConfig[], options: McpOption
     async ready(signal) {
       const left = started + waitMs - Date.now();
       if (left <= 0) return;
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      let stop: (() => void) | undefined;
-      await Promise.race([initial, new Promise<void>((resolve) => {
-        timer = setTimeout(resolve, left);
-        stop = resolve;
-        signal.addEventListener("abort", stop, { once: true });
-      })]);
-      clearTimeout(timer);
-      if (stop !== undefined) signal.removeEventListener("abort", stop);
+      // Waits for the servers up to what is left of `waitMs`, and not at all once the request stopped, even before it began.
+      try {
+        await Effect.runPromise(Effect.timeoutOption(Effect.promise(() => initial), left), { signal });
+      } catch (error) {
+        if (!signal.aborted) throw error;
+      }
     },
     status: () => servers.map((server) => {
       const error = [server.error, server.stderr].filter((part) => part !== undefined).join("\n");
