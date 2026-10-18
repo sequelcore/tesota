@@ -35,14 +35,14 @@ async function repositoryBase(folder: string, root: string): Promise<BaseUnit> {
  * repository Tesota's snapshot of it. Verification reads this record and
  * never rebuilds the base after the agent changed the files.
  */
-export async function captureBase(cwd: string): Promise<Base> {
+export async function captureBase(cwd: string, signal?: AbortSignal): Promise<Base> {
   const units = workspaceUnits(cwd);
   const workspace = units.some(({ folder }) => folder !== "");
   const found: BaseUnit[] = [];
   for (const { folder, repository } of units) {
     const root = join(cwd, folder);
     if (repository) { found.push(await repositoryBase(folder, root)); continue; }
-    const snapshot = await takeSnapshot(root, workspace && folder === "", withLockWhile);
+    const snapshot = await takeSnapshot(root, workspace && folder === "", withLockWhile, undefined, signal);
     found.push("refused" in snapshot ? { folder, kind: "refused", reason: snapshot.refused }
       : { folder, kind: "snapshot", commit: snapshot.base, tooLarge: snapshot.tooLarge });
   }
