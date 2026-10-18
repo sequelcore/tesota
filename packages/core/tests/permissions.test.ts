@@ -251,6 +251,28 @@ describe("the boundary every call passes", () => {
     expect(entries(created.file).some(({ type }) => type === "call_intent")).toBe(false);
   });
 
+  test("stopped while the operator has not answered, the run ends without waiting for the answer, and the call does not run", async () => {
+    const faux = fauxProvider();
+    faux.setResponses([write("a.txt"), "done"].map(scriptedReply));
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const cwd = folder("tesota-core-permissions-cwd-");
+    let asked: () => void = () => undefined;
+    const asking = new Promise<void>((resolve) => { asked = resolve; });
+    // The question is never answered, as when no one is there to see it.
+    const created = createSession({ cwd, folder: folder("tesota-core-sessions-"), models, model: faux.getModel(), verifier: accepts,
+      permissions: { mode: () => "ask", rules: [], ask: () => { asked(); return new Promise(() => undefined); } } });
+    open.push(created);
+    const run = created.prompt("go");
+    await asking;
+    await created.abort();
+    await run;
+    expect(created.outcome()).toBe("aborted");
+    expect(existsSync(join(cwd, "a.txt"))).toBe(false);
+    expect(entries(created.file)).toContainEqual(expect.objectContaining({ type: "permission", decision: "deny",
+      reason: "The run was stopped before the operator answered." }));
+  });
+
   test("with no one to ask, a call that would ask is refused; read only refuses writes; the floor holds in full access", async () => {
     const alone = session([write("a.txt"), "done"], "ask");
     await alone.created.prompt("go");

@@ -188,6 +188,24 @@ export const modelContext = (history: readonly HistoryMessage[]): Message[] => h
  * Runs one tool call: an unknown or inactive tool, invalid arguments or an
  * exception become a failed call the model sees.
  */
+/** The operator's answer as a decision and its reason; none when the run was stopped before they answered. */
+function operatorDecision(answer: "once" | "session" | "deny" | undefined): { decision: "allow" | "deny"; reason: string } {
+  if (answer === undefined) return { decision: "deny", reason: "The run was stopped before the operator answered." };
+  if (answer === "deny") return { decision: "deny", reason: "The operator refused it." };
+  return { decision: "allow", reason: answer === "session" ? "The operator allowed it for this session." : "The operator allowed it once." };
+}
+
+/** What `promise` gives, or nothing once `signal` stops first; the promise itself is left to settle on its own. */
+function untilStopped<T>(promise: Promise<T>, signal: AbortSignal): Promise<T | undefined> {
+  if (signal.aborted) return Promise.resolve(undefined);
+  return new Promise((resolve, reject) => {
+    const stop = (): void => { resolve(undefined); };
+    signal.addEventListener("abort", stop, { once: true });
+    promise.then((value) => { signal.removeEventListener("abort", stop); resolve(value); },
+      (error: unknown) => { signal.removeEventListener("abort", stop); reject(error); });
+  });
+}
+
 async function execute(tools: readonly EngineTool[], call: ToolCall, signal: AbortSignal): Promise<ToolOutput> {
   const tool = tools.find((candidate) => candidate.name === call.name);
   if (tool === undefined) return { text: `Tool "${call.name}" not found.`, isError: true };
@@ -454,7 +472,7 @@ export function createLoop(options: LoopOptions): LoopSession {
    * (`judge`), and the operator answers what they leave to them, once or for
    * the session. Every decision is recorded before the call runs, or instead.
    */
-  async function permitted(run: number, call: ToolCall, offered: readonly EngineTool[]): Promise<boolean> {
+  async function permitted(run: number, call: ToolCall, offered: readonly EngineTool[], signal: AbortSignal): Promise<boolean> {
     const permissions = options.permissions;
     const access = offered.find((tool) => tool.name === call.name)?.access ?? "run";
     const key = `${call.name}\n${JSON.stringify(call.arguments)}`;
@@ -466,11 +484,10 @@ export function createLoop(options: LoopOptions): LoopSession {
       by = "session";
       reason = "The operator allowed it for this session.";
     } else if (verdict.decision === "ask") {
-      const answer = await permissions?.ask?.(call, verdict.reason) ?? "deny";
-      decision = answer === "deny" ? "deny" : "allow";
+      // A stop while the operator is asked ends the wait: the run does not wait for an answer that no longer matters.
+      const answer = await untilStopped(permissions?.ask?.(call, verdict.reason) ?? Promise.resolve("deny" as const), signal);
+      ({ decision, reason } = operatorDecision(answer));
       by = "operator";
-      reason = answer === "deny" ? "The operator refused it." : answer === "session" ? "The operator allowed it for this session."
-        : "The operator allowed it once.";
       if (answer === "session") allowedForSession.add(key);
     }
     writer.append({ type: "permission", run, callId: call.id, decision, by, reason });
@@ -527,7 +544,7 @@ export function createLoop(options: LoopOptions): LoopSession {
       let output: ToolOutput;
       if (message.stopReason === "length") output = truncatedCall(call);
       else if (signal.aborted) output = stoppedCall;
-      else if (!await permitted(run, call, offered)) output = refusedCall(call);
+      else if (!await permitted(run, call, offered, signal)) output = signal.aborted ? stoppedCall : refusedCall(call);
       else output = await hooked(run, call, signal, offered);
       const result = toolResult(call, output);
       writer.append({ type: "tool_result", run, message: result });
