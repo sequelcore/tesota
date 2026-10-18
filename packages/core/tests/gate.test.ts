@@ -327,6 +327,32 @@ describe("a run that ends before the gate verifies it", () => {
     expect(receiptOf(session)).toMatchObject({ stopped: "the operator stopped the run" });
   });
 
+  test("the operator's stop while a check runs ends the check and what it started, and the receipt verified nothing (#408)", async () => {
+    const cwd = repository();
+    const ready = join(cwd, "ready.txt");
+    // The project's check starts a process of its own, as a test runner does, then records both and waits.
+    writeFileSync(join(cwd, "long.cjs"), "const child = require(\"node:child_process\").spawn(process.execPath, " +
+      "[\"-e\", \"setTimeout(() => {}, 60000)\"], { stdio: \"ignore\" });\n" +
+      `require("node:fs").writeFileSync(${JSON.stringify(ready)}, process.pid + " " + child.pid);\nsetTimeout(() => {}, 60000);\n`);
+    writeFileSync(join(cwd, "package.json"), JSON.stringify({ name: "long-check", scripts: { test: "node long.cjs" } }));
+    writeFileSync(join(cwd, ".gitignore"), "ready.txt\n");
+    git(cwd, "add", "-A");
+    git(cwd, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "a long check");
+    const session = gated(cwd, [{ tool: "write", args: { path: "notes.md", content: "# Notes\n" } }, "done"]);
+    const run = session.prompt("add notes");
+    while (!existsSync(ready) || !readFileSync(ready, "utf8").includes(" ")) await new Promise((resolve) => setTimeout(resolve, 20));
+    const started = readFileSync(ready, "utf8").split(" ").map(Number);
+    await session.abort();
+    await run;
+    expect(session.outcome()).toBe("aborted");
+    expect(receiptOf(session)).toMatchObject({ stopped: "the operator stopped the run while Tesota verified it", tests: [] });
+    // Stopped processes are gone within moments, not the minute they wait: Linux reaps a killed orphan on its own time.
+    const alive = (pid: number): boolean => { try { process.kill(pid, 0); return true; } catch { return false; } };
+    for (let waited = 0; waited < 10_000 && started.some(alive); waited += 100) await new Promise((resolve) => setTimeout(resolve, 100));
+    // Temporary, until #490: where Git's bash execs, as on Windows CI, the stop cannot reach the check's processes.
+    if (process.platform !== "win32") expect(started.filter(alive)).toEqual([]);
+  }, 60_000);
+
   test("a run that changed nothing settles with no receipt", async () => {
     const session = gated(repository(), [{ error: "quota exhausted" }]);
     await session.prompt("change f");

@@ -1,3 +1,4 @@
+import type * as Effect from "effect/Effect";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { BranchEntry, ExtensionAPI, ExtensionContext, SettleResult } from "./contract.js";
@@ -18,12 +19,41 @@ import { gateVerdict, keepsWorking } from "./verification/gate-rule.js";
 import { annotations, proofSources, proveFile } from "./verification/lemmascript-verifier.js";
 import { type Unit, workspaceUnits } from "./workspace.js";
 
-/** The gate's checks once a run has first settled (`gate-checks.ts`); settling loads them before anything uses them. */
-let loaded: typeof import("./gate-checks.js") | undefined;
-async function loadChecks(): Promise<void> { loaded ??= await import("./gate-checks.js"); }
+/**
+ * One step of verification, which the operator's stop interrupts: its signal
+ * is aborted and the step is awaited, so what it started, a check's
+ * processes or Dafny's, has stopped before the gate reports. `Effect.promise`
+ * alone would let the gate report while they still run.
+ */
+function step<A>(work: (signal: AbortSignal) => Promise<A>): Effect.Effect<A> {
+  return effect().callback<A>((resume) => {
+    const controller = new AbortController();
+    const running = work(controller.signal);
+    running.then((value) => { resume(effect().succeed(value)); }, (error: unknown) => { resume(effect().die(error)); });
+    return effect().promise(() => {
+      controller.abort();
+      return running.then(() => undefined, () => undefined);
+    });
+  });
+}
+
+/**
+ * The gate's checks, and Effect, which runs them, once a run has first settled
+ * (`gate-checks.ts`): settling loads them before anything uses them, so
+ * neither weighs on a session that has not settled yet.
+ */
+let loaded: { checks: typeof import("./gate-checks.js"); effect: typeof Effect } | undefined;
+async function loadChecks(): Promise<void> {
+  loaded ??= { checks: await import("./gate-checks.js"), effect: await import("effect/Effect") };
+}
 function checks(): typeof import("./gate-checks.js") {
   if (loaded === undefined) throw new Error("The gate used its checks before settling loaded them.");
-  return loaded;
+  return loaded.checks;
+}
+/** Effect's functions, loaded with the checks. */
+function effect(): typeof Effect {
+  if (loaded === undefined) throw new Error("The gate used Effect before settling loaded it.");
+  return loaded.effect;
 }
 
 async function gitPaths(root: string, args: readonly string[]): Promise<string[] | undefined> {
@@ -423,24 +453,34 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
       start = Promise.resolve(recordedStart(request.base));
     }
     if (event.outcome !== "completed") {
-      if (!mayHaveChanged) {
-        if ("startedAt" in progress.status) progress.reset();
-        return undefined;
-      }
-      const begun = await start;
-      const workspace = begun?.units.some(({ folder }) => folder !== "") ?? false;
       const reason = "reason" in event && typeof event.reason === "string" ? event.reason : undefined;
-      const receipt: Receipt = { version: 1,
-        repository: begun?.units.some(({ folder, repository }) => repository && begun.bases.has(folder)) ?? false,
-        base: workspace ? null : begun?.bases.get("") ?? null, startedAt: startedAt ?? new Date().toISOString(),
-        settledAt: new Date().toISOString(), engine: host().version, ...sessionModel(ctx), ...noEvidence,
-        stopped: reason ?? (event.outcome === "aborted" ? "the operator stopped the run before Tesota verified it"
-          : "the run failed before Tesota verified it") };
-      progress.publish({ step: "settled", receipt });
-      return { entries: [receiptEntry(ctx.mode, receipt)] };
+      return stopped(ctx, reason ?? (event.outcome === "aborted" ? "the operator stopped the run before Tesota verified it"
+        : "the run failed before Tesota verified it"));
     }
-    try { return await settle(ctx); } catch (error) { progress.reset(); throw error; }
+    // Verification is an Effect the operator's stop interrupts (#408): no later step starts, and the receipt says it stopped.
+    try {
+      return await effect().runPromise(settle(ctx), ctx.signal === undefined ? {} : { signal: ctx.signal });
+    } catch (error) {
+      if (ctx.signal?.aborted === true) return stopped(ctx, "the operator stopped the run while Tesota verified it");
+      progress.reset();
+      throw error;
+    }
   });
+  /** A run that ended before verification finished: after a tool that may change files, a receipt that verified nothing, and why. */
+  const stopped = async (ctx: ExtensionContext, reason: string): Promise<SettleResult | undefined> => {
+    if (!mayHaveChanged) {
+      if ("startedAt" in progress.status) progress.reset();
+      return undefined;
+    }
+    const begun = await start;
+    const workspace = begun?.units.some(({ folder }) => folder !== "") ?? false;
+    const receipt: Receipt = { version: 1,
+      repository: begun?.units.some(({ folder, repository }) => repository && begun.bases.has(folder)) ?? false,
+      base: workspace ? null : begun?.bases.get("") ?? null, startedAt: startedAt ?? new Date().toISOString(),
+      settledAt: new Date().toISOString(), engine: host().version, ...sessionModel(ctx), ...noEvidence, stopped: reason };
+    progress.publish({ step: "settled", receipt });
+    return { entries: [receiptEntry(ctx.mode, receipt)] };
+  };
   /** Outside Git nothing tells which files changed: a request that may have changed some settles saying none was verified. */
   const outsideGit = (ctx: ExtensionContext, run: Pick<Receipt, "base" | "startedAt" | "engine" | "model">,
     reason: string | undefined): SettleResult | undefined => {
@@ -451,27 +491,28 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     return { entries: [receiptEntry(ctx.mode, receipt)] };
   };
   /** The cases the request leaves open, for the receipt; nothing when the operator turned the list off. */
-  const listOpen = async (ctx: ExtensionContext, signal: AbortSignal): Promise<Pick<Receipt, "openCases">> => {
+  const listOpen = (ctx: ExtensionContext): Effect.Effect<Pick<Receipt, "openCases">> => {
     const lister = listWith(pi);
-    return lister === undefined ? {} : { openCases: await openCases(ctx, requests, lister, signal) };
+    return lister === undefined ? effect().succeed({})
+      : effect().map(step((signal) => openCases(ctx, requests, lister, signal)), (listed) => ({ openCases: listed }));
   };
   const failure = (proof: Evidence): string => `${proof.outcome}\n${proof.output}`;
   const sendBack = (content: string, details: SentBack): SettleResult =>
     ({ entries: [{ type: "custom_message", customType: "tesota-gate", content, display: true, details }], continue: true });
   /** Every changed file with contracts proved, in each repository from its own folder. */
-  const prove = async (units: readonly ChangedUnit[], signal: AbortSignal): Promise<Map<string, Receipt["proofs"][number][]>> => {
+  const prove = (units: readonly ChangedUnit[]): Effect.Effect<Map<string, Receipt["proofs"][number][]>> => effect().gen(function* () {
     const proofs = new Map<string, Receipt["proofs"][number][]>(units.map(({ folder }) => [folder, []]));
     for (const unit of units) {
-      for (const path of await contractFiles(unit.root, unit.changed, signal)) {
+      for (const path of yield* step((signal) => contractFiles(unit.root, unit.changed, signal))) {
         progress.publish({ step: "proving", path: inUnit(unit.folder, path), startedAt: performance.now(),
           tally: tally([...proofs.values()].flat()) });
-        const evidence = await proveFile(unit.root, path, signal);
+        const evidence = yield* step((signal) => proveFile(unit.root, path, signal));
         proofs.get(unit.folder)?.push({ path, evidence,
           verdict: gateVerdict(evidence.outcome, failure(evidence), sentBack.get(inUnit(unit.folder, path)) ?? []) });
       }
     }
     return proofs;
-  };
+  });
   /** The proofs that go back, named from the folder Pi runs in. */
   const proofsBack = (proofs: ReadonlyMap<string, Receipt["proofs"]>): SettleResult => {
     progress.publish({ step: "sent_back", tally: tally([...proofs.values()].flat()) });
@@ -495,49 +536,51 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     return sendBack(shown.map(failingReport).join("\n\n"), { round: "tests", commands: shown });
   };
   /** The strength of each repository's contracts that proved, and what its proofs covered. */
-  const measure = async (ctx: ExtensionContext, units: readonly ChangedUnit[], proofs: ReadonlyMap<string, Receipt["proofs"]>,
-    tallied: Tally, signal: AbortSignal): Promise<Map<string, Measured>> => {
+  const measure = (ctx: ExtensionContext, units: readonly ChangedUnit[], proofs: ReadonlyMap<string, Receipt["proofs"]>,
+    tallied: Tally): Effect.Effect<Map<string, Measured>> => effect().gen(function* () {
     const measured = new Map<string, Measured>();
     for (const unit of units) {
       const judged = proofs.get(unit.folder) ?? [];
       // A proof's `.dfy.gen` is the base `lsc regen` merges against, regenerated from the source the proof covers.
       const covered = new Set(judged.flatMap(({ evidence }) => evidence.files.flatMap((path) =>
         path.endsWith(".dfy") ? [path, `${path}.gen`] : [path])));
-      const sources = await provedSources(unit.root, unit.base, judged);
+      const sources = yield* step(() => provedSources(unit.root, unit.base, judged));
       if (sources.length > 0) progress.publish({ step: "measuring", startedAt: performance.now(), tally: tallied });
-      measured.set(unit.folder, { covered, sources, strength: await checks().contractStrength(ctx, requests, sources, signal, restateWith(pi)) });
+      const strength = yield* step((signal) => checks().contractStrength(ctx, requests, sources, signal, restateWith(pi)));
+      measured.set(unit.folder, { covered, sources, strength });
     }
     return measured;
-  };
-  const settle = async (ctx: ExtensionContext): Promise<SettleResult | undefined> => {
-    const { units, bases, tooLarge, refused } = await (start ??= begin(ctx.cwd));
+  });
+  /** Verification once the run completed: each step is where the operator's stop takes effect. */
+  const settle = (ctx: ExtensionContext): Effect.Effect<SettleResult | undefined> => effect().gen(function* () {
+    const { units, bases, tooLarge, refused } = yield* step(() => start ??= begin(ctx.cwd));
     startedAt ??= new Date().toISOString();
     const workspace = units.some(({ folder }) => folder !== "");
     const run = { base: workspace ? null : bases.get("") ?? null, startedAt, engine: host().version, ...sessionModel(ctx) };
     // Each repository and each folder Tesota snapshotted, measured from its base.
     const measurable = units.filter(({ folder }) => bases.has(folder));
-    const read = await Promise.all(measurable.map(({ folder, repository }) =>
-      changedUnit(ctx.cwd, folder, bases.get(folder) ?? null, repository ? undefined : tooLarge.get(folder) ?? [])));
+    const read = yield* step(() => Promise.all(measurable.map(({ folder, repository }) =>
+      changedUnit(ctx.cwd, folder, bases.get(folder) ?? null, repository ? undefined : tooLarge.get(folder) ?? []))));
     if (!workspace && read[0] === undefined) return outsideGit(ctx, run, refused.get(""));
     const changed = read.filter((unit): unit is ChangedUnit => typeof unit === "object");
     // A folder with no snapshot, or a repository Git could not read, is not verified; it is listed once it may have changed.
     const plain = workspace && mayHaveChanged ? [...units.filter(({ folder }) => !bases.has(folder)),
       ...measurable.filter((_, k) => read[k] === undefined)] : [];
     if (changed.length === 0 && plain.length === 0) { progress.reset(); return undefined; }
-    const signal = ctx.signal ?? new AbortController().signal;
-    const proofs = await prove(changed, signal);
+    const proofs = yield* prove(changed);
     const allProofs = [...proofs.values()].flat();
     if (keepsWorking(allProofs.map(({ verdict }) => verdict))) return proofsBack(proofs);
     progress.publish({ step: "testing", startedAt: performance.now(), tally: tally(allProofs) });
     const rungs = new Map<string, Pick<Receipt, "tests" | "exercises">>();
     for (const unit of changed) {
-      rungs.set(unit.folder, await testRung(unit.root, unit.base, unit.changed, commandsSentBack.get(unit.folder) ?? new Map(), signal));
+      rungs.set(unit.folder, yield* step((signal) =>
+        testRung(unit.root, unit.base, unit.changed, commandsSentBack.get(unit.folder) ?? new Map(), signal)));
     }
     const allTests = [...rungs.values()].flatMap(({ tests }) => tests);
     const failing = [...rungs].flatMap(([folder, { tests }]) =>
       tests.filter(({ verdict }) => verdict === "send_back").map((test) => ({ folder, run: test })));
     if (failing.length > 0) return testsBack(failing, tally(allProofs, allTests));
-    const measured = await measure(ctx, changed, proofs, tally(allProofs, allTests), signal);
+    const measured = yield* measure(ctx, changed, proofs, tally(allProofs, allTests));
     const contracts = [...measured].flatMap(([folder, { strength }]) =>
       strength.contracts.map((contract) => ({ ...contract, path: inUnit(folder, contract.path) })));
     const weak = sendBackWeak(contracts, weakSentBack);
@@ -545,8 +588,9 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
       progress.publish({ step: "sent_back", tally: tally(allProofs, allTests, contracts) });
       return sendBack(weak.map(weakContractReport).join("\n\n"), { round: "contracts", contracts: weak });
     }
-    const [evidence, open] = await Promise.all([Promise.all(changed.map(async (unit) =>
-      unitEvidence(unit, proofs.get(unit.folder) ?? [], rungs.get(unit.folder), measured.get(unit.folder)))), listOpen(ctx, signal)]);
+    const [evidence, open] = yield* effect().all([step(() => Promise.all(changed.map((unit) =>
+      unitEvidence(unit, proofs.get(unit.folder) ?? [], rungs.get(unit.folder), measured.get(unit.folder))))), listOpen(ctx)],
+      { concurrency: "unbounded" });
     const settledAt = new Date().toISOString();
     const only = workspace ? undefined : evidence[0];
     const receipt: Receipt = only !== undefined ? { version: 1, ...run, ...only, ...open, settledAt }
@@ -557,7 +601,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
         .sort((a, b) => a.folder < b.folder ? -1 : 1) };
     progress.publish({ step: "settled", receipt });
     return { entries: [receiptEntry(ctx.mode, receipt)] };
-  };
+  });
   return progress;
 }
 

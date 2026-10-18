@@ -30,14 +30,23 @@ test("Tesota imports only pi-ai, pi-tui and pi-mcp of Pi's packages", () => {
   expect(imported.filter((each) => !kept.has(each.package))).toEqual([]);
 });
 
-/** Every file's imports from `effect`: the module each names, `effect/Stream` as `Stream`, and `{ Effect, Option }` from the root as both. */
+/**
+ * Every file's references to `effect`, however made: a path such as
+ * `effect/Stream`, in an import, a namespace import or `import()`, names
+ * `Stream`; `{ Effect, Option }` from the root names both.
+ */
 function effectImports(): { file: string; module: string }[] {
   return [join(root, "src"), join(root, "packages", "core", "src")].flatMap(sources).flatMap((file) => {
     const at = relative(root, file).replaceAll("\\", "/");
-    return [...readFileSync(file, "utf8").matchAll(/import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+"effect(?:\/([^"]+))?"/gu)]
-      .flatMap(([, names, path]) => path !== undefined ? [{ file: at, module: path }]
-        : (names ?? "").split(",").map((name) => name.trim().replace(/^type\s+/u, "").split(/\s+as\s+/u)[0] ?? "").filter((name) => name !== "")
-          .map((module) => ({ file: at, module })));
+    const text = readFileSync(file, "utf8");
+    const paths = [...text.matchAll(/["']effect\/([^"']+)["']/gu)].map(([, path]) => ({ file: at, module: path ?? "" }));
+    const named = [...text.matchAll(/import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+["']effect["']/gu)]
+      .flatMap(([, names]) => (names ?? "").split(",").map((name) => name.trim().replace(/^type\s+/u, "").split(/\s+as\s+/u)[0] ?? "")
+        .filter((name) => name !== "").map((module) => ({ file: at, module })));
+    // A namespace or default import of the root, or `import("effect")`, names every module, unstable ones included.
+    const whole = /import\s+(?:type\s+)?(?:\*\s+as\s+\w+|\w+)\s+from\s+["']effect["']|import\(\s*["']effect["']\s*\)/u.test(text)
+      ? [{ file: at, module: "the whole package" }] : [];
+    return [...paths, ...named, ...whole];
   });
 }
 

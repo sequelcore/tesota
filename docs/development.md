@@ -128,6 +128,14 @@ a stop and a time limit are interruptions rather than flags to check. Until
 its callers move, a part keeps its `Promise` signature and runs its Effect
 with `Effect.runPromise(effect, { signal })`.
 
+- **Load it when first used, on the shell's path.** Evaluating Effect costs
+  memory, and the shell's memory has a budget: code that loads with the
+  shell, as the gate does, imports Effect's types and loads its module when
+  it first runs (`loadChecks` in `src/gate.ts`). Import a module by its path
+  (`effect/Effect`); the root `effect` re-exports the whole package.
+- **An interrupted step is awaited.** `Effect.promise` abandons its promise
+  when interrupted; a step that started processes aborts them and waits, as
+  the gate's `step` does, so nothing runs after Tesota reports.
 - **Stable core modules only.** Effect tags each module's stability, and an
   `unstable` or `experimental` one may change in a patch release. Every
   submodule (`effect/process`, `effect/ai`, `effect/cli`, `effect/http`, …)

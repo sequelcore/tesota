@@ -88,6 +88,10 @@ weakened nothing settles without a receipt. Otherwise it climbs:
    strength, and send back the weak ones.
 4. When nothing goes back, settle with the receipt.
 
+Stopping the run while it climbs ends the step under way and every process
+it started, and starts no other: the receipt says you stopped it and claims
+no evidence.
+
 **What goes back** follows one rule on every rung (`gateVerdict`, proved).
 A `failed` or `vacuous` result goes back to the agent, unless it repeats a
 failure already sent for the same file, command or contract during the
