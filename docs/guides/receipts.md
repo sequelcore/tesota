@@ -52,7 +52,7 @@ session's own worktree, run it there.
 `tesota receipt` writes nothing when:
 
 - no session here settled with a receipt;
-- the run ended before Tesota verified it;
+- the run ended, or you stopped it, before Tesota finished verifying it;
 - the receipt came from a run outside Git, whose base no one else can
   fetch;
 - the folder holds several repositories: run it in the repository of the
