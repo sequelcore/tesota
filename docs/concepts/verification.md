@@ -228,8 +228,10 @@ A proof settles code against its contract, not the contract against what
 you meant, and agents settle a request's open cases silently. So as the run
 settles, a model reads your messages for the request, not the change, and
 lists the inputs where someone who made the request could expect more than
-one result. The receipt shows each as a note for you to settle; nothing
-goes back.
+one result. A standard term keeps its usual meaning unless you say otherwise,
+so `clamp` or `median` raise no case their definition settles, while an
+input their definition gives no result for, such as an empty list, still
+does. The receipt shows each as a note for you to settle; nothing goes back.
 
 The model is GPT-6 Sol, the one that found every open case with few false
 alarms on held-out requests

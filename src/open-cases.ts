@@ -9,7 +9,11 @@ import { type ModelAccess, named, recorded, registered } from "./pi-claimcheck.j
  * settle. The list is a model's opinion, never evidence and never a verdict,
  * and it does not go back to the agent. It reads the request alone: shown
  * the agent's change as well, models listed more false alarms. Measured
- * before it shipped, with this prompt (#397).
+ * before it shipped, with this prompt (#397). Its two rules on standard
+ * terms came from #429, after it listed readings of "clamp" that its usual
+ * meaning rules out: a term keeps that meaning, and an input the request
+ * allows that the meaning gives no result for stays open, since the first
+ * rule alone dropped such inputs, an empty name or a page size of zero.
  */
 
 /** The model that lists open cases unless the operator names another: GPT-6 Sol met every threshold, GPT-6 Luna did not. */
@@ -38,7 +42,11 @@ export const openCasesSystemPrompt =
 export function openCasesPrompt(requests: readonly string[]): string {
   return `A person gave a coding agent this request:\n\n${requests.join("\n\n")}\n\n` +
     "List each input case the request does not settle: an input for which a reasonable person who made the request could " +
-    "expect more than one result. For each, give the input and the results someone could expect. Leave out cases the " +
+    "expect more than one result. A standard term the request names keeps its established meaning unless the request says " +
+    "otherwise, and that meaning settles the cases it decides; the request need not restate it. List a case only when two " +
+    "different results stay reasonable under that meaning and every rule the request states, never one that needs an " +
+    "unusual reading of a term. An input the request allows that neither its words nor that meaning give one result for " +
+    "stays open. For each, give the input and the results someone could expect. Leave out cases the " +
     "request settles, and anything about how the code or its proof is written. If the request settles every case, list none. " +
     "Leave out inputs of a kind the request never mentions, such as NaN, Infinity, -0, or values that are not of the type it names.";
 }
