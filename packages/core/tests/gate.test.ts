@@ -346,7 +346,9 @@ describe("a run that ends before the gate verifies it", () => {
     await run;
     expect(session.outcome()).toBe("aborted");
     expect(receiptOf(session)).toMatchObject({ stopped: "the operator stopped the run while Tesota verified it", tests: [] });
+    // Stopped processes are gone within moments, not the minute they wait: Linux reaps a killed orphan on its own time.
     const alive = (pid: number): boolean => { try { process.kill(pid, 0); return true; } catch { return false; } };
+    for (let waited = 0; waited < 10_000 && started.some(alive); waited += 100) await new Promise((resolve) => setTimeout(resolve, 100));
     expect(started.filter(alive)).toEqual([]);
   }, 60_000);
 
