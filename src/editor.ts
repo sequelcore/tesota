@@ -2,28 +2,24 @@ import { Editor, type EditorTheme, truncateToWidth, type TUI, type TuiMouseEvent
   from "@earendil-works/pi-tui";
 import type { Theme } from "./contract.js";
 
-/** Pi's border hooks return these in place of its border lines, so the fill can find the rows between them. */
+/** Pi's border hooks return these in place of its border lines, so the frame can find the rows between them. */
 const TOP = "\u{F8FF}tesota-top";
 const BOTTOM = "\u{F8FF}tesota-bottom";
 /** The columns the frame adds: the bar and two spaces before the text, three spaces after it. */
 const LEFT = 3;
 const RIGHT = 3;
-
-/** Keeps a background through the resets inside a row, such as the cursor's `ESC[0m`, and ends it at the row's end. */
-export function fill(line: string, background: string): string {
-  const kept = ["\x1b[0m", "\x1b[49m", "\x1b[m"].reduce((text, reset) => text.replaceAll(reset, reset + background), line);
-  return `${background}${kept}\x1b[0m`;
-}
+const HINT = "/ for commands · @ for files";
 
 /**
- * pi-tui's editor, drawn as a filled block: a bar in its border color down
- * its left edge, the text on the theme's `userMessageBg` with a padding row
- * above and below it, and the scroll markers in those padding rows. The
- * editor still lays out and edits the text, so autocomplete, paste, history
- * and keys are its own; only the frame is redrawn, through its border hooks
- * and on the rows it returns between them.
+ * pi-tui's editor, drawn on the terminal's own background with a bar in its
+ * border color down its left edge, a padding row above and below the text,
+ * and the scroll markers in those padding rows: only the live input has the
+ * bar, so it never reads as one of the conversation's cards (OpenCode marks
+ * its input the same way). The editor still lays out and edits the text, so
+ * autocomplete, paste, history and keys are its own; only the frame is
+ * redrawn, through its border hooks and on the rows it returns between them.
  */
-export class FilledEditor extends Editor {
+export class BarEditor extends Editor {
   #above = 0;
   #below = 0;
 
@@ -51,14 +47,15 @@ export class FilledEditor extends Editor {
     const end = lines.indexOf(BOTTOM);
     if (lines[0] !== TOP || end < 0) throw new Error("The host's editor no longer draws its borders through the border hooks");
     const theme = this.#look();
-    const background = theme.getBgAnsi("userMessageBg");
     const bar = this.borderColor("▌");
-    const padding = (hidden: number, arrow: string): string => bar + fill(hidden > 0
+    const padding = (hidden: number, arrow: string): string => bar + (hidden > 0
       ? `  ${theme.fg("muted", `${arrow} ${hidden} more`)}${" ".repeat(Math.max(0, inner + RIGHT - 7 - String(hidden).length))}`
-      : " ".repeat(inner + LEFT - 1 + RIGHT), background);
+      : " ".repeat(inner + LEFT - 1 + RIGHT));
+    // An empty input says what it takes, dim after the cursor, as Gemini CLI's does.
+    const hint = (line: string): string => this.getText() === "" ? `${line.trimEnd()} ${theme.fg("dim", HINT)}` : line;
     return [
       padding(this.#above, "↑"),
-      ...lines.slice(1, end).map((line) => `${bar}${fill(`  ${line}${" ".repeat(RIGHT)}`, background)}`),
+      ...lines.slice(1, end).map((line, row) => `${bar}  ${row === 0 ? hint(line) : line}${" ".repeat(RIGHT)}`),
       padding(this.#below, "↓"),
       ...lines.slice(end + 1).map((line) => `${" ".repeat(LEFT)}${line}`),
     ].map((line) => truncateToWidth(line, width, ""));

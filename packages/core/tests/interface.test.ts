@@ -14,7 +14,7 @@ import { VirtualTerminal } from "./virtual-terminal.ts";
 
 /**
  * Tesota's own interface in the engine's shell (#446), as the operator sees
- * it: the welcome header with its tree, the filled editor, the evidence
+ * it: the welcome header with its tree, the barred editor, the evidence
  * footer, the tumbleweed while the agent works, the receipt card, and the
  * theme for the terminal's background. Pi is not loaded for any of it.
  */
@@ -62,7 +62,7 @@ describe("Tesota's interface on the engine", () => {
   beforeAll(() => { setCapabilityOverrides({ trueColor: true }); });
   afterAll(() => { setCapabilityOverrides({}); });
 
-  test("slash suggestions draw below the filled editor and Tab completes one", async () => {
+  test("slash suggestions draw below the barred editor and Tab completes one", async () => {
     const { terminal, running } = await app([]);
     try {
       terminal.type("/");
@@ -80,7 +80,7 @@ describe("Tesota's interface on the engine", () => {
     }
   });
 
-  test("the welcome header draws the palo fierro, and the filled editor and evidence footer sit below", async () => {
+  test("the welcome header draws the palo fierro, and the barred editor and evidence footer sit below", async () => {
     const { terminal, running, branch } = await app([]);
     const screen = await terminal.screen();
     expect(screen.join("\n")).toContain("Shows evidence that the change does what you asked.");
@@ -129,9 +129,9 @@ describe("Tesota's interface on the engine", () => {
     await new Promise((resolve) => setTimeout(resolve, 200));
     terminal.type("x");
     await new Promise((resolve) => setTimeout(resolve, 100));
-    // The filled editor, drawn again as the operator types, on tesota-light's message background #e4d9e9 instead of the dark #2f2a35.
-    expect(terminal.written.slice(0, before)).toContain("48;2;47;42;53");
-    expect(terminal.written.slice(before)).toContain("48;2;228;217;233");
+    // The editor's bar, drawn again as the operator types, in tesota-light's border color #9c86a5 instead of the dark #8f7a99.
+    expect(terminal.written.slice(0, before)).toContain("38;2;143;122;153");
+    expect(terminal.written.slice(before)).toContain("38;2;156;134;165");
     await quit(terminal, running);
   });
 });
