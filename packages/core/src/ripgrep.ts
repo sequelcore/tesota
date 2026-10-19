@@ -15,10 +15,21 @@ const triples: Readonly<Record<string, string>> = pin.targets;
 const assets: Readonly<Record<string, { readonly executableSha256: string }>> = pin.assets;
 const asset = assets[triples[hostTarget] ?? ""];
 const name = process.platform === "win32" ? "rg.exe" : "rg";
+
+/**
+ * The vendored and embedded file of `target`'s ripgrep: always with an
+ * extension, since `bun build --compile` names an embedded file
+ * `[name].[ext]` and one without an extension is not found at the binary's
+ * root under its own name. Extracted, it is `rg` or `rg.exe` again.
+ */
+export function executableName(target: string): string {
+  return target.includes("windows") ? "rg.exe" : "rg.bin";
+}
 let extracted: Promise<string> | undefined;
 
 /** The pinned executable, from the checkout or extracted atomically from this binary. */
-export async function ripgrepPath(source: string = fileURLToPath(new URL(`../../../vendor/ripgrep/${hostTarget}/${name}`, import.meta.url))): Promise<string> {
+export async function ripgrepPath(source: string = fileURLToPath(new URL(`../../../vendor/ripgrep/${hostTarget}/${executableName(hostTarget)}`,
+  import.meta.url))): Promise<string> {
   if (!inBinary) {
     try { await access(source, constants.X_OK); }
     catch { throw new Error(`Bundled ripgrep is missing or not executable at ${source}; run \`bun run vendor\` in the checkout.`); }
@@ -34,7 +45,7 @@ export async function ripgrepPath(source: string = fileURLToPath(new URL(`../../
       return undefined;
     });
     if (existing === undefined || createHash("sha256").update(existing).digest("hex") !== hash) {
-      const embedded = await readFile(fileURLToPath(new URL(`./${name}`, import.meta.url)));
+      const embedded = await readFile(fileURLToPath(new URL(`./${executableName(hostTarget)}`, import.meta.url)));
       await mkdir(directory, { recursive: true });
       const temporary = `${destination}.${randomUUID()}.tmp`;
       try {

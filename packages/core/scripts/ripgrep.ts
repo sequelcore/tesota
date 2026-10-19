@@ -3,6 +3,7 @@ import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path";
 import { inflateRawSync } from "node:zlib";
 import pin from "../../../ripgrep.json" with { type: "json" };
+import { executableName } from "../src/ripgrep.ts";
 
 const repository = join(import.meta.dir, "..", "..", "..");
 const archives = new Map<string, Buffer>();
@@ -38,9 +39,10 @@ async function extract(archive: Buffer, asset: string, name: string): Promise<Bu
 
 for (const [target, triple] of Object.entries(pin.targets)) {
   const asset = pin.assets[triple as keyof typeof pin.assets];
+  // The archive holds `rg` or `rg.exe`; the vendored file keeps an extension so the build can embed it (`executableName`).
   const name = target.includes("windows") ? "rg.exe" : "rg";
   const directory = join(repository, "vendor", "ripgrep", target);
-  const destination = join(directory, name);
+  const destination = join(directory, executableName(target));
   const existing = await readFile(destination).catch((error: NodeJS.ErrnoException) => {
     if (error.code !== "ENOENT") throw error;
     return undefined;

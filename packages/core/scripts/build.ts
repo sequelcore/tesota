@@ -1,6 +1,6 @@
 import { mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { hostTarget } from "../src/ripgrep.ts";
+import { executableName, hostTarget } from "../src/ripgrep.ts";
 
 /**
  * The `tesota` binary (#472), as the budget measures it and a release would
@@ -17,7 +17,7 @@ const engine = join(import.meta.dir, "..", "src", "main.ts");
 /** What a binary embeds beside its code, each at the binary's root under its own name. */
 function embedded(target: string): string[] {
   const grammars = join(repository, "grammars");
-  return [join(repository, "vendor", "ripgrep", target, target.includes("windows") ? "rg.exe" : "rg"),
+  return [join(repository, "vendor", "ripgrep", target, executableName(target)),
     join(repository, "node_modules", "web-tree-sitter", "web-tree-sitter.wasm"),
     ...readdirSync(grammars).filter((name) => name.endsWith(".wasm")).map((name) => join(grammars, name))];
 }
