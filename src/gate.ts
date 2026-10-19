@@ -11,6 +11,7 @@ import type { ContractStrength } from "./proof-guarantees.js";
 import { inFolder, owningProjects, suggestChecks } from "./projects.js";
 import { proofReport } from "./prove-tool.js";
 import { entryReceipt, inUnit, isReceipt, noEvidence, type Receipt, receiptEntry, type UnitEvidence } from "./receipt.js";
+import { captureFingerprint, compareFingerprints, type Fingerprint, pathBlobs } from "./request-fingerprint.js";
 import { takeSnapshot } from "./snapshot.js";
 import type { CommandRun } from "./test-rung.js";
 import type { FileChange } from "./verification-changes.js";
@@ -81,23 +82,16 @@ export async function changedFiles(root: string, base: string | null): Promise<s
 }
 
 /**
- * Each file changed from `base`, as the run leaves it: the blob id Git would
+ * Each file changed during the request, as the run leaves it: the blob id Git would
  * store for its content, or null once deleted; `unreadable` when Git cannot
  * tell. A pull request's commit holds the receipt's content exactly where its
  * blobs match (`changedAfter`).
  */
-async function recordedChanges(root: string, base: string | null, changed: readonly string[]): Promise<Receipt["changed"]> {
-  const deleted = base === null ? [] : await gitPaths(root, diffFrom(base, "--name-only", "--diff-filter=D"));
-  if (deleted === undefined) return "unreadable";
-  const blobs: string[] = [];
-  // In batches, to stay within the command line's length on Windows.
-  for (let k = 0; k < changed.length; k += 200) {
-    const batch = changed.slice(k, k + 200);
-    const ids = (await git(root, ["hash-object", "--", ...batch]))?.trim().split(/\r?\n/u);
-    if (ids?.length !== batch.length) return "unreadable";
-    blobs.push(...ids);
-  }
-  return [...changed.map((path, k) => ({ path, blob: blobs[k] ?? null })), ...deleted.map((path) => ({ path, blob: null }))]
+async function recordedChanges(root: string, changed: readonly string[]): Promise<Receipt["changed"]> {
+  const prefix = await git(root, ["rev-parse", "--show-prefix"]);
+  if (prefix === undefined) return "unreadable";
+  const blobs = await pathBlobs(root, changed, prefix.trimEnd());
+  return blobs === undefined ? "unreadable" : [...blobs].map(([path, blob]) => ({ path, blob }))
     .sort((a, b) => a.path < b.path ? -1 : 1);
 }
 
@@ -193,7 +187,8 @@ async function testRung(root: string, base: string | null, changed: readonly str
   const passed = tests.every(({ evidence }) => evidence.outcome === "passed");
   // A snapshot counts as a test for weakened evidence, but is not one a runner can run alone.
   const runnable = changed.filter((path) => checks().isTestPath(path) && !path.endsWith(".snap"));
-  const exercises = passed && base !== null ? await checks().exerciseTests(root, base, runnable, changed, projects, signal) : [];
+  const present = (await Promise.all(runnable.map(async (path) => await readIfPresent(join(root, path)) === undefined ? [] : [path]))).flat();
+  const exercises = passed && base !== null ? await checks().exerciseTests(root, base, present, changed, projects, signal) : [];
   return { tests, exercises };
 }
 
@@ -396,9 +391,10 @@ export class GateProgress {
  * proof covers (`uncovered`) are measured for the receipt, and a weak
  * contract goes back first (`sendBackWeak`). What went back lasts for the operator's request: it resets on their input, not
  * on `agent_start`, which every continuation fires too. When nothing goes back, the run settles with
- * a receipt for the operator. Changes are measured against the commit `HEAD`
- * named when the operator's request started, so a commit the agent makes
- * hides nothing; a steer or follow-up sent while the agent works belongs to
+ * a receipt for the operator. The first non-reader tool fingerprints each
+ * repository; paths changed since then and commits since admission are the
+ * request's change. Weakening and exercise keep the admission base H, so a
+ * commit hides nothing; a steer or follow-up sent while the agent works belongs to
  * the request already running. Outside a Git repository the base is
  * Tesota's snapshot of the folder (`takeSnapshot`, #384); where it takes
  * none, a request that ran a tool that may change files ends with a receipt
@@ -423,6 +419,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
   let commandsSentBack = new Map<string, Map<string, string[]>>();
   let weakSentBack = new Map<string, string[]>();
   let mayHaveChanged = false;
+  let fingerprints: Promise<ReadonlyMap<string, Fingerprint>> | undefined;
   /** What the operator asked during the request, for ClaimCheck to compare the contracts with. */
   let requests: string[] = [];
   /** The request's units and bases, recorded before the agent can run anything; a run no operator input started takes them as it settles. */
@@ -437,6 +434,8 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     commandsSentBack = new Map();
     weakSentBack = new Map();
     mayHaveChanged = false;
+    fingerprints = undefined;
+    start = undefined;
     progress.waiting();
     // On the engine the ledger holds the request and its start; the gate reads them as it settles.
     if (recorded !== undefined) return undefined;
@@ -446,7 +445,18 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     await start;
     return undefined;
   });
-  pi.on("tool_execution_start", (event) => { if (toolMayChangeFiles(event.toolName)) mayHaveChanged = true; });
+  pi.on("tool_execution_start", async (event, ctx) => {
+    if (!toolMayChangeFiles(event.toolName)) return;
+    mayHaveChanged = true;
+    const request = recorded?.();
+    if (request !== undefined) start ??= Promise.resolve(recordedStart(request.base));
+    fingerprints ??= (async () => {
+      const units = (await start)?.units ?? workspaceUnits(ctx.cwd);
+      return new Map(await Promise.all(units.filter(({ repository }) => repository)
+        .map(async ({ folder }) => [folder, await captureFingerprint(join(ctx.cwd, folder))] as const)));
+    })();
+    await fingerprints;
+  });
   // A run that ends before verification leaves no step running, and says why if it may have changed files.
   pi.on("agent_before_settle", async (event, ctx) => {
     if (!mayHaveChanged) { progress.reset(); return undefined; }
@@ -564,8 +574,9 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     const run = { base: workspace ? null : bases.get("") ?? null, startedAt, engine: host().version, ...sessionModel(ctx) };
     // Each repository and each folder Tesota snapshotted, measured from its base.
     const measurable = units.filter(({ folder }) => bases.has(folder));
+    const initial = yield* step(async () => fingerprints);
     const read = yield* step(() => Promise.all(measurable.map(({ folder, repository }) =>
-      changedUnit(ctx.cwd, folder, bases.get(folder) ?? null, repository ? undefined : tooLarge.get(folder) ?? []))));
+      changedUnit(ctx.cwd, folder, bases.get(folder) ?? null, repository ? undefined : tooLarge.get(folder) ?? [], initial?.get(folder)))));
     if (!workspace && read[0] === undefined) return outsideGit(ctx, run, refused.get(""));
     const changed = read.filter((unit): unit is ChangedUnit => typeof unit === "object");
     // A folder with no snapshot, or a repository Git could not read, is not verified; it is listed once it may have changed.
@@ -682,6 +693,36 @@ interface ChangedUnit {
   readonly changed: readonly string[];
   readonly changes: Awaited<ReturnType<typeof fileChanges>>;
   readonly weakened: Receipt["weakened"];
+  readonly unreadable: boolean;
+  readonly inherited: Receipt["inherited"];
+  readonly unmeasured: Receipt["unmeasured"];
+  readonly startState?: Receipt["startState"];
+  readonly endState?: Receipt["endState"];
+}
+
+/** The whole diff against H, including deletions, for weakening even where attribution excludes inherited paths. */
+async function changesFromBase(root: string, base: string | null): Promise<{
+  paths: string[]; changes: Awaited<ReturnType<typeof fileChanges>>;
+} | undefined> {
+  const paths = await changedFiles(root, base);
+  const deleted = base === null ? [] : await gitPaths(root, diffFrom(base, "--name-only", "--diff-filter=D"));
+  return paths === undefined || deleted === undefined ? undefined
+    : { paths: [...new Set([...paths, ...deleted])].sort(), changes: await fileChanges(root, base, paths) };
+}
+
+/** Each capture's facts and the committed paths since H; an unknown capture keeps verification against H. */
+async function fingerprintedUnit(root: string, base: string | null, start: Fingerprint): Promise<{
+  attribution: ReturnType<typeof compareFingerprints>;
+  facts: Pick<ChangedUnit, "startState" | "endState">;
+}> {
+  let end = await captureFingerprint(root);
+  const committed = end.status !== "known" || end.head === null ? []
+    : base === null ? await gitPaths(root, ["ls-tree", "-r", "--name-only", end.head])
+      : await gitPaths(root, [...diffFrom(base, "--name-only"), end.head]);
+  if (committed === undefined) end = { status: "unknown", reason: "Git could not read the files committed since the admission base" };
+  return { attribution: compareFingerprints(start, end, committed ?? []),
+    facts: { startState: start.status === "unknown" ? start : { status: "known", head: start.head },
+      endState: end.status === "unknown" ? end : { status: "known", head: end.head } } };
 }
 
 /**
@@ -689,15 +730,24 @@ interface ChangedUnit {
  * given what it left out (`tooLarge`), a snapshot; `unchanged` when it
  * changed nothing, and nothing when Git cannot read it.
  */
-async function changedUnit(cwd: string, folder: string, base: string | null, tooLarge: readonly string[] | undefined):
+async function changedUnit(cwd: string, folder: string, base: string | null, tooLarge: readonly string[] | undefined,
+  fingerprint: Fingerprint | undefined):
   Promise<ChangedUnit | "unchanged" | undefined> {
   const root = join(cwd, folder);
-  const changed = await changedFiles(root, base);
-  if (changed === undefined) return undefined;
-  const changes = await fileChanges(root, base, changed);
-  const weakened = typeof changes === "string" ? changes : checks().weakenedEvidence(changes);
-  return changed.length === 0 && Array.isArray(weakened) && weakened.length === 0 ? "unchanged"
-    : { folder, root, base, changed, changes, weakened, ...tooLarge === undefined ? {} : { snapshot: { tooLarge } } };
+  const captured = fingerprint === undefined ? undefined : await fingerprintedUnit(root, base, fingerprint);
+  const attribution = captured?.attribution ?? { eligible: true, changed: undefined, inherited: [], unmeasured: [] };
+  if (!attribution.eligible) return "unchanged";
+  const whole = await changesFromBase(root, base);
+  if (whole === undefined && captured === undefined) return undefined;
+  const changed = (attribution.changed ?? whole?.paths ?? [])
+    .filter((path) => !attribution.unmeasured.some((item) => item.path === path));
+  const full = whole?.changes ?? "unreadable";
+  const weakened = typeof full === "string" ? full : checks().weakenedEvidence(full);
+  const changes = typeof full === "string" ? full : full.filter(({ path }) => changed.includes(path));
+  return fingerprint === undefined && changed.length === 0 && Array.isArray(weakened) && weakened.length === 0 ? "unchanged"
+    : { folder, root, base, changed, changes, weakened, unreadable: whole === undefined,
+      inherited: attribution.inherited, unmeasured: attribution.unmeasured, ...captured?.facts,
+      ...tooLarge === undefined ? {} : { snapshot: { tooLarge } } };
 }
 
 /** What `measure` found in one repository. */
@@ -714,7 +764,10 @@ async function unitEvidence(unit: ChangedUnit, proofs: Receipt["proofs"], rung: 
   return { repository: unit.snapshot === undefined,
     ...unit.snapshot === undefined ? {} : { snapshot: true, ...unit.snapshot.tooLarge.length === 0 ? {} : { tooLarge: unit.snapshot.tooLarge } },
     base: unit.base, proofs, ...measured?.strength ?? { contracts: [] },
+    inherited: unit.inherited, unmeasured: unit.unmeasured,
+    ...unit.startState === undefined ? {} : { startState: unit.startState },
+    ...unit.endState === undefined ? {} : { endState: unit.endState },
     tests: rung?.tests ?? [], exercises: rung?.exercises ?? [], weakened: unit.weakened,
     ...unprovedFiles(unit.changes, unit.changed, measured?.covered ?? new Set()), uncovered: uncovered(sources, unit.changes, unit.weakened),
-    changed: await recordedChanges(unit.root, unit.base, unit.changed) };
+    changed: unit.unreadable ? "unreadable" : await recordedChanges(unit.root, unit.changed) };
 }

@@ -28,15 +28,17 @@ export function gitEnvironment(root: string): NodeJS.ProcessEnv | undefined {
  * `git` on PATH can be a launcher, and killing it would leave the Git it
  * started running in the project after the gate moved on.
  */
-export function gitOutput(root: string, args: readonly string[]): Promise<string | "too_large" | undefined> {
+export function gitOutput(root: string, args: readonly string[], input?: string): Promise<string | "too_large" | undefined> {
   return new Promise((settle) => {
     const child = spawn("git", [...args], { cwd: root, env: gitEnvironment(root), windowsHide: true,
-      stdio: ["ignore", "pipe", "ignore"] });
+      stdio: [input === undefined ? "ignore" : "pipe", "pipe", "ignore"] });
+    child.stdin?.on("error", () => undefined);
+    child.stdin?.end(input);
     const chunks: Buffer[] = [];
     let size = 0;
-    child.stdout.on("data", (chunk: Buffer) => {
+    child.stdout?.on("data", (chunk: Buffer) => {
       size += chunk.length;
-      if (size > outputLimit) child.stdout.destroy();
+      if (size > outputLimit) child.stdout?.destroy();
       else chunks.push(chunk);
     });
     child.once("error", () => { settle(undefined); });
@@ -47,8 +49,8 @@ export function gitOutput(root: string, args: readonly string[]): Promise<string
 }
 
 /** Git's output in `root`; undefined when Git fails or its output passes what the gate reads. */
-export async function git(root: string, args: readonly string[]): Promise<string | undefined> {
-  const output = await gitOutput(root, args);
+export async function git(root: string, args: readonly string[], input?: string): Promise<string | undefined> {
+  const output = await gitOutput(root, args, input);
   return output === "too_large" ? undefined : output;
 }
 

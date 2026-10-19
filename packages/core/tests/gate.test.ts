@@ -95,8 +95,102 @@ function receiptOf(session: EngineSession): Receipt | undefined {
 
 const edit = (content: string): ScriptStep => ({ tool: "write", args: { path: "src/rule.ts", content } });
 const changed = `${contract}// changed\n`;
+const shell = process.platform === "win32" ? "powershell" : "bash";
 
 describe("the gate on @tesota/core", () => {
+  test.each(["tui", "print"] as const)("fingerprints old dirt before a shell call in %s and skips unchanged requests", async (mode) => {
+    const cwd = repository();
+    writeFileSync(join(cwd, "src/rule.ts"), changed);
+    const session = gated(cwd, [{ tool: shell, args: { command: "git --no-optional-locks status --short" } }, "done"], { mode });
+    await session.prompt("inspect status");
+    expect(session.outcome()).toBe("completed");
+    expect(session.messages().filter((message) => message.role === "toolResult")).toMatchObject([{ isError: false }]);
+    expect(receiptOf(session)).toBeUndefined();
+  });
+
+  test.each(["tui", "print"] as const)("attributes an edit separately from inherited dirt in %s", async (mode) => {
+    const cwd = repository();
+    writeFileSync(join(cwd, "src/rule.ts"), changed);
+    const session = gated(cwd, [{ tool: "write", args: { path: "new.txt", content: "new\n" } }, "done"], { mode });
+    await session.prompt("write new.txt");
+    expect(session.outcome()).toBe("completed");
+    expect(receiptOf(session)).toMatchObject({ inherited: ["src/rule.ts"], proofs: [],
+      changed: [{ path: "new.txt", blob: expect.any(String) }] });
+  });
+
+  test.each(["commit", "delete", "stash", "switch"] as const)("a %s is eligible on the engine", async (action) => {
+    const cwd = repository();
+    if (action === "switch") {
+      git(cwd, "branch", "before");
+      writeFileSync(join(cwd, "src/rule.ts"), changed);
+      git(cwd, "add", "-A");
+      git(cwd, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "other");
+    }
+    if (action === "stash") writeFileSync(join(cwd, "src/rule.ts"), changed);
+    const command = action === "commit" ? "git -c user.name=t -c user.email=t@t commit -am agent"
+      : action === "delete" ? "git rm src/rule.ts"
+        : action === "stash" ? "git -c user.name=t -c user.email=t@t stash" : "git switch before";
+    const session = gated(cwd, [...action === "commit" ? [edit(changed)] : [], { tool: shell, args: { command } }, "done"]);
+    await session.prompt(`perform ${action}`);
+    expect(session.outcome()).toBe("completed");
+    expect(session.messages().filter((message) => message.role === "toolResult").every((message) =>
+      message.role === "toolResult" && !message.isError)).toBe(true);
+    expect(receiptOf(session)).toMatchObject({ inherited: [],
+      changed: [{ path: "src/rule.ts", blob: action === "delete" ? null : expect.any(String) }] });
+  });
+
+  test("earlier weakening stays visible against H after a stopped request", async () => {
+    const cwd = repository();
+    writeFileSync(join(cwd, "old.test.js"), "assert.ok(true);\n");
+    git(cwd, "add", "-A");
+    git(cwd, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "test");
+    const stop: ExtensionFactory = (pi) => { pi.on("tool_result", () => { session.abort(); }); };
+    const session = gated(cwd, [{ tool: "write", args: { path: "old.test.js", content: "// test removed\n" } },
+      { tool: "write", args: { path: "new.txt", content: "new\n" } }, "done"], { extensions: [stop] });
+    await session.prompt("remove test");
+    expect(session.outcome()).toBe("aborted");
+    // A later request uses the same working tree, with a verifier whose tool-result hook does not stop it.
+    open.splice(open.indexOf(session), 1);
+    await session.dispose();
+    const next = gated(cwd, [{ tool: "write", args: { path: "new.txt", content: "new\n" } }, "done"]);
+    await next.prompt("add a note");
+    expect(receiptOf(next)).toMatchObject({ inherited: ["old.test.js"], exercises: [],
+      changed: [{ path: "new.txt", blob: expect.any(String) }], weakened: [{ path: "old.test.js", kind: "edited_test" }] });
+  });
+
+  test("limits stay unmeasured and do not write objects, refs or the index", async () => {
+    const cwd = repository();
+    writeFileSync(join(cwd, "large.txt"), "x".repeat(10 * 1024 * 1024 + 1));
+    mkdirSync(join(cwd, "many"));
+    for (let k = 0; k < 200; k += 1) writeFileSync(join(cwd, "many", `${k}.txt`), "x");
+    const state = () => ({ objects: git(cwd, "count-objects", "-v"), refs: git(cwd, "for-each-ref"), index: readFileSync(join(cwd, ".git/index")) });
+    const before = state();
+    const session = gated(cwd, [{ tool: shell, args: { command: "git --version" } }, "done"]);
+    await session.prompt("inspect");
+    expect(session.outcome()).toBe("completed");
+    expect(receiptOf(session)).toMatchObject({ inherited: [], changed: [] });
+    expect(receiptOf(session)?.unmeasured).toHaveLength(201);
+    expect(state()).toEqual(before);
+  });
+
+  test("a folder of repositories attributes each unit independently", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "tesota-core-gate-workspace-"));
+    const a = repository();
+    const b = repository();
+    // Move whole fixtures into the workspace before any session owns them.
+    const { renameSync } = await import("node:fs");
+    renameSync(a, join(cwd, "a"));
+    renameSync(b, join(cwd, "b"));
+    writeFileSync(join(cwd, "a/src/rule.ts"), changed);
+    writeFileSync(join(cwd, "b/src/rule.ts"), changed);
+    const session = gated(cwd, [{ tool: "write", args: { path: "b/new.txt", content: "new\n" } }, "done"]);
+    await session.prompt("add note in b");
+    expect(session.outcome()).toBe("completed");
+    expect(receiptOf(session)?.units).toHaveLength(1);
+    expect(receiptOf(session)?.units?.[0]).toMatchObject({ folder: "b", inherited: ["src/rule.ts"], proofs: [],
+      changed: [{ path: "new.txt", blob: expect.any(String) }] });
+  });
+
   test.each(["tui", "print"] as const)("a greeting and file exploration in %s mode leave external changes unverified", async (mode) => {
     const cwd = repository();
     writeFileSync(join(cwd, "src", "rule.ts"), changed);

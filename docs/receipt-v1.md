@@ -118,14 +118,17 @@ unit as a receipt of its own, with the run's `version`, `startedAt`,
 | `unverified` | string[] | Changed files no proof's evidence covers, other than test files and files whose changed lines are all blank or comment-only |
 | `commentsOnly` | `true`, optional | Present when every line the request added or removed is blank or comment-only, a `//@` line not counting as a comment. When nothing else is listed, the receipt says there was nothing to verify |
 | `uncovered` | UncoveredLines[] | The changed lines of each TypeScript file that proved that no contract's proof covers. Empty when `weakened` is a string |
-| `changed` | Changed[], or `"unreadable"` | Every file changed from `base` as the run left it, sorted by path |
-| `units` | Unit[], optional | Present when the session ran in a folder that is in no Git repository and holds repositories directly. Then the fields from `snapshot` to `changed` are empty or absent, `repository` is true and `base` is null |
+| `changed` | Changed[], or `"unreadable"` | Files changed during the request (by anyone), as the run left them, sorted by path: differences between fingerprints plus files changed between `base` and current `HEAD`. Unmeasured paths are listed separately |
+| `inherited` | string[] | Paths dirty at the first non-reader tool whose blobs stayed unchanged; not proved or exercised as this request's change. Tests ran with them |
+| `unmeasured` | { path: string, reason: string }[] | Paths not hashed at either capture: a dirty file over 10 MiB or an untracked directory with 200 or more files. These make the unit eligible and are never called unchanged |
+| `startState`, `endState` | CaptureState, optional | Each repository's capture at the first non-reader tool and at settlement. Absent for snapshots and stopped runs |
+| `units` | Unit[], optional | Present when the session ran in a folder that is in no Git repository and holds repositories directly. Then the fields from `snapshot` to `endState` are empty or absent, `repository` is true and `base` is null |
 | `openCases` | OpenCases, optional | The cases the operator's request leaves open, as a model listed them for the operator to settle. A model's opinion, never evidence, and never one of the receipt's decisions. Absent when the operator ran Tesota with `--open-cases-model off` |
 
 ### Unit
 
-A unit is a repository the request changed, or a folder in no repository,
-in name order. A unit has the fields from `repository` to `changed` of the
+A unit is an eligible repository, or a folder in no repository,
+in name order. A unit has the fields from `repository` through `endState` of the
 receipt, about that unit alone, with paths relative to it and commands run
 from it, and:
 
@@ -140,6 +143,23 @@ could not be snapshotted has a unit, with `repository` false, nothing
 verified, `base` null and its `reason`, only when the request ran a tool
 that may change files; a repository Git could not read is listed the same
 way.
+
+### CaptureState
+
+`{ "status": "known", "head": <commit or null> }`, or
+`{ "status": "unknown", "reason": <why> }` when Git failed or the index was
+in conflict. An unknown capture keeps the unit eligible; verification
+compares every changed path against the admission `base`, and the receipt
+shows the reason. Limits keep paths unmeasured even if their names and
+`HEAD` were readable.
+
+The gate observes results, not authors. A stash that removes old dirt is a
+change during the request, including when it restores the admission base's
+content. Inherited paths appear in one collapsed card row, with the paths
+under Ctrl+O. Weakening still compares all paths against the admission base.
+Tests run with inherited files; exercise uses the admission base, so a test
+relying on inherited changes may be misjudged. Folders outside Git retain
+their per-request snapshots and have empty `inherited` and `unmeasured` lists.
 
 ### Proof
 
@@ -304,5 +324,5 @@ The kinds are:
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `path` | string | A file changed from `base`, untracked files included |
+| `path` | string | A file changed during the request (by anyone), including deletions and untracked paths |
 | `blob` | string or null | The blob id Git would store for its content (`git hash-object`), or null when the file was deleted |
