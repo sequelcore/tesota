@@ -1,5 +1,5 @@
 import type { AssistantMessage, ToolCall, ToolResultMessage } from "@earendil-works/pi-ai";
-import { type Component, Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
+import { type Component, Container, Markdown, Text, truncateToWidth } from "@earendil-works/pi-tui";
 import type { CustomMessage, HistoryMessage } from "../loop.ts";
 import type { MessageRenderer, ToolDrawing } from "./surface.ts";
 import type { ShellTheme } from "../../../../src/theme.ts";
@@ -20,9 +20,28 @@ const outputLines = 12;
 const textOf = (content: string | readonly { type: string; text?: string }[]): string => typeof content === "string" ? content
   : content.flatMap((part) => part.type === "text" && part.text !== undefined ? [part.text] : []).join("");
 
-/** The operator's message, on its own background. */
+/** Rows drawn once per width, as pi-tui's `Text` keeps its lines: the shell repaints every frame. */
+function cached(rows: (width: number) => string[], invalidate: () => void = () => undefined): Component {
+  let drawn: { readonly width: number; readonly lines: string[] } | undefined;
+  return {
+    invalidate: () => { drawn = undefined; invalidate(); },
+    render: (width) => {
+      if (drawn?.width !== width) drawn = { width, lines: rows(width) };
+      return drawn.lines;
+    },
+  };
+}
+
+/** Text wrapped under a two-column prefix, with continuation lines aligned under the text. */
+function prefixedText(text: string, prefix: string): Component {
+  const body = new Text(text, 0, 0);
+  return cached((width) => body.render(Math.max(1, width - 2)).map((line, index) =>
+    truncateToWidth(`${index === 0 ? prefix : "  "}${line}`, width)), () => { body.invalidate(); });
+}
+
+/** The operator's message, with a quiet prompt and no background. */
 function userView(text: string, theme: ShellTheme): Component {
-  return new Text(theme.fg("userMessageText", text), 1, 1, (line) => theme.bg("userMessageBg", line));
+  return prefixedText(theme.fg("userMessageText", text), theme.bold(theme.fg("dim", "› ")));
 }
 
 /** A reply: its thinking, quieter, then its text as Markdown. */
@@ -55,15 +74,19 @@ function summary(call: ToolCall): string {
 }
 
 /** An edit's replacements as removed and added lines. */
-function diffLines(call: ToolCall, theme: ShellTheme): string[] {
+function diffLines(call: ToolCall): string[] {
   const edits = (call.arguments as { edits?: { oldText?: unknown; newText?: unknown }[] }).edits ?? [];
+  const lines = (text: unknown, prefix: string): string[] => {
+    const value = String(text ?? "");
+    return value === "" ? [] : value.replace(/\r?\n$/u, "").split(/\r?\n/u).map((line) => `${prefix} ${line}`);
+  };
   return edits.flatMap(({ oldText, newText }) => [
-    ...String(oldText ?? "").split("\n").map((line) => theme.fg("toolDiffRemoved", `- ${line}`)),
-    ...String(newText ?? "").split("\n").map((line) => theme.fg("toolDiffAdded", `+ ${line}`)),
+    ...lines(oldText, "-"),
+    ...lines(newText, "+"),
   ]);
 }
 
-/** A call: its tool and target, then its diff or the start of its output, on a background that says how it went. */
+/** A call's status, tool and target, with details when expanded and failures always visible. */
 class CallView extends Container {
   private result: ToolResultMessage | undefined;
   private readonly call: ToolCall;
@@ -88,15 +111,23 @@ class CallView extends Container {
     const { theme, call, result } = this;
     const drawing = this.drawings.tools.get(call.name);
     if (drawing !== undefined) { this.drawn(drawing); return; }
-    const state = result === undefined ? "toolPendingBg" : result.isError ? "toolErrorBg" : "toolSuccessBg";
-    const lines = [`${theme.bold(theme.fg("toolTitle", call.name))} ${theme.fg("muted", summary(call))}`];
-    if (call.name === "edit" && result?.isError !== true) lines.push(...diffLines(call, theme));
-    else if (result !== undefined) {
+    const glyph = result === undefined ? "○" : result.isError ? "✗" : "✓";
+    const diff = call.name === "edit" && result?.isError !== true ? diffLines(call) : [];
+    const note = result !== undefined && diff.length > 0
+      ? ` ${theme.fg("dim", `+${diff.filter((line) => line.startsWith("+")).length} −${diff.filter((line) => line.startsWith("-")).length}`)}` : "";
+    const title = `${theme.fg(result?.isError === true ? "error" : "muted", glyph)} ${theme.bold(theme.fg("toolTitle", call.name))}`
+      + ` ${theme.fg("muted", summary(call))}${note}`;
+    this.addChild(cached((width) => [truncateToWidth(title, width)]));
+    const lines: string[] = [];
+    const expanded = this.drawings.expanded();
+    if (expanded && diff.length > 0) {
+      lines.push(...diff.map((line) => theme.fg(line.startsWith("-") ? "toolDiffRemoved" : "toolDiffAdded", line)));
+    } else if (result !== undefined && (expanded || result.isError)) {
       const output = textOf(result.content).trimEnd().split("\n");
-      lines.push(...output.slice(0, outputLines).map((line) => theme.fg("toolOutput", line)));
-      if (output.length > outputLines) lines.push(theme.fg("dim", `… ${output.length - outputLines} more lines`));
+      lines.push(...output.slice(0, expanded ? outputLines : 1).map((line) => theme.fg(result.isError ? "error" : "toolOutput", line)));
+      if (expanded && output.length > outputLines) lines.push(theme.fg("dim", `… ${output.length - outputLines} more lines`));
     }
-    this.addChild(new Text(lines.join("\n"), 1, 1, (line) => theme.bg(state, line)));
+    if (lines.length > 0) this.addChild(prefixedText(lines.join("\n"), "  "));
   }
   /** A call drawn as its extension's tool says, Pi's way: its call, then its result once there is one. */
   private drawn(drawing: ToolDrawing): void {
@@ -152,7 +183,7 @@ export class Transcript extends Container {
   stream(partial: AssistantMessage): void {
     if (this.streaming === undefined) {
       this.streaming = new ReplyView(this.theme);
-      this.append(this.streaming);
+      this.addChild(this.streaming);
     }
     this.streaming.show(partial);
   }
@@ -162,17 +193,18 @@ export class Transcript extends Container {
     if (this.calls.has(call.id)) return;
     const view = new CallView(call, this.theme, this.drawings);
     this.calls.set(call.id, view);
-    this.append(view);
+    this.addChild(view);
   }
 
   /** A message that entered the conversation. */
   add(message: HistoryMessage): void {
-    if (message.role === "user") this.append(userView(textOf(message.content), this.theme));
+    if (message.role === "user") this.addChild(userView(textOf(message.content), this.theme));
     else if (message.role === "assistant") {
       const view = this.streaming ?? new ReplyView(this.theme);
-      if (this.streaming === undefined) this.append(view);
+      if (this.streaming === undefined) this.addChild(view);
       this.streaming = undefined;
       view.show(message);
+      for (const part of message.content) if (part.type === "toolCall") this.start(part);
     } else if (message.role === "toolResult") {
       const view = this.calls.get(message.toolCallId);
       if (view === undefined) {
@@ -180,11 +212,12 @@ export class Transcript extends Container {
         this.start(call);
       }
       this.calls.get(message.toolCallId)?.finish(message);
-    } else if (message.role === "custom" && message.display) this.append(customView(message, this.theme, this.drawings));
+    } else if (message.role === "custom" && message.display) this.addChild(customView(message, this.theme, this.drawings));
   }
 
-  private append(component: Component): void {
-    if (this.children.length > 0) this.addChild(new Spacer(1));
-    this.addChild(component);
+  /** Each entry that draws anything, one blank row between them: a reply that only called tools draws nothing and adds no row. */
+  override render(width: number): string[] {
+    return this.children.map((child) => child.render(width)).filter((lines) => lines.length > 0)
+      .flatMap((lines, index) => index === 0 ? lines : ["", ...lines]);
   }
 }

@@ -108,19 +108,75 @@ describe("the shell", () => {
       screen.findIndex((line) => line.includes("Hello from the engine.")));
   });
 
-  test("a tool call shows its tool and target, and an edit its removed and added lines", async () => {
+  test("an operator message has a dim prompt, aligned continuation and no background", async () => {
+    const { terminal, session } = shellOn(["answered"]);
+    terminal.type("\x1b[200~first line\nsecond line\x1b[201~");
+    terminal.type(enter);
+    await settled(session);
+    const screen = await terminal.screen();
+    const row = screen.findIndex((line) => line.includes("first line"));
+    expect(screen.slice(row, row + 2).map((line) => line.trimEnd())).toEqual(["› first line", "  second line"]);
+    const buffer = await terminal.drawn();
+    expect(buffer.getLine(buffer.viewportY + row)?.getCell(0)?.getFgColor()).toBe(0x8f8d84);
+    expect(buffer.getLine(buffer.viewportY + row)?.getCell(2)?.getFgColor()).toBe(0xf2eee6);
+    for (let line = row; line < row + 2; line++) {
+      for (let column = 0; column < terminal.columns; column++) {
+        expect(buffer.getLine(buffer.viewportY + line)?.getCell(column)?.isBgDefault()).toBe(true);
+      }
+    }
+  });
+
+  for (const mode of ["fullscreen", "inline"] as const) test(`a write is one unfilled row until Ctrl+O expands it, and folds again (${mode})`, async () => {
+    const { terminal, session } = shellOn([{ tool: "write", args: { path: "a.txt", content: "one\n" } }, "done"], mode);
+    terminal.type("write it");
+    terminal.type(enter);
+    await settled(session);
+    const screen = await terminal.screen();
+    const row = screen.findIndex((line) => line.includes("write a.txt"));
+    expect(screen[row]).toBe("✓ write a.txt");
+    expect(screen[row + 1]).toBe("");
+    expect(shown(screen)).not.toContain("Wrote");
+    const buffer = await terminal.drawn();
+    expect(buffer.getLine(buffer.viewportY + row)?.getCell(0)?.getFgColor()).toBe(0xb9b7aa);
+    expect(buffer.getLine(buffer.viewportY + row)?.getCell(2)?.isBold()).toBeGreaterThan(0);
+    for (let column = 0; column < terminal.columns; column++) {
+      expect(buffer.getLine(buffer.viewportY + row)?.getCell(column)?.isBgDefault()).toBe(true);
+    }
+    terminal.type("\x0f");
+    const expanded = await terminal.until("Wrote 4 bytes to a.txt.");
+    expect(expanded.split("\n").map((line) => line.trimEnd()).join("\n")).toContain("✓ write a.txt\n  Wrote 4 bytes to a.txt.");
+    terminal.type("\x0f");
+    expect(await terminal.untilGone("Wrote 4 bytes")).toContain("✓ write a.txt");
+  });
+
+  test("an edit shows replacement counts collapsed and its diff after Ctrl+O", async () => {
     const { terminal, session } = shellOn([
-      { tool: "write", args: { path: "a.txt", content: "one\n" } },
-      { tool: "edit", args: { path: "a.txt", edits: [{ oldText: "one", newText: "two" }] } },
-      "done"]);
+      { tool: "write", args: { path: "a.txt", content: "one\ntwo\n" } },
+      { tool: "edit", args: { path: "a.txt", edits: [{ oldText: "one", newText: "first\nsecond" }, { oldText: "two", newText: "third" }] } },
+      "done"], "fullscreen", [80, 36]);
     terminal.type("change it");
     terminal.type(enter);
     await settled(session);
     const screen = shown(await terminal.screen());
-    expect(screen).toContain("write a.txt");
-    expect(screen).toContain("edit a.txt");
-    expect(screen).toContain("- one");
-    expect(screen).toContain("+ two");
+    expect(screen).toContain("✓ edit a.txt +3 −2");
+    expect(screen).not.toContain("- one");
+    expect(screen).not.toContain("+ first");
+    terminal.type("\x0f");
+    const expanded = await terminal.until("+ third");
+    expect(expanded.split("\n").map((line) => line.trimEnd()).join("\n")).toContain("✓ edit a.txt +3 −2\n  - one\n  + first\n  + second\n  - two\n  + third");
+    terminal.type("\x0f");
+    expect(await terminal.untilGone("+ third")).toContain("✓ edit a.txt +3 −2");
+  });
+
+  test("a failed call keeps its reason visible while collapsed", async () => {
+    const { terminal, session } = shellOn([
+      { tool: "write", args: { path: "a.txt", content: "one\n" } },
+      { tool: "read", args: { path: "a.txt", offset: 99 } }, "done"], "fullscreen", [80, 32]);
+    terminal.type("read past the end");
+    terminal.type(enter);
+    await settled(session);
+    const screen = shown(await terminal.screen());
+    expect(screen).toContain("✗ read a.txt\n  Offset 99 is past the end of the file, which has 1 lines.");
   });
 
   test("ending a fullscreen shell leaves the conversation in the terminal's scrollback", async () => {
