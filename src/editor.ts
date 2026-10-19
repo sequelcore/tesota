@@ -22,6 +22,9 @@ const HINT = "/ for commands · @ for files";
 export class BarEditor extends Editor {
   #above = 0;
   #below = 0;
+  /** The last frame's suggestion rows, drawn above the block, and text rows, so a click lands where pi's layout has it. */
+  #suggestions = 0;
+  #textRows = 0;
 
   readonly #look: () => Theme;
 
@@ -53,15 +56,21 @@ export class BarEditor extends Editor {
       : " ".repeat(inner + LEFT - 1 + RIGHT));
     // An empty input says what it takes, dim after the cursor, as Gemini CLI's does.
     const hint = (line: string): string => this.getText() === "" ? `${line.trimEnd()} ${theme.fg("dim", HINT)}` : line;
+    // Suggestions open above the block, between the conversation and the input, as Claude Code's and Codex's do.
+    const suggestions = lines.slice(end + 1);
+    this.#suggestions = suggestions.length;
+    this.#textRows = end - 1;
     return [
+      ...suggestions.map((line) => `${" ".repeat(LEFT)}${line}`),
       padding(this.#above, "↑"),
       ...lines.slice(1, end).map((line, row) => `${bar}  ${row === 0 ? hint(line) : line}${" ".repeat(RIGHT)}`),
       padding(this.#below, "↓"),
-      ...lines.slice(end + 1).map((line) => `${" ".repeat(LEFT)}${line}`),
     ].map((line) => truncateToWidth(line, width, ""));
   }
 
   override handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
-    return super.handleMouse({ ...event, x: event.x - LEFT, width: Math.max(1, event.width - LEFT - RIGHT) });
+    // Pi's rows are its border, the text, its border, then the suggestions; here the suggestions come first.
+    const y = event.y < this.#suggestions ? this.#textRows + 2 + event.y : event.y - this.#suggestions;
+    return super.handleMouse({ ...event, x: event.x - LEFT, y, width: Math.max(1, event.width - LEFT - RIGHT) });
   }
 }

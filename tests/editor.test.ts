@@ -67,15 +67,22 @@ it("shows the editor's scroll markers in the padding rows", () => {
   expect(top[6]).toBe(`▌  ↓ 7 more${" ".repeat(49)}`);
 });
 
-it("puts autocomplete beneath the block, under the text, and places clicks past the bar", async () => {
+it("opens suggestions above the block, as Claude Code and Codex do, and places clicks past the bar and the suggestions", async () => {
   const view = editor("");
   view.setAutocompleteProvider(new CombinedAutocompleteProvider([{ name: "help", description: "Show help" }], process.cwd()));
   view.handleInput("/");
+  view.handleInput("h");
   await new Promise((resolve) => setTimeout(resolve, 200));
   const rows = view.render(60).map(stripTerminalSequences);
-  expect(rows.length).toBeGreaterThan(3);
-  expect(rows[3]?.startsWith("   ")).toBe(true);
-  expect(rows.slice(3).join("\n")).toContain("help");
+  const block = rows.findIndex((row) => row.startsWith("▌"));
+  expect(block).toBeGreaterThan(0);
+  expect(rows.slice(0, block).join("\n")).toContain("help");
+  expect(rows.slice(0, block).every((row) => row.startsWith("   "))).toBe(true);
+  expect(rows.slice(block).every((row) => row.startsWith("▌"))).toBe(true);
+  // A click on the text, below the open suggestions, places the cursor where pi's layout has it.
+  view.handleMouse({ type: "click", button: "left", x: 3 + 1, y: block + 1, screenX: 4, screenY: block + 1, width: 60,
+    height: rows.length, shift: false, alt: false, ctrl: false } as TuiMouseEvent);
+  expect(view.getCursor()).toEqual({ line: 0, col: 1 });
   const typed = editor("abcdefghij");
   const click: TuiMouseEvent = { type: "click", button: "left", x: 3 + 4, y: 1, screenX: 7, screenY: 1, width: 60, height: 3,
     shift: false, alt: false, ctrl: false } as TuiMouseEvent;
