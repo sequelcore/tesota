@@ -1,7 +1,7 @@
 import {
   CombinedAutocompleteProvider, type Component, Container, Editor, type Focusable, Input, Loader, matchesKey, ScrollView, type SelectItem, SelectList,
   type SlashCommand,
-  type Terminal, type TerminalColors, Text, TuiAltScreen, type TuiAltScreenOptions, TuiMainScreen, VStack,
+  Spacer, type Terminal, type TerminalColors, Text, TuiAltScreen, type TuiAltScreenOptions, TuiMainScreen, VStack,
 } from "@earendil-works/pi-tui";
 import type { FooterData } from "../../../../src/contract.ts";
 import type { SessionEvent } from "../loop.ts";
@@ -124,6 +124,8 @@ export function startShell(options: ShellOptions): Shell {
     expanded: () => expanded, get cwd() { return session.workspace.cwd; } });
   const header = new Container();
   document.addChild(header);
+  // A blank row between the header and the conversation's first entry.
+  document.addChild(new Spacer(1));
   document.addChild(transcript);
   const status = new Container();
   const loader = new Loader(tui, (text) => theme.fg("accent", text), (text) => theme.fg("muted", text), "Working…");
@@ -135,7 +137,8 @@ export function startShell(options: ShellOptions): Shell {
   const footer = new Text("", 1, 0);
   const drawFooter = (): void => { footer.setText(theme.fg("dim", options.status())); };
   drawFooter();
-  const dock: readonly Component[] = [status, editorSlot, footerSlot];
+  // A blank row always above the input, so the conversation's last card never touches it.
+  const dock: readonly Component[] = [new Spacer(1), status, editorSlot, footerSlot];
   if (tui instanceof TuiAltScreen) {
     tui.setLayoutRoot(new VStack([
       { component: new ScrollView(document, { follow: "end", primary: true, overscroll: "chain" }), basis: 0, grow: 1, shrink: 1, minSize: 1 },

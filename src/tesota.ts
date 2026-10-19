@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import type { ExtensionAPI } from "./contract.js";
-import { FilledEditor } from "./editor.js";
+import { BarEditor } from "./editor.js";
 import { EvidenceFooter } from "./footer.js";
 import { type RecordedRequest, registerGate } from "./gate.js";
 import { registerMessages } from "./messages.js";
@@ -12,7 +12,7 @@ import { mountWelcomeHeader, TUMBLEWEED_FRAME_MS, tumbleweedFrames, WelcomeHeade
 /**
  * Tesota, as Pi and the engine's shell load it (#446): it puts the palo fierro in Pi's header
  * (`WelcomeHeader`) and its tumbleweed in Pi's working indicator
- * (`tumbleweedFrames`), draws the input as a filled block (`FilledEditor`) over
+ * (`tumbleweedFrames`), draws the input with a bar down its edge (`BarEditor`) over
  * a footer that shows the gate's evidence (`EvidenceFooter`), offers `prove`
  * where there are contracts or once the agent writes one, holds a run open
  * while a changed file's contracts do not prove (`registerGate`), and styles
@@ -36,7 +36,7 @@ export default function tesota(pi: ExtensionAPI, recorded?: () => RecordedReques
         stageShare: listed ? 1 / 3 : 1 / 2 }), tui));
     // While the agent works, the scene's tumbleweed rolls where Pi shows its working indicator.
     if (ctx.mode === "tui") ctx.ui.setWorkingIndicator({ frames: tumbleweedFrames(ctx.ui.theme), intervalMs: TUMBLEWEED_FRAME_MS });
-    ctx.ui.setEditorComponent((tui, theme) => new FilledEditor(tui, theme, () => ctx.ui.theme));
+    ctx.ui.setEditorComponent((tui, theme) => new BarEditor(tui, theme, () => ctx.ui.theme));
     ctx.ui.setFooter((tui, theme, data) => new EvidenceFooter(theme, data, progress, { cwd: ctx.cwd,
       model: () => ctx.model === undefined ? "no model"
         : ctx.model.reasoning ? `${ctx.model.id} ${pi.getThinkingLevel()}` : ctx.model.id,

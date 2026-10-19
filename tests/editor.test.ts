@@ -2,7 +2,7 @@ import { CombinedAutocompleteProvider, CURSOR_MARKER, Editor, type EditorTheme, 
   type TuiMouseEvent, visibleWidth } from "@earendil-works/pi-tui";
 import type { Theme } from "../src/contract.js";
 import { beforeAll, expect, it } from "vitest";
-import { fill, FilledEditor } from "../src/editor.js";
+import { BarEditor } from "../src/editor.js";
 import { shellTheme } from "../src/theme.js";
 
 let theme: Theme;
@@ -14,13 +14,13 @@ const editorTheme: EditorTheme = { borderColor: (text) => `\x1b[35m${text}\x1b[3
   selectedText: plain, description: plain, scrollInfo: plain, noMatch: plain } };
 
 function editor(text: string, rows = 40) {
-  const view = new FilledEditor(tui(rows), editorTheme, () => theme);
+  const view = new BarEditor(tui(rows), editorTheme, () => theme);
   view.focused = true;
   view.setText(text);
   return view;
 }
 
-/** pi-tui's editor with the same text, at the width the filled one gives it. */
+/** pi-tui's editor with the same text, at the width the barred one gives it. */
 function plainRows(text: string, width: number, rows = 40): string[] {
   const plainEditor = new Editor(tui(rows), editorTheme, { paddingX: 0 });
   plainEditor.focused = true;
@@ -28,7 +28,7 @@ function plainRows(text: string, width: number, rows = 40): string[] {
   return plainEditor.render(width - 6);
 }
 
-it("draws the editor's text rows on the fill, between padding rows where the editor draws its borders", () => {
+it("draws the editor's text rows past the bar, between padding rows where the editor draws its borders", () => {
   const text = "Make clamp reject an empty range and keep its proofs passing, with a test that exercises it";
   for (const width of [120, 80, 40]) {
     const rows = editor(text).render(width);
@@ -42,14 +42,15 @@ it("draws the editor's text rows on the fill, between padding rows where the edi
   }
 });
 
-it("keeps the fill through the cursor and resets, and the bar in the editor's border color", () => {
-  const background = theme.getBgAnsi("userMessageBg");
-  const body = editor("hello").render(40)[1] ?? "";
-  expect(body.startsWith(`\x1b[35m▌\x1b[39m${background}`)).toBe(true);
-  // The editor marks the cursor here and later draws it with reverse video on and off, so nothing ends the fill before the row does.
-  expect(body).toContain(`hello${CURSOR_MARKER}${renderFakeCursor(" ")}`);
-  expect(body.indexOf("\x1b[0m")).toBe(body.length - "\x1b[0m".length);
-  expect(fill("a\x1b[49mb\x1b[mc", "<bg>")).toBe("<bg>a\x1b[49m<bg>b\x1b[m<bg>c\x1b[0m");
+it("draws on the terminal's own background, the bar in the editor's border color", () => {
+  const rows = editor("hello").render(40);
+  for (const row of rows) {
+    expect(row.startsWith("\x1b[35m▌\x1b[39m")).toBe(true);
+    // No background of its own: only the live input has the bar, and the conversation's cards keep their fills.
+    expect(row).not.toContain(theme.getBgAnsi("userMessageBg"));
+    expect(row).not.toContain("\x1b[48;");
+  }
+  expect(rows[1]).toContain(`hello${CURSOR_MARKER}${renderFakeCursor(" ")}`);
 });
 
 it("shows the editor's scroll markers in the padding rows", () => {
@@ -80,4 +81,10 @@ it("puts autocomplete beneath the block, under the text, and places clicks past 
     shift: false, alt: false, ctrl: false } as TuiMouseEvent;
   typed.handleMouse(click);
   expect(typed.getCursor()).toEqual({ line: 0, col: 4 });
+});
+
+it("says what an empty input takes, and stops once the operator types", () => {
+  expect(stripTerminalSequences(editor("").render(60)[1] ?? "")).toContain("/ for commands · @ for files");
+  expect(stripTerminalSequences(editor("a").render(60)[1] ?? "")).not.toContain("for commands");
+  expect(visibleWidth(editor("").render(20)[1] ?? "")).toBeLessThanOrEqual(20);
 });
