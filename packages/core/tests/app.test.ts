@@ -201,12 +201,12 @@ describe("tesota-core", () => {
     send(terminal, "write it");
     send(terminal, "/new");
     await terminal.until("1 session waits for you");
-    expect((await terminal.screen()).join("\n")).not.toContain("Allow write");
+    expect((await terminal.screen()).join("\n")).not.toContain("Write asked.md?");
     terminal.type("\x14");
     await terminal.until("waiting");
     terminal.type("\x1b[A");
     terminal.type(enter);
-    await terminal.until("Allow write asked.md");
+    await terminal.until("Write asked.md?");
     terminal.type(enter);
     await terminal.until("written");
     expect(existsSync(join(cwd, "asked.md"))).toBe(true);
@@ -330,17 +330,25 @@ describe("tesota-core", () => {
     terminal.type(enter);
     await terminal.until("Model: ");
     send(terminal, "write it");
-    const rows = (await terminal.until("Allow write allowed.txt")).split("\n");
+    const rows = (await terminal.until("Write allowed.txt?")).split("\n");
     // The question takes the input's place, under the conversation rather than drawn over it, and the input comes back after.
-    const asked = rows.findIndex((row) => row.includes("Allow write allowed.txt"));
+    const asked = rows.findIndex((row) => row.includes("Write allowed.txt?"));
     expect(asked).toBeGreaterThan(rows.findIndex((row) => row.includes("› write it")));
-    expect(rows.slice(asked).join("\n")).toContain("Yes, this once");
-    expect(rows.some((row) => row.startsWith("▌"))).toBe(false);
+    // A bar sets it apart; the file's content, why it asks, then numbered choices.
+    expect(rows[asked]?.startsWith("▌ ")).toBe(true);
+    const question = rows.slice(asked).join("\n");
+    expect(question).toContain("x");
+    expect(question).toContain("The session is in ask. Shift+Tab changes the mode.");
+    expect(question).toContain("1. Yes");
+    expect(question).toContain("2. Yes, and don't ask again this session");
+    expect(question).toContain("3. No  (esc)");
+    expect(rows.some((row) => row.includes("/ for commands"))).toBe(false);
     // While it asks, the footer says the run waits for the operator, not for the agent.
     expect(rows.at(-1)).toContain("◌ waiting for you");
-    terminal.type(enter);
+    // A digit answers at once.
+    terminal.type("1");
     const answered = (await terminal.until("written")).split("\n");
-    expect(answered.some((row) => row.startsWith("▌"))).toBe(true);
+    expect(answered.some((row) => row.includes("/ for commands"))).toBe(true);
     expect(answered.at(-1)).not.toContain("waiting for you");
     expect(existsSync(join(cwd, "allowed.txt"))).toBe(true);
     send(terminal, "/quit");
