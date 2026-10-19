@@ -2,48 +2,10 @@ import {
   type AutocompleteItem, type AutocompleteProvider, type AutocompleteSuggestions, CombinedAutocompleteProvider, fuzzyFilter, type SlashCommand,
 } from "@earendil-works/pi-tui";
 import * as Effect from "effect/Effect";
-import { opendir } from "node:fs/promises";
-import { basename, join } from "node:path";
-import { git } from "../../../../src/git.ts";
+import { basename } from "node:path";
+import { listFiles } from "../ripgrep.ts";
 
 const refreshMs = 3_000;
-const walkEntries = 20_000;
-const walkDepth = 8;
-
-/**
- * The folder's files as Git lists them (`git`, which knows Tesota's
- * snapshots), untracked ones included and ignored ones left out, in NUL
- * records that keep spaces and Unicode; undefined outside a repository or
- * when Git fails.
- */
-async function gitFiles(cwd: string): Promise<string[] | undefined> {
-  return (await git(cwd, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"]))?.split("\0").filter(Boolean);
-}
-
-/** Bound work by entries visited, depth and time; never follow links out of the session's folder. */
-async function walkFiles(cwd: string): Promise<string[]> {
-  const paths: string[] = [];
-  const pending = [{ path: "", depth: 0 }];
-  const until = performance.now() + 2_000;
-  let visited = 0;
-  while (pending.length > 0 && visited < walkEntries && performance.now() < until) {
-    const next = pending.shift();
-    if (next === undefined) break;
-    try {
-      const directory = await opendir(join(cwd, next.path));
-      for await (const entry of directory) {
-        if (++visited > walkEntries || performance.now() >= until) break;
-        const path = next.path + entry.name;
-        if (entry.isDirectory()) {
-          if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
-          paths.push(`${path}/`);
-          if (next.depth < walkDepth) pending.push({ path: `${path}/`, depth: next.depth + 1 });
-        } else if (entry.isFile()) paths.push(path);
-      }
-    } catch { /* unreadable or removed while walking */ }
-  }
-  return paths;
-}
 
 /** The session's fuzzy @ mentions, with pi-tui owning commands, ordinary paths and insertion. */
 export class FileAutocompleteProvider implements AutocompleteProvider {
@@ -62,7 +24,7 @@ export class FileAutocompleteProvider implements AutocompleteProvider {
     if (this.pending !== undefined) return this.pending;
     if (this.files === undefined || Date.now() - this.refreshed >= refreshMs) {
       this.pending = (async () => {
-        const files = await gitFiles(this.cwd) ?? await walkFiles(this.cwd);
+        const { files } = await listFiles(this.cwd, { limit: 20_000, timeoutMs: 2_000 });
         const paths = new Set(files);
         for (const file of files) {
           for (let slash = file.lastIndexOf("/"); slash > 0; slash = file.lastIndexOf("/", slash - 1)) {

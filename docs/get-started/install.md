@@ -20,6 +20,7 @@ with: run `mise install` in the checkout.
 git clone https://github.com/sequelcore/tesota
 cd tesota
 bun install --frozen-lockfile --ignore-scripts
+bun run vendor
 cd packages/core
 bun link
 ```
@@ -30,7 +31,7 @@ bun link
 tesota --version
 ```
 
-To update, pull the checkout and run `bun install` again; the linked
+To update, pull the checkout and run `bun install` and `bun run vendor` again; the linked
 command runs the new source.
 
 ## Sign in to a model

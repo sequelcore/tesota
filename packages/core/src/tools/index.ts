@@ -1,10 +1,13 @@
 import type { EngineTool } from "../tool.ts";
 import { editTool } from "./edit.ts";
+import { findTool } from "./find.ts";
+import { grepTool } from "./grep.ts";
+import { lsTool } from "./ls.ts";
 import { readTool } from "./read.ts";
 import { platformShell, type Shell, shellTool } from "./shell.ts";
 import { writeTool } from "./write.ts";
 
-/** The agent's tools in `cwd`: read, write, edit and the platform's shell, whose long output goes under `spool()`. */
+/** The agent's file tools and the platform's shell, whose long output goes under `spool()`. */
 export function codingTools(cwd: string, spool: () => string, shell: Shell = platformShell()): EngineTool[] {
-  return [readTool(cwd), writeTool(cwd), editTool(cwd), shellTool(cwd, shell, spool)];
+  return [readTool(cwd), lsTool(cwd), findTool(cwd), grepTool(cwd), writeTool(cwd), editTool(cwd), shellTool(cwd, shell, spool)];
 }

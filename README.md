@@ -41,6 +41,7 @@ and Git; [Dafny 4](https://dafny.org) to prove contracts.
 git clone https://github.com/sequelcore/tesota
 cd tesota
 bun install --frozen-lockfile --ignore-scripts
+bun run vendor
 cd packages/core && bun link
 ```
 

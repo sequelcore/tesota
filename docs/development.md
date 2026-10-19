@@ -12,9 +12,18 @@ proving needs, is in [mise.toml](../mise.toml) for `mise install`.
 
 ```sh
 bun install --frozen-lockfile --ignore-scripts
+bun run vendor
 ```
 
 Dependencies come from the registry, with lifecycle scripts disabled.
+Run `bun run vendor` once after installing a source checkout. It downloads
+the pinned ripgrep archives in [ripgrep.json](../ripgrep.json), verifies
+their SHA-256 and the extracted executables, and puts each build target's
+`rg` in the ignored `vendor/ripgrep/<target>/`. Verified executables are
+skipped on later runs. Extraction uses Bun's archive API for `.tar.gz` and
+Node's zlib for the pinned ZIP executables, without external commands.
+`bun run vendor --force` downloads and verifies every archive again.
+
 `bun link` in `packages/core` puts your checkout's `tesota` on the `PATH`.
 
 ## Checks
@@ -113,11 +122,14 @@ approval.
 measures its binary, and `bun packages/core/scripts/build.ts <folder>`
 builds every release target into a folder. A binary embeds LemmaScript and
 the TypeScript parser as code, and tree-sitter's runtime and grammars as
-files, so it verifies without the checkout; inside one, the verifier runs
+files, and that target's pinned ripgrep executable, so it verifies and
+searches without the checkout. Ripgrep is extracted once under
+`~/.tesota/ripgrep/<version>-<sha256>/`, verified before an atomic rename;
+there is no runtime download or PATH lookup. Inside a binary, the verifier runs
 LemmaScript as the binary's own `__lsc` command. The binaries workflow
 builds every target on each pull request and starts each one a runner can
 run; `binary.test.ts` proves and reads source from a binary run outside the
-checkout.
+checkout, including a search with the embedded ripgrep.
 
 ## Effect
 

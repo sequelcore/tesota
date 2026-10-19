@@ -69,11 +69,13 @@ class ReplyView extends Container {
   }
 }
 
-/** What a call's arguments say in one line: its path or its command. */
+/** What a call's arguments say in one line: its pattern and path, its path, or its command. */
 function summary(call: ToolCall): string {
   const args = call.arguments as Record<string, unknown>;
-  const said = args["path"] ?? args["command"];
-  return typeof said === "string" ? said.split("\n")[0] ?? "" : "";
+  const text = (value: unknown): string => typeof value === "string" ? value.split("\n")[0] ?? "" : "";
+  // A search shows what it looks for, then where: `quesillo in notes`.
+  if (typeof args["pattern"] === "string") return [text(args["pattern"]), text(args["path"])].filter((part) => part !== "").join(" in ");
+  return text(args["path"] ?? args["command"]);
 }
 
 /** An edit's replacements as removed and added lines. */

@@ -1,5 +1,6 @@
 import { mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { hostTarget } from "../src/ripgrep.ts";
 
 /**
  * The `tesota` binary (#472), as the budget measures it and a release would
@@ -14,9 +15,10 @@ const repository = join(import.meta.dir, "..", "..", "..");
 const engine = join(import.meta.dir, "..", "src", "main.ts");
 
 /** What a binary embeds beside its code, each at the binary's root under its own name. */
-function embedded(): string[] {
+function embedded(target: string): string[] {
   const grammars = join(repository, "grammars");
-  return [join(repository, "node_modules", "web-tree-sitter", "web-tree-sitter.wasm"),
+  return [join(repository, "vendor", "ripgrep", target, target.includes("windows") ? "rg.exe" : "rg"),
+    join(repository, "node_modules", "web-tree-sitter", "web-tree-sitter.wasm"),
     ...readdirSync(grammars).filter((name) => name.endsWith(".wasm")).map((name) => join(grammars, name))];
 }
 
@@ -38,7 +40,7 @@ export function build(outfile: string, options: { readonly target?: string; read
   // bundle, 20-25 ms more on Linux and Windows. Bytecode did the same at 3 MB more (#435).
   const build = Bun.spawnSync(["bun", "build", "--compile", "--minify", "--format=esm", "--splitting",
     ...options.target === undefined ? [] : [`--target=${options.target}`], "--asset-naming=[name].[ext]",
-    options.entry ?? engine, ...embedded(), "--outfile", outfile], { cwd: repository, stdout: "ignore", stderr: "pipe" });
+    options.entry ?? engine, ...embedded(options.target ?? hostTarget), "--outfile", outfile], { cwd: repository, stdout: "ignore", stderr: "pipe" });
   if (build.exitCode !== 0) throw new Error(`bun build --compile failed:\n${build.stderr.toString()}`);
 }
 

@@ -2,6 +2,7 @@ import { grammarCommentLines } from "../../../src/grammar-source.ts";
 import { commentOnlyLines } from "../../../src/typescript-source.ts";
 import { proveFile } from "../../../src/verification/lemmascript-verifier.ts";
 import { runLsc } from "../src/lsc.ts";
+import { grepTool } from "../src/tools/grep.ts";
 
 /**
  * What `binary.test.ts` compiles beside the engine (#472): the verifier's
@@ -19,5 +20,6 @@ else if (command !== undefined) {
     python: [...await grammarCommentLines("a.py", "# note\na = 1\n")],
     go: [...await grammarCommentLines("a.go", "// note\npackage a\n")],
     proof: { outcome: proof.outcome, files: proof.files },
+    search: await grepTool(command).execute({ pattern: "export function", glob: "*.ts" }, new AbortController().signal, "search"),
   }));
 }

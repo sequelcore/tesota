@@ -97,16 +97,22 @@ const edit = (content: string): ScriptStep => ({ tool: "write", args: { path: "s
 const changed = `${contract}// changed\n`;
 
 describe("the gate on @tesota/core", () => {
-  test.each(["tui", "print"] as const)("a greeting and a read in %s mode leave external changes unverified", async (mode) => {
+  test.each(["tui", "print"] as const)("a greeting and file exploration in %s mode leave external changes unverified", async (mode) => {
     const cwd = repository();
     writeFileSync(join(cwd, "src", "rule.ts"), changed);
-    const session = gated(cwd, ["hi", { tool: "read", args: { path: "src/rule.ts" } }, "read it"], { mode });
+    const session = gated(cwd, ["hi", { tool: "read", args: { path: "src/rule.ts" } },
+      { tool: "ls", args: {} }, { tool: "find", args: { pattern: "**/*.ts" } },
+      { tool: "grep", args: { pattern: "export function" } }, "read it"],
+    { mode, permissions: { mode: () => "ask", rules: [] } });
     await session.prompt("hi");
     expect(session.outcome()).toBe("completed");
     expect(receiptOf(session)).toBeUndefined();
     await session.prompt("read the rule");
     expect(session.outcome()).toBe("completed");
     expect(receiptOf(session)).toBeUndefined();
+    const results = session.messages().filter((message) => message.role === "toolResult");
+    expect(results).toHaveLength(4);
+    expect(results.every((message) => message.role === "toolResult" && !message.isError)).toBe(true);
   });
 
   test("a new request after a write does not inherit eligibility from the ledger refresh", async () => {

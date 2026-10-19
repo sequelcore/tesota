@@ -25,6 +25,7 @@ jobs:
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
       - run: dafny --version
       - run: bun install --frozen-lockfile --ignore-scripts
+      - run: bun run vendor
       - run: bun --no-env-file run check
       - run: bun --no-env-file run formal:check
       - run: bun packages/core/src/main.ts --version
@@ -41,6 +42,7 @@ jobs:
           docker run --rm -v "$PWD:/tesota" -w /tesota "oven/bun:${bun_version}-alpine" sh -euc '
             apk add --no-cache git
             bun install --frozen-lockfile --ignore-scripts
+            bun run vendor
             cd packages/core
             bun run test tests/session.test.ts
             bun src/main.ts --version'

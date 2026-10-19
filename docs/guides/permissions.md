@@ -54,7 +54,7 @@ Rules are JSON, as `tool(pattern)` or a tool's name alone:
 | `~/.tesota/permissions.json` | Yours: `allow`, `ask` and `deny` |
 | `<project>/.tesota/permissions.json` | The project's: only `ask` and `deny`, so a repository can tighten what you allow but never grant itself more |
 
-- **Tools:** `read`, `write`, `edit`, `prove`, `shell` (whichever shell the
+- **Tools:** `read`, `ls`, `find`, `grep`, `write`, `edit`, `prove`, `shell` (whichever shell the
   platform runs: PowerShell on Windows, bash elsewhere), and MCP tools by
   their name, `mcp__<server>__<tool>`.
 - **Patterns** match a path, relative to the session's folder, or a shell
