@@ -75,7 +75,7 @@ describe("the shell", () => {
     expect(await terminal.until("Open an earlier session")).toMatch(/resume\s+Open an earlier session/u);
   });
 
-  test.skipIf(Bun.which("fd") === null)("@ suggests files in the shown session's folder, including after switching sessions", async () => {
+  test("@ suggests files in the shown session's folder, including after switching sessions", async () => {
     const first = shellOn([]);
     const second = shellOn([]);
     writeFileSync(join(first.session.workspace.cwd, "first-notes.md"), "first\n");

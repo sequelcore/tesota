@@ -1,5 +1,5 @@
 import {
-  CombinedAutocompleteProvider, type Component, Container, Editor, type Focusable, Input, Loader, matchesKey, ScrollView, type SelectItem, SelectList,
+  type Component, Container, Editor, type Focusable, Input, Loader, matchesKey, ScrollView, type SelectItem, SelectList,
   type SlashCommand,
   Spacer, type Terminal, type TerminalColors, Text, TuiAltScreen, type TuiAltScreenOptions, TuiMainScreen, VStack,
 } from "@earendil-works/pi-tui";
@@ -8,6 +8,7 @@ import type { SessionEvent } from "../loop.ts";
 import type { EngineSession } from "../session.ts";
 import type { TuiMode } from "../settings.ts";
 import { copyToClipboard } from "./clipboard.ts";
+import { FileAutocompleteProvider } from "./autocomplete.ts";
 import { expandKey, type Surface } from "./surface.ts";
 import type { ShellTheme } from "../../../../src/theme.ts";
 import { Transcript } from "./transcript.ts";
@@ -131,8 +132,8 @@ export function startShell(options: ShellOptions): Shell {
   const loader = new Loader(tui, (text) => theme.fg("accent", text), (text) => theme.fg("muted", text), "Working…");
   const editorSlot = new Container();
   let editor = new Editor(tui, theme.editor);
-  const autocomplete = (): CombinedAutocompleteProvider =>
-    new CombinedAutocompleteProvider([...(options.commands ?? [])], session.workspace.cwd, Bun.which("fd"));
+  const autocomplete = (): FileAutocompleteProvider =>
+    new FileAutocompleteProvider([...(options.commands ?? [])], session.workspace.cwd);
   const footerSlot = new Container();
   const footer = new Text("", 1, 0);
   const drawFooter = (): void => { footer.setText(theme.fg("dim", options.status())); };
