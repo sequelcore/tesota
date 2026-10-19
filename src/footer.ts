@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import { posix, sep } from "node:path";
-import type { ContextUsage, FooterData, Theme, ThemeColor } from "./contract.js";
+import { type ContextUsage, type FooterData, QUESTION_STATUS, type Theme, type ThemeColor } from "./contract.js";
 import { type Component, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { GateProgress, GateStatus, Tally } from "./gate.js";
 import { addedAssumptions, allEvidence, type Finding, type Receipt, receiptDecisions, receiptFindings, receiptTone, type UnitEvidence,
@@ -129,14 +129,18 @@ function uncheckedGaps(findings: readonly Finding[], receipt: UnitEvidence): num
     - (typeof receipt.weakened === "string" && receipt.proofs.length > 0 ? 1 : 0);
 }
 
-/** What the footer's first row says for the gate's status. */
-export function evidenceParts(status: GateStatus, now: number = performance.now()): EvidencePart[] {
+/** What the footer's row says for the gate's status; `asked` while the shell waits for the operator's answer to a question. */
+export function evidenceParts(status: GateStatus, now: number = performance.now(), asked = false): EvidencePart[] {
   if (status.step === "ready") {
     const words = readinessWords[status.readiness];
     return [part("● ready", "● ready", "●", status.readiness === "nothing" ? "warning" : "success"), words];
   }
-  // While the agent works nothing is ready or verified yet: the gate waits, with what it will check once the run settles.
-  if (status.step === "waiting") return [part("◌ waiting for the agent", "◌ waiting", "◌", "muted"), readinessWords[status.readiness]];
+  // While the agent works nothing is ready or verified yet: the gate waits, with what it will check once the run settles;
+  // while the run waits on the operator's answer, it says so.
+  if (status.step === "waiting") {
+    return [asked ? part("◌ waiting for you", "◌ for you", "◌ you", "accent") : part("◌ waiting for the agent", "◌ waiting", "◌", "muted"),
+      readinessWords[status.readiness]];
+  }
   if (status.step === "settled") return receiptParts(status.receipt);
   if (status.step === "sent_back") return [workingHeads.sent_back, ...tallyParts(status.tally)];
   const { minutes, seconds } = elapsedTime(Math.max(0, Math.floor(now - status.startedAt)));
@@ -223,12 +227,14 @@ export class EvidenceFooter implements Component {
 
   render(width: number): string[] {
     const inner = Math.max(0, width - 2);
-    const parts = evidenceParts(this.#progress.status);
+    const shown = this.#data.getExtensionStatuses();
+    const parts = evidenceParts(this.#progress.status, performance.now(), shown.has(QUESTION_STATUS));
     const context = contextText(this.#theme, this.#session.context());
     const branch = this.#data.getGitBranch();
     const place = homeRelative(this.#session.cwd) + (branch === null ? "" : ` (${branch})`);
     const model = this.#session.model();
-    const statuses = [...this.#data.getExtensionStatuses().entries()].filter(([key]) => key !== "tesota")
+    // A waiting question is said by the evidence, so it is not listed again at the right.
+    const statuses = [...shown.entries()].filter(([key]) => key !== "tesota" && key !== QUESTION_STATUS)
       .sort(([a], [b]) => a.localeCompare(b)).map(([, text]) => text.replace(/[\r\n\t]/gu, " ")).join(SEPARATOR);
     const layout = footerLayout(inner, visibleWidth(evidenceText(parts, "full")), visibleWidth(evidenceText(parts, "short")),
       visibleWidth(evidenceText(parts, "glyphs")), visibleWidth(context.text), visibleWidth(place), visibleWidth(model),
