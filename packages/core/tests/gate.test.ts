@@ -97,6 +97,50 @@ const edit = (content: string): ScriptStep => ({ tool: "write", args: { path: "s
 const changed = `${contract}// changed\n`;
 
 describe("the gate on @tesota/core", () => {
+  test.each(["tui", "print"] as const)("a greeting and a read in %s mode leave external changes unverified", async (mode) => {
+    const cwd = repository();
+    writeFileSync(join(cwd, "src", "rule.ts"), changed);
+    const session = gated(cwd, ["hi", { tool: "read", args: { path: "src/rule.ts" } }, "read it"], { mode });
+    await session.prompt("hi");
+    expect(session.outcome()).toBe("completed");
+    expect(receiptOf(session)).toBeUndefined();
+    await session.prompt("read the rule");
+    expect(session.outcome()).toBe("completed");
+    expect(receiptOf(session)).toBeUndefined();
+  });
+
+  test("a new request after a write does not inherit eligibility from the ledger refresh", async () => {
+    const session = gated(repository(), [edit(changed), "done", "hi"]);
+    await session.prompt("change f");
+    expect(receiptOf(session)?.proofs).toMatchObject([{ verdict: "proved" }]);
+    const receipts = () => entriesOf(session.file).filter((entry) => entryReceipt(entry) !== undefined);
+    expect(receipts()).toHaveLength(1);
+    await session.prompt("hi");
+    expect(session.outcome()).toBe("completed");
+    expect(receipts()).toHaveLength(1);
+  });
+
+  test.each(["steer", "followUp"] as const)("a %s after a write keeps the request eligible", async (streamingBehavior) => {
+    const amendment: ExtensionFactory = (pi) => {
+      pi.on("tool_result", async () => { await session.prompt("keep the change", { streamingBehavior }); });
+    };
+    const session = gated(repository(), [edit(changed), "done", "also done"], { extensions: [amendment] });
+    await session.prompt("change f");
+    expect(session.outcome()).toBe("completed");
+    expect(receiptOf(session)?.proofs).toMatchObject([{ path: "src/rule.ts", verdict: "proved" }]);
+    expect(session.ledger()[0]?.amendments).toMatchObject([{ behavior: streamingBehavior, text: "keep the change" }]);
+  });
+
+  test("a write denied before execution leaves no receipt for external changes", async () => {
+    const cwd = repository();
+    writeFileSync(join(cwd, "src", "rule.ts"), changed);
+    const session = gated(cwd, [edit("overwritten"), "denied"], { permissions: { mode: () => "read", rules: [] } });
+    await session.prompt("change f");
+    expect(session.outcome()).toBe("completed");
+    expect(readFileSync(join(cwd, "src", "rule.ts"), "utf8")).toBe(changed);
+    expect(receiptOf(session)).toBeUndefined();
+  });
+
   test("a failing proof goes back to the agent, which fixes it, and the run completes with the receipt", async () => {
     proofs.set("src/rule.ts", ["failed", "passed"]);
     const session = gated(repository(), [edit(changed), "done", edit(`${changed}// fixed\n`), "fixed", "no restatement"]);

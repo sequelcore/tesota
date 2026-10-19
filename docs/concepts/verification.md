@@ -76,8 +76,14 @@ none of them is snapshotted.
 
 ## The gate
 
-The gate runs when a run completes. A run that changed nothing and
-weakened nothing settles without a receipt. Otherwise it climbs:
+The gate runs when a run completes. It verifies only when a tool that may
+change files started during the request: any tool except the built-in
+readers `read`, `grep`, `find` and `ls`. `prove` counts because it regenerates
+proof files. Without such a start, the footer returns to ready, with no
+checks, model call, diff or receipt. Eligible requests still measure each
+unit's whole change against its base, regardless of who changed the files.
+A run that changed nothing and weakened nothing settles without a receipt.
+Otherwise it climbs:
 
 1. Prove each changed TypeScript file with `//@` annotations, and each whose
    `.dfy` or `.dfy.gen` changed. A proof maps back to its source as
@@ -303,7 +309,7 @@ by `bun run formal:check` on every pull request.
 | Rule | Decides |
 | --- | --- |
 | `proof-outcome-rule.ts` | How a proof ended, vacuous included |
-| `gate-rule.ts` | What goes back, what is yours, and whether the run continues |
+| `gate-rule.ts` | Which started tools make a request eligible, what goes back, what is yours, and whether the run continues |
 | `weakening-rule.ts` | Which annotation changes may weaken the evidence |
 | `selection-rule.ts` | Which functions LemmaScript extracts, `//@ verify` and `//@ skip` included |
 | `test-weakening-rule.ts` | Which changes to a test file may weaken its tests |

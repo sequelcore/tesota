@@ -1,6 +1,15 @@
 import type { ProofOutcome } from "./proof-outcome-rule.js";
 
 /**
+ * A started tool may change files unless it is a trusted built-in reader.
+ * `prove` regenerates the proof's files, so it makes the request eligible too.
+ */
+//@ ensures \result <==> (toolName !== "read" && toolName !== "grep" && toolName !== "find" && toolName !== "ls")
+export function toolMayChangeFiles(toolName: string): boolean {
+  return toolName !== "read" && toolName !== "grep" && toolName !== "find" && toolName !== "ls";
+}
+
+/**
  * What the gate does with one changed file's proof when a run is about to
  * settle: a `failed` or `vacuous` proof goes back to the agent, which can fix
  * the code or the proof, unless its `failure` is one the gate already sent

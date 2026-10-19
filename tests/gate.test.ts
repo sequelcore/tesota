@@ -126,6 +126,68 @@ function entry(settled: Settled | undefined): { customType: string; content: str
   return (settled?.entries ?? [])[0] ?? { customType: "", content: "" };
 }
 
+it.each(["tui", "print"])("leaves a %s request ready without verification when no tool or only readers started", async (mode) => {
+  const root = repository({ "src/rule.ts": contract, "bun.lock": "",
+    "package.json": JSON.stringify({ scripts: { check: "node -e \"require('node:fs').writeFileSync('.git/check-ran','ran')\"" } }) });
+  const find = vi.fn(() => ({ provider: "openai", id: "gpt-6-sol" }));
+  const run = gate(root, undefined, { mode, modelRegistry: { find }, flags: { "open-cases-model": undefined } });
+  run.progress.ready("proofs_and_tests");
+  await run.input("interactive", undefined, "hi");
+  write(root, { "src/rule.ts": `${contract}// external change\n` });
+  scripted.set("src/rule.ts", { outcome: "failed", output: "throws" });
+  const gitCalls = vi.spyOn(await import("../src/git.js"), "git");
+  const diffCalls = vi.spyOn(await import("../src/git.js"), "gitOutput");
+  try {
+    expect(await run.settle()).toBeUndefined();
+    for (const reader of ["read", "grep", "find", "ls"]) run.tool(reader);
+    expect(await run.settle()).toBeUndefined();
+    expect(gitCalls).not.toHaveBeenCalled();
+    expect(diffCalls).not.toHaveBeenCalled();
+    expect(find).not.toHaveBeenCalled();
+    expect(existsSync(join(root, ".git", "check-ran"))).toBe(false);
+    expect(run.progress.status).toEqual({ step: "ready", readiness: "proofs_and_tests" });
+    expect(run.steps.map(({ step }) => step)).toEqual(["ready", "waiting", "ready", "ready"]);
+  } finally { gitCalls.mockRestore(); diffCalls.mockRestore(); }
+});
+
+it.each(["prove", "bash", "powershell", "mcp__files__write", "unknown", "extension-tool"])(
+  "verifies changed files after %s starts, even if the call never succeeds", async (name) => {
+    const root = project();
+    const run = gate(root);
+    await run.input();
+    run.tool(name);
+    write(root, { "notes.md": "changed\n" });
+    expect((entry(await run.settle()).details as Receipt).changed).toMatchObject([{ path: "notes.md" }]);
+    expect(entry(await run.settle("aborted")).details).toMatchObject({ stopped: expect.any(String), proofs: [], tests: [] });
+  });
+
+it.each(["steer", "followUp"])("keeps eligibility and send-back history through a %s and repeated settlements", async (behavior) => {
+  const root = project();
+  const run = gate(root);
+  await run.input();
+  run.tool("write");
+  write(root, { "src/rule.ts": `${contract}// changed\n` });
+  scripted.set("src/rule.ts", { outcome: "failed", output: "1 verified, 1 error" });
+  expect((await run.settle())?.continue).toBe(true);
+  await run.input("interactive", behavior, "also keep the change");
+  run.agentStart();
+  expect((entry(await run.settle()).details as Receipt).proofs).toMatchObject([{ verdict: "no_progress" }]);
+  scripted.delete("src/rule.ts");
+  expect((entry(await run.settle()).details as Receipt).proofs).toMatchObject([{ verdict: "proved" }]);
+});
+
+it.each(["interactive", "extension"])("starts a new %s request ineligible after an editing request", async (source) => {
+  const root = project();
+  const run = gate(root);
+  await run.input();
+  run.tool("write");
+  write(root, { "notes.md": "changed\n" });
+  expect(entry(await run.settle()).customType).toBe("tesota-receipt");
+  await run.input(source, undefined, "hi");
+  expect(await run.settle()).toBeUndefined();
+  expect(run.progress.status.step).toBe("ready");
+});
+
 it("discloses a check script narrowed after its failing test went back, even when the remaining tests pass", async () => {
   const root = repository({
     "package.json": JSON.stringify({ type: "module", scripts: { check: "node --test test/positive.test.mjs test/negative.test.mjs" } }),
@@ -134,6 +196,7 @@ it("discloses a check script narrowed after its failing test went back, even whe
   });
   const run = gate(root);
   await run.input("interactive", undefined, "Keep totals unchanged, including negative values.");
+  run.tool("write");
   write(root, { "src/price.mjs": "export const total = (n) => Math.max(0, n);\n" });
   expect((await run.settle())?.continue).toBe(true);
   write(root, { "package.json": JSON.stringify({ type: "module", scripts: { check: "node --test test/positive.test.mjs" } }) });
@@ -184,6 +247,7 @@ it("keeps the agent working while a changed contract fails, and settles with a r
   const run = gate(root);
   await run.input();
   expect(await run.settle()).toBeUndefined();
+  run.tool("write");
   writeFileSync(join(root, "src", "rule.ts"), `${contract}export const changed = true;\n`);
   writeFileSync(join(root, "notes.md"), "# Notes, changed\n");
   writeFileSync(join(root, "src", "rule.dfy.gen"), "// regenerated\n");
@@ -220,6 +284,7 @@ it("publishes each step for the footer: waiting, proving, sent back, testing, me
   const run = gate(root);
   run.progress.ready("proofs_only");
   await run.input();
+  run.tool("write");
   expect(run.progress.status).toEqual({ step: "waiting", readiness: "proofs_only" });
   writeFileSync(join(root, "src", "rule.ts"), contract.replace("return 0;", "return 1;"));
   scripted.set("src/rule.ts", { outcome: "failed", output: "1 verified, 1 error" });
@@ -329,9 +394,13 @@ it("shows a resumed session's receipt again, unless the operator spoke after it"
 it("settles a print-mode run with the receipt outside the conversation, so Pi prints the final answer (#427)", async () => {
   const root = repository({ "notes.md": "# Notes\n" });
   writeFileSync(join(root, "notes.md"), "# Notes, changed\n");
-  const printed = (await gate(root, undefined, { mode: "print" }).settle())?.entries ?? [];
+  const printRun = gate(root, undefined, { mode: "print" });
+  printRun.tool("write");
+  const printed = (await printRun.settle())?.entries ?? [];
   expect(printed).toMatchObject([{ type: "custom", customType: "tesota-receipt", data: { version: 1 } }]);
-  const shown = (await gate(root, undefined, { mode: "tui" }).settle())?.entries ?? [];
+  const tuiRun = gate(root, undefined, { mode: "tui" });
+  tuiRun.tool("write");
+  const shown = (await tuiRun.settle())?.entries ?? [];
   expect(shown).toMatchObject([{ type: "custom_message", customType: "tesota-receipt", display: true, details: { version: 1 } }]);
 });
 
@@ -340,6 +409,7 @@ it("goes back to ready when the gate fails midway or the run changed nothing", a
   const run = gate(root);
   run.progress.ready("proofs_and_tests");
   await run.input();
+  run.tool("write");
   writeFileSync(join(root, "src", "rule.ts"), `${contract}// changed\n`);
   scripted.set("src/rule.ts", { outcome: "failed", output: "throws" });
   await expect(run.settle()).rejects.toThrow("the prover broke");
@@ -356,6 +426,7 @@ it("lists the changed lines of a proved file that no contract covers, and not th
   const root = project();
   const run = gate(root);
   await run.input();
+  run.tool("write");
   writeFileSync(join(root, "src", "rule.ts"), `${contract.replace("return 0;", "return 1;")}\nexport function g(): number {\n` +
     "  return 1;\n}\n");
   const settled = entry(await run.settle());
@@ -367,6 +438,7 @@ it("records the blob of every file the run left changed, and a deleted one as nu
   const root = project();
   const run = gate(root);
   await run.input();
+  run.tool("write");
   writeFileSync(join(root, "src", "new.md"), "# New\n");
   rmSync(join(root, "notes.md"));
   const blob = spawnSync("git", ["hash-object", "src/new.md"], { cwd: root, encoding: "utf8" }).stdout.trim();
@@ -387,6 +459,7 @@ it("measures the strength of the contracts the request changed once they prove, 
   };
   const run = gate(root, undefined, { model: { provider: "provider", id: "model" }, modelRegistry: { complete } });
   await run.input("interactive", undefined, "f returns zero");
+  run.tool("write");
   await run.input("interactive", "steer", "and only zero");
   writeFileSync(join(root, "src", "rule.ts"), "//@ ensures \\result >= 0\n//@ ensures \\result <= 1\n" +
     "export function f(): number {\n  return 0;\n}\n");
@@ -405,6 +478,7 @@ it("restates with the model the claimcheck-model flag names", async () => {
   const run = gate(root, undefined, { model: { provider: "provider", id: "model" }, flags: { "claimcheck-model": "other/missing" },
     modelRegistry: { find: () => undefined } });
   await run.input();
+  run.tool("write");
   writeFileSync(join(root, "src", "rule.ts"), `//@ ensures true\n${contract}`);
   expect(entry(await run.settle()).content).toContain("ClaimCheck its restating model other/missing is not a provider/id in Pi's model registry");
 });
@@ -423,6 +497,7 @@ it("lists the cases the request leaves open with GPT-6 Sol unless the operator n
     const run = gate(root, undefined, { model: { provider: "provider", id: "model" }, modelRegistry: { complete, find },
       flags: { "open-cases-model": named } });
     await run.input("interactive", undefined, "lateFee charges 5 per day late, at most 50");
+    run.tool("write");
     writeFileSync(join(root, "src", "notes.md"), "notes\n");
     const settled = entry(await run.settle());
     expect((settled.details as Receipt).openCases).toEqual({ status: "listed", model, cases: [{ input: "lateFee(-1)", outcomes: ["0", "-5"] }] });
@@ -436,11 +511,13 @@ it("leaves the open cases out when the operator turns the list off, and says why
   const root = project();
   const off = gate(root, undefined, { model: { provider: "provider", id: "model" }, modelRegistry: { find: () => undefined } });
   await off.input();
+  off.tool("write");
   writeFileSync(join(root, "src", "notes.md"), "notes\n");
   expect((entry(await off.settle()).details as Receipt).openCases).toBeUndefined();
   const missing = gate(root, undefined, { model: { provider: "provider", id: "model" }, modelRegistry: { find: () => undefined },
     flags: { "open-cases-model": "nobody/none" } });
   await missing.input();
+  missing.tool("write");
   writeFileSync(join(root, "src", "notes.md"), "more notes\n");
   const settled = entry(await missing.settle());
   expect((settled.details as Receipt).openCases).toEqual({ status: "not_listed", reason: "nobody/none is not a provider/id in Pi's model registry" });
@@ -453,6 +530,7 @@ it("sends a weak contract back once, then lists it in the receipt", async () => 
   writeFileSync(join(root, "src", "rule.ts"), "//@ ensures \\result <= 5\nexport function f(): number {\n  return 0;\n}\n");
   const run = gate(root);
   await run.input();
+  run.tool("write");
   const sent = await run.settle();
   expect(sent?.continue).toBe(true);
   expect(entry(sent).content).toMatch(/^Tesota: the contract of f in src\/rule\.ts proves, but these changes to its code prove too, so it does not rule them out:\n {2}line 3: 0 became 1\n\nStrengthen the contract/u);
@@ -462,6 +540,7 @@ it("sends a weak contract back once, then lists it in the receipt", async () => 
   expect(settled.customType).toBe("tesota-receipt");
   expect(settled.content).toContain("**weak contract** — f in src/rule.ts");
   await run.input();
+  run.tool("write");
   expect((await run.settle())?.continue).toBe(true);
 });
 
@@ -469,6 +548,7 @@ it("stops on any failure already sent back, alternating ones included, and forge
   const root = project();
   const run = gate(root);
   await run.input();
+  run.tool("write");
   writeFileSync(join(root, "src", "rule.ts"), `${contract}// changed\n`);
   scripted.set("src/rule.ts", { outcome: "failed", output: "A" });
   expect((await run.settle())?.continue).toBe(true);
@@ -482,15 +562,17 @@ it("stops on any failure already sent back, alternating ones included, and forge
   expect(entry(stuck).content).toContain(
     "**NOT proved** — src/rule.ts: an obligation fails, repeating a failure already sent back");
   expect((entry(stuck).details as Receipt).proofs.map(({ verdict }) => verdict)).toEqual(["no_progress"]);
-  await run.input("extension");
+  await run.input("extension", "followUp");
   expect((await run.settle())?.continue).toBeUndefined();
   await run.input();
+  run.tool("write");
   expect((await run.settle())?.continue).toBe(true);
 });
 
 it("reports a proof that could not run to the operator instead of sending it back", async () => {
   const root = project();
   const run = gate(root);
+  run.tool("write");
   writeFileSync(join(root, "src", "rule.ts"), `${contract}// changed\n`);
   scripted.set("src/rule.ts", { outcome: "not_started", output: "Dafny is not installed, so nothing was proved." });
   const settled = await run.settle();
@@ -502,6 +584,7 @@ it("reports a proof that could not run to the operator instead of sending it bac
 it("tells the agent to finish its turn instead of running prove when prove is not active", async () => {
   const root = project();
   const run = gate(root, ["read", "edit"]);
+  run.tool("write");
   writeFileSync(join(root, "src", "rule.ts"), `${contract}// changed\n`);
   scripted.set("src/rule.ts", { outcome: "failed", output: "1 verified, 1 error" });
   const failed = entry(await run.settle()).content;
@@ -523,7 +606,7 @@ it("verifies a folder in no repository against Tesota's snapshot of it, whatever
   const root = plainProject();
   const run = gate(root);
   await run.input();
-  // No tool event: a change a shell command made is found by content all the same.
+  run.tool("bash");
   write(root, { "src/price.mjs": "export const total = (n) => Math.max(n, 0);\n", "test/negative.test.mjs": priceTest(-1, 0) });
   const settled = await run.settle();
   expect(settled?.continue).toBeUndefined();
@@ -545,6 +628,7 @@ it("flags a test weakened in a folder in no repository", async () => {
   const root = plainProject();
   const run = gate(root);
   await run.input();
+  run.tool("write");
   write(root, { "test/price.test.mjs": priceTest(1, 1) });
   expect(entry(await run.settle()).content).toContain("- **may weaken** — test/price.test.mjs: edits a test file");
 }, 60_000);
@@ -568,6 +652,7 @@ it("proves a contract file whose .dfy alone changed, and leaves runs that did no
   writeFileSync(join(root, "src", "rule.dfy"), "// hand-written proof line\n");
   scripted.set("src/rule.ts", { outcome: "failed", output: "assume false" });
   expect(await run.settle("aborted")).toBeUndefined();
+  run.tool("write");
   expect(entry(await run.settle()).content).toContain("Tesota: src/rule.ts does not prove yet.");
 });
 
@@ -575,6 +660,7 @@ it("proves a contract file whose .dfy alone changed where LemmaScript's proof-di
   const root = repository({ "lemmascript.json": JSON.stringify({ "proof-dir": "proofs" }), "src/rule.ts": contract,
     "proofs/src/rule.dfy": "// proof\n", "notes.md": "# Notes\n" });
   const run = gate(root);
+  run.tool("write");
   scripted.set("src/rule.ts", { outcome: "failed", output: "assume false" });
   // LemmaScript keeps this project's proofs under proofs/, so a .dfy beside the source is not its proof.
   writeFileSync(join(root, "src", "rule.dfy"), "// stray\n");
@@ -588,6 +674,7 @@ it("measures from the commit the request started at, so an agent's commit hides 
   const root = project();
   const run = gate(root);
   await run.input();
+  run.tool("write");
   writeFileSync(join(root, "src", "rule.ts"), `${contract}// changed\n`);
   writeFileSync(join(root, "notes.md"), "# Notes, changed\n");
   commit(root, "agent");
@@ -605,6 +692,7 @@ it("keeps the running request's base through a steer or follow-up sent after the
   const root = project();
   const run = gate(root);
   await run.input();
+  run.tool("write");
   writeFileSync(join(root, "src", "rule.ts"), `${contract}// changed\n`);
   commit(root, "agent");
   await run.input("interactive", "steer");
@@ -617,6 +705,7 @@ it("leaves out of the receipt's files those whose changed lines are all blank or
     "src/tool.py": "x = 1\n", "src/legacy.js": "export const two = 2;\n", "logo.bin": "\0\u0001" });
   const run = gate(root);
   await run.input();
+  run.tool("write");
   write(root, { "src/helper.ts": "// One, as a constant.\n\nexport const one = 1;\n", "src/note.ts": "/* Nothing yet.\n * Later.\n */\n",
     "src/tool.py": "# The tool's value.\nx = 1\n", "src/legacy.js": "//@ ensures true\nexport const two = 2;\n",
     "notes.md": "# Notes, changed\n", "logo.bin": "\0\u0002" });
@@ -629,6 +718,7 @@ it("settles a change of comments and blank lines alone with a receipt and footer
   const root = repository({ "src/helper.ts": "export const one = 1;\n", "src/tool.py": "x = 1\n" });
   const run = gate(root);
   await run.input();
+  run.tool("write");
   write(root, { "src/helper.ts": "// One, as a constant.\n\nexport const one = 1;\n", "src/tool.py": "# The tool's value.\nx = 1\n" });
   const settled = entry(await run.settle());
   expect(settled.content).toBe("## Tesota receipt\n\n- **no code** — nothing to verify: the changes are comments or blank lines only\n\nThis is check evidence, not your acceptance.");
@@ -642,6 +732,7 @@ it("lists every file in a repository whose first commit the agent made", async (
   git(root, "init", "-q");
   const run = gate(root);
   await run.input();
+  run.tool("write");
   writeFileSync(join(root, "notes.md"), "# Notes\n");
   commit(root, "agent");
   expect((entry(await run.settle()).details as Receipt).unverified).toEqual(["notes.md"]);
@@ -659,6 +750,7 @@ it("puts each change that may weaken the evidence in the receipt, committed or n
   commit(root, "tests");
   const run = gate(root);
   await run.input();
+  run.tool("write");
   writeFileSync(join(root, "src", "rule.ts"), ["//@ requires x >= 1", "//@ ensures   \\result >= x", "//@ assume x < 10",
     "export function f(x: number): number { return x; }", "", "//@ skip", "//@ requires y > 0",
     "export function g(y: number): number { return y; }", "", "//@ skip", "//@ requires z > 0",
@@ -703,6 +795,7 @@ it("settles with a receipt when the only change deletes a test", async () => {
   commit(root, "tests");
   const run = gate(root);
   await run.input();
+  run.tool("write");
   rmSync(join(root, "tests", "old.test.ts"));
   expect(entry(await run.settle()).content).toBe("## Tesota receipt\n\n- **may weaken** — tests/old.test.ts: deletes a test file\n\nThis is check evidence, not your acceptance.");
 });
@@ -711,6 +804,7 @@ it("says a change too large to read was not checked for weakening, instead of li
   const root = project();
   const run = gate(root);
   await run.input();
+  run.tool("write");
   writeFileSync(join(root, "notes.md"), "x\n".repeat(9 * 1024 * 1024));
   const settled = entry(await run.settle());
   expect(settled.content).toBe(["## Tesota receipt\n",
@@ -722,6 +816,7 @@ it("runs the project's tests, and runs each changed test on the request's base e
   const root = testedProject();
   const run = gate(root);
   await run.input();
+  run.tool("write");
   write(root, { "src/price.mjs": "export const total = (n) => Math.max(n, 0);\n",
     "test/negative.test.mjs": priceTest(-1, 0), "test/positive.test.mjs": priceTest(2, 2),
     "test/__snapshots__/price.test.mjs.snap": "exports[`total 1`] = `1`;\n" });
@@ -749,6 +844,7 @@ it("neither flags nor lists as not proved a test file that only gains a test", a
   const root = testedProject();
   const run = gate(root);
   await run.input();
+  run.tool("write");
   const base = readFileSync(join(root, "test", "price.test.mjs"), "utf8");
   write(root, { "src/price.mjs": "export const total = (n) => Math.max(n, 0);\n",
     "test/price.test.mjs": `${base}test("negative", () => { assert.equal(total(-1), 0); });\n` });
@@ -767,6 +863,7 @@ it("sends failing tests back once when the project writes no test report, then s
   const root = testedProject();
   const run = gate(root);
   await run.input();
+  run.tool("write");
   write(root, { "test/negative.test.mjs": priceTest(-1, 0) });
   const failed = await run.settle();
   expect(failed?.continue).toBe(true);
@@ -779,6 +876,7 @@ it("sends failing tests back once when the project writes no test report, then s
   expect(entry(stuck).content).toBe(["## Tesota receipt\n",
     "- **NOT passed** — bun run test: it still fails after its failure went back", "\nThis is check evidence, not your acceptance."].join("\n"));
   await run.input();
+  run.tool("write");
   expect((await run.settle())?.continue).toBe(true);
 }, 60_000);
 
@@ -786,6 +884,7 @@ it("sends failing tests back until the set that fails repeats one already sent, 
   const root = testedProject("node --test --test-reporter=junit --test-reporter-destination=report.xml");
   const run = gate(root);
   await run.input();
+  run.tool("write");
   write(root, { "test/a.test.mjs": priceTest(-1, 0, "a") });
   const first = await run.settle();
   expect(first?.continue).toBe(true);
@@ -809,6 +908,7 @@ async function newTestOverFailingBase(test: string): Promise<Settled | undefined
   commit(root, "a failing test");
   const run = gate(root);
   await run.input();
+  run.tool("write");
   write(root, { "src/price.mjs": "export const total = (n) => Math.max(n, 0);\n",
     "src/discount.mjs": "export const discount = (n) => n / 2;\n",
     "test/discount.test.mjs": "import assert from \"node:assert\";\nimport { test } from \"node:test\";\n" +
@@ -831,6 +931,7 @@ it("gives no verdict on the base when the change touches what decides the depend
   const root = testedProject();
   const run = gate(root);
   await run.input();
+  run.tool("write");
   write(root, { "package.json": JSON.stringify({ type: "module", scripts: { test: "node --test" }, description: "changed" }),
     "src/price.mjs": "export const total = (n) => Math.max(n, 0);\n", "test/negative.test.mjs": priceTest(-1, 0) });
   expect(entry(await run.settle()).content).toContain("- **exercise?** — test/negative.test.mjs: the change touches " +
@@ -845,6 +946,7 @@ it("runs only the commands of the projects that own the changed files, there and
   });
   const run = gate(root);
   await run.input();
+  run.tool("write");
   write(root, { "a/test/y.test.mjs": passing });
   expect(entry(await run.settle()).content).toBe(["## Tesota receipt\n", "- **passed** — cd a && bun run test",
     "- **vacuous test** — a/test/y.test.mjs: it passes without the change", "\nThis is check evidence, not your acceptance."].join("\n"));
@@ -895,6 +997,7 @@ it("sends a repository's failure back by its path in the folder, and runs nothin
   testedProject("node -e process.exit(1)", join(root, "b"));
   const run = gate(root);
   await run.input();
+  run.tool("write");
   writeFileSync(join(root, "a", "src", "rule.ts"), `${contract}// changed\n`);
   scripted.set("src/rule.ts", { outcome: "failed", output: "1 verified, 1 error" });
   const back = entry(await run.settle());
@@ -912,6 +1015,7 @@ it("keeps one repository's repeated failure from stopping another's from going b
   project(join(root, "b"));
   const run = gate(root);
   await run.input();
+  run.tool("write");
   writeFileSync(join(root, "a", "src", "rule.ts"), `${contract}// changed\n`);
   scripted.set("src/rule.ts", { outcome: "failed", output: "1 verified, 1 error" });
   expect(entry(await run.settle()).content).toContain("Tesota: a/src/rule.ts does not prove yet.");
