@@ -32,6 +32,12 @@ statement of direction, not a commitment to dates.
 - **Surfaces beyond the terminal shell,** such as a GUI or an ACP server,
   until there's a real client.
 - **Model access of its own:** providers come from pi-ai.
+- **A plan mode.** A plan is something you ask for, in your own words or
+  with a skill. What a plan mode stands for, nothing changes until you say
+  so, is the **read only** [permission mode](docs/guides/permissions.md),
+  enforced on every tool call rather than asked of the model. And a plan
+  isn't evidence: the gate checks what the change does, whatever was
+  planned.
 
 ## Focus areas
 
