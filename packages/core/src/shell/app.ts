@@ -235,7 +235,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     const dashboard = new Dashboard(theme, rows, {
       attach: (id) => { hide(); const next = byId(id); if (next !== undefined) void attach(next); },
       peek: (id) => peekLines(byId(id)?.session.history() ?? []),
-      create: () => { hide(); void commands["/new"]?.(""); },
+      create: () => { hide(); void commands["/new"]?.run(""); },
       close: (id) => { const gone = byId(id); if (gone !== undefined) void close(gone).then(() => { shell.redraw(); }); },
       back: () => { hide(); },
     });
@@ -350,8 +350,8 @@ export async function runApp(options: AppOptions): Promise<void> {
       shell.note(error instanceof Error ? error.message : String(error), "error");
     }
   };
-  const commands: Readonly<Record<string, (args: string) => Promise<void>>> = {
-    "/model": async () => {
+  const commands: Readonly<Record<string, { description: string; argumentHint?: string; run: (args: string) => Promise<void> }>> = {
+    "/model": { description: "Choose the model", run: async () => {
       const available = await models.getAvailable();
       if (available.length === 0) { shell.note("No provider is logged in: /login first, or set its API key.", "warning"); return; }
       const picked = await shell.pick("Model", available.map((candidate) => ({ value: label(candidate), label: label(candidate) })));
@@ -361,8 +361,8 @@ export async function runApp(options: AppOptions): Promise<void> {
       save({ model: label(next) });
       await reopen();
       shell.note(`Model: ${label(next)}.`);
-    },
-    "/login": async () => {
+    } },
+    "/login": { description: "Sign in to a model provider", run: async () => {
       const providers = models.getProviders().filter(({ auth }) => auth.oauth !== undefined || auth.apiKey?.login !== undefined);
       const picked = await shell.pick("Log in to", providers.map(({ id, name }) => ({ value: id, label: name })));
       const provider = providers.find(({ id }) => id === picked);
@@ -377,8 +377,8 @@ export async function runApp(options: AppOptions): Promise<void> {
       } catch (error) {
         shell.note(error instanceof Error ? error.message : String(error), "error");
       }
-    },
-    "/logout": async () => {
+    } },
+    "/logout": { description: "Forget a provider's sign-in", run: async () => {
       const stored = await credentials.list();
       if (stored.length === 0) { shell.note("No provider is logged in."); return; }
       const picked = await shell.pick("Log out of", stored.map(({ providerId, type }) => ({ value: providerId, label: providerId,
@@ -386,16 +386,16 @@ export async function runApp(options: AppOptions): Promise<void> {
       if (picked === undefined) return;
       await models.logout(picked);
       shell.note(`Logged out of ${picked}.`);
-    },
+    } },
     // A new session runs beside the others, in its own worktree when another holds the checkout (#453, #455).
-    "/new": async () => {
+    "/new": { description: "Start another session beside this one", run: async () => {
       try {
         await attach(live((made) => createSession({ cwd: options.cwd, folder, ...sessionOptions(made) })));
       } catch (error) {
         shell.note(error instanceof Error ? error.message : String(error), "warning");
       }
-    },
-    "/resume": async () => {
+    } },
+    "/resume": { description: "Open an earlier session", run: async () => {
       const running = new Set(lives.map((each) => each.session.file));
       const asked = readdirSync(folder).filter((name) => name.endsWith(".jsonl")).sort().reverse()
         .map((name) => join(folder, name)).filter((file) => !running.has(file))
@@ -409,9 +409,9 @@ export async function runApp(options: AppOptions): Promise<void> {
       } catch (error) {
         shell.note(error instanceof Error ? error.message : String(error), "warning");
       }
-    },
-    "/agents": () => { agents(); return Promise.resolve(); },
-    "/settings": async () => {
+    } },
+    "/agents": { description: "Open the sessions dashboard", run: () => { agents(); return Promise.resolve(); } },
+    "/settings": { description: "Change terminal mode and thinking", run: async () => {
       const picked = await shell.pick("Settings", [
         { value: "mode", label: `Terminal: ${settings.tuiMode ?? "fullscreen"}`, description: "fullscreen or inline, from the next start" },
         { value: "thinking", label: `Thinking: ${settings.thinkingLevel ?? "off"}`, description: "for a model that reasons" },
@@ -428,13 +428,13 @@ export async function runApp(options: AppOptions): Promise<void> {
           shell.note(`Thinking: ${chosen}.`);
         }
       }
-    },
-    "/compact": async () => {
+    } },
+    "/compact": { description: "Summarize the older conversation", run: async () => {
       shell.note("Compacting…");
       await attached.session.compact().catch((error: unknown) => { shell.note(error instanceof Error ? error.message : String(error), "warning"); });
-    },
-    "/mcp": async (args) => { await mcpCommand(args); },
-    "/quit": () => { shell.stop(); return Promise.resolve(); },
+    } },
+    "/mcp": { description: "Manage MCP servers", argumentHint: "[login|logout|reconnect <server>]", run: async (args) => { await mcpCommand(args); } },
+    "/quit": { description: "End the shell", run: () => { shell.stop(); return Promise.resolve(); } },
   };
 
   shell = startShell({ terminal: options.terminal ?? new ProcessTerminal(), mode: modeFor(settings),
@@ -448,11 +448,12 @@ export async function runApp(options: AppOptions): Promise<void> {
       shell.redraw();
     },
     agents,
+    commands: Object.entries(commands).map(([name, command]) => ({ name: name.slice(1), ...command })),
     command: async (text) => {
       const word = text.split(/\s/u)[0] ?? "";
-      const run = commands[word];
-      if (run === undefined) return false;
-      await run(text.slice(word.length).trim());
+      const command = commands[word];
+      if (command === undefined) return false;
+      await command.run(text.slice(word.length).trim());
       return true;
     } });
   if (read.invalid.length > 0) shell.note(`Settings left out as invalid: ${read.invalid.join(", ")}.`, "warning");
