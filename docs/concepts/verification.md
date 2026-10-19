@@ -272,14 +272,19 @@ request.
 ## What you see
 
 - **The footer** shows what the project lets Tesota verify before a
-  request (`readiness`, proved), the gate's step and timer while it works,
-  and the receipt in brief after. It leads with `!` when anything needs
-  you, by the same count as the receipt, and `✓` otherwise.
-- **The receipt card** opens with the verdict, `✓ Nothing needs you` or
-  `! 4 things need you`, counting only findings the checks established
-  (`decisions`, proved). Then NEEDS YOU, the model's opinion (marked `◇`),
-  what isn't proved, and one row of what holds, which never reads stronger
-  than the rows above it: `Contract strong (1 of 4)`.
+  request (`readiness`, proved), that it waits while the agent works, the
+  gate's step and timer while it verifies, and the receipt in brief after.
+  It leads with `!` when anything needs you, by the same count as the
+  receipt, `○` when nothing does but something is unverified, and `✓`
+  otherwise, in the receipt's color.
+- **The receipt card** opens with the verdict, `✓ Nothing needs you`,
+  `○ Nothing needs you · 1 unverified` or `! 4 things need you`, counting
+  only findings the checks established (`decisions`, proved). Its color is
+  green only when nothing needs you and nothing is unverified, amber
+  otherwise, red when a check failed (`verdictTone`, proved). Then NEEDS
+  YOU, the model's opinion (marked `◇`), UNVERIFIED with its count, and one
+  row of what holds, which never reads stronger than the rows above it:
+  `Contract strong (1 of 4)`. Rows wrap; a reason is never cut.
 - **What the gate sends back** is a card titled with what failed, such as
   `↺ Sent back to the agent: the tests fail`.
 - **`prove`** shows the file, how long the proof took, and `✓ Proved` or
@@ -306,7 +311,7 @@ by `bun run formal:check` on every pull request.
 | `comment-line-rule.ts` | Whether a line holds only a comment |
 | `range-rule.ts` | How the receipt groups line numbers |
 | `footer-rule.ts` | What Tesota can verify before a request, and what the footer drops as the terminal narrows |
-| `verdict-rule.ts` | How many findings need you, never a model's opinion, and when a summary must say how many hold |
+| `verdict-rule.ts` | How many findings need you, never a model's opinion, when a summary must say how many hold, and the receipt's color |
 | `settle-rule.ts` | Whether a run goes on or how it ends, after its extensions and its verifier |
 | `permission-rule.ts` | Whether a call may run: the floor, the mode and the strongest rule |
 | `reconcile-rule.ts` | What recovery says of each call of an interrupted run |
@@ -314,7 +319,7 @@ by `bun run formal:check` on every pull request.
 | `edit-rule.ts` | When a list of edits may apply to a file, all at once |
 | `truncate-rule.ts` | How much of a tool's output the model gets |
 | `catalog-rule.ts` | How much of the prompt the skill list and instruction files may take |
-| `budget-rule.ts` | Whether a performance measurement keeps to its limit |
+| `budget-rule.ts` | Whether a performance measurement keeps to its limit, in one of two attempts |
 
 ## Credits
 

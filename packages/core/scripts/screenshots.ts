@@ -220,7 +220,7 @@ async function turn(appearance: Appearance): Promise<void> {
     "Orders over 100 now get 10% off, and test/total.test.mjs checks both sides of 100."], appearance, turnRows);
   app.terminal.type("Take 10% off orders over 100, and add a test for it.");
   app.terminal.type(enter);
-  await app.terminal.until("✓ receipt", 120_000);
+  await app.terminal.until("receipt ·", 120_000);
   await new Promise((resolve) => setTimeout(resolve, 500));
   await write(app.terminal, "tesota-turn", appearance, turnRows,
     "A verified turn in Tesota: the request, the agent's two file writes and its answer, then Tesota's receipt card saying nothing needs you, the tests pass and the new test exercises the change.");

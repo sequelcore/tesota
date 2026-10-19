@@ -57,8 +57,8 @@ it("names the gate's step and what its round found so far", () => {
 it("sums up the receipt, leading with whether anything in it needs the operator", () => {
   const clean: Receipt = { ...emptyReceipt, proofs: [proved], tests: [passing], contracts: [strong],
     uncovered: [{ path: "src/parse.ts", lines: [[12, 14]] }] };
-  expect(words({ step: "settled", receipt: clean })).toBe("✓ receipt · 1 proved · tests pass · contracts strong · 3 lines not proved");
-  expect(words({ step: "settled", receipt: clean }, "short")).toBe("✓ receipt · 1 proved · tests ✓ · 3 lines unproved");
+  expect(words({ step: "settled", receipt: clean })).toBe("○ receipt · 1 proved · tests pass · contracts strong · 3 lines not proved");
+  expect(words({ step: "settled", receipt: clean }, "short")).toBe("○ receipt · 1 proved · tests ✓ · 3 lines unproved");
   const weak: Receipt = { ...clean, contracts: [{ ...strong,
     mutation: { ...strong.mutation, survived: [{ line: 4, operator: "comparison", before: ">", after: ">=" }] } }],
     weakened: [{ kind: "edited_test", path: "tests/clamp.test.ts" }], unverified: ["notes.md"], tests: [] };
@@ -104,7 +104,7 @@ it("counts what the checks established and never a model's opinion, as the recei
   expect(words({ step: "settled", receipt: misses }, "glyphs")).toBe("! · ✓1 · tests ✓ · miss 1");
   // Strength needs a change the proof caught: two changes that behave the same as the code show nothing.
   const unmeasured: Receipt = { ...judged, contracts: [{ ...strong, mutation: { ...strong.mutation, rejected: 0, equivalent: 2 } }] };
-  expect(words({ step: "settled", receipt: unmeasured })).toBe("✓ receipt · 1 proved · tests pass");
+  expect(words({ step: "settled", receipt: unmeasured })).toBe("○ receipt · 1 proved · tests pass · 1 not checked");
 });
 
 it("says there was nothing to verify when the change was comments alone, and only when nothing else is listed", () => {
@@ -259,11 +259,11 @@ it("narrows at 80 and 30 columns in the order the rule sets", () => {
   progress.publish({ step: "settled", receipt: { ...emptyReceipt, proofs: [proved], tests: [passing], contracts: [strong],
     uncovered: [{ path: "src/parse.ts", lines: [[12, 14]] }] } });
   const { rows } = footer(progress);
-  expect(rows(80)[1]).toMatch(/^ ✓ receipt · 1 proved · tests ✓ · 3 lines unproved +ctx 5%$/u);
+  expect(rows(80)[1]).toMatch(/^ ○ receipt · 1 proved · tests ✓ · 3 lines unproved +ctx 5%$/u);
   expect(rows(80)[2]).not.toContain("gpt-5.5");
-  expect(rows(40)[1]).toMatch(/^ ✓ · ✓1 · tests ✓ · ○3 +ctx 5%$/u);
+  expect(rows(40)[1]).toMatch(/^ ○ · ✓1 · tests ✓ · ○3 +ctx 5%$/u);
   // Too narrow for even the glyphs beside it, the context % goes, and the evidence is cut.
-  expect(rows(25)[1]).toBe(" ✓ · ✓1 · tests ✓ · ○3");
+  expect(rows(25)[1]).toBe(" ○ · ✓1 · tests ✓ · ○3");
 });
 
 it("keeps other extensions' statuses on a third row, and colors a full context window", () => {

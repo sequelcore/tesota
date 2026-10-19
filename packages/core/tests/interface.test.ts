@@ -110,7 +110,7 @@ describe("Tesota's interface on the engine", () => {
     terminal.type(enter);
     const card = await terminal.until("Tesota receipt");
     expect(card).toContain("notes.md");
-    expect(await terminal.until("✓ receipt")).toContain("not verified");
+    expect(await terminal.until("○ receipt")).toContain("not verified");
     terminal.type("\x0f");
     await terminal.untilGone("ctrl+o for details");
     await quit(terminal, running);

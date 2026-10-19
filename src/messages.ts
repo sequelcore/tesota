@@ -2,8 +2,8 @@ import type { ExtensionAPI, MessageRenderer, Theme, ThemeColor } from "./contrac
 import { host } from "./host.js";
 import { Box, type Component, sliceByColumn, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { SentBack } from "./gate.js";
-import { allEvidence, commandFinding, contractFinding, type Finding, holdsWords, isNote, isReceipt, plainName, proofFinding, type Receipt,
-  receiptFindings, type UnitEvidence, verified } from "./receipt.js";
+import { commandFinding, contractFinding, type Finding, holdsWords, isNote, isReceipt, plainName, proofFinding, type Receipt,
+  receiptFindings, receiptTone, type UnitEvidence, verified } from "./receipt.js";
 import { decisions } from "./verification/verdict-rule.js";
 
 /** How the shell asks a message to be drawn: expanded or not, and how far in. */
@@ -88,14 +88,18 @@ const byCheck = (a: Finding, b: Finding): number => ORDER.indexOf(a.check) - ORD
 /** The fewest columns the text beside the labels keeps; with fewer, expanded rows wrap under the glyph instead. */
 const TEXT_COLUMNS = 30;
 
-/** One finding: its glyph, its label in a column `label` wide, then what it is about and why; its details under it when expanded. */
+/**
+ * One finding: its glyph, its label in a column `label` wide, then what it
+ * is about and why, wrapped under the text so the reason is never cut; its
+ * details under it when expanded.
+ */
 function findingRows(theme: Theme, finding: Finding, label: number, width: number, expanded: boolean): string[] {
   const tone = color(finding);
   const head = `${theme.fg(tone, glyph(finding))}  ${theme.fg(finding.standing === "gap" ? "muted" : tone, finding.label.padEnd(label))}` +
     theme.fg("text", finding.subject) +
     (finding.detail === "" ? "" : theme.fg("muted", `${finding.subject === "" ? "" : " — "}${finding.detail}`));
-  if (!expanded) return [head];
   const column = width - label - 3 >= TEXT_COLUMNS ? label + 3 : 3;
+  if (!expanded) return wrapUnder(head, width, column);
   return [...wrapUnder(head, width, column),
     ...finding.more.flatMap((line) => wrapUnder(theme.fg("dim", line), width - column, 0).map((row) => " ".repeat(column) + row))];
 }
@@ -147,12 +151,11 @@ function receiptCard(theme: Theme, receipt: Receipt, options: RenderOptions): Co
   const gaps = findings.filter(({ standing }) => standing === "gap");
   const holds = findings.filter(({ standing }) => standing === "holds");
   const count = decisions(findings.map(({ standing }) => standing));
-  const verdict = count === 0 ? theme.fg("success", bold("✓ Nothing needs you"))
-    : theme.fg(decide.some(({ failed }) => failed === true) ? "error" : "warning", bold(`! ${plural(count, "thing needs", "things need")} you`));
+  // Green only with no gap either: a gap is amber and counted, so the verdict never reads as wholly verified (`verdictTone`).
+  const verdict = theme.fg(receiptTone(findings), bold(count > 0 ? `! ${plural(count, "thing needs", "things need")} you`
+    : gaps.length === 0 ? "✓ Nothing needs you" : `○ Nothing needs you · ${gaps.length} unverified`));
   const noted = notes.length === 0 ? "" : `${theme.fg("dim", " · ")}${theme.fg("accent", `◇ ${plural(notes.length, "model note", "model notes")}`)}`;
   const label = labelWidth(findings);
-  const { tests } = allEvidence(receipt);
-  const unproved = tests.length > 0 && tests.every(({ verdict: v }) => v === "proved") ? "NOT PROVED" : "NOT VERIFIED";
   // Each unit's base: a commit, or Tesota's snapshot of a folder in no repository, which no one else can fetch.
   const based = ({ snapshot, base }: UnitEvidence, first: string): string =>
     `${snapshot === true ? "Tesota's snapshot " : ""}${base?.slice(0, 12) ?? first}`;
@@ -167,7 +170,7 @@ function receiptCard(theme: Theme, receipt: Receipt, options: RenderOptions): Co
     return [title,
       ...section(theme, "NEEDS YOU", decide, label, width, options.expanded),
       ...section(theme, "MODEL'S OPINION, NOT A PROOF", shown, label, width, options.expanded),
-      ...section(theme, unproved, gaps, label, width, options.expanded),
+      ...section(theme, `UNVERIFIED (${gaps.length})`, gaps, label, width, options.expanded),
       ...options.expanded ? section(theme, "VERIFIED", holds, label, width, true)
         : holds.length + matches === 0 ? [] : ["", holdsRow(theme, findings, matches)],
       "", ...options.expanded ? wrapUnder(theme.fg("dim", `From ${from} · Tesota ${receipt.engine}` +
