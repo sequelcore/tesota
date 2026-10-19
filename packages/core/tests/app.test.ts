@@ -330,9 +330,14 @@ describe("tesota-core", () => {
     terminal.type(enter);
     await terminal.until("Model: ");
     send(terminal, "write it");
-    await terminal.until("Allow write allowed.txt");
+    const rows = (await terminal.until("Allow write allowed.txt")).split("\n");
+    // The question takes the input's place, under the conversation rather than drawn over it, and the input comes back after.
+    const asked = rows.findIndex((row) => row.includes("Allow write allowed.txt"));
+    expect(asked).toBeGreaterThan(rows.findIndex((row) => row.includes("› write it")));
+    expect(rows.slice(asked).join("\n")).toContain("Yes, this once");
+    expect(rows.some((row) => row.startsWith("▌"))).toBe(false);
     terminal.type(enter);
-    await terminal.until("written");
+    expect((await terminal.until("written")).split("\n").some((row) => row.startsWith("▌"))).toBe(true);
     expect(existsSync(join(cwd, "allowed.txt"))).toBe(true);
     send(terminal, "/quit");
     await running;
