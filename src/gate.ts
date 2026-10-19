@@ -323,12 +323,14 @@ export interface Tally {
 
 /**
  * What the gate is doing, for the footer. Between requests it is ready with
- * what the project lets it verify. While a run settles it is proving,
+ * what the project lets it verify, and `waiting` while the agent works on
+ * the operator's request, before anything settles. While a run settles it is proving,
  * testing or measuring contracts; it has `sent_back` failures while the
  * agent answers them, and is `settled` once the run ends with a receipt.
  */
 export type GateStatus =
   | { readonly step: "ready"; readonly readiness: Readiness }
+  | { readonly step: "waiting"; readonly readiness: Readiness }
   | { readonly step: "proving"; readonly path: string; readonly startedAt: number; readonly tally: Tally }
   | { readonly step: "testing" | "measuring"; readonly startedAt: number; readonly tally: Tally }
   | { readonly step: "sent_back"; readonly tally: Tally }
@@ -377,6 +379,9 @@ export class GateProgress {
 
   /** Back to ready, as on the operator's next request. */
   reset(): void { this.publish({ step: "ready", readiness: this.#readiness }); }
+
+  /** Waiting for the agent, from the operator's request until the run settles. */
+  waiting(): void { this.publish({ step: "waiting", readiness: this.#readiness }); }
 
   publish(status: GateStatus): void {
     this.#status = status;
@@ -432,7 +437,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     commandsSentBack = new Map();
     weakSentBack = new Map();
     mayHaveChanged = false;
-    progress.reset();
+    progress.waiting();
     // On the engine the ledger holds the request and its start; the gate reads them as it settles.
     if (recorded !== undefined) return undefined;
     if (event.streamingBehavior !== undefined) { requests.push(event.text); return undefined; }
@@ -469,7 +474,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
   /** A run that ended before verification finished: after a tool that may change files, a receipt that verified nothing, and why. */
   const stopped = async (ctx: ExtensionContext, reason: string): Promise<SettleResult | undefined> => {
     if (!mayHaveChanged) {
-      if ("startedAt" in progress.status) progress.reset();
+      if (progress.status.step === "waiting" || "startedAt" in progress.status) progress.reset();
       return undefined;
     }
     const begun = await start;

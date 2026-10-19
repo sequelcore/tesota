@@ -35,6 +35,13 @@ it("says what Tesota can verify before any request", () => {
   expect(evidenceParts({ step: "ready", readiness: "nothing" }).map(({ color }) => color)).toEqual(["warning", "warning"]);
 });
 
+it("says the gate waits, not that it is ready, while the agent works", () => {
+  expect(words({ step: "waiting", readiness: "tests_only" })).toBe("◌ waiting for the agent · tests only");
+  expect(words({ step: "waiting", readiness: "proofs_and_tests" }, "short")).toBe("◌ waiting · proofs, tests");
+  expect(words({ step: "waiting", readiness: "tests_only" }, "glyphs")).toBe("◌ · tests");
+  expect(evidenceParts({ step: "waiting", readiness: "tests_only" })[0]?.color).toBe("muted");
+});
+
 it("names the gate's step and what its round found so far", () => {
   expect(words({ step: "proving", path: "src/clamp.ts", startedAt: 0, tally: { proved: 0, notProved: 0 } }))
     .toBe("◐ proving src/clamp.ts · 0s");
