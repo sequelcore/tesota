@@ -153,6 +153,13 @@ export function startShell(options: ShellOptions): Shell {
 
   /** What has the keyboard over the shell, a dialog or the dashboard (#455): the editor takes it back only when nothing does. */
   let covering: Component | undefined;
+  /** The questions shown in the input's place, the latest in front: a permission, a picker, a prompt. */
+  const questions: { readonly box: Component; readonly body: Component & Focusable }[] = [];
+  /** The input's slot: the latest question while one waits, the editor otherwise. */
+  const showSlot = (): void => {
+    editorSlot.clear();
+    editorSlot.addChild(questions.at(-1)?.box ?? editor);
+  };
   /** Each session's unsent text, kept while another is shown (#455). */
   const drafts = new Map<EngineSession, string>();
   /** What each slot was last built from, so a change rebuilds only what changed and the editor keeps its text otherwise. */
@@ -174,8 +181,7 @@ export function startShell(options: ShellOptions): Shell {
     editor.setAutocompleteProvider(autocomplete());
     editor.setText(text);
     editor.onSubmit = submit;
-    editorSlot.clear();
-    editorSlot.addChild(editor);
+    showSlot();
     if (covering === undefined) tui.setFocus(editor);
   };
   const mountFooter = (): void => {
@@ -314,19 +320,28 @@ export function startShell(options: ShellOptions): Shell {
   });
   tui.start();
 
-  /** Shows `body` under `title` over the shell until `settle` is called, then gives the editor back its focus. */
+  /**
+   * Shows `body` under `title` in the input's place until `settle` is called,
+   * as Pi and Claude Code ask: nothing is drawn over the conversation, and a
+   * long command wraps in full above the choices. The editor, or the question
+   * before it, comes back with the focus.
+   */
   function dialog<T>(title: string, body: Component & Focusable, wire: (settle: (value: T | undefined) => void) => void): Promise<T | undefined> {
     return new Promise((resolve) => {
       const box = new Container();
       box.addChild(new Text(theme.bold(theme.fg("accent", title)), 1, 0));
       box.addChild(body);
-      const handle = tui.showOverlay(box, { width: "80%", maxHeight: "60%", anchor: "center" });
+      const question = { box, body };
+      questions.push(question);
+      showSlot();
       covering = body;
       tui.setFocus(body);
       wire((value) => {
-        handle.hide();
-        covering = undefined;
-        tui.setFocus(editor);
+        questions.splice(questions.indexOf(question), 1);
+        showSlot();
+        const next = questions.at(-1)?.body;
+        covering = next;
+        tui.setFocus(next ?? editor);
         tui.requestRender();
         resolve(value);
       });
@@ -377,8 +392,9 @@ export function startShell(options: ShellOptions): Shell {
       tui.requestRender();
       return () => {
         handle.hide();
-        covering = undefined;
-        tui.setFocus(editor);
+        // A question that waited in the input's place keeps the keyboard; the editor gets it otherwise.
+        covering = questions.at(-1)?.body;
+        tui.setFocus(covering ?? editor);
         tui.requestRender();
       };
     },
