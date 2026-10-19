@@ -77,7 +77,7 @@ function summary(call: ToolCall): string {
 }
 
 /** An edit's replacements as removed and added lines. */
-function diffLines(call: ToolCall): string[] {
+export function diffLines(call: { readonly arguments: unknown }): string[] {
   const edits = (call.arguments as { edits?: { oldText?: unknown; newText?: unknown }[] }).edits ?? [];
   const lines = (text: unknown, prefix: string): string[] => {
     const value = String(text ?? "");

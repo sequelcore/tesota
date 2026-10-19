@@ -19,7 +19,8 @@ import { readStandards } from "../standards.ts";
 import { trust } from "../trust.ts";
 import { readSettings, type Settings, updateSettings } from "../settings.ts";
 import { Dashboard, type SessionRow } from "./dashboard.ts";
-import { type Shell, startShell } from "./shell.ts";
+import { type Confirmation, type Shell, startShell } from "./shell.ts";
+import { diffLines } from "./transcript.ts";
 import { createSurface, footerData, shellHost, type Surface } from "./surface.ts";
 import { shellTheme } from "../../../../src/theme.ts";
 
@@ -40,6 +41,35 @@ export interface AppOptions {
 
 const levels: readonly ModelThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 const label = (model: Model<Api>): string => `${model.provider}/${model.id}`;
+
+/** How many lines of a command or change a permission question shows before it says how many more there are. */
+const shownLines = 12;
+
+function clipped(lines: readonly string[]): string {
+  return lines.length <= shownLines ? lines.join("\n") : [...lines.slice(0, shownLines), `… ${lines.length - shownLines} more lines`].join("\n");
+}
+
+/**
+ * How a permission question reads for `call` (#449): what it would do, as
+ * Claude Code and Codex ask it, then the command, the edit's replacements or
+ * the file's start in their own block, then why Tesota asks.
+ */
+export function confirmation(call: { name: string; arguments: unknown }, reason: string): Omit<Confirmation, "items"> {
+  const args = (call.arguments ?? {}) as Record<string, unknown>;
+  const path = typeof args["path"] === "string" ? args["path"] : undefined;
+  const note = `${reason} Shift+Tab changes the mode.`;
+  if (typeof args["command"] === "string") {
+    return { title: `Run a ${call.name === "powershell" ? "PowerShell" : "shell"} command?`, body: clipped(args["command"].split("\n")), note };
+  }
+  if (call.name === "edit" && path !== undefined) {
+    return { title: `Edit ${path}?`, body: clipped(diffLines({ arguments: args })), note };
+  }
+  if (call.name === "write" && path !== undefined) {
+    const content = typeof args["content"] === "string" ? args["content"].trimEnd() : "";
+    return { title: `Write ${path}?`, body: clipped(content === "" ? [] : content.split("\n")), note };
+  }
+  return { title: `Use ${call.name}?`, body: JSON.stringify(args), note };
+}
 
 /** On Windows over SSH the inline shell, which the remote terminal draws reliably; otherwise the operator's choice (#432). */
 const modeFor = (settings: Settings): "fullscreen" | "inline" =>
@@ -83,13 +113,11 @@ export async function runApp(options: AppOptions): Promise<void> {
   const rules = loadRules(options.cwd);
   /** The operator's answer to a call the mode and rules leave to them (#449): once, for this session, or no. */
   const answer = async (call: { name: string; arguments: unknown }, reason: string): Promise<"once" | "session" | "deny"> => {
-    const args = call.arguments as Record<string, unknown>;
-    const about = typeof args["path"] === "string" ? args["path"] : typeof args["command"] === "string" ? args["command"] : "";
-    const picked = await shell.pick(`Allow ${call.name} ${about}`.trim(), [
-      { value: "once", label: "Yes, this once", description: reason },
-      { value: "session", label: "Yes, for this session" },
-      { value: "deny", label: "No" },
-    ]);
+    const picked = await shell.confirm({ ...confirmation(call, reason), items: [
+      { value: "once", label: "Yes" },
+      { value: "session", label: "Yes, and don't ask again this session" },
+      { value: "deny", label: "No  (esc)" },
+    ] });
     return picked === "once" || picked === "session" ? picked : "deny";
   };
   const modeNames: Readonly<Record<Mode, string>> = { read: "read only", ask: "ask", full: "full access" };

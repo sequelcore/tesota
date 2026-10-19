@@ -61,10 +61,45 @@ class SecretInput implements Component, Focusable {
   render(): string[] { return [`> ${"•".repeat(this.value.length)}`]; }
 }
 
+/** What a permission question shows: what is asked, the command or change in its own block, and why it asks. */
+export interface Confirmation {
+  readonly title: string;
+  readonly body?: string;
+  readonly note?: string;
+  readonly items: readonly SelectItem[];
+}
+
+/** A list whose numbered items a digit picks at once, as Claude Code and Codex answer a permission. */
+class NumberedList extends SelectList implements Focusable {
+  focused = false;
+  readonly #items: readonly SelectItem[];
+  constructor(items: SelectItem[], maxVisible: number, theme: ConstructorParameters<typeof SelectList>[2]) {
+    super(items, maxVisible, theme);
+    this.#items = items;
+  }
+  override handleInput(data: string): void {
+    const index = /^[1-9]$/u.test(data) ? Number(data) - 1 : -1;
+    const item = this.#items[index];
+    if (item === undefined) { super.handleInput(data); return; }
+    this.setSelectedIndex(index);
+    this.onSelect?.(item);
+  }
+}
+
+/** `inner` with a bar in `bar`'s color down its left edge, so a question stands apart from the conversation and the footer. */
+function barred(inner: Component, bar: (text: string) => string): Component {
+  return {
+    invalidate: () => { inner.invalidate(); },
+    render: (width) => inner.render(Math.max(1, width - 2)).map((line) => `${bar("▌")} ${line}`),
+  };
+}
+
 /** A running shell: what it draws, and how it ends. */
 export interface Shell {
   /** Asks the operator to choose one of `items`; undefined when they cancel. */
   pick(title: string, items: readonly SelectItem[]): Promise<string | undefined>;
+  /** Asks the operator to allow something (#449), set apart by a bar: numbered choices a digit picks; undefined when they cancel. */
+  confirm(question: Confirmation): Promise<string | undefined>;
   /** Asks the operator for a line of text, hidden when `secret`; undefined when they cancel. */
   ask(message: string, options?: { readonly secret?: boolean; readonly placeholder?: string }): Promise<string | undefined>;
   /**
@@ -322,17 +357,22 @@ export function startShell(options: ShellOptions): Shell {
   });
   tui.start();
 
+  /** A picker's or a prompt's title, in the accent. */
+  const heading = (title: string): Component => new Text(theme.bold(theme.fg("accent", title)), 1, 0);
+
   /**
-   * Shows `body` under `title` in the input's place until `settle` is called,
+   * Shows `body` under `heading` in the input's place until `settle` is called,
    * as Pi and Claude Code ask: nothing is drawn over the conversation, and a
    * long command wraps in full above the choices. The editor, or the question
    * before it, comes back with the focus.
    */
-  function dialog<T>(title: string, body: Component & Focusable, wire: (settle: (value: T | undefined) => void) => void): Promise<T | undefined> {
+  function dialog<T>(heading: Component, body: Component & Focusable, wire: (settle: (value: T | undefined) => void) => void,
+    bar?: (text: string) => string): Promise<T | undefined> {
     return new Promise((resolve) => {
-      const box = new Container();
-      box.addChild(new Text(theme.bold(theme.fg("accent", title)), 1, 0));
-      box.addChild(body);
+      const inner = new Container();
+      inner.addChild(heading);
+      inner.addChild(body);
+      const box = bar === undefined ? inner : barred(inner, bar);
       const question = { box, body };
       questions.push(question);
       showSlot();
@@ -354,15 +394,31 @@ export function startShell(options: ShellOptions): Shell {
   return {
     pick: (title, items) => {
       const list = new SelectList([...items], Math.min(items.length, 12), theme.selectList);
-      return dialog<string>(title, list as SelectList & Focusable, (settle) => {
+      return dialog<string>(heading(title), list as SelectList & Focusable, (settle) => {
         list.onSelect = (item) => { settle(item.value); };
         list.onCancel = () => { settle(undefined); };
       });
     },
+    confirm: ({ title, body, note, items }) => {
+      const list = new NumberedList(items.map((item, index) => ({ ...item, label: `${index + 1}. ${item.label}` })), items.length,
+        theme.selectList);
+      const top = new Container();
+      top.addChild(new Text(theme.bold(title), 0, 0));
+      if (body !== undefined && body !== "") {
+        top.addChild(new Spacer(1));
+        top.addChild(new Text(theme.fg("dim", body), 2, 0));
+      }
+      top.addChild(new Spacer(1));
+      if (note !== undefined) top.addChild(new Text(theme.fg("muted", note), 0, 0));
+      return dialog<string>(top, list, (settle) => {
+        list.onSelect = (item) => { settle(item.value); };
+        list.onCancel = () => { settle(undefined); };
+      }, (text) => theme.fg("warning", text));
+    },
     ask: (message, askOptions = {}) => {
       const input = askOptions.secret === true ? new SecretInput()
         : new Input(askOptions.placeholder === undefined ? {} : { placeholder: askOptions.placeholder });
-      return dialog<string>(message, input, (settle) => {
+      return dialog<string>(heading(message), input, (settle) => {
         input.onSubmit = (value) => { settle(value); };
         input.onEscape = () => { settle(undefined); };
       });
