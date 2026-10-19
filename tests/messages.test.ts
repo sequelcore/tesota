@@ -77,6 +77,17 @@ it("shows a clean receipt as its verdict and one row of what holds", () => {
   expect(rows.join("\n")).not.toContain(hash.slice(0, 12));
 });
 
+it("counts a receipt's gaps in its verdict, amber, and keeps green for one with none", () => {
+  const gapped: Receipt = { ...clean, unverified: ["notes.md"] };
+  const rows = shown("tesota-receipt", gapped, 120);
+  expect(rows[1]).toMatch(/^ ○ Nothing needs you · 1 unverified +Tesota receipt$/u);
+  expect(rows).toContain(" UNVERIFIED (1)");
+  const colored = (receipt: Receipt): string => renderers().get("tesota-receipt")?.({ customType: "tesota-receipt",
+    content: "", details: receipt }, { expanded: false, outputPad: 1 }, theme)?.render(120)[1] ?? "";
+  expect(colored(gapped)).toContain(theme.fg("warning", "\x1b[1m○ Nothing needs you · 1 unverified\x1b[22m"));
+  expect(colored(clean)).toContain(theme.fg("success", "\x1b[1m✓ Nothing needs you\x1b[22m"));
+});
+
 it("shows a stopped receipt as not verified in both card views", () => {
   const receipt: Receipt = { ...emptyReceipt, stopped: "quota exhausted" };
   for (const expanded of [false, true]) {
@@ -106,8 +117,8 @@ it("leads with what needs the operator and keeps the model's opinion out of the 
   const rows = shown("tesota-receipt", attention, 120);
   // Four findings the checks established; the model's partial match is a note beside them.
   expect(rows[1]).toMatch(/^ ! 4 things need you · ◇ 1 model note +Tesota receipt$/u);
-  const headings = rows.filter((row) => /^ [A-Z' ,]+$/u.test(row)).map((row) => row.trim());
-  expect(headings).toEqual(["NEEDS YOU", "MODEL'S OPINION, NOT A PROOF", "NOT PROVED"]);
+  const headings = rows.filter((row) => /^ [A-Z' ,]+(?: \(\d+\))?$/u.test(row)).map((row) => row.trim());
+  expect(headings).toEqual(["NEEDS YOU", "MODEL'S OPINION, NOT A PROOF", "UNVERIFIED (2)"]);
   const start = rows.indexOf(" NEEDS YOU") + 1;
   const needs = rows.slice(start, start + 4);
   expect(needs.map((row) => row.slice(1, 28).trim())).toEqual(["!  May weaken the evidence", "!  May weaken the evidence",
@@ -184,11 +195,12 @@ it("shows every finding's details when expanded, with the hash shortened", () =>
   expect(rows).toContain("check evidence, not a reviewer's acceptance");
 });
 
-it("fits narrow terminals, cutting rows collapsed and wrapping them expanded", () => {
+it("fits narrow terminals, wrapping rows collapsed and expanded so no reason is cut", () => {
   for (const width of [80, 40]) {
     const collapsed = shown("tesota-receipt", attention, width);
     expect(collapsed[1]).toContain("! 4 things need you");
-    expect(collapsed.some((row) => row.endsWith("…"))).toBe(true);
+    expect(collapsed.some((row) => row.endsWith("…"))).toBe(false);
+    expect(collapsed.join(" ").replace(/\s+/gu, " ")).toContain("1 change to its code still proves");
     const expanded = shown("tesota-receipt", attention, width, true);
     expect(expanded.join(" ")).toContain("still proves");
     expect(expanded.join(" ")).toContain("acceptance");

@@ -2,6 +2,31 @@
 
 datatype Standing = decide | gap | holds | opinion
 
+function verdictTone(decisions: int, failed: bool, gaps: int): string
+  requires (decisions >= 0)
+  requires (gaps >= 0)
+{
+  if (decisions > 0) then
+    if failed then
+      "error"
+    else
+      "warning"
+  else
+    if (gaps > 0) then
+      "warning"
+    else
+      "success"
+}
+
+lemma verdictTone_ensures(decisions: int, failed: bool, gaps: int)
+  requires (decisions >= 0)
+  requires (gaps >= 0)
+  ensures ((verdictTone(decisions, failed, gaps) == "error") <==> ((decisions > 0) && failed))
+  ensures ((verdictTone(decisions, failed, gaps) == "success") <==> ((decisions == 0) && (gaps == 0)))
+  ensures (((verdictTone(decisions, failed, gaps) == "error") || (verdictTone(decisions, failed, gaps) == "warning")) || (verdictTone(decisions, failed, gaps) == "success"))
+{
+}
+
 method decisions(standings: seq<Standing>) returns (res: int)
   ensures (0 <= res)
   ensures (res <= |standings|)

@@ -45,3 +45,18 @@ export function partlyHolds(standings: readonly Standing[]): boolean {
   }
   return false;
 }
+
+/**
+ * The color of a receipt's verdict, in the conversation and in the footer
+ * alike: red when a check failed among what needs the operator, amber when
+ * something needs them or is a gap, green only when neither, so a receipt
+ * with gaps never reads as wholly verified.
+ */
+//@ requires decisions >= 0 && gaps >= 0
+//@ ensures \result === "error" <==> (decisions > 0 && failed)
+//@ ensures \result === "success" <==> (decisions === 0 && gaps === 0)
+//@ ensures \result === "error" || \result === "warning" || \result === "success"
+export function verdictTone(decisions: number, failed: boolean, gaps: number): "error" | "warning" | "success" {
+  if (decisions > 0) return failed ? "error" : "warning";
+  return gaps > 0 ? "warning" : "success";
+}

@@ -3,7 +3,8 @@ import { posix, sep } from "node:path";
 import type { ContextUsage, FooterData, Theme, ThemeColor } from "./contract.js";
 import { type Component, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { GateProgress, GateStatus, Tally } from "./gate.js";
-import { addedAssumptions, allEvidence, type Receipt, receiptDecisions, verified } from "./receipt.js";
+import { addedAssumptions, allEvidence, type Finding, type Receipt, receiptDecisions, receiptFindings, receiptTone, type UnitEvidence,
+  verified } from "./receipt.js";
 import { elapsedTime, type EvidenceLevel, footerLayout } from "./verification/footer-rule.js";
 
 /** One piece of the evidence row, in its words, its shorter words and its glyph form; an empty form is left out. */
@@ -78,8 +79,8 @@ function receiptParts(settled: Receipt): EvidencePart[] {
   // Commands that pass leave the rest tested though not proved, as the receipt words it.
   const unproved = passed && receipt.tests.length > 0 ? "not proved" : "not verified";
   const misses = receipt.exercises.filter(({ finding }) => finding === "does_not_exercise").length;
-  // The same count as the receipt in the conversation: only what the checks established, never a model's opinion.
-  const clean = receiptDecisions(settled) === 0;
+  const findings = receiptFindings(settled);
+  const unchecked = uncheckedGaps(findings, receipt);
   const listed = [
     ...tallyParts({ proved, notProved: receipt.proofs.length - proved,
       ...receipt.tests.length === 0 ? {} : { tests: passed ? "pass" : "fail" }, weak }, assumed),
@@ -91,6 +92,7 @@ function receiptParts(settled: Receipt): EvidencePart[] {
       "warning")] : [],
     ...files > 0 ? [part(`${plural(files, "file", "files")} ${unproved}`, `${plural(files, "file", "files")} unproved`, `○${files}f`,
       "warning")] : [],
+    ...unchecked > 0 ? [part(`${unchecked} not checked`, `${unchecked} unchecked`, `?${unchecked}`, "warning")] : [],
     ...misses > 0 ? [part(`${plural(misses, "test misses", "tests miss")} the change`, `${plural(misses, "test misses", "tests miss")}`,
       `miss ${misses}`, "warning")] : [],
     ...typeof receipt.weakened === "string" ? [part("weakening not checked", "unchecked", "unchecked", "warning")]
@@ -100,8 +102,31 @@ function receiptParts(settled: Receipt): EvidencePart[] {
   // A change of comments alone leaves nothing to list, as the receipt says.
   const nothing = listed.length === 0 && receipt.commentsOnly === true
     ? [part("nothing to verify, comments only", "nothing to verify", "no code", "muted")] : [];
-  return [clean ? part("✓ receipt", "✓ receipt", "✓", "success") : part("! receipt", "! receipt", "!", "warning"),
-    ...listed, ...nothing];
+  return [receiptHead(settled, findings), ...listed, ...nothing];
+}
+
+/**
+ * The row's first word, with the receipt's count and color in the
+ * conversation (`receiptTone`): `!` when something needs the operator, `✓`
+ * only when nothing is a gap either, `○` for gaps, as the receipt marks them.
+ */
+function receiptHead(settled: Receipt, findings: readonly Finding[]): EvidencePart {
+  const tone = receiptTone(findings);
+  if (receiptDecisions(settled) > 0) return part("! receipt", "! receipt", "!", tone);
+  return tone === "success" ? part("✓ receipt", "✓ receipt", "✓", tone) : part("○ receipt", "○ receipt", "○", tone);
+}
+
+/**
+ * The gaps the row's other parts do not name, such as a contract not
+ * measured or a test not checked, so amber always says why: every gap but
+ * the uncovered lines and unverified files counted on their own, and the
+ * coverage left unchecked because Git could not show the change, named with
+ * its weakening.
+ */
+function uncheckedGaps(findings: readonly Finding[], receipt: UnitEvidence): number {
+  return findings.filter(({ standing }) => standing === "gap").length
+    - receipt.uncovered.filter(({ lines }) => lines.length > 0).length - receipt.unverified.length
+    - (typeof receipt.weakened === "string" && receipt.proofs.length > 0 ? 1 : 0);
 }
 
 /** What the footer's first row says for the gate's status. */

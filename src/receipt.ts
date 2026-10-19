@@ -6,7 +6,7 @@ import type { ClaimCheckRun, ContractStrength } from "./proof-guarantees.js";
 import type { CommandRun, TestExercise } from "./test-rung.js";
 import type { Weakening } from "./verification-changes.js";
 import type { GateVerdict } from "./verification/gate-rule.js";
-import { decisions, partlyHolds, type Standing } from "./verification/verdict-rule.js";
+import { decisions, partlyHolds, type Standing, verdictTone } from "./verification/verdict-rule.js";
 
 /**
  * What a run that changed files leaves the operator when it settles: each
@@ -541,6 +541,12 @@ export function holdsWords(findings: readonly Finding[]): string[] {
 /** How many of the receipt's findings need the operator; none makes it clean, in the footer and the conversation alike. */
 export function receiptDecisions(receipt: Receipt): number {
   return decisions(receiptFindings(receipt).map(({ standing }) => standing));
+}
+
+/** The receipt's color (`verdictTone`), from its findings, in the footer and the conversation alike. */
+export function receiptTone(findings: readonly Finding[]): ReturnType<typeof verdictTone> {
+  return verdictTone(decisions(findings.map(({ standing }) => standing)),
+    findings.some(({ standing, failed }) => standing === "decide" && failed === true), findings.filter(({ standing }) => standing === "gap").length);
 }
 
 /**
