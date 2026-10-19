@@ -336,8 +336,12 @@ describe("tesota-core", () => {
     expect(asked).toBeGreaterThan(rows.findIndex((row) => row.includes("› write it")));
     expect(rows.slice(asked).join("\n")).toContain("Yes, this once");
     expect(rows.some((row) => row.startsWith("▌"))).toBe(false);
+    // While it asks, the footer says the run waits for the operator, not for the agent.
+    expect(rows.at(-1)).toContain("◌ waiting for you");
     terminal.type(enter);
-    expect((await terminal.until("written")).split("\n").some((row) => row.startsWith("▌"))).toBe(true);
+    const answered = (await terminal.until("written")).split("\n");
+    expect(answered.some((row) => row.startsWith("▌"))).toBe(true);
+    expect(answered.at(-1)).not.toContain("waiting for you");
     expect(existsSync(join(cwd, "allowed.txt"))).toBe(true);
     send(terminal, "/quit");
     await running;

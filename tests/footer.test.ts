@@ -42,6 +42,20 @@ it("says the gate waits, not that it is ready, while the agent works", () => {
   expect(evidenceParts({ step: "waiting", readiness: "tests_only" })[0]?.color).toBe("muted");
 });
 
+it("says the run waits for you while the shell asks you a question, and does not list that again at the right", () => {
+  const waiting = { step: "waiting", readiness: "tests_only" } as const;
+  expect(evidenceText(evidenceParts(waiting, 0, true), "full")).toBe("◌ waiting for you · tests only");
+  expect(evidenceParts(waiting, 0, true)[0]?.color).toBe("accent");
+  // Outside a run a question, such as /model's, changes nothing: the gate is ready.
+  expect(evidenceText(evidenceParts({ step: "ready", readiness: "tests_only" }, 0, true), "full")).toBe("● ready · tests only");
+  const progress = new GateProgress();
+  progress.waiting();
+  const row = footer(progress, { question: "waiting for you", permissions: "ask" }).rows(120)[1] ?? "";
+  expect(row.startsWith(" ◌ waiting for you · nothing to check with")).toBe(true);
+  expect(row.endsWith(" · ask")).toBe(true);
+  expect(row.match(/waiting for you/gu)).toHaveLength(1);
+});
+
 it("names the gate's step and what its round found so far", () => {
   expect(words({ step: "proving", path: "src/clamp.ts", startedAt: 0, tally: { proved: 0, notProved: 0 } }))
     .toBe("◐ proving src/clamp.ts · 0s");

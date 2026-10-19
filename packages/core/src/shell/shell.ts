@@ -3,7 +3,7 @@ import {
   type SlashCommand,
   Spacer, type Terminal, type TerminalColors, Text, TuiAltScreen, type TuiAltScreenOptions, TuiMainScreen, VStack,
 } from "@earendil-works/pi-tui";
-import type { FooterData } from "../../../../src/contract.ts";
+import { type FooterData, QUESTION_STATUS } from "../../../../src/contract.ts";
 import type { SessionEvent } from "../loop.ts";
 import type { EngineSession } from "../session.ts";
 import type { TuiMode } from "../settings.ts";
@@ -155,10 +155,12 @@ export function startShell(options: ShellOptions): Shell {
   let covering: Component | undefined;
   /** The questions shown in the input's place, the latest in front: a permission, a picker, a prompt. */
   const questions: { readonly box: Component; readonly body: Component & Focusable }[] = [];
-  /** The input's slot: the latest question while one waits, the editor otherwise. */
+  /** The input's slot: the latest question while one waits, the editor otherwise; the footer says when one waits. */
   const showSlot = (): void => {
     editorSlot.clear();
     editorSlot.addChild(questions.at(-1)?.box ?? editor);
+    if (questions.length > 0) surface?.statuses.set(QUESTION_STATUS, "waiting for you");
+    else surface?.statuses.delete(QUESTION_STATUS);
   };
   /** Each session's unsent text, kept while another is shown (#455). */
   const drafts = new Map<EngineSession, string>();

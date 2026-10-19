@@ -163,6 +163,9 @@ export interface FooterData {
   onBranchChange(callback: () => void): () => void;
 }
 
+/** The status the shell sets while it waits for the operator's answer to a question, such as a permission; the footer says so. */
+export const QUESTION_STATUS = "question";
+
 /** A component the shell mounts that may hold something to let go when it is replaced. */
 export type Mounted = Component & { dispose?(): void };
 
