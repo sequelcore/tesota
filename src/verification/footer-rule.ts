@@ -11,7 +11,7 @@ export function readiness(contracts: boolean, tests: boolean): Readiness {
   return tests ? "tests_only" : "nothing";
 }
 
-/** How much of the evidence the footer's first row shows: its words, shorter words, or glyphs. */
+/** How much of the evidence the footer's row shows: its words, shorter words, or glyphs. */
 export type EvidenceLevel = "full" | "short" | "glyphs";
 
 /** Whole elapsed minutes and seconds; elapsedMs is a nonnegative integer duration, never a remaining-time estimate. */
@@ -25,31 +25,61 @@ export function elapsedTime(elapsedMs: number): { minutes: number; seconds: numb
 
 export interface FooterLayout {
   level: EvidenceLevel;
-  /** Whether the context % shows at the right of the first row. */
+  /** Whether the context % shows on the right. */
   context: boolean;
-  /** Whether the model shows at the right of the second row. */
+  /** Whether the model shows on the right. */
   model: boolean;
+  /** Whether the folder shows on the right. */
+  place: boolean;
 }
 
 /**
- * What the footer's two rows show in `width` columns, given the widths of
- * the evidence at each level (`full` ≥ `short` ≥ `glyphs`), of the context %,
- * of the path on the second row and of the model, with two columns between
- * a row's left and right sides. As the terminal narrows the model goes
- * first, then the evidence shortens, and the context % goes last.
+ * The columns the right side of the footer's row takes: the folder, the
+ * model and the context % that show, then the statuses, which always do
+ * (`status` is 0 without any), three columns between each.
  */
-//@ requires full >= short && short >= glyphs && glyphs >= 0 && context >= 0 && place >= 0 && model >= 0
-//@ ensures \result.context <==> glyphs + 2 + context <= width
-//@ ensures \result.context ==> (\result.level === "full" <==> full + 2 + context <= width)
-//@ ensures \result.context ==> (\result.level === "short" <==> full + 2 + context > width && short + 2 + context <= width)
-//@ ensures !\result.context ==> (\result.level === "full" <==> full <= width)
-//@ ensures !\result.context ==> (\result.level === "short" <==> full > width && short <= width)
-//@ ensures \result.model <==> \result.context && \result.level === "full" && place + 2 + model <= width
+//@ requires place >= 0 && model >= 0 && context >= 0 && status >= 0
+//@ ensures \result >= 0
+export function rightWidth(place: number, model: number, context: number, status: number, showsPlace: boolean, showsModel: boolean,
+  showsContext: boolean): number {
+  const count = (showsPlace ? 1 : 0) + (showsModel ? 1 : 0) + (showsContext ? 1 : 0) + (status > 0 ? 1 : 0);
+  const items = (showsPlace ? place : 0) + (showsModel ? model : 0) + (showsContext ? context : 0) + status;
+  return count === 0 ? 0 : items + 3 * (count - 1);
+}
+
+/** Whether evidence `left` wide and a right side `right` wide fit in `width` columns, two columns between them. */
+//@ requires left >= 0 && right >= 0
+//@ ensures \result <==> (right === 0 ? left <= width : left + 2 + right <= width)
+export function fits(width: number, left: number, right: number): boolean {
+  return right === 0 ? left <= width : left + 2 + right <= width;
+}
+
+/**
+ * What the footer's one row shows in `width` columns, given the widths of
+ * the evidence at each level (`full` ≥ `short` ≥ `glyphs`) on the left, and
+ * on the right of the folder, the model, the context % and the statuses,
+ * the permission mode among them. The first that fits of: everything; no
+ * folder; no model; shorter evidence; glyphs; no context %. The statuses
+ * always show, so the row never hides the permission mode.
+ */
+//@ requires full >= short && short >= glyphs && glyphs >= 0 && context >= 0 && place >= 0 && model >= 0 && status >= 0
+//@ ensures \result.place <==> fits(width, full, rightWidth(place, model, context, status, true, true, true))
+//@ ensures \result.model <==> (\result.place || fits(width, full, rightWidth(place, model, context, status, false, true, true)))
+//@ ensures \result.level === "full" <==> (\result.model || fits(width, full, rightWidth(place, model, context, status, false, false, true)))
+//@ ensures \result.level === "short" <==> (\result.level !== "full" && fits(width, short, rightWidth(place, model, context, status, false, false, true)))
+//@ ensures \result.context <==> (\result.level !== "glyphs" || fits(width, glyphs, rightWidth(place, model, context, status, false, false, true)))
+//@ ensures \result.place ==> \result.model
 //@ ensures \result.model ==> \result.context
 export function footerLayout(width: number, full: number, short: number, glyphs: number, context: number, place: number,
-  model: number): FooterLayout {
-  const showsContext = glyphs + 2 + context <= width;
-  const room = showsContext ? width - 2 - context : width;
-  const level: EvidenceLevel = full <= room ? "full" : short <= room ? "short" : "glyphs";
-  return { level, context: showsContext, model: showsContext && level === "full" && place + 2 + model <= width };
+  model: number, status: number): FooterLayout {
+  if (fits(width, full, rightWidth(place, model, context, status, true, true, true))) {
+    return { level: "full", context: true, model: true, place: true };
+  }
+  if (fits(width, full, rightWidth(place, model, context, status, false, true, true))) {
+    return { level: "full", context: true, model: true, place: false };
+  }
+  const contextOnly = rightWidth(place, model, context, status, false, false, true);
+  if (fits(width, full, contextOnly)) return { level: "full", context: true, model: false, place: false };
+  if (fits(width, short, contextOnly)) return { level: "short", context: true, model: false, place: false };
+  return { level: "glyphs", context: fits(width, glyphs, contextOnly), model: false, place: false };
 }

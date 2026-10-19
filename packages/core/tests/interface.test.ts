@@ -86,10 +86,11 @@ describe("Tesota's interface on the engine", () => {
     expect(screen.join("\n")).toContain("Shows evidence that the change does what you asked.");
     expect(screen.filter((line) => /[⠁-⣿]/u.test(line)).length).toBeGreaterThan(4);
     expect(screen.filter((line) => line.startsWith("▌")).length).toBeGreaterThanOrEqual(3);
-    expect(screen.join("\n")).toContain("● ready");
-    expect(screen.at(-2)).toContain(`(${branch})`);
-    // The permission mode is a status, on the footer's third row (#449).
+    // The footer is one row: the evidence, and the permission mode (#449), a status it never drops; this temporary folder's long
+    // path is the first thing it drops, so the branch shows only in a wider terminal.
+    expect(screen.at(-1)).toContain("● ready");
     expect(screen.at(-1)).toContain("full access");
+    expect(screen.at(-1)).not.toContain(`(${branch})`);
     await quit(terminal, running);
   });
 

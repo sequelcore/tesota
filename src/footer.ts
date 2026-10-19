@@ -185,11 +185,12 @@ function row(left: string, right: string | undefined, width: number): string {
 }
 
 /**
- * Pi's footer in a Tesota session, under a blank row: the gate's evidence
- * with the context window's use at the right, then the folder and branch
- * with the model at the right. Narrowing drops the model, then shortens the
- * evidence, then drops the context % (`footerLayout`). Other extensions'
- * statuses follow on a third row, as in Pi's own footer.
+ * Pi's footer in a Tesota session, one row under a blank one: the gate's
+ * evidence, and at the right the folder and branch, the model, the context
+ * window's use and the other extensions' statuses, the permission mode among
+ * them. Narrowing drops the folder, then the model, then shortens the
+ * evidence, then drops the context %; the statuses always show
+ * (`footerLayout`).
  */
 export class EvidenceFooter implements Component {
   readonly #theme: Theme;
@@ -227,14 +228,16 @@ export class EvidenceFooter implements Component {
     const branch = this.#data.getGitBranch();
     const place = homeRelative(this.#session.cwd) + (branch === null ? "" : ` (${branch})`);
     const model = this.#session.model();
-    const layout = footerLayout(inner, visibleWidth(evidenceText(parts, "full")), visibleWidth(evidenceText(parts, "short")),
-      visibleWidth(evidenceText(parts, "glyphs")), visibleWidth(context.text), visibleWidth(place), visibleWidth(model));
     const statuses = [...this.#data.getExtensionStatuses().entries()].filter(([key]) => key !== "tesota")
-      .sort(([a], [b]) => a.localeCompare(b)).map(([, text]) => text.replace(/[\r\n\t]/gu, " "));
-    return ["",
-      ` ${row(paint(this.#theme, parts, layout.level), layout.context ? context.styled : undefined, inner)}`,
-      ` ${row(this.#theme.fg("dim", place), layout.model ? this.#theme.fg("dim", model) : undefined, inner)}`,
-      ...statuses.length > 0 ? [` ${row(statuses.join(" "), undefined, inner)}`] : []];
+      .sort(([a], [b]) => a.localeCompare(b)).map(([, text]) => text.replace(/[\r\n\t]/gu, " ")).join(SEPARATOR);
+    const layout = footerLayout(inner, visibleWidth(evidenceText(parts, "full")), visibleWidth(evidenceText(parts, "short")),
+      visibleWidth(evidenceText(parts, "glyphs")), visibleWidth(context.text), visibleWidth(place), visibleWidth(model),
+      visibleWidth(statuses));
+    const right = [...layout.place ? [this.#theme.fg("dim", place)] : [], ...layout.model ? [this.#theme.fg("dim", model)] : [],
+      ...layout.context ? [context.styled] : [], ...statuses === "" ? [] : [this.#theme.fg("text", statuses)]]
+      .join(this.#theme.fg("dim", SEPARATOR));
+    // Too narrow for even the glyphs beside the statuses, the row is cut at the edge rather than wrapped.
+    return ["", truncateToWidth(` ${row(paint(this.#theme, parts, layout.level), right === "" ? undefined : right, inner)}`, width, "")];
   }
 
   invalidate(): void {}

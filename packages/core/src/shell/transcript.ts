@@ -32,11 +32,14 @@ function cached(rows: (width: number) => string[], invalidate: () => void = () =
   };
 }
 
-/** Text wrapped under a two-column prefix, with continuation lines aligned under the text. */
+/** The column every entry starts at, as a reply's Markdown is padded, so prompts, calls and replies line up. */
+const MARGIN = " ";
+
+/** Text wrapped under a two-column prefix past the margin, with continuation lines aligned under the text. */
 function prefixedText(text: string, prefix: string): Component {
   const body = new Text(text, 0, 0);
-  return cached((width) => body.render(Math.max(1, width - 2)).map((line, index) =>
-    truncateToWidth(`${index === 0 ? prefix : "  "}${line}`, width)), () => { body.invalidate(); });
+  return cached((width) => body.render(Math.max(1, width - MARGIN.length - 2)).map((line, index) =>
+    truncateToWidth(`${MARGIN}${index === 0 ? prefix : "  "}${line}`, width)), () => { body.invalidate(); });
 }
 
 /** The operator's message, with a quiet prompt and no background. */
@@ -117,7 +120,7 @@ class CallView extends Container {
       ? ` ${theme.fg("dim", `+${diff.filter((line) => line.startsWith("+")).length} −${diff.filter((line) => line.startsWith("-")).length}`)}` : "";
     const title = `${theme.fg(result?.isError === true ? "error" : "muted", glyph)} ${theme.bold(theme.fg("toolTitle", call.name))}`
       + ` ${theme.fg("muted", summary(call))}${note}`;
-    this.addChild(cached((width) => [truncateToWidth(title, width)]));
+    this.addChild(cached((width) => [truncateToWidth(`${MARGIN}${title}`, width)]));
     const lines: string[] = [];
     const expanded = this.drawings.expanded();
     if (expanded && diff.length > 0) {

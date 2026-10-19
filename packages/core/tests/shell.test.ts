@@ -115,10 +115,10 @@ describe("the shell", () => {
     await settled(session);
     const screen = await terminal.screen();
     const row = screen.findIndex((line) => line.includes("first line"));
-    expect(screen.slice(row, row + 2).map((line) => line.trimEnd())).toEqual(["› first line", "  second line"]);
+    expect(screen.slice(row, row + 2).map((line) => line.trimEnd())).toEqual([" › first line", "   second line"]);
     const buffer = await terminal.drawn();
-    expect(buffer.getLine(buffer.viewportY + row)?.getCell(0)?.getFgColor()).toBe(0x8f8d84);
-    expect(buffer.getLine(buffer.viewportY + row)?.getCell(2)?.getFgColor()).toBe(0xf2eee6);
+    expect(buffer.getLine(buffer.viewportY + row)?.getCell(1)?.getFgColor()).toBe(0x8f8d84);
+    expect(buffer.getLine(buffer.viewportY + row)?.getCell(3)?.getFgColor()).toBe(0xf2eee6);
     for (let line = row; line < row + 2; line++) {
       for (let column = 0; column < terminal.columns; column++) {
         expect(buffer.getLine(buffer.viewportY + line)?.getCell(column)?.isBgDefault()).toBe(true);
@@ -133,18 +133,18 @@ describe("the shell", () => {
     await settled(session);
     const screen = await terminal.screen();
     const row = screen.findIndex((line) => line.includes("write a.txt"));
-    expect(screen[row]).toBe("✓ write a.txt");
+    expect(screen[row]).toBe(" ✓ write a.txt");
     expect(screen[row + 1]).toBe("");
     expect(shown(screen)).not.toContain("Wrote");
     const buffer = await terminal.drawn();
-    expect(buffer.getLine(buffer.viewportY + row)?.getCell(0)?.getFgColor()).toBe(0xb9b7aa);
-    expect(buffer.getLine(buffer.viewportY + row)?.getCell(2)?.isBold()).toBeGreaterThan(0);
+    expect(buffer.getLine(buffer.viewportY + row)?.getCell(1)?.getFgColor()).toBe(0xb9b7aa);
+    expect(buffer.getLine(buffer.viewportY + row)?.getCell(3)?.isBold()).toBeGreaterThan(0);
     for (let column = 0; column < terminal.columns; column++) {
       expect(buffer.getLine(buffer.viewportY + row)?.getCell(column)?.isBgDefault()).toBe(true);
     }
     terminal.type("\x0f");
     const expanded = await terminal.until("Wrote 4 bytes to a.txt.");
-    expect(expanded.split("\n").map((line) => line.trimEnd()).join("\n")).toContain("✓ write a.txt\n  Wrote 4 bytes to a.txt.");
+    expect(expanded.split("\n").map((line) => line.trimEnd()).join("\n")).toContain(" ✓ write a.txt\n   Wrote 4 bytes to a.txt.");
     terminal.type("\x0f");
     expect(await terminal.untilGone("Wrote 4 bytes")).toContain("✓ write a.txt");
   });
@@ -163,7 +163,7 @@ describe("the shell", () => {
     expect(screen).not.toContain("+ first");
     terminal.type("\x0f");
     const expanded = await terminal.until("+ third");
-    expect(expanded.split("\n").map((line) => line.trimEnd()).join("\n")).toContain("✓ edit a.txt +3 −2\n  - one\n  + first\n  + second\n  - two\n  + third");
+    expect(expanded.split("\n").map((line) => line.trimEnd()).join("\n")).toContain(" ✓ edit a.txt +3 −2\n   - one\n   + first\n   + second\n   - two\n   + third");
     terminal.type("\x0f");
     expect(await terminal.untilGone("+ third")).toContain("✓ edit a.txt +3 −2");
   });
@@ -176,7 +176,7 @@ describe("the shell", () => {
     terminal.type(enter);
     await settled(session);
     const screen = shown(await terminal.screen());
-    expect(screen).toContain("✗ read a.txt\n  Offset 99 is past the end of the file, which has 1 lines.");
+    expect(screen).toContain(" ✗ read a.txt\n   Offset 99 is past the end of the file, which has 1 lines.");
   });
 
   test("ending a fullscreen shell leaves the conversation in the terminal's scrollback", async () => {

@@ -22,7 +22,7 @@ datatype Readiness = proofs_and_tests | proofs_only | tests_only | nothing
 
 datatype EvidenceLevel = full | short | glyphs
 
-datatype FooterLayout = FooterLayout(level: EvidenceLevel, context: bool, model: bool)
+datatype FooterLayout = FooterLayout(level: EvidenceLevel, context: bool, model: bool, place: bool)
 
 datatype ElapsedTimeResult = ElapsedTimeResult(minutes: int, seconds: int)
 
@@ -62,33 +62,85 @@ lemma elapsedTime_ensures(elapsedMs: int)
 {
 }
 
-function footerLayout(width: int, full: int, short: int, glyphs: int, context: int, place: int, model: int): FooterLayout
-  requires (full >= short)
-  requires (short >= glyphs)
-  requires (glyphs >= 0)
-  requires (context >= 0)
+function rightWidth(place: int, model: int, context: int, status: int, showsPlace: bool, showsModel: bool, showsContext: bool): int
   requires (place >= 0)
   requires (model >= 0)
+  requires (context >= 0)
+  requires (status >= 0)
 {
-  var showsContext := (((glyphs + 2) + context) <= width);
-  var room := (if showsContext then ((width - 2) - context) else width);
-  var level := (if (full <= room) then EvidenceLevel.full else (if (short <= room) then EvidenceLevel.short else EvidenceLevel.glyphs));
-  FooterLayout(level, showsContext, ((showsContext && level.full?) && (((place + 2) + model) <= width)))
+  var count := ((((if showsPlace then 1 else 0) + (if showsModel then 1 else 0)) + (if showsContext then 1 else 0)) + (if (status > 0) then 1 else 0));
+  var items := ((((if showsPlace then place else 0) + (if showsModel then model else 0)) + (if showsContext then context else 0)) + status);
+  if (count == 0) then
+    0
+  else
+    (items + (3 * (count - 1)))
 }
 
-lemma footerLayout_ensures(width: int, full: int, short: int, glyphs: int, context: int, place: int, model: int)
+lemma rightWidth_ensures(place: int, model: int, context: int, status: int, showsPlace: bool, showsModel: bool, showsContext: bool)
+  requires (place >= 0)
+  requires (model >= 0)
+  requires (context >= 0)
+  requires (status >= 0)
+  ensures (rightWidth(place, model, context, status, showsPlace, showsModel, showsContext) >= 0)
+{
+}
+
+function fits(width: int, left: int, right: int): bool
+  requires (left >= 0)
+  requires (right >= 0)
+{
+  if (right == 0) then
+    (left <= width)
+  else
+    (((left + 2) + right) <= width)
+}
+
+lemma fits_ensures(width: int, left: int, right: int)
+  requires (left >= 0)
+  requires (right >= 0)
+  ensures (fits(width, left, right) <==> (if (right == 0) then (left <= width) else (((left + 2) + right) <= width)))
+{
+}
+
+function footerLayout(width: int, full: int, short: int, glyphs: int, context: int, place: int, model: int, status: int): FooterLayout
   requires (full >= short)
   requires (short >= glyphs)
   requires (glyphs >= 0)
   requires (context >= 0)
   requires (place >= 0)
   requires (model >= 0)
-  ensures (footerLayout(width, full, short, glyphs, context, place, model).context <==> (((glyphs + 2) + context) <= width))
-  ensures (footerLayout(width, full, short, glyphs, context, place, model).context ==> (footerLayout(width, full, short, glyphs, context, place, model).level.full? <==> (((full + 2) + context) <= width)))
-  ensures (footerLayout(width, full, short, glyphs, context, place, model).context ==> (footerLayout(width, full, short, glyphs, context, place, model).level.short? <==> ((((full + 2) + context) > width) && (((short + 2) + context) <= width))))
-  ensures (!(footerLayout(width, full, short, glyphs, context, place, model).context) ==> (footerLayout(width, full, short, glyphs, context, place, model).level.full? <==> (full <= width)))
-  ensures (!(footerLayout(width, full, short, glyphs, context, place, model).context) ==> (footerLayout(width, full, short, glyphs, context, place, model).level.short? <==> ((full > width) && (short <= width))))
-  ensures (footerLayout(width, full, short, glyphs, context, place, model).model <==> ((footerLayout(width, full, short, glyphs, context, place, model).context && footerLayout(width, full, short, glyphs, context, place, model).level.full?) && (((place + 2) + model) <= width)))
-  ensures (footerLayout(width, full, short, glyphs, context, place, model).model ==> footerLayout(width, full, short, glyphs, context, place, model).context)
+  requires (status >= 0)
+{
+  if fits(width, full, rightWidth(place, model, context, status, true, true, true)) then
+    FooterLayout(EvidenceLevel.full, true, true, true)
+  else
+    if fits(width, full, rightWidth(place, model, context, status, false, true, true)) then
+      FooterLayout(EvidenceLevel.full, true, true, false)
+    else
+      var contextOnly := rightWidth(place, model, context, status, false, false, true);
+      if fits(width, full, contextOnly) then
+        FooterLayout(EvidenceLevel.full, true, false, false)
+      else
+        if fits(width, short, contextOnly) then
+          FooterLayout(EvidenceLevel.short, true, false, false)
+        else
+          FooterLayout(EvidenceLevel.glyphs, fits(width, glyphs, contextOnly), false, false)
+}
+
+lemma footerLayout_ensures(width: int, full: int, short: int, glyphs: int, context: int, place: int, model: int, status: int)
+  requires (full >= short)
+  requires (short >= glyphs)
+  requires (glyphs >= 0)
+  requires (context >= 0)
+  requires (place >= 0)
+  requires (model >= 0)
+  requires (status >= 0)
+  ensures (footerLayout(width, full, short, glyphs, context, place, model, status).place <==> fits(width, full, rightWidth(place, model, context, status, true, true, true)))
+  ensures (footerLayout(width, full, short, glyphs, context, place, model, status).model <==> (footerLayout(width, full, short, glyphs, context, place, model, status).place || fits(width, full, rightWidth(place, model, context, status, false, true, true))))
+  ensures (footerLayout(width, full, short, glyphs, context, place, model, status).level.full? <==> (footerLayout(width, full, short, glyphs, context, place, model, status).model || fits(width, full, rightWidth(place, model, context, status, false, false, true))))
+  ensures (footerLayout(width, full, short, glyphs, context, place, model, status).level.short? <==> ((!footerLayout(width, full, short, glyphs, context, place, model, status).level.full?) && fits(width, short, rightWidth(place, model, context, status, false, false, true))))
+  ensures (footerLayout(width, full, short, glyphs, context, place, model, status).context <==> ((!footerLayout(width, full, short, glyphs, context, place, model, status).level.glyphs?) || fits(width, glyphs, rightWidth(place, model, context, status, false, false, true))))
+  ensures (footerLayout(width, full, short, glyphs, context, place, model, status).place ==> footerLayout(width, full, short, glyphs, context, place, model, status).model)
+  ensures (footerLayout(width, full, short, glyphs, context, place, model, status).model ==> footerLayout(width, full, short, glyphs, context, place, model, status).context)
 {
 }

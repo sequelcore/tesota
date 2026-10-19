@@ -1,11 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="872" height="572" viewBox="0 0 872 572" role="img" aria-label="Tesota's shell as it opens: the palo fierro tree above Tesota's name, the project's folder and 'Shows evidence that the change does what you asked.', then the input and the footer.">
 <title>Tesota's shell as it opens: the palo fierro tree above Tesota's name, the project's folder and 'Shows evidence that the change does what you asked.', then the input and the footer.</title>
 <rect width="872" height="572" rx="10" fill="#202020"/>
-<rect x="24.4" y="430" width="831.6" height="18" fill="#2f2a35"/>
-<rect x="24.4" y="448" width="16.8" height="18" fill="#2f2a35"/>
-<rect x="41.2" y="448" width="8.4" height="18" fill="#f2eee6"/>
-<rect x="49.6" y="448" width="806.4" height="18" fill="#2f2a35"/>
-<rect x="24.4" y="466" width="831.6" height="18" fill="#2f2a35"/>
+<rect x="41.2" y="484" width="8.4" height="18" fill="#f2eee6"/>
 <g font-family="'Cascadia Mono', 'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="14" xml:space="preserve">
 <text x="410.8" y="29" fill="#abb8a0" textLength="8.4" lengthAdjust="spacingAndGlyphs">⣀</text>
 <text x="419.2" y="29" fill="#95a08d" textLength="8.4" lengthAdjust="spacingAndGlyphs">⣀</text>
@@ -145,20 +141,30 @@
 <text x="520.0" y="263" fill="#b9b7aa" textLength="33.6" lengthAdjust="spacingAndGlyphs">what</text>
 <text x="562.0" y="263" fill="#b9b7aa" textLength="25.2" lengthAdjust="spacingAndGlyphs">you</text>
 <text x="595.6" y="263" fill="#b9b7aa" textLength="50.4" lengthAdjust="spacingAndGlyphs">asked.</text>
-<text x="16.0" y="443" fill="#8f7a99" textLength="8.4" lengthAdjust="spacingAndGlyphs">▌</text>
-<text x="16.0" y="461" fill="#8f7a99" textLength="8.4" lengthAdjust="spacingAndGlyphs">▌</text>
 <text x="16.0" y="479" fill="#8f7a99" textLength="8.4" lengthAdjust="spacingAndGlyphs">▌</text>
-<text x="24.4" y="515" fill="#9ab08f" textLength="8.4" lengthAdjust="spacingAndGlyphs">●</text>
-<text x="41.2" y="515" fill="#9ab08f" textLength="42.0" lengthAdjust="spacingAndGlyphs">ready</text>
-<text x="91.6" y="515" fill="#8f8d84" textLength="8.4" lengthAdjust="spacingAndGlyphs">·</text>
-<text x="108.4" y="515" fill="#b9b7aa" textLength="42.0" lengthAdjust="spacingAndGlyphs">tests</text>
-<text x="158.8" y="515" fill="#b9b7aa" textLength="33.6" lengthAdjust="spacingAndGlyphs">only</text>
-<text x="797.2" y="515" fill="#b9b7aa" textLength="25.2" lengthAdjust="spacingAndGlyphs">ctx</text>
-<text x="830.8" y="515" fill="#b9b7aa" textLength="16.8" lengthAdjust="spacingAndGlyphs">0%</text>
-<text x="24.4" y="533" fill="#8f8d84" textLength="50.4" lengthAdjust="spacingAndGlyphs">~\shop</text>
-<text x="83.2" y="533" fill="#8f8d84" textLength="50.4" lengthAdjust="spacingAndGlyphs">(main)</text>
-<text x="763.6" y="533" fill="#8f8d84" textLength="84.0" lengthAdjust="spacingAndGlyphs">your-model</text>
-<text x="24.4" y="551" fill="#f2eee6" textLength="33.6" lengthAdjust="spacingAndGlyphs">full</text>
-<text x="66.4" y="551" fill="#f2eee6" textLength="50.4" lengthAdjust="spacingAndGlyphs">access</text>
+<text x="16.0" y="497" fill="#8f7a99" textLength="8.4" lengthAdjust="spacingAndGlyphs">▌</text>
+<text x="58.0" y="497" fill="#8f8d84" textLength="8.4" lengthAdjust="spacingAndGlyphs">/</text>
+<text x="74.8" y="497" fill="#8f8d84" textLength="25.2" lengthAdjust="spacingAndGlyphs">for</text>
+<text x="108.4" y="497" fill="#8f8d84" textLength="67.2" lengthAdjust="spacingAndGlyphs">commands</text>
+<text x="184.0" y="497" fill="#8f8d84" textLength="8.4" lengthAdjust="spacingAndGlyphs">·</text>
+<text x="200.8" y="497" fill="#8f8d84" textLength="8.4" lengthAdjust="spacingAndGlyphs">@</text>
+<text x="217.6" y="497" fill="#8f8d84" textLength="25.2" lengthAdjust="spacingAndGlyphs">for</text>
+<text x="251.2" y="497" fill="#8f8d84" textLength="42.0" lengthAdjust="spacingAndGlyphs">files</text>
+<text x="16.0" y="515" fill="#8f7a99" textLength="8.4" lengthAdjust="spacingAndGlyphs">▌</text>
+<text x="24.4" y="551" fill="#9ab08f" textLength="8.4" lengthAdjust="spacingAndGlyphs">●</text>
+<text x="41.2" y="551" fill="#9ab08f" textLength="42.0" lengthAdjust="spacingAndGlyphs">ready</text>
+<text x="91.6" y="551" fill="#8f8d84" textLength="8.4" lengthAdjust="spacingAndGlyphs">·</text>
+<text x="108.4" y="551" fill="#b9b7aa" textLength="42.0" lengthAdjust="spacingAndGlyphs">tests</text>
+<text x="158.8" y="551" fill="#b9b7aa" textLength="33.6" lengthAdjust="spacingAndGlyphs">only</text>
+<text x="436.0" y="551" fill="#8f8d84" textLength="50.4" lengthAdjust="spacingAndGlyphs">~\shop</text>
+<text x="494.8" y="551" fill="#8f8d84" textLength="50.4" lengthAdjust="spacingAndGlyphs">(main)</text>
+<text x="553.6" y="551" fill="#8f8d84" textLength="8.4" lengthAdjust="spacingAndGlyphs">·</text>
+<text x="570.4" y="551" fill="#8f8d84" textLength="84.0" lengthAdjust="spacingAndGlyphs">your-model</text>
+<text x="662.8" y="551" fill="#8f8d84" textLength="8.4" lengthAdjust="spacingAndGlyphs">·</text>
+<text x="679.6" y="551" fill="#b9b7aa" textLength="25.2" lengthAdjust="spacingAndGlyphs">ctx</text>
+<text x="713.2" y="551" fill="#b9b7aa" textLength="16.8" lengthAdjust="spacingAndGlyphs">0%</text>
+<text x="738.4" y="551" fill="#8f8d84" textLength="8.4" lengthAdjust="spacingAndGlyphs">·</text>
+<text x="755.2" y="551" fill="#f2eee6" textLength="33.6" lengthAdjust="spacingAndGlyphs">full</text>
+<text x="797.2" y="551" fill="#f2eee6" textLength="50.4" lengthAdjust="spacingAndGlyphs">access</text>
 </g>
 </svg>

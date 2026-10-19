@@ -116,13 +116,16 @@ it("says there was nothing to verify when the change was comments alone, and onl
   expect(words({ step: "settled", receipt: emptyReceipt })).toBe("✓ receipt");
 });
 
-it("drops the model first, then shortens the evidence, and drops the context % last", () => {
-  // Widths: evidence 40, 30 or 10; context 6; path 40; model 15.
-  expect(footerLayout(100, 40, 30, 10, 6, 40, 15)).toEqual({ level: "full", context: true, model: true });
-  expect(footerLayout(56, 40, 30, 10, 6, 40, 15)).toEqual({ level: "full", context: true, model: false });
-  expect(footerLayout(47, 40, 30, 10, 6, 40, 15)).toEqual({ level: "short", context: true, model: false });
-  expect(footerLayout(20, 40, 30, 10, 6, 40, 15)).toEqual({ level: "glyphs", context: true, model: false });
-  expect(footerLayout(17, 40, 30, 10, 6, 40, 15)).toEqual({ level: "glyphs", context: false, model: false });
+it("drops the folder first, then the model, then shortens the evidence, and drops the context % last, never the statuses", () => {
+  // Widths: evidence 40, 30 or 10; context 6; folder 40; model 15; statuses 11 ("full access"); " · " between the right's items.
+  expect(footerLayout(130, 40, 30, 10, 6, 40, 15, 11)).toEqual({ level: "full", context: true, model: true, place: true });
+  expect(footerLayout(100, 40, 30, 10, 6, 40, 15, 11)).toEqual({ level: "full", context: true, model: true, place: false });
+  expect(footerLayout(70, 40, 30, 10, 6, 40, 15, 11)).toEqual({ level: "full", context: true, model: false, place: false });
+  expect(footerLayout(55, 40, 30, 10, 6, 40, 15, 11)).toEqual({ level: "short", context: true, model: false, place: false });
+  expect(footerLayout(40, 40, 30, 10, 6, 40, 15, 11)).toEqual({ level: "glyphs", context: true, model: false, place: false });
+  expect(footerLayout(25, 40, 30, 10, 6, 40, 15, 11)).toEqual({ level: "glyphs", context: false, model: false, place: false });
+  // Without statuses, nothing is kept for them.
+  expect(footerLayout(116, 40, 30, 10, 6, 40, 15, 0)).toEqual({ level: "full", context: true, model: true, place: true });
 });
 
 it("writes the folder from home as Pi's footer does", () => {
@@ -153,13 +156,13 @@ it("shows the proving file and elapsed time even when the verifier produces no o
   const { view, rows, renders } = footer(progress);
   try {
     progress.publish({ step: "proving", path: "src/lib/rules.ts", startedAt: 0, tally: { proved: 0, notProved: 0 } });
-    expect(rows(120)[1]).toMatch(/^ ◐ proving src\/lib\/rules.ts · 0s +ctx 5%$/u);
+    expect(rows(120)[1]).toMatch(/^ ◐ proving src\/lib\/rules.ts · 0s +\S.* · ctx 5%$/u);
     vi.advanceTimersByTime(59_000);
-    expect(rows(120)[1]).toMatch(/^ ◐ proving src\/lib\/rules.ts · 59s +ctx 5%$/u);
+    expect(rows(120)[1]).toMatch(/^ ◐ proving src\/lib\/rules.ts · 59s +\S.* · ctx 5%$/u);
     vi.advanceTimersByTime(1_000);
-    expect(rows(120)[1]).toMatch(/^ ◐ proving src\/lib\/rules.ts · 1m 00s +ctx 5%$/u);
+    expect(rows(120)[1]).toMatch(/^ ◐ proving src\/lib\/rules.ts · 1m 00s +\S.* · ctx 5%$/u);
     vi.advanceTimersByTime(40_000);
-    expect(rows(120)[1]).toMatch(/^ ◐ proving src\/lib\/rules.ts · 1m 40s +ctx 5%$/u);
+    expect(rows(120)[1]).toMatch(/^ ◐ proving src\/lib\/rules.ts · 1m 40s +\S.* · ctx 5%$/u);
     expect(renders()).toBe(101);
   } finally {
     view.dispose();
@@ -227,17 +230,16 @@ it("shortens a long proof path before losing time, and drops time before the ste
   }
 });
 
-it("shows the evidence over the folder, with the context % and the model at the far right", () => {
+it("shows the evidence in one row, with the folder, the model and the context % at the far right", () => {
   const progress = new GateProgress();
   progress.ready("proofs_and_tests");
   const { rows } = footer(progress);
   const wide = rows(120);
   expect(wide[0]).toBe("");
-  expect(wide[1]).toMatch(/^ ● ready · proofs and tests +ctx 5%$/u);
-  expect(wide[2]?.startsWith(` ${join("/srv", "parse-range")} (feat/range) `)).toBe(true);
-  expect(wide[2]?.endsWith(" gpt-5.5 medium")).toBe(true);
-  expect(visibleWidth(wide[2] ?? "")).toBe(119);
-  expect(wide).toHaveLength(3);
+  expect(wide[1]?.startsWith(" ● ready · proofs and tests ")).toBe(true);
+  expect(wide[1]?.endsWith(` ${join("/srv", "parse-range")} (feat/range) · gpt-5.5 medium · ctx 5%`)).toBe(true);
+  expect(visibleWidth(wide[1] ?? "")).toBe(119);
+  expect(wide).toHaveLength(2);
   for (const width of [200, 120, 80, 60, 30, 12]) for (const row of footer(progress).view.render(width)) expect(visibleWidth(row)).toBeLessThanOrEqual(width);
   // No "Tesota" in the footer: the header carries the name.
   expect(rows(120).join("\n")).not.toContain("Tesota");
@@ -248,7 +250,7 @@ it("follows the gate as it publishes, and stops when disposed", () => {
   const { view, renders, rows } = footer(progress);
   progress.publish({ step: "proving", path: "src/clamp.ts", startedAt: performance.now(), tally: { proved: 1, notProved: 0 } });
   expect(renders()).toBe(1);
-  expect(rows(120)[1]).toMatch(/^ ◐ proving src\/clamp.ts · 0s · 1 proved +ctx 5%$/u);
+  expect(rows(120)[1]).toMatch(/^ ◐ proving src\/clamp.ts · 0s · 1 proved +\S.* · ctx 5%$/u);
   view.dispose();
   progress.reset();
   expect(renders()).toBe(1);
@@ -260,16 +262,21 @@ it("narrows at 80 and 30 columns in the order the rule sets", () => {
     uncovered: [{ path: "src/parse.ts", lines: [[12, 14]] }] } });
   const { rows } = footer(progress);
   expect(rows(80)[1]).toMatch(/^ ○ receipt · 1 proved · tests ✓ · 3 lines unproved +ctx 5%$/u);
-  expect(rows(80)[2]).not.toContain("gpt-5.5");
+  expect(rows(80)[1]).not.toContain("gpt-5.5");
+  expect(rows(80)[1]).not.toContain("parse-range");
   expect(rows(40)[1]).toMatch(/^ ○ · ✓1 · tests ✓ · ○3 +ctx 5%$/u);
   // Too narrow for even the glyphs beside it, the context % goes, and the evidence is cut.
   expect(rows(25)[1]).toBe(" ○ · ✓1 · tests ✓ · ○3");
 });
 
-it("keeps other extensions' statuses on a third row, and colors a full context window", () => {
+it("ends the row with the other extensions' statuses at every width, and colors a full context window", () => {
   const progress = new GateProgress();
   const { rows } = footer(progress, { tesota: "Tesota", zeta: "Z on", alpha: "A\non" });
-  expect(rows(120)[3]).toBe(" A on Z on");
+  expect(rows(120)[1]?.endsWith("ctx 5% · A on · Z on")).toBe(true);
+  expect(rows(120)).toHaveLength(2);
+  // The permission mode is one of them: narrowing drops the folder, the model and the context %, never the mode.
+  const mode = footer(progress, { permissions: "full access" }).rows;
+  for (const width of [120, 60, 40, 30]) expect(mode(width)[1]).toContain("full access");
   const full = footer(progress, {}, { tokens: 260_000, contextWindow: 272_000, percent: 95.6 }).view.render(120)[1] ?? "";
   expect(full).toContain(theme.fg("error", "ctx 96%"));
 });

@@ -276,7 +276,10 @@ request.
   gate's step and timer while it verifies, and the receipt in brief after.
   It leads with `!` when anything needs you, by the same count as the
   receipt, `○` when nothing does but something is unverified, and `✓`
-  otherwise, in the receipt's color.
+  otherwise, in the receipt's color. It is one row: at the right the
+  folder, the model, the context % and the permission mode. As the terminal
+  narrows it drops the folder, then the model, shortens the evidence, then
+  drops the context % (`footerLayout`, proved); the permission mode stays.
 - **The receipt card** opens with the verdict, `✓ Nothing needs you`,
   `○ Nothing needs you · 1 unverified` or `! 4 things need you`, counting
   only findings the checks established (`decisions`, proved). Its color is
@@ -310,7 +313,7 @@ by `bun run formal:check` on every pull request.
 | `proof-cover-rule.ts` | Which changed lines a proof covers |
 | `comment-line-rule.ts` | Whether a line holds only a comment |
 | `range-rule.ts` | How the receipt groups line numbers |
-| `footer-rule.ts` | What Tesota can verify before a request, and what the footer drops as the terminal narrows |
+| `footer-rule.ts` | What Tesota can verify before a request, and what the footer's one row drops as the terminal narrows, never the permission mode |
 | `verdict-rule.ts` | How many findings need you, never a model's opinion, when a summary must say how many hold, and the receipt's color |
 | `settle-rule.ts` | Whether a run goes on or how it ends, after its extensions and its verifier |
 | `permission-rule.ts` | Whether a call may run: the floor, the mode and the strongest rule |
