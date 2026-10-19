@@ -77,6 +77,28 @@ it("shows a clean receipt as its verdict and one row of what holds", () => {
   expect(rows.join("\n")).not.toContain(hash.slice(0, 12));
 });
 
+it("shows inherited files in one collapsed row and their paths only expanded", () => {
+  const receipt: Receipt = { ...clean, inherited: ["old/a.ts", "old/b.ts"] };
+  const collapsed = shown("tesota-receipt", receipt, 120).join("\n");
+  expect(collapsed).toContain("○ 2 files already uncommitted, not this request's");
+  expect(collapsed).not.toContain("old/a.ts");
+  const expanded = shown("tesota-receipt", receipt, 120, true).join("\n");
+  expect(expanded).toContain("old/a.ts");
+  expect(expanded).toContain("old/b.ts");
+  expect(expanded).toContain("tests ran with them");
+});
+
+it("explains unknown start states and unmeasured paths in both card views", () => {
+  const receipt: Receipt = { ...emptyReceipt, startState: { status: "unknown", reason: "the index has unresolved conflicts" },
+    unmeasured: [{ path: "large.bin", reason: "file exceeds 10 MiB" }] };
+  for (const expanded of [false, true]) {
+    const rows = shown("tesota-receipt", receipt, 120, expanded).join("\n");
+    expect(rows).toContain("the index has unresolved conflicts");
+    expect(rows).toContain("large.bin");
+    expect(rows).toContain("file exceeds 10 MiB");
+  }
+});
+
 it("counts a receipt's gaps in its verdict, amber, and keeps green for one with none", () => {
   const gapped: Receipt = { ...clean, unverified: ["notes.md"] };
   const rows = shown("tesota-receipt", gapped, 120);

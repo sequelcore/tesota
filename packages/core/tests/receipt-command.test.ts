@@ -7,7 +7,7 @@ import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { EntryDraft } from "../../../src/contract.ts";
 import { contentHash } from "../../../src/evidence.ts";
-import { httpsRepository, receiptCommand, type SessionStore, subjectOf } from "../../../src/pull-request-receipt.ts";
+import { httpsRepository, receiptCommand, receiptMarkdown, type SessionStore, subjectOf } from "../../../src/pull-request-receipt.ts";
 import type { Receipt } from "../../../src/receipt.ts";
 import { emptyReceipt } from "../../../tests/receipts.ts";
 import { createSession } from "../src/session.ts";
@@ -17,6 +17,18 @@ import { scriptedReply } from "./scripted.ts";
 /** `tesota receipt` (#463): the last receipt of the engine's sessions in a folder, for a pull request. */
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true, maxRetries: 3 }); });
+
+it("explains request attribution, inherited paths and capture limits in pull-request Markdown", () => {
+  const receipt: Receipt = { ...emptyReceipt, inherited: ["old.txt"],
+    startState: { status: "unknown", reason: "the index has unresolved conflicts" },
+    unmeasured: [{ path: "large.bin", reason: "file exceeds 10 MiB" }] };
+  const markdown = receiptMarkdown(receipt, { commit: "1234567890123456", owner: "operator", sessionId: "session", stale: [], changedAfter: [] });
+  expect(markdown).toContain("changed during the request (by anyone)");
+  expect(markdown).toContain("old.txt");
+  expect(markdown).toContain("the index has unresolved conflicts");
+  expect(markdown).toContain("large.bin: file exceeds 10 MiB");
+  expect(markdown).toContain("exercise test relying on them may be misjudged");
+});
 
 function git(root: string, ...args: string[]): string {
   const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });

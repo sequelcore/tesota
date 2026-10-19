@@ -5,6 +5,7 @@ import type { UncoveredLines } from "./proof-coverage.js";
 import type { ClaimCheckRun, ContractStrength } from "./proof-guarantees.js";
 import type { CommandRun, TestExercise } from "./test-rung.js";
 import type { Weakening } from "./verification-changes.js";
+import type { StartState, UnmeasuredPath } from "./request-fingerprint.js";
 import type { GateVerdict } from "./verification/gate-rule.js";
 import { decisions, partlyHolds, type Standing, verdictTone } from "./verification/verdict-rule.js";
 
@@ -15,8 +16,8 @@ import { decisions, partlyHolds, type Standing, verdictTone } from "./verificati
  * request added or changed is, once it proved; the project's commands, such as
  * its tests, with theirs; whether each changed or added test exercises the
  * change; the changes that may weaken the evidence; and the changed files and
- * lines no proof covers. Changes are measured against the commit the
- * operator's request started from.
+ * lines no proof covers. Attribution describes what changed during the
+ * request (by anyone); weakening and exercise still use its admission commit.
  */
 export interface Receipt {
   readonly version: 1;
@@ -66,11 +67,17 @@ export interface Receipt {
    */
   readonly uncovered: readonly UncoveredLines[];
   /**
-   * Every file changed from `base` as the run left it, relative to the
+   * Every file changed during the request (by anyone) as the run left it, relative to the
    * project: the blob id Git would store for its content, or null when
    * deleted; `unreadable` when Git could not tell.
    */
   readonly changed: readonly { readonly path: string; readonly blob: string | null }[] | "unreadable";
+  /** Paths dirty at the first non-reader tool whose content stayed unchanged; tests ran with them. */
+  readonly inherited: readonly string[];
+  /** Paths whose content was not hashed at either capture, never called unchanged. */
+  readonly unmeasured: readonly UnmeasuredPath[];
+  readonly startState?: StartState;
+  readonly endState?: StartState;
   /**
    * In a folder of Git repositories that is in none (#384), what each unit
    * holds, in name order: each repository the request changed, measured from
@@ -89,7 +96,8 @@ export interface Receipt {
 
 /** What a receipt records for one repository or folder; the receipt itself is one, for the folder Pi runs in. */
 export type UnitEvidence = Pick<Receipt, "repository" | "snapshot" | "tooLarge" | "reason" | "base" | "proofs" | "contracts" |
-  "claimcheck" | "tests" | "exercises" | "weakened" | "unverified" | "commentsOnly" | "uncovered" | "changed">;
+  "claimcheck" | "tests" | "exercises" | "weakened" | "unverified" | "commentsOnly" | "uncovered" | "changed" |
+  "inherited" | "unmeasured" | "startState" | "endState">;
 
 /** Whether anything verified a unit: it is a Git repository, or Tesota snapshotted it. */
 export function verified(unit: Pick<UnitEvidence, "repository" | "snapshot">): boolean {
@@ -113,8 +121,8 @@ export type ReceiptUnit = UnitEvidence & { readonly folder: string };
 
 /** The evidence of a unit that verified nothing. */
 export const noEvidence: Omit<UnitEvidence, "repository" | "snapshot" | "tooLarge" | "reason" | "base" | "claimcheck" |
-  "commentsOnly"> = { proofs: [], contracts: [],
-  tests: [], exercises: [], weakened: [], unverified: [], uncovered: [], changed: [] };
+  "commentsOnly" | "startState" | "endState"> = { proofs: [], contracts: [],
+  tests: [], exercises: [], weakened: [], unverified: [], uncovered: [], changed: [], inherited: [], unmeasured: [] };
 
 /** A unit's path as seen from the folder Pi runs in. */
 export function inUnit(folder: string, path: string): string {
@@ -137,6 +145,8 @@ export function fromFolder(unit: ReceiptUnit): UnitEvidence {
     exercises: unit.exercises.map((exercise) => ({ ...exercise, path: at(exercise.path) })),
     weakened: typeof unit.weakened === "string" ? unit.weakened : unit.weakened.map((change) => ({ ...change, path: at(change.path) })),
     unverified: unit.unverified.map(at),
+    inherited: unit.inherited.map(at),
+    unmeasured: unit.unmeasured.map((item) => ({ ...item, path: at(item.path) })),
     uncovered: unit.uncovered.map((lines) => ({ ...lines, path: at(lines.path) })),
     changed: typeof unit.changed === "string" ? unit.changed : unit.changed.map((file) => ({ ...file, path: at(file.path) })),
     ...unit.tooLarge === undefined ? {} : { tooLarge: unit.tooLarge.map(at) } };
@@ -164,6 +174,7 @@ export function allEvidence(receipt: Receipt): UnitEvidence {
     weakened: typeof unread === "string" ? unread : units.flatMap(({ weakened }) => typeof weakened === "string" ? [] : weakened),
     unverified: units.flatMap(({ unverified }) => unverified), uncovered: units.flatMap(({ uncovered }) => uncovered), changed,
     tooLarge: units.flatMap(({ tooLarge }) => tooLarge ?? []),
+    inherited: units.flatMap(({ inherited }) => inherited), unmeasured: units.flatMap(({ unmeasured }) => unmeasured),
     ...units.length > 0 && units.every(({ commentsOnly }) => commentsOnly === true) ? { commentsOnly: true as const } : {} };
 }
 
@@ -484,6 +495,7 @@ function unitFindings(receipt: UnitEvidence): Finding[] {
   const unproved = tested ? "Not proved" : "Not verified";
   const unread = typeof receipt.weakened === "string";
   const found: Finding[] = [
+    ...fingerprintFindings(receipt),
     ...receipt.proofs.map((proof) => proofFinding(proof, addedAssumptions(proof.evidence.files, receipt.weakened))),
     ...receipt.tests.map(commandFinding),
     ...typeof receipt.weakened === "string"
@@ -516,6 +528,15 @@ function unitFindings(receipt: UnitEvidence): Finding[] {
   // A change of comments alone leaves nothing to list; the receipt says so rather than ending empty.
   return found.length === 0 && receipt.commentsOnly === true ? [{ standing: "holds", check: "coverage",
     label: "Nothing to verify", subject: "", detail: "the changes are comments or blank lines only", more: [] }] : found;
+}
+
+/** Attribution limits affect what is known, never the inherited paths' status or the checks' evidence. */
+function fingerprintFindings(receipt: UnitEvidence): Finding[] {
+  return [...([receipt.startState, receipt.endState] as const).flatMap((state, k): Finding[] => state?.status !== "unknown" ? []
+    : [{ standing: "gap", check: "coverage", label: k === 0 ? "Unknown start state" : "Unknown end state", subject: "",
+      detail: `${state.reason}; verification compares against the admission base`, more: [] }]),
+  ...receipt.unmeasured.map(({ path, reason }): Finding => ({ standing: "gap", check: "coverage", label: "Unmeasured", subject: path,
+    detail: reason, more: [] }))];
 }
 
 /**
@@ -591,6 +612,10 @@ function unitLines(receipt: UnitEvidence): string[] {
   }
   const tested = receipt.tests.length > 0 && receipt.tests.every(({ verdict }) => verdict === "proved");
   const listed = [
+    ...fingerprintFindings(receipt).map(({ label, subject, detail }) => `  not measured  ${label}: ${subject}${subject === "" ? "" : ": "}${detail}`),
+    ...receipt.inherited.length === 0 ? [] : [`  inherited     ${receipt.inherited.length} ${receipt.inherited.length === 1 ? "file" : "files"} already uncommitted, not this request's`,
+      ...receipt.inherited.map((path) => `                ${path}`),
+      "                The tests ran with them; an exercise test relying on them may be misjudged against the base."],
     ...receipt.proofs.flatMap(({ path, verdict, evidence }) =>
       [line(path, verdict, evidence, addedAssumptions(evidence.files, receipt.weakened)), `                content sha256 ${evidence.contentHash}`]),
     ...receipt.contracts.flatMap(mutationLines),

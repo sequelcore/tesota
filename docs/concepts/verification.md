@@ -21,6 +21,7 @@ job.
 | Behavior | Owner |
 | --- | --- |
 | The gate and its order | `src/gate.ts` |
+| Request fingerprints and attribution | `src/request-fingerprint.ts` |
 | Evidence and its content hash | `src/evidence.ts` |
 | Proofs and `prove` | `src/verification/lemmascript-verifier.ts`, `src/prove-tool.ts` |
 | Weakened evidence | `src/verification-changes.ts` |
@@ -51,9 +52,28 @@ Tesota records the request's **base**: the commit `HEAD` names. A steer or
 follow-up joins the request already running; what the gate sent back
 resets on your next request.
 
-The changed files are those that differ from the base, deletions excluded,
-plus untracked files Git doesn't ignore. A commit the agent makes hides
-nothing, since the comparison is with the base.
+At the first non-reader tool's `tool_execution_start`, before the tool runs,
+the gate fingerprints each repository: its `HEAD` and the blob IDs of every
+dirty path, including deleted, renamed and untracked files. It uses
+`git status --porcelain=v2 -z --untracked-files=all` and
+`git hash-object --stdin-paths`, without `-w`; optional index refreshes are
+disabled. It writes no objects, refs, index or stash. A new request resets
+the fingerprint; steers, follow-ups and verification continuations keep it.
+
+At settlement it captures again. A repository is eligible if `HEAD` moved,
+a path appeared, disappeared or changed blob, or any path was unmeasured.
+The request's changed paths are those differences plus the files changed
+between the admission base H and the current `HEAD`, deletions included.
+These are **changed during the request (by anyone)**: the gate observes
+results, not authors. A stash removing old dirt counts as a request change,
+even when it restores H's content. A commit hides nothing.
+
+Paths dirty at the start whose blob stayed the same are **inherited**.
+They are not proved or exercised as this request's change. Dirty files over
+10 MiB and files in an untracked directory with 200 or more files are
+**unmeasured**, never unchanged. Git failures or index conflicts make a
+capture **unknown**, with a reason; verification then uses the whole change
+against H and the receipt explains why attribution could not be measured.
 
 **Outside a repository** the base is Tesota's own snapshot of the folder,
 taken as the request starts: Git, with its Git folder in
@@ -80,10 +100,9 @@ The gate runs when a run completes. It verifies only when a tool that may
 change files started during the request: any tool except the built-in
 readers `read`, `grep`, `find` and `ls`. `prove` counts because it regenerates
 proof files. Without such a start, the footer returns to ready, with no
-checks, model call, diff or receipt. Eligible requests still measure each
-unit's whole change against its base, regardless of who changed the files.
-A run that changed nothing and weakened nothing settles without a receipt.
-Otherwise it climbs:
+checks, model call, diff or receipt. If no unit's fingerprint is eligible,
+it also returns to ready without checks, an open-cases call or a receipt.
+Eligible units climb:
 
 1. Prove each changed TypeScript file with `//@` annotations, and each whose
    `.dfy` or `.dfy.gen` changed. A proof maps back to its source as
@@ -141,6 +160,8 @@ and asks the agent to rewrite it.
 From the diff against the base, fixed rules list the changes that may
 weaken the evidence. The agent can't argue one off the list; whether each
 is legitimate is yours to decide. Moving or reindenting a line doesn't count.
+This still includes inherited paths, so weakening left by a stopped or
+unverified earlier request remains visible when a later request changes files.
 
 - **Contracts:** a removed or changed `//@ requires` or `//@ ensures`.
 - **New preconditions:** a `//@ requires` added to a function the base had.
@@ -201,6 +222,9 @@ the temporary folder with the checkout's `node_modules` linked in:
 
 A change to `package.json` or a lockfile leaves the base with the wrong
 dependencies, so no run there gives a verdict.
+Commands run on the real working tree, including inherited changes.
+Exercise still uses H as its base: a test relying on inherited changes may
+be misjudged, which the receipt discloses.
 
 ## Contract strength
 
@@ -270,7 +294,8 @@ entry. It records the base, when the request started and settled,
 Tesota's version and the model; each proof with its verdict and evidence;
 each measured contract; ClaimCheck; the open cases; each command; each
 exercise finding; the weakened evidence; what nothing verified; and the Git
-blob of every file changed from the base.
+blob of every file changed during the request (by anyone), inherited paths,
+unmeasured paths and capture states.
 [Receipt v1](../receipt-v1.md) specifies every field, and
 [Receipts](../guides/receipts.md) how `tesota receipt` writes it for a pull
 request.
@@ -300,6 +325,8 @@ request.
   `✗ Not proved` with Dafny's error and the contract line it points at.
 
 Ctrl+O expands each one to its details.
+Inherited paths occupy one collapsed row in the receipt card, with their
+paths under Ctrl+O. Unknown capture states show their reasons.
 
 ## Proved rules
 
@@ -310,6 +337,7 @@ by `bun run formal:check` on every pull request.
 | --- | --- |
 | `proof-outcome-rule.ts` | How a proof ended, vacuous included |
 | `gate-rule.ts` | Which started tools make a request eligible, what goes back, what is yours, and whether the run continues |
+| `fingerprint-rule.ts` | Whether a repository is eligible and whether each path is a request change, inherited, unmeasured or unchanged |
 | `weakening-rule.ts` | Which annotation changes may weaken the evidence |
 | `selection-rule.ts` | Which functions LemmaScript extracts, `//@ verify` and `//@ skip` included |
 | `test-weakening-rule.ts` | Which changes to a test file may weaken its tests |
