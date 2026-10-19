@@ -14,7 +14,7 @@ const git = (cwd: string, ...args: string[]): void => {
 };
 
 describe("file autocomplete", () => {
-  test("Git lists tracked and untracked files, excludes ignored files, and ranks fuzzy matches", async () => {
+  test("lists tracked and untracked files, excludes ignored files, and ranks fuzzy matches", async () => {
     const cwd = folder();
     git(cwd, "init");
     writeFileSync(join(cwd, ".gitignore"), "ignored-notes.md\n");
@@ -33,21 +33,23 @@ describe("file autocomplete", () => {
       .toEqual(["@local-notes.md"]);
   });
 
-  test("outside Git, lists files and folders but skips dependencies and hidden folders", async () => {
+  test("outside Git, respects ignores and includes hidden files except .git", async () => {
     const cwd = folder();
     for (const name of ["notes", "node_modules", ".hidden", ".git"]) {
       mkdirSync(join(cwd, name));
       writeFileSync(join(cwd, name, "notes.md"), "notes\n");
     }
     writeFileSync(join(cwd, "notes.md"), "notes\n");
+    writeFileSync(join(cwd, ".ignore"), "node_modules/\n");
     const result = await suggest(new FileAutocompleteProvider([], cwd), "@notes");
-    expect(result?.items.map((item) => item.value).sort()).toEqual(["@notes.md", "@notes/", "@notes/notes.md"]);
+    expect(result?.items.map((item) => item.value).sort()).toEqual(["@.hidden/notes.md", "@notes.md", "@notes/", "@notes/notes.md"]);
   });
 
   test("inserts quoted files and folders using pi-tui's completion semantics", async () => {
     const cwd = folder();
     writeFileSync(join(cwd, "my notes.md"), "notes\n");
     mkdirSync(join(cwd, "my folder"));
+    writeFileSync(join(cwd, "my folder", "file.md"), "notes\n");
     const provider = new FileAutocompleteProvider([], cwd);
     for (const [text, value, label, line, col] of [
       ["read @notes", '@"my notes.md"', "my notes.md", 'read @"my notes.md" ', 20],

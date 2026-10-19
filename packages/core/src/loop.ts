@@ -26,7 +26,7 @@ export interface LoopOptions {
   readonly models: Models;
   readonly model: Model<Api>;
   readonly systemPrompt?: string;
-  /** The tools the model may call; read, write, edit and the platform's shell when not given. */
+  /** The tools the model may call; the file tools and platform's shell when not given. */
   readonly tools?: (spool: () => string) => readonly EngineTool[];
   /** Where the session's entries go. */
   readonly writer: SessionWriter;
@@ -169,7 +169,10 @@ export function defaultPrompt(cwd: string, active: readonly EngineTool[]): strin
     : [`- ${name}: ${promptSnippet.replace(/\s+/gu, " ").trim()}`]);
   const rules = [...new Set(active.flatMap(({ promptGuidelines }) => promptGuidelines ?? []).map((rule) => rule.trim())
     .filter((rule) => rule !== ""))].map((rule) => `- ${rule}`);
+  const explorers = active.filter(({ name }) => name === "ls" || name === "find" || name === "grep").map(({ name }) => name);
   return [`You are a coding agent working in ${cwd}. Use the tools to read, change and run what the request needs.`,
+    ...explorers.length > 0 ? [`Use ${explorers.join(", ")} to explore.`
+      + (active.some(({ name }) => name === "bash" || name === "powershell") ? " Use the shell to run commands." : "")] : [],
     ...listed.length > 0 ? [`Available tools:\n${listed.join("\n")}`] : [],
     ...rules.length > 0 ? [`Guidelines:\n${rules.join("\n")}`] : []].join("\n\n");
 }

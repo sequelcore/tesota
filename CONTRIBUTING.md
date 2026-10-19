@@ -13,6 +13,7 @@ first, saying who needs it and how its effect will be shown.
 
 ```sh
 bun install --frozen-lockfile --ignore-scripts
+bun run vendor
 bun run check
 ```
 

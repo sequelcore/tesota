@@ -65,3 +65,10 @@ test("a deletion counts no added lines and a final newline adds no phantom line"
     content: [{ type: "text", text: "Applied 1 edit to a.txt." }] });
   expect(plain(transcript, 80)).toEqual([" ✓ edit a.txt +0 −2"]);
 });
+
+test("a search shows its pattern and where it looks", () => {
+  const transcript = new Transcript(theme);
+  transcript.start({ type: "toolCall", id: "grep", name: "grep", arguments: { pattern: "quesillo", path: "notes" } });
+  transcript.start({ type: "toolCall", id: "find", name: "find", arguments: { pattern: "**/*.md" } });
+  expect(plain(transcript, 80)).toEqual([" ○ grep quesillo in notes", "", " ○ find **/*.md"]);
+});

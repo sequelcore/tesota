@@ -216,6 +216,22 @@ describe("the boundary every call passes", () => {
     { type: string; decision?: string; by?: string });
   const write = (path: string): ScriptStep => ({ tool: "write", args: { path, content: "x" } });
 
+  test("in ask mode ls, find and grep run without asking", async () => {
+    const { created, asked, cwd } = session([
+      { tool: "ls", args: {} }, { tool: "find", args: { pattern: "*.txt" } },
+      { tool: "grep", args: { pattern: "needle" } }, "done",
+    ], "ask", () => "deny");
+    writeFileSync(join(cwd, "notes.txt"), "needle\n");
+    await created.prompt("explore");
+    expect(asked).toEqual([]);
+    const results = created.messages().filter((message) => message.role === "toolResult");
+    expect(results).toHaveLength(3);
+    expect(results.every((message) => message.role === "toolResult" && !message.isError)).toBe(true);
+    expect(entries(created.file).filter(({ type }) => type === "permission")).toMatchObject([
+      { decision: "allow", by: "mode" }, { decision: "allow", by: "mode" }, { decision: "allow", by: "mode" },
+    ]);
+  });
+
   test("in ask mode a write asks: allowed once it runs, and each decision is in the session", async () => {
     const { created, asked, cwd } = session([write("a.txt"), "done"], "ask", () => "once");
     await created.prompt("go");

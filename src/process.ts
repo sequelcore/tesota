@@ -18,6 +18,8 @@ export interface ProcessRun {
 
 /** What else a run may need: text for its standard input, its environment, and on Windows its command line as written. */
 export interface ProcessOptions {
+  /** Standard output apart from errors, for tools that consume a process's records. */
+  readonly onStdout?: (chunk: Buffer) => void;
   readonly input?: string;
   readonly env?: NodeJS.ProcessEnv;
   /** Windows: pass `args` to the process unquoted, as `cmd.exe` needs a command line it reads itself. */
@@ -134,6 +136,7 @@ export async function runProcess(executable: string, args: readonly string[], cw
     got.output = (got.output + text).slice(-outputLimit);
     if (got[stream].length < streamLimit) got[stream] = (got[stream] + text).slice(0, streamLimit);
     onOutput?.(chunk);
+    if (stream === "stdout") options.onStdout?.(chunk);
   };
   const jobs = await windowsJobs();
   const start = Effect.sync(() => {
@@ -155,8 +158,11 @@ export async function runProcess(executable: string, args: readonly string[], cw
   const stop = ({ child, job }: { child: ChildProcess; job: unknown }, exit: Exit.Exit<Option.Option<number | null>, Error>) =>
     Effect.promise(async () => {
       const stopped = !Exit.isSuccess(exit) || Option.isNone(exit.value) || (child.exitCode === null && child.signalCode === null);
+      const closed = stopped && child.pid !== undefined && child.exitCode === null && child.signalCode === null
+        ? new Promise<void>((resolve) => { child.once("close", () => { resolve(); }); }) : Promise.resolve();
       if (stopped && jobs !== undefined && job !== undefined) jobs.TerminateJobObject(job, 1);
       else if (stopped && child.pid !== undefined) await stopTree(child.pid);
+      await closed;
       if (jobs !== undefined && job !== undefined) jobs.CloseHandle(job);
     });
   const run = Effect.acquireUseRelease(start, ({ child }) => {

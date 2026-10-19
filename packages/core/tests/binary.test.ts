@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import manifest from "../package.json" with { type: "json" };
@@ -47,5 +47,8 @@ test("in a binary, the verifier reads TypeScript, Python and Go, and proves a co
   expect(run.stderr).toBe("");
   const read = JSON.parse(run.stdout) as { typescript: number[]; python: number[]; go: number[]; proof: { outcome: string; files: string[] } };
   expect(read).toMatchObject({ typescript: [1], python: [1], go: [1] });
+  expect(read).toMatchObject({ search: { isError: false, text: "clamp.ts:3:export function clamp(value: number, low: number, high: number): number {" } });
+  expect(existsSync(join(process.env["TESOTA_ISOLATED"] ?? "", ".tesota", "ripgrep"))).toBe(true);
+  expect(readdirSync(join(process.env["TESOTA_ISOLATED"] ?? "", ".tesota", "ripgrep"))).toHaveLength(1);
   if (dafny) expect(read.proof).toEqual({ outcome: "passed", files: ["clamp.ts", "clamp.dfy"] });
 }, 300_000);
