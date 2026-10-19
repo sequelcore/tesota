@@ -62,6 +62,14 @@ test("Tesota uses only Effect's stable core modules, never one tagged unstable o
   expect(imports.map((each) => ({ ...each, stability: stability(each.module) })).filter((each) => each.stability !== "stable")).toEqual([]);
 });
 
+test("no proved contract carries a control character, which a shell can leave where `\\result` was and Dafny still verifies", () => {
+  const mangled = [join(root, "src"), join(root, "packages", "core", "src")].flatMap(sources).flatMap((file) =>
+    readFileSync(file, "utf8").split("\n").map((line) => line.replace(/\r$/u, "")).flatMap((line, index) =>
+      line.trimStart().startsWith("//@") && [...line].some((char) => char !== "\t" && (char.codePointAt(0) ?? 0) < 0x20)
+        ? [`${relative(root, file).replaceAll("\\", "/")}:${index + 1}`] : []));
+  expect(mangled).toEqual([]);
+});
+
 test("Tesota imports Effect's modules by their path, never the root, which evaluates the whole package", () => {
   const whole = /import\s+(?!type\s)[^;]*?from\s+["']effect["']|import\(\s*["']effect["']\s*\)/u;
   expect([join(root, "src"), join(root, "packages", "core", "src")].flatMap(sources)
