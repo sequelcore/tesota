@@ -4,6 +4,16 @@ datatype GateVerdict = proved | send_back | no_progress | operator
 
 datatype ProofOutcome = passed | failed | vacuous | timed_out | cancelled | not_started
 
+function toolMayChangeFiles(toolName: string): bool
+{
+  ((((toolName != "read") && (toolName != "grep")) && (toolName != "find")) && (toolName != "ls"))
+}
+
+lemma toolMayChangeFiles_ensures(toolName: string)
+  ensures (toolMayChangeFiles(toolName) <==> ((((toolName != "read") && (toolName != "grep")) && (toolName != "find")) && (toolName != "ls")))
+{
+}
+
 method gateVerdict(outcome: ProofOutcome, failure: string, sent: seq<string>) returns (res: GateVerdict)
   ensures (res.proved? <==> outcome.passed?)
   ensures (res.send_back? <==> ((outcome.failed? || outcome.vacuous?) && !(exists k: nat :: ((k < |sent|) && (sent[k] == failure)))))

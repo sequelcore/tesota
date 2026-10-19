@@ -15,7 +15,7 @@ import { takeSnapshot } from "./snapshot.js";
 import type { CommandRun } from "./test-rung.js";
 import type { FileChange } from "./verification-changes.js";
 import type { Readiness } from "./verification/footer-rule.js";
-import { gateVerdict, keepsWorking } from "./verification/gate-rule.js";
+import { gateVerdict, keepsWorking, toolMayChangeFiles } from "./verification/gate-rule.js";
 import { annotations, proofSources, proveFile } from "./verification/lemmascript-verifier.js";
 import { type Unit, workspaceUnits } from "./workspace.js";
 
@@ -310,9 +310,6 @@ function sessionModel(ctx: Pick<ExtensionContext, "model">): Pick<Receipt, "mode
   return ctx.model === undefined ? {} : { model: `${ctx.model.provider}/${ctx.model.id}` };
 }
 
-/** Built-in tools that only read, and `prove`, whose changes are the proof's own; any other tool may change files. */
-const readOnlyTools = new Set(["read", "grep", "find", "ls", "prove"]);
-
 /** What the gate's current round found so far: proofs, then the commands, then weak contracts. */
 export interface Tally {
   readonly proved: number;
@@ -432,7 +429,10 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
   let start: Promise<Start> | undefined;
   let startedAt: string | undefined;
   pi.on("input", async (event, ctx) => {
-    if (event.source === "extension") return undefined;
+    if (event.streamingBehavior !== undefined) {
+      if (event.source !== "extension") requests.push(event.text);
+      return undefined;
+    }
     sentBack = new Map();
     commandsSentBack = new Map();
     weakSentBack = new Map();
@@ -440,16 +440,16 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     progress.waiting();
     // On the engine the ledger holds the request and its start; the gate reads them as it settles.
     if (recorded !== undefined) return undefined;
-    if (event.streamingBehavior !== undefined) { requests.push(event.text); return undefined; }
     requests = [event.text];
     startedAt = new Date().toISOString();
     start = begin(ctx.cwd);
     await start;
     return undefined;
   });
-  pi.on("tool_execution_start", (event) => { if (!readOnlyTools.has(event.toolName)) mayHaveChanged = true; });
+  pi.on("tool_execution_start", (event) => { if (toolMayChangeFiles(event.toolName)) mayHaveChanged = true; });
   // A run that ends before verification leaves no step running, and says why if it may have changed files.
   pi.on("agent_before_settle", async (event, ctx) => {
+    if (!mayHaveChanged) { progress.reset(); return undefined; }
     await loadChecks();
     const request = recorded?.();
     if (request !== undefined) {
