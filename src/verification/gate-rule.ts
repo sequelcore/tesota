@@ -1,12 +1,12 @@
 import type { ProofOutcome } from "./proof-outcome-rule.js";
 
 /**
- * A started tool may change files unless it is a trusted built-in reader.
+ * A started tool may change files unless it is a trusted built-in reader or question.
  * `prove` regenerates the proof's files, so it makes the request eligible too.
  */
-//@ ensures \result <==> (toolName !== "read" && toolName !== "grep" && toolName !== "find" && toolName !== "ls")
-export function toolMayChangeFiles(toolName: string): boolean {
-  return toolName !== "read" && toolName !== "grep" && toolName !== "find" && toolName !== "ls";
+//@ ensures \result <==> (!nativeQuestion && toolName !== "read" && toolName !== "grep" && toolName !== "find" && toolName !== "ls")
+export function toolMayChangeFiles(toolName: string, nativeQuestion: boolean): boolean {
+  return !nativeQuestion && toolName !== "read" && toolName !== "grep" && toolName !== "find" && toolName !== "ls";
 }
 
 /**

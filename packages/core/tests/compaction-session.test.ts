@@ -13,6 +13,8 @@ import { createSession, type EngineSession, openSession, type SessionOptions } f
  */
 const folder = (prefix: string): string => mkdtempSync(join(tmpdir(), prefix));
 const request = "Write the six notes, then say done. Keep each note's text exactly as I wrote it: lowercase, no headings.";
+// Leave room for the built-in tool declarations before the growing conversation crosses the margin.
+const smallWindow = 4_000;
 
 /** A reply for the main conversation: a tool call, plain text, or a provider error. */
 type Step = { readonly write: string } | { readonly text: string } | { readonly error: string };
@@ -79,7 +81,7 @@ describe("compaction", () => {
   }
 
   test("past the margin the older turns become a summary, the tail stays verbatim and the request stays exact", async () => {
-    const model = scripted([...writes(6), { text: "done" }], ["## Goal\nwrite notes"], 3_000);
+    const model = scripted([...writes(6), { text: "done" }], ["## Goal\nwrite notes"], smallWindow);
     const verified: { request?: string | undefined } = {};
     const created = session(model, undefined, verified);
     await created.prompt(request);
@@ -99,7 +101,7 @@ describe("compaction", () => {
   });
 
   test("a second compaction merges into the first summary, and a resumed session holds the same conversation", async () => {
-    const model = scripted([...writes(12), { text: "done" }], ["## Goal\nfirst summary", "## Goal\nsecond summary"], 3_000);
+    const model = scripted([...writes(12), { text: "done" }], ["## Goal\nfirst summary", "## Goal\nsecond summary"], smallWindow);
     const created = session(model);
     await created.prompt(request);
     const summaries = model.seen.filter(({ summary }) => summary);
@@ -124,14 +126,14 @@ describe("compaction", () => {
   });
 
   test("a summary that fails twice, or comes out larger than what it replaced, ends the run as an error saying why", async () => {
-    const failing = scripted([...writes(6), { text: "done" }], [{ error: "quota exhausted" }, { error: "quota exhausted" }], 3_000);
+    const failing = scripted([...writes(6), { text: "done" }], [{ error: "quota exhausted" }, { error: "quota exhausted" }], smallWindow);
     const first = session(failing);
     await first.prompt(request);
     expect(first.outcome()).toBe("error");
     expect(entries(first.file).findLast(({ type }) => type === "run_end")?.reason).toBe("compaction failed twice: quota exhausted");
     // A larger summary ends it at once, with no second try.
     const huge = "## Goal\n" + "too long ".repeat(5_000);
-    const larger = scripted([...writes(6), { text: "done" }], [huge, "## Goal\nshort"], 3_000);
+    const larger = scripted([...writes(6), { text: "done" }], [huge, "## Goal\nshort"], smallWindow);
     const second = session(larger);
     await second.prompt(request);
     expect(second.outcome()).toBe("error");
@@ -141,7 +143,7 @@ describe("compaction", () => {
   });
 
   test("the summary's tokens count in the session's usage", async () => {
-    const model = scripted([...writes(6), { text: "done" }], ["## Goal\nwrite notes"], 3_000);
+    const model = scripted([...writes(6), { text: "done" }], ["## Goal\nwrite notes"], smallWindow);
     const created = session(model);
     await created.prompt(request);
     const replies = entries(created.file).filter(({ type }) => type === "assistant").length;
@@ -173,7 +175,7 @@ describe("compaction", () => {
     const reply = (id: string, stopReason: string) => ({ role: "assistant", content: [{ type: "toolCall", id, name: "write",
       arguments: { path: `${id}.txt`, content: "x" } }], api: "faux", provider: "faux", model: "small", usage, stopReason, timestamp: 0 });
     const lines = [
-      { type: "session", format: "tesota-session", version: 2, id: "repaired", cwd, createdAt: new Date(0).toISOString() },
+      { type: "session", format: "tesota-session", version: 3, id: "repaired", cwd, createdAt: new Date(0).toISOString() },
       { type: "request", run: 1, text: request, origin: "interactive", at: new Date(0).toISOString(), base: { units: [] } },
       { type: "assistant", run: 1, message: reply("first", "toolUse") },
       { type: "tool_result", run: 1, message: { role: "toolResult", toolCallId: "first", toolName: "write",
@@ -223,7 +225,7 @@ describe("compaction", () => {
   });
 
   test("a summary's tokens are written down, so a resumed session counts them too", async () => {
-    const model = scripted([...writes(6), { text: "done" }], ["## Goal\nwrite notes"], 3_000);
+    const model = scripted([...writes(6), { text: "done" }], ["## Goal\nwrite notes"], smallWindow);
     const created = session(model);
     await created.prompt(request);
     const live = created.stats().tokens;

@@ -14,6 +14,7 @@ import {
 } from "./session-file.ts";
 import { lockSession } from "./session-lock.ts";
 import { bindWorkspace, reopenWorkspace, type Workspace } from "./workspace.ts";
+import { clarificationText, type Clarification, type RequestInput } from "../../../src/clarification.ts";
 
 /** An amendment as the ledger keeps it; `delivered` once it entered the conversation. */
 export interface LedgerAmendment {
@@ -33,6 +34,8 @@ export interface LedgerRequest {
   readonly at: string;
   readonly base: Base;
   readonly amendments: readonly LedgerAmendment[];
+  /** Every accepted request input in the order it entered the durable journal. */
+  readonly inputs: readonly RequestInput[];
 }
 
 /** A session of the engine: the contract's, plus its file and its request ledger. */
@@ -87,6 +90,7 @@ interface Reply {
   readonly intended: Set<string>;
   readonly seen: Set<string>;
   readonly repaired: Set<string>;
+  readonly clarifications: Map<string, Clarification>;
 }
 
 /** The replies of every run, with their calls' intents, results and repairs. */
@@ -99,13 +103,15 @@ function repliesOf(entries: readonly SessionEntry[]): Reply[] {
     if (entry.type === "assistant") {
       const index = counts.get(entry.run) ?? 0;
       counts.set(entry.run, index + 1);
-      const reply: Reply = { run: entry.run, index, intended: new Set(), seen: new Set(), repaired: new Set(),
+      const reply: Reply = { run: entry.run, index, intended: new Set(), seen: new Set(), repaired: new Set(), clarifications: new Map(),
         calls: entry.message.content.filter((part): part is ToolCall => part.type === "toolCall") };
       replies.push(reply);
       latest.set(entry.run, reply);
       byIndex.set(`${entry.run}:${index}`, reply);
     } else if (entry.type === "call_intent") latest.get(entry.run)?.intended.add(entry.callId);
     else if (entry.type === "tool_result") latest.get(entry.run)?.seen.add(entry.message.toolCallId);
+    else if (entry.type === "clarification") byIndex.get(`${entry.run}:${entry.clarification.reply}`)?.clarifications.set(entry.clarification.callId,
+      entry.clarification);
     else if (entry.type === "reconciliation") byIndex.get(`${entry.run}:${entry.reply}`)?.repaired.add(entry.callId);
   }
   return replies;
@@ -121,6 +127,13 @@ function repliesOf(entries: readonly SessionEntry[]): Reply[] {
 export function recovery(entries: readonly SessionEntry[]): SessionEntry[] {
   const added: SessionEntry[] = [];
   for (const reply of repliesOf(entries)) {
+    for (const call of reply.calls) {
+      const clarification = reply.clarifications.get(call.id);
+      if (clarification === undefined || call.name !== "ask_user" || reply.seen.has(call.id)) continue;
+      added.push({ type: "tool_result", run: reply.run, message: toolResult(call,
+        { text: clarificationText(clarification), isError: false }) });
+      reply.seen.add(call.id);
+    }
     const kinds = repairs(reply.calls.map((call) => reply.seen.has(call.id)), reply.calls.map((call) => reply.intended.has(call.id)),
       reply.calls.map((call) => reply.repaired.has(call.id)));
     reply.calls.forEach((call, at) => {
@@ -150,20 +163,74 @@ function conversation(entries: readonly SessionEntry[]): Pick<LoopState, "histor
   const history: HistoryMessage[] = [];
   let ledger: HistoryMessage[] = [];
   let compacted: LoopState["compacted"];
-  const amendments = new Map<number, string>();
+  const amendments = new Map<number, { readonly text: string; readonly order: number }>();
+  const inputOrder = new Map<HistoryMessage, number>();
+  const pendingContext: HistoryMessage[] = [];
   /** Each reply by its run and its place in the run, so a repair written later finds it. */
   const replies = new Map<string, HistoryMessage>();
+  const replyCalls = new Map<string, Set<string>>();
+  const replySeen = new Map<string, Set<string>>();
+  const latestReply = new Map<number, number>();
+  const clarificationContext = new Map<string, HistoryMessage[]>();
   const counts = new Map<number, number>();
-  for (const entry of entries) {
+  const completeReply = (key: string): void => {
+    const context = clarificationContext.get(key);
+    const calls = replyCalls.get(key);
+    const seen = replySeen.get(key);
+    if (context === undefined || calls === undefined || ![...calls].every((call) => seen?.has(call))) return;
+    pendingContext.push(...context);
+    clarificationContext.delete(key);
+  };
+  const flushContext = (): void => {
+    const byOrder = (a: HistoryMessage, b: HistoryMessage): number => (inputOrder.get(a) ?? 0) - (inputOrder.get(b) ?? 0);
+    ledger.sort(byOrder);
+    pendingContext.sort(byOrder);
+    history.push(...pendingContext.splice(0));
+  };
+  const retainClarification = (entry: Extract<SessionEntry, { readonly type: "clarification" }>, order: number): void => {
+    const clarification: HistoryMessage = { role: "user", content: clarificationText(entry.clarification), timestamp: Date.parse(entry.clarification.at) };
+    ledger.push(clarification);
+    inputOrder.set(clarification, order);
+    const key = `${entry.run}:${entry.clarification.reply}`;
+    clarificationContext.set(key, [...clarificationContext.get(key) ?? [], clarification]);
+  };
+  const deliverAmendment = (entry: Extract<SessionEntry, { readonly type: "delivered" }>, order: number): void => {
+    const amendment = amendments.get(entry.amendment);
+    const delivered: HistoryMessage = { role: "user", content: amendment?.text ?? "", timestamp: 0 };
+    ledger.push(delivered);
+    inputOrder.set(delivered, amendment?.order ?? order);
+    pendingContext.push(delivered);
+  };
+  const rememberReply = (entry: Extract<SessionEntry, { readonly type: "assistant" }>): void => {
+    const index = counts.get(entry.run) ?? 0;
+    counts.set(entry.run, index + 1);
+    const key = `${entry.run}:${index}`;
+    replies.set(key, entry.message);
+    latestReply.set(entry.run, index);
+    replyCalls.set(key, new Set(entry.message.content.flatMap((part) => part.type === "toolCall" ? [part.id] : [])));
+    replySeen.set(key, new Set());
+    history.push(entry.message);
+  };
+  const acceptResult = (entry: Extract<SessionEntry, { readonly type: "tool_result" }>): void => {
+    history.push(entry.message);
+    const index = latestReply.get(entry.run);
+    if (index === undefined) return;
+    const key = `${entry.run}:${index}`;
+    replySeen.get(key)?.add(entry.message.toolCallId);
+    completeReply(key);
+  };
+  for (const [order, entry] of entries.entries()) {
+    if (["assistant", "request", "settle", "run_end", "compaction"].includes(entry.type)) flushContext();
     if (entry.type === "request") {
       const asked: HistoryMessage = { role: "user", content: entry.text, timestamp: Date.parse(entry.at) };
       ledger = [asked];
+      inputOrder.set(asked, order);
       history.push(asked);
-    } else if (entry.type === "amendment") amendments.set(entry.id, entry.text);
+    } else if (entry.type === "amendment") amendments.set(entry.id, { text: entry.text, order });
     else if (entry.type === "delivered") {
-      const delivered: HistoryMessage = { role: "user", content: amendments.get(entry.amendment) ?? "", timestamp: 0 };
-      ledger.push(delivered);
-      history.push(delivered);
+      deliverAmendment(entry, order);
+    } else if (entry.type === "clarification") {
+      retainClarification(entry, order);
     } else if (entry.type === "reconciliation") {
       // A repair goes after the other results of its reply, in the order repairs were written: a compaction
       // written before it kept what the session held then, and a reply it summarized takes its repair with it.
@@ -174,22 +241,25 @@ function conversation(entries: readonly SessionEntry[]): Pick<LoopState, "histor
       while (history[after]?.role === "toolResult") after += 1;
       history.splice(after, 0,
         toolResult({ id: entry.callId, name: entry.toolName }, { text: repairText[entry.repair], isError: true }, 0));
+      const key = `${entry.run}:${entry.reply}`;
+      replySeen.get(key)?.add(entry.callId);
+      completeReply(key);
     } else if (entry.type === "compaction") {
       const files = { read: entry.read, changed: entry.changed };
       const cut = Math.max(0, history.length - entry.kept);
       history.splice(0, cut, compactedHead(ledger, entry.summary, files, history.slice(cut)));
       compacted = { summary: entry.summary, files, counted: history.length };
     } else if (entry.type === "assistant") {
-      const index = counts.get(entry.run) ?? 0;
-      counts.set(entry.run, index + 1);
-      replies.set(`${entry.run}:${index}`, entry.message);
-      history.push(entry.message);
-    } else if (entry.type === "tool_result") history.push(entry.message);
+      rememberReply(entry);
+    } else if (entry.type === "tool_result") {
+      acceptResult(entry);
+    }
     else if (entry.type === "custom_message") {
       const { customType, content, display, details } = entry;
       history.push({ role: "custom", customType, content, display, ...details === undefined ? {} : { details }, timestamp: 0 });
     }
   }
+  flushContext();
   return { history, ledger, ...compacted === undefined ? {} : { compacted } };
 }
 
@@ -202,6 +272,9 @@ function ledgerOf(entries: readonly SessionEntry[]): LedgerRequest[] {
       id: amendment.id, behavior: amendment.behavior, origin: amendment.origin, text: amendment.text, at: amendment.at,
       delivered: delivered.has(amendment.id),
     }]),
+    inputs: entries.flatMap((input): RequestInput[] => (input.type === "active_tools" || input.run !== entry.run) ? []
+      : input.type === "amendment" ? [{ kind: "amendment", origin: input.origin, text: input.text }]
+        : input.type === "clarification" ? [{ kind: "clarification", clarification: input.clarification }] : []),
   }]);
 }
 
@@ -237,9 +310,21 @@ function stateOf(entries: readonly SessionEntry[]): LoopState {
 function engineSession(file: string, release: () => void, entries: SessionEntry[], options: OpenOptions, workspace: Workspace,
   opened: boolean): EngineSession {
   const written = sessionWriter(file);
+  const staged: SessionEntry[] = [];
+  let poisoned: Error | undefined;
+  const fail = (error: unknown): never => {
+    poisoned ??= error instanceof Error ? error : new Error(String(error));
+    throw poisoned;
+  };
   const recording: SessionWriter = {
-    append: (entry) => { written.append(entry); entries.push(entry); },
-    sync: () => { written.sync(); },
+    append: (entry) => {
+      if (poisoned !== undefined) throw poisoned;
+      try { written.append(entry); staged.push(entry); } catch (error) { return fail(error); }
+    },
+    sync: () => {
+      if (poisoned !== undefined) throw poisoned;
+      try { written.sync(); entries.push(...staged.splice(0)); } catch (error) { return fail(error); }
+    },
     close: () => { written.close(); },
   };
   const request = (): LedgerRequest | undefined => ledgerOf(entries).at(-1);
@@ -261,6 +346,14 @@ function engineSession(file: string, release: () => void, entries: SessionEntry[
     ledger: () => ledgerOf(entries),
     workspace: { cwd, checkout, ...worktree === undefined ? {} : { worktree }, ...branch === undefined ? {} : { branch } },
     kept: () => kept,
+    prompt: async (text, prompt) => {
+      if (poisoned !== undefined) throw poisoned;
+      return await loop.prompt(text, prompt);
+    },
+    compact: async () => {
+      if (poisoned !== undefined) throw poisoned;
+      return await loop.compact();
+    },
     dispose: () => disposed ??= loop.dispose().finally(() => {
       release();
       kept = workspace.release();

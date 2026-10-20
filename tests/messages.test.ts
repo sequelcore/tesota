@@ -59,6 +59,19 @@ const attention: Receipt = { ...clean,
     { path: "src/clamp.ts", kind: "removed_contract", annotation: "//@ ensures \\result >= lo && \\result <= hi" }],
   unverified: ["src/format.ts"], uncovered: [{ path: "src/range.ts", lines: [[9, 14]] }] };
 
+it("keeps clarification context outside evidence and expands its exact submitted text", () => {
+  const receipt: Receipt = { ...clean, clarifications: [{ reply: 0, callId: "clarify", at: "2026-10-20T00:00:00.000Z",
+    questions: [{ question: "Which version?", options: [
+      { label: "Three", description: "Use version three." }, { label: "Two", description: "Use version two." },
+    ] }], answers: [{ selected: [0], text: "Explain first." }] }] };
+  const collapsed = shown("tesota-receipt", receipt, 80).join("\n");
+  expect(collapsed).toContain("1 request clarification");
+  expect(collapsed).not.toContain("Explain first.");
+  const expanded = shown("tesota-receipt", receipt, 40, true).join("\n");
+  expect(expanded).toContain("Explain first.");
+  expect(expanded).toContain("not evidence or acceptance");
+});
+
 it("wraps a line under its own text, cutting a word longer than the row", () => {
   expect(hang("  label         one two three four", 22, 16)).toEqual(["  label         one", "                two", "                three",
     "                four"]);

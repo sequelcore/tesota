@@ -1,4 +1,5 @@
 import { type Evidence, proofSummary } from "./evidence.js";
+import { clarificationText, type Clarification } from "./clarification.js";
 import type { OpenCases } from "./open-cases.js";
 import { inFolder } from "./projects.js";
 import type { UncoveredLines } from "./proof-coverage.js";
@@ -92,6 +93,8 @@ export interface Receipt {
    * when the operator turned the list off.
    */
   readonly openCases?: OpenCases;
+  /** Submitted operator input that qualified the request; neither check evidence nor acceptance. */
+  readonly clarifications?: readonly Clarification[];
 }
 
 /** What a receipt records for one repository or folder; the receipt itself is one, for the folder Pi runs in. */
@@ -185,8 +188,9 @@ export function allEvidence(receipt: Receipt): UnitEvidence {
  */
 export function unitReceipt(receipt: Receipt, folder: string): Receipt | undefined {
   const unit = receipt.units?.find((candidate) => candidate.folder === folder && candidate.repository);
-  const { version, startedAt, settledAt, engine, model } = receipt;
-  return unit === undefined ? undefined : { ...unit, version, startedAt, settledAt, engine, ...model === undefined ? {} : { model } };
+  const { version, startedAt, settledAt, engine, model, clarifications } = receipt;
+  return unit === undefined ? undefined : { ...unit, version, startedAt, settledAt, engine, ...model === undefined ? {} : { model },
+    ...clarifications === undefined ? {} : { clarifications } };
 }
 
 /** How a folder in no repository is named: the folder the session runs in holds only its own files there. */
@@ -584,17 +588,28 @@ export function receiptStanding(receipt: Receipt): "verified" | "incomplete" | "
 
 /** The receipt as the operator reads it; `details` of its session entry carries the receipt itself. */
 export function renderReceipt(receipt: Receipt): string {
-  return ["Tesota receipt", ...receiptLines(receipt)].join("\n");
+  return ["Tesota receipt", ...receiptLines(receipt), ...receiptClarificationLines(receipt)].join("\n");
 }
+
+/** Request context is separate from findings, so it cannot affect evidence counts or verdicts. */
+export function receiptClarificationLines(receipt: Pick<Receipt, "clarifications">): string[] {
+  return (receipt.clarifications ?? []).flatMap((clarification) => ["",
+    "Request clarification (operator input, not evidence or acceptance)", ...clarificationText(clarification).split("\n")]);
+}
+
+const markdownText = (text: string): string => text.replace(/[\\`*_{}[\]()#+!|<>~-]/gu, "\\$&");
 
 /** The same evidence as wrapping Markdown for chat hosts; the TUI reads structured details. */
 export function renderReceiptMessage(receipt: Receipt): string {
   const rows = receiptLines(receipt).map((row) => {
     const label = row.slice(2, 16).trim();
-    const text = row.slice(16).replace(/[\\`*_{}[\]()#+!|<>~-]/gu, "\\$&").replace(/\n/gu, "\n  ");
+    const text = markdownText(row.slice(16)).replace(/\n/gu, "\n  ");
     return label === "" ? `  - ${text}` : `- **${label}** — ${text}`;
   });
-  return ["## Tesota receipt", rows.join("\n"), "This is check evidence, not your acceptance."].join("\n\n");
+  const clarifications = receiptClarificationLines(receipt);
+  return ["## Tesota receipt", rows.join("\n"),
+    ...clarifications.length === 0 ? [] : [clarifications.map((line) => `> ${markdownText(line)}`).join("\n")],
+    "This is check evidence, not your acceptance."].join("\n\n");
 }
 
 /** Shared evidence wording for terminal text and chat Markdown. */

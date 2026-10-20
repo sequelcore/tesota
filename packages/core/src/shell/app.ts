@@ -23,6 +23,7 @@ import { type Confirmation, type Shell, startShell } from "./shell.ts";
 import { diffLines } from "./transcript.ts";
 import { createSurface, footerData, shellHost, type Surface } from "./surface.ts";
 import { shellTheme } from "../../../../src/theme.ts";
+import type { QuestionResponder } from "../questions.ts";
 
 export interface AppOptions {
   readonly cwd: string;
@@ -157,6 +158,24 @@ export async function runApp(options: AppOptions): Promise<void> {
   };
   /** Settles once the servers started, or were left out; `/mcp` waits for it. */
   let serversStarted: Promise<void> = Promise.resolve();
+  /** The shell callback bound to one live session: hidden questions register without blocking `attach`. */
+  const questionsFor = (live: Live): QuestionResponder => (asked, submit, finish) => {
+    live.pendingQuestions++;
+    live.state = "waiting";
+    showStatuses();
+    shell.redraw();
+    const release = shell.askUser(live.session, asked, submit, finish);
+    return () => {
+      release();
+      live.pendingQuestions = Math.max(0, live.pendingQuestions - 1);
+      if (live.pendingQuestions === 0 && live.waiting.length === 0 && live.state === "waiting") {
+        live.state = "working";
+        if (live === attached) shell.busy("working");
+      }
+      showStatuses();
+      shell.redraw();
+    };
+  };
   const sessionOptions = (live: Live) => ({ models, model: model ?? models.getModels()[0] as Model<Api>, verifier, surface: live.surface,
     hooks: () => hooks, mcp: () => serversIn(live.session.workspace.cwd), ...options.flags === undefined ? {} : { flags: options.flags },
     mode: "tui",
@@ -169,11 +188,11 @@ export async function runApp(options: AppOptions): Promise<void> {
         showStatuses();
         shell.redraw();
       });
-    } },
+    } }, questions: questionsFor(live),
     ...settings.thinkingLevel === undefined ? {} : { thinkingLevel: settings.thinkingLevel } });
   /** A session the shell runs, made by `open` with its own surface, and followed for the dashboard. */
   const live = (open: (made: Live) => EngineSession): Live => {
-    const made = { surface: createSurface(theme), state: "idle", startedAt: Date.now(), waiting: [] } as unknown as Live;
+    const made = { surface: createSurface(theme), state: "idle", startedAt: Date.now(), waiting: [], pendingQuestions: 0 } as unknown as Live;
     made.session = open(made);
     follow(made);
     lives.push(made);
@@ -193,7 +212,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     const held = last?.role === "custom" ? last.details : undefined;
     if (isReceipt(held)) made.verification = receiptStanding(held as Receipt); else delete made.verification;
     made.unsubscribe = made.session.subscribe((event) => {
-      if (event.type === "state") made.state = made.waiting.length > 0 ? "waiting" : event.state === "settling" ? "verifying" : "working";
+      if (event.type === "state") made.state = made.waiting.length > 0 || made.pendingQuestions > 0 ? "waiting" : event.state === "settling" ? "verifying" : "working";
       else if (event.type === "ended") {
         made.state = "ended";
         made.outcome = event.outcome;
@@ -211,7 +230,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     showStatuses();
     shell.show(next.session, next.surface, next.state === "working" ? "working" : next.state === "verifying" ? "settling" : undefined);
     for (const { put } of next.waiting.splice(0)) await put();
-    if (next.state === "waiting") {
+    if (next.state === "waiting" && next.pendingQuestions === 0 && next.waiting.length === 0) {
       // Its run goes on once answered, without an event to say so: the shell shows it working, so Esc stops it.
       next.state = "working";
       if (next === attached) shell.busy("working");
@@ -229,6 +248,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     if (at < 0) return;
     lives.splice(at, 1);
     gone.unsubscribe();
+    shell.cancelQuestions(gone.session, "The session was closed.");
     for (const { refuse } of gone.waiting.splice(0)) refuse();
     await gone.session.dispose();
     const kept = gone.session.kept();
@@ -516,6 +536,8 @@ interface Live {
   readonly startedAt: number;
   /** Questions it holds for the operator: put when it is shown, refused when it closes. */
   readonly waiting: { readonly put: () => Promise<void>; readonly refuse: () => void }[];
+  /** Native clarification callbacks waiting for their session's live run. */
+  pendingQuestions: number;
   unsubscribe: () => void;
 }
 

@@ -8,6 +8,7 @@ import type { TuiMode } from "../src/settings.ts";
 import { createSession, type EngineSession } from "../src/session.ts";
 import { type Shell, startShell } from "../src/shell/shell.ts";
 import { createSurface, type Surface } from "../src/shell/surface.ts";
+import type { ClarificationQuestion } from "../../../src/clarification.ts";
 import { shellTheme } from "../../../src/theme.ts";
 import type { ScriptStep } from "./engine.ts";
 import { accepts, scriptedReply } from "./scripted.ts";
@@ -52,6 +53,10 @@ async function settled(session: EngineSession): Promise<void> {
 }
 
 const shown = (lines: readonly string[]): string => lines.join("\n");
+const choices: readonly ClarificationQuestion[] = [{ question: "Which path should the agent take?", options: [
+  { label: "conservative", description: "make the smallest change" },
+  { label: "complete", description: "implement the full requested path" },
+], recommended: 0 }];
 
 describe("the shell", () => {
   test("slash suggestions stay on the mounted editor when a surface replaces it", async () => {
@@ -303,5 +308,101 @@ describe("the shell", () => {
     await terminal.until("Press Ctrl+C again");
     terminal.type("\x1b[99;5u");
     await shell.stopped;
+  });
+
+  test("a question does not select its recommendation, and submits only after its explicit submit action", async () => {
+    const { terminal, shell, session } = shellOn([]);
+    const submitted: unknown[] = [];
+    const release = shell.askUser(session, choices, (answers) => { submitted.push(answers); return undefined; }, () => undefined);
+    const before = await terminal.until("recommended");
+    expect(before).toContain("[ ] conservative (recommended)");
+    terminal.type("2");
+    terminal.type("\t");
+    terminal.type("\t");
+    terminal.type(enter);
+    expect(submitted).toEqual([[{ selected: [1] }]]);
+    release();
+    await terminal.untilGone("Answer the agent");
+  });
+
+  test("a multiple-choice answer keeps its selected options and supplemental text", async () => {
+    const { terminal, shell, session } = shellOn([], "fullscreen", [36, 24]);
+    const submitted: unknown[] = [];
+    const release = shell.askUser(session, [{ question: "Pick every useful input for a narrow terminal.", multiple: true, options: [
+      { label: "first", description: "first option" }, { label: "second", description: "second option" },
+    ] }], (answers) => { submitted.push(answers); return undefined; }, () => undefined);
+    await terminal.until("Pick every useful");
+    terminal.type("1");
+    terminal.type("2");
+    terminal.type("\t");
+    terminal.type("operator context");
+    terminal.type("\t");
+    terminal.type(enter);
+    expect(submitted).toEqual([[{ selected: [0, 1], text: "operator context" }]]);
+    expect((await terminal.screen()).every((line) => line.length <= 36)).toBe(true);
+    release();
+  });
+
+  test("model control characters cannot repaint the question's selection chrome", async () => {
+    const { terminal, shell, session } = shellOn([]);
+    const submitted: unknown[] = [];
+    const label = `${"\b".repeat(12)}\x1b[31mForged\x1b[0m\x07\u009b`;
+    const release = shell.askUser(session, [{ question: "Safe\x1b[2J question\b", options: [
+      { label, description: "Description\x07\u009b" }, { label: "Ordinary", description: "Normal choice." },
+    ] }], (answers) => { submitted.push(answers); return undefined; }, () => undefined);
+    const screen = await terminal.until("Forged");
+    expect(screen).toContain(`› 1. [ ] ${"�".repeat(12)}Forged��`);
+    expect(terminal.written).not.toContain(label);
+    terminal.type("2"); terminal.type("\t"); terminal.type("\t"); terminal.type(enter);
+    expect(submitted).toEqual([[{ selected: [1] }]]);
+    release();
+  });
+
+  test("a question draft survives two session switches and a late release cannot submit it", async () => {
+    const first = shellOn([]);
+    const second = shellOn([]);
+    const submitted: unknown[] = [];
+    const release = first.shell.askUser(first.session, choices, (answers) => { submitted.push(answers); return undefined; }, () => undefined);
+    await first.terminal.until("Answer the agent");
+    first.terminal.type("2");
+    first.shell.show(second.session);
+    first.shell.show(first.session);
+    expect(await first.terminal.until("[x] complete")).toContain("[ ] conservative");
+    first.shell.show(second.session);
+    release();
+    first.shell.show(first.session);
+    await first.terminal.untilGone("Answer the agent");
+    first.terminal.type("2\t\t\r");
+    expect(submitted).toEqual([]);
+  });
+
+  test.each(["fullscreen", "inline"] as const)("long questions scroll through every option and keep the active field visible (%s)", async (mode) => {
+    const { terminal, shell, session } = shellOn([], mode, [36, 24]);
+    const batch = Array.from({ length: 3 }, (_, q) => ({ question: `Question body ${q}`, options: Array.from({ length: 4 }, (_, o) => ({
+      label: `Choice ${q}-${o}`, description: `${"context ".repeat(140)}END ${q}-${o}`,
+    })) }));
+    const submitted: unknown[] = [];
+    const release = shell.askUser(session, batch, (answers) => { submitted.push(answers); return undefined; }, () => undefined);
+    for (let q = 0; q < 3; q++) {
+      await terminal.until(`Question ${q + 1}/3`);
+      for (let o = 0; o < 4; o++) {
+        await terminal.until(`› ${o + 1}. [ ] Choice ${q}-${o}`);
+        let visible = false;
+        for (let page = 0; page < 5 && !visible; page++) {
+          terminal.type("\x1b[6~");
+          await new Promise((resolve) => setTimeout(resolve, 25));
+          visible = (await terminal.screen()).some((line) => line.includes(`END ${q}-${o}`));
+        }
+        expect(visible).toBe(true);
+        if (o < 3) terminal.type("\x1b[B");
+      }
+      terminal.type("4");
+      if (q < 2) terminal.type("\x1b[C");
+    }
+    terminal.type("\t"); await terminal.until("Text:");
+    terminal.type("\t"); await terminal.until("› [Submit answers]");
+    terminal.type(enter);
+    expect(submitted).toEqual([[{ selected: [3] }, { selected: [3] }, { selected: [3] }]]);
+    release();
   });
 });

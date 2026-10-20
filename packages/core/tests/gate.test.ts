@@ -41,6 +41,42 @@ type Receipt = import("../../../src/receipt.ts").Receipt;
  * an extension that tries to silence it.
  */
 const open: EngineSession[] = [];
+
+test("the native question's saved answer reaches the mandatory gate and its receipt", async () => {
+  const cwd = repository();
+  let released = 0;
+  const questions = [{ question: "Which behavior?", options: [
+    { label: "A", description: "Use behavior A." }, { label: "B", description: "Use behavior B." },
+  ] }];
+  const session = gated(cwd, [{ tool: "ask_user", args: { questions } },
+    { tool: "write", args: { path: "new.txt", content: "A\n" } }, "done"], {
+    questions: (_batch, submit) => {
+      expect(submit([{ selected: [0], text: "Keep this qualifier exactly." }])).toBeUndefined();
+      return () => { released++; };
+    },
+  });
+  await session.prompt("Choose the behavior and write it.");
+  expect(session.outcome()).toBe("completed");
+  expect(released).toBe(1);
+  expect(receiptOf(session)?.clarifications).toMatchObject([{ reply: 0, questions,
+    answers: [{ selected: [0], text: "Keep this qualifier exactly." }] }]);
+  expect(session.ledger()[0]?.inputs).toMatchObject([{ kind: "clarification",
+    clarification: { answers: [{ selected: [0], text: "Keep this qualifier exactly." }] } }]);
+});
+
+test("an answered question without project changes does not manufacture verification evidence", async () => {
+  const cwd = repository();
+  const session = gated(cwd, [{ tool: "ask_user", args: { questions: [{ question: "Which behavior?", options: [
+    { label: "A", description: "Use A." }, { label: "B", description: "Use B." },
+  ] }] } }, "explained"], { questions: (_batch, submit) => {
+    expect(submit([{ selected: [1] }])).toBeUndefined();
+    return () => undefined;
+  } });
+  await session.prompt("Explain the choices.");
+  expect(session.outcome()).toBe("completed");
+  expect(receiptOf(session)).toBeUndefined();
+  expect(session.ledger()[0]?.inputs).toHaveLength(1);
+});
 beforeEach(() => { proofs.clear(); });
 afterEach(async () => { await Promise.all(open.splice(0).map((session) => session.dispose())); });
 

@@ -23,6 +23,10 @@ import { contextFiles, instructionsText, skillCatalog, skills } from "./instruct
 import { judge, type Mode, type Rules } from "./permissions.ts";
 import type { EngineTool, ToolOutput } from "./tool.ts";
 import { codingTools } from "./tools/index.ts";
+import { isNativeAskTool } from "./tools/ask.ts";
+import { askQuestions, type QuestionResponder } from "./questions.ts";
+import type { Clarification, ClarificationAnswer, ClarificationQuestion } from "../../../src/clarification.ts";
+import { clarificationText } from "../../../src/clarification.ts";
 
 export interface LoopOptions {
   /** The session's folder: tools resolve paths and run commands from here. */
@@ -74,6 +78,8 @@ export interface LoopOptions {
   readonly sessionId?: string;
   /** The MCP servers' tools (#459), read before each request; none when not given or while it gives none. */
   readonly mcp?: () => McpTools | undefined;
+  /** The terminal's explicit operator-question bridge; absent in print and headless runs. */
+  readonly questions?: QuestionResponder;
 }
 
 /** The tools of the MCP servers a session reaches (#459). */
@@ -251,9 +257,14 @@ function endedBy(exit: Exit.Exit<Ended>): Ended {
 async function execute(tools: readonly EngineTool[], call: ToolCall, signal: AbortSignal): Promise<ToolOutput> {
   const tool = tools.find((candidate) => candidate.name === call.name);
   if (tool === undefined) return { text: `Tool "${call.name}" not found.`, isError: true };
+  let args: unknown;
   try {
-    return await tool.execute(validateToolArguments(tool, call) as never, signal, call.id);
+    args = validateToolArguments(tool, call);
   } catch (error) {
+    return { text: error instanceof Error ? error.message : String(error), isError: true };
+  }
+  if (isNativeAskTool(tool)) return await tool.execute(args as never, signal, call.id);
+  try { return await tool.execute(args as never, signal, call.id); } catch (error) {
     return { text: error instanceof Error ? error.message : String(error), isError: true };
   }
 }
@@ -385,6 +396,7 @@ interface Queued {
   readonly id: number;
   readonly behavior: Behavior;
   readonly text: string;
+  readonly order: number;
 }
 
 /** How the model's turns of a run ended, and why when they failed. */
@@ -421,9 +433,27 @@ export function createLoop(options: LoopOptions): LoopSession {
   let runs = options.resumed?.runs ?? 0;
   let amendments = options.resumed?.amendments ?? 0;
   let outcome = options.resumed?.outcome;
+  let hostFailure: Error | undefined;
   let spoolFolder: string | undefined;
   const spool = (): string => (spoolFolder ??= mkdtempSync(join(tmpdir(), "tesota-core-output-")));
-  const tools = toolbox([...options.tools?.(spool) ?? codingTools(options.cwd, spool)], writer);
+  let activeQuestion: { readonly run: number; readonly reply: number; readonly callId: string } | undefined;
+  const questionHost = {
+    ask: async (questions: readonly ClarificationQuestion[], signal: AbortSignal, callId: string) => {
+      const active = activeQuestion;
+      if (active === undefined || active.callId !== callId) throw new Error("The question call is no longer active.");
+      return await askQuestions(questions, options.questions, signal, (answers: readonly ClarificationAnswer[]) => {
+        if (signal.aborted) throw new Error("The run was stopped before this answer could be saved.");
+        const clarification: Clarification = { reply: active.reply, callId, at: new Date().toISOString(), questions, answers };
+        writer.append({ type: "clarification", run: active.run, clarification });
+        writer.sync();
+        const message: HistoryMessage = { role: "user", content: clarificationText(clarification), timestamp: Date.now() };
+        ledger.push(message);
+        inputOrder.set(message, nextInputOrder++);
+        pendingClarifications.push(message);
+      });
+    },
+  };
+  const tools = toolbox([...options.tools?.(spool) ?? codingTools(options.cwd, spool, undefined, questionHost)], writer);
   const thinkingLevel = thinkingOf(options.model, options.thinkingLevel);
   const base = options.captureBase ?? captureBase;
   // The operator's and the project's instructions and skills (#457), read once as the session starts, from its own folder.
@@ -435,6 +465,9 @@ export function createLoop(options: LoopOptions): LoopSession {
   const margins = resumedCompaction.margins;
   /** The current run's request and delivered amendments, which a compaction keeps as given. */
   let ledger = resumedCompaction.ledger;
+  const pendingClarifications: HistoryMessage[] = [];
+  const inputOrder = new Map(ledger.map((message, index) => [message, index]));
+  let nextInputOrder = ledger.length;
   let compacted = resumedCompaction.compacted;
   /** Set when a compaction left the conversation past the margin: until another brings it under, only an overflow compacts. */
   let stuck = false;
@@ -460,6 +493,7 @@ export function createLoop(options: LoopOptions): LoopSession {
   const admitting = new Set<AbortController>();
   let controller: AbortController | undefined;
   let running: Promise<void> | undefined;
+  const replyIndexes = new Map<number, number>();
   /** Settles once the running request is in the ledger, so no amendment comes before it. */
   let recorded: Promise<void> = Promise.resolve();
   let queue: Queued[] = [];
@@ -495,6 +529,7 @@ export function createLoop(options: LoopOptions): LoopSession {
   /** Records a reply and counts its usage once, partial usage included when it failed; a failed write rejects. */
   function replied(run: number, message: AssistantMessage): void {
     writer.append({ type: "assistant", run, message });
+    replyIndexes.set(run, (replyIndexes.get(run) ?? 0) + 1);
     add(message);
     tokens.input += message.usage.input;
     tokens.output += message.usage.output;
@@ -509,13 +544,19 @@ export function createLoop(options: LoopOptions): LoopSession {
   function deliver(run: number, behaviors: readonly Behavior[]): boolean {
     const due = queue.filter((amendment) => behaviors.includes(amendment.behavior));
     queue = queue.filter((amendment) => !behaviors.includes(amendment.behavior));
-    for (const { id, text } of due) {
+    const incoming = pendingClarifications.splice(0);
+    for (const { id, text, order } of due) {
       writer.append({ type: "delivered", run, amendment: id });
       const delivered: HistoryMessage = { role: "user", content: text, timestamp: Date.now() };
       ledger.push(delivered);
-      add(delivered);
+      inputOrder.set(delivered, order);
+      incoming.push(delivered);
     }
-    return due.length > 0;
+    const byOrder = (a: HistoryMessage, b: HistoryMessage): number => (inputOrder.get(a) ?? 0) - (inputOrder.get(b) ?? 0);
+    ledger.sort(byOrder);
+    incoming.sort(byOrder);
+    for (const message of incoming) add(message);
+    return incoming.length > 0;
   }
 
   /** Calls the operator allowed for the rest of the session, by tool and what they were about. */
@@ -558,14 +599,20 @@ export function createLoop(options: LoopOptions): LoopSession {
    * the operator was asked does not run it. Once the run goes on without
    * the call (`left`), its events reach no more handlers (`ExtensionHost`).
    */
-  async function runCall(run: number, call: ToolCall, signal: AbortSignal, left: AbortSignal, offered: readonly EngineTool[]): Promise<ToolOutput> {
+  async function runCall(run: number, call: ToolCall, signal: AbortSignal, left: AbortSignal, offered: readonly EngineTool[],
+    reply: number): Promise<ToolOutput> {
     if (signal.aborted) return stoppedCall;
     writer.append({ type: "call_intent", run, callId: call.id });
     writer.sync();
     emit({ type: "call", call });
-    await host.toolStart({ type: "tool_execution_start", toolCallId: call.id, toolName: call.name, args: call.arguments }, signal, left);
+    const selected = offered.find((tool) => tool.name === call.name);
+    const nativeQuestion = selected !== undefined && isNativeAskTool(selected);
+    await host.toolStart({ type: "tool_execution_start", toolCallId: call.id, toolName: call.name, args: call.arguments, nativeQuestion },
+      signal, left);
     if (signal.aborted) return stoppedCall;
-    const output = await execute(offered, call, signal);
+    activeQuestion = nativeQuestion ? { run, reply, callId: call.id } : undefined;
+    let output: ToolOutput;
+    try { output = await execute(offered, call, signal); } finally { activeQuestion = undefined; }
     await host.toolResult({ type: "tool_result", toolCallId: call.id, toolName: call.name, input: call.arguments,
       isError: output.isError }, signal, left);
     return output;
@@ -577,9 +624,10 @@ export function createLoop(options: LoopOptions): LoopSession {
    * see its result, and one that blocks has its reason added for the model.
    * What hooks say for the operator is a note.
    */
-  async function hooked(run: number, call: ToolCall, signal: AbortSignal, left: AbortSignal, offered: readonly EngineTool[]): Promise<ToolOutput> {
+  async function hooked(run: number, call: ToolCall, signal: AbortSignal, left: AbortSignal, offered: readonly EngineTool[],
+    reply: number): Promise<ToolOutput> {
     const hooks = options.hooks?.();
-    if (hooks === undefined) return await runCall(run, call, signal, left, offered);
+    if (hooks === undefined) return await runCall(run, call, signal, left, offered, reply);
     const asked = { session_id: options.sessionId ?? "", cwd: options.cwd, tool_name: call.name, tool_input: call.arguments };
     const before = await runHooks(hooks, { ...asked, hook_event_name: "PreToolUse" }, signal);
     for (const text of before.notes) emit({ type: "note", text });
@@ -588,7 +636,7 @@ export function createLoop(options: LoopOptions): LoopSession {
       writer.append({ type: "permission", run, callId: call.id, decision: "deny", by: "hook", reason });
       return { text: `Not run: ${reason}`, isError: true };
     }
-    const output = await runCall(run, call, signal, left, offered);
+    const output = await runCall(run, call, signal, left, offered, reply);
     if (left.aborted) return output;
     const after = await runHooks(hooks, { ...asked, hook_event_name: "PostToolUse",
       tool_response: { output: output.text, isError: output.isError } }, signal);
@@ -597,10 +645,11 @@ export function createLoop(options: LoopOptions): LoopSession {
   }
 
   /** What one allowed or refused call gives, asked about first; a call made after the stop does not run. */
-  async function outcomeOf(run: number, call: ToolCall, signal: AbortSignal, left: AbortSignal, offered: readonly EngineTool[]): Promise<ToolOutput> {
+  async function outcomeOf(run: number, call: ToolCall, signal: AbortSignal, left: AbortSignal, offered: readonly EngineTool[],
+    reply: number): Promise<ToolOutput> {
     if (signal.aborted) return stoppedCall;
     if (!await permitted(run, call, offered, signal)) return signal.aborted ? stoppedCall : refusedCall(call);
-    return await hooked(run, call, signal, left, offered);
+    return await hooked(run, call, signal, left, offered, reply);
   }
 
   /**
@@ -611,21 +660,27 @@ export function createLoop(options: LoopOptions): LoopSession {
    * running has what it reported in time or says it was stopped, and the
    * rest were not run.
    */
-  function runCalls(run: number, message: AssistantMessage, calls: readonly ToolCall[], signal: AbortSignal,
+  function runCalls(run: number, reply: number, message: AssistantMessage, calls: readonly ToolCall[], signal: AbortSignal,
     offered: readonly EngineTool[]): Effect.Effect<void> {
     return Effect.suspend(() => {
+      if (new Set(calls.map((call) => call.id)).size !== calls.length) throw new Error("An assistant reply used a tool call id more than once.");
       let next = 0;
+      let questionBoundary = false;
       const answer = (output: ToolOutput): void => {
-        const result = toolResult(calls[next] as ToolCall, output);
+        const call = calls[next] as ToolCall;
+        const result = toolResult(call, output);
         writer.append({ type: "tool_result", run, message: result });
         add(result);
         next += 1;
+        const native = offered.find((tool) => tool.name === call.name);
+        if (native !== undefined && isNativeAskTool(native)) questionBoundary = true;
       };
       const each = Effect.gen(function* () {
         while (next < calls.length) {
           const call = calls[next] as ToolCall;
           if (message.stopReason === "length") answer(truncatedCall(call));
-          else yield* step((left) => outcomeOf(run, call, signal, left, offered), (given, ms) => { answer(Option.isSome(given) ? given.value : stoppedAfter(ms)); });
+          else if (questionBoundary) answer({ isError: true, text: "Not run: reconsider this call after reading the question's outcome." });
+          else yield* step((left) => outcomeOf(run, call, signal, left, offered, reply), (given, ms) => { answer(Option.isSome(given) ? given.value : stoppedAfter(ms)); });
         }
       });
       return each.pipe(Effect.onInterrupt(() => Effect.sync(() => { while (next < calls.length) answer(stoppedCall); })));
@@ -736,7 +791,8 @@ export function createLoop(options: LoopOptions): LoopSession {
         if (deliver(run, ["steer", "followUp"])) continue;
         return { outcome: "completed" };
       }
-      yield* runCalls(run, message, calls, signal, offered);
+      const replyIndex = (replyIndexes.get(run) ?? 1) - 1;
+      yield* runCalls(run, replyIndex, message, calls, signal, offered);
       if (signal.aborted) return { outcome: "aborted", reason: stoppedReason };
     }
   });
@@ -847,6 +903,10 @@ export function createLoop(options: LoopOptions): LoopSession {
     await options.mcp?.()?.ready(signal);
     const asked: HistoryMessage = { role: "user", content: text, timestamp: Date.parse(at) };
     ledger = [asked];
+    inputOrder.clear();
+    inputOrder.set(asked, 0);
+    nextInputOrder = 1;
+    pendingClarifications.length = 0;
     add(asked);
     let generation = 0;
     let continuations = 0;
@@ -878,7 +938,7 @@ export function createLoop(options: LoopOptions): LoopSession {
     const id = ++amendments;
     writer.append({ type: "amendment", run, id, behavior, origin, text, at: new Date().toISOString() });
     writer.sync();
-    queue.push({ id, behavior, text });
+    queue.push({ id, behavior, text, order: nextInputOrder++ });
     const handlers = () => host.input({ type: "input", text, source: origin, streamingBehavior: behavior }, signal);
     if (settling) { waiting.push(handlers); return; }
     const running = handlers();
@@ -888,10 +948,12 @@ export function createLoop(options: LoopOptions): LoopSession {
 
   return {
     async prompt(text, { streamingBehavior, source = "interactive" } = {}) {
+      if (hostFailure !== undefined) throw hostFailure;
       if (disposed !== undefined) throw new Error(disposedReason);
       const admission = new AbortController();
       admitting.add(admission);
       const refused = () => {
+        if (hostFailure !== undefined) throw hostFailure;
         if (disposed !== undefined) throw new Error(disposedReason);
         if (admission.signal.aborted) throw new Error(stoppedReason);
       };
@@ -922,6 +984,7 @@ export function createLoop(options: LoopOptions): LoopSession {
       try {
         await current;
       } catch (error) {
+        hostFailure = error instanceof Error ? error : new Error(String(error));
         outcome = "error";
         // A failed run never settles, so its input handlers still running are stopped and finish here, as settlement's would.
         admission.abort();
@@ -941,8 +1004,10 @@ export function createLoop(options: LoopOptions): LoopSession {
       await compacting?.done.catch(() => undefined);
     },
     async compact() {
+      if (hostFailure !== undefined) throw hostFailure;
       if (disposed !== undefined) throw new Error(disposedReason);
       await started;
+      if (hostFailure !== undefined) throw hostFailure;
       if (disposed !== undefined) throw new Error(disposedReason);
       if (running !== undefined) throw new Error("A run is going; wait for it to end, or stop it, then compact.");
       if (compacting !== undefined) throw new Error("The conversation is already being compacted.");

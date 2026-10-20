@@ -4,6 +4,11 @@ A receipt is what a run proved, tested, couldn't verify and may have
 weakened, kept with the session. `tesota receipt` writes the last one for a
 pull request or for CI.
 
+When you answered the agent's questions, the receipt keeps those answers
+as request context, separate from evidence and acceptance. The shell shows
+their count; Ctrl+O expands the questions, choices you selected and your
+text. Exported Markdown and JSON retain this context too.
+
 ## For a pull request
 
 Commit the change, then, in the folder where the session ran:

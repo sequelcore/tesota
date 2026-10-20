@@ -75,6 +75,8 @@ export interface ToolExecutionStartEvent {
   readonly toolCallId: string;
   readonly toolName: string;
   readonly args: unknown;
+  /** Set by the engine only for its native clarification bridge. */
+  readonly nativeQuestion?: boolean;
 }
 
 export interface ToolResultEvent {

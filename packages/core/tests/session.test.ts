@@ -321,20 +321,20 @@ describe("the session file", () => {
     expect(entriesOf(file).slice(-2).map((entry) => entry.type)).toEqual(["active_tools", "run_end"]);
   });
 
-  // Version 1 promised no verification behind "completed" (#439), so it is refused, not reinterpreted.
-  for (const version of [1, 3]) {
+  // Older formats are refused, not reinterpreted or migrated.
+  for (const version of [1, 2]) {
     test(`a session of version ${version} refuses to open, naming it`, async () => {
       const file = await finished();
       const lines = readFileSync(file, "utf8").split("\n");
-      lines[0] = (lines[0] ?? "").replace("\"version\":2", `"version":${version}`);
+      lines[0] = (lines[0] ?? "").replace("\"version\":3", `"version":${version}`);
       writeFileSync(file, lines.join("\n"));
       expect(() => openSession(file, scriptless())).toThrow(`version ${version}`);
     });
   }
 
-  test("version 2 as committed still reads, with the verifier's message in the conversation and its data outside it", () => {
-    const fixture = join(import.meta.dir, "fixtures", "session-v2.jsonl");
-    const copy = join(folder(), "session-v2.jsonl");
+  test("version 3 reads, with the verifier's message in the conversation and its data outside it", () => {
+    const fixture = join(import.meta.dir, "fixtures", "session-v3.jsonl");
+    const copy = join(folder(), "session-v3.jsonl");
     writeFileSync(copy, readFileSync(fixture));
     const resumed = openSession(copy, scriptless());
     open.push(resumed);

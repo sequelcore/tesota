@@ -1,9 +1,10 @@
 import type { ExtensionAPI, MessageRenderer, Theme, ThemeColor } from "./contract.js";
 import { host } from "./host.js";
 import { Box, type Component, sliceByColumn, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { terminalText } from "./terminal-text.js";
 import type { SentBack } from "./gate.js";
 import { allEvidence, commandFinding, contractFinding, type Finding, holdsWords, isNote, isReceipt, plainName, proofFinding, type Receipt,
-  receiptFindings, receiptTone, type UnitEvidence, verified } from "./receipt.js";
+  receiptClarificationLines, receiptFindings, receiptTone, type UnitEvidence, verified } from "./receipt.js";
 import { decisions } from "./verification/verdict-rule.js";
 
 /** How the shell asks a message to be drawn: expanded or not, and how far in. */
@@ -143,6 +144,13 @@ function holdsRow(theme: Theme, findings: readonly Finding[], matches: number): 
  * holds is listed.
  */
 function receiptCard(theme: Theme, receipt: Receipt, options: RenderOptions): Component {
+  const clarificationRows = (width: number): string[] => {
+    const count = receipt.clarifications?.length ?? 0;
+    if (count === 0) return [];
+    return options.expanded ? receiptClarificationLines(receipt)
+      .flatMap((line) => wrapUnder(theme.fg("dim", terminalText(line)), width, 0))
+      : wrapUnder(theme.fg("dim", `◦ ${plural(count, "request clarification", "request clarifications")} · operator input`), width, 2);
+  };
   const inherited = allEvidence(receipt).inherited;
   const inheritedRows = (width: number): string[] => inherited.length === 0 ? []
     : [...wrapUnder(theme.fg("muted", `○ ${plural(inherited.length, "file", "files")} already uncommitted, not this request's`), width, 2),
@@ -169,11 +177,13 @@ function receiptCard(theme: Theme, receipt: Receipt, options: RenderOptions): Co
   return card(theme, options, (width) => {
     const title = spread(verdict + noted, theme.fg("customMessageLabel", bold("Tesota receipt")), width);
     if (!options.expanded && decide.length === 0 && gaps.length === 0 && opinions.every(isQuiet)) {
-      return [title, ...inheritedRows(width), spread(holdsRow(theme, findings, matches), expandHint(theme, "for details"), width)];
+      return [title, ...inheritedRows(width), ...clarificationRows(width),
+        spread(holdsRow(theme, findings, matches), expandHint(theme, "for details"), width)];
     }
     const shown = options.expanded ? opinions : opinions.filter((finding) => !isQuiet(finding));
     return [title,
       ...inheritedRows(width),
+      ...clarificationRows(width),
       ...section(theme, "NEEDS YOU", decide, label, width, options.expanded),
       ...section(theme, "MODEL'S OPINION, NOT A PROOF", shown, label, width, options.expanded),
       ...section(theme, `UNVERIFIED (${gaps.length})`, gaps, label, width, options.expanded),

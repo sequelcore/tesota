@@ -2,6 +2,7 @@ import type * as Effect from "effect/Effect";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { BranchEntry, ExtensionAPI, ExtensionContext, SettleResult } from "./contract.js";
+import { clarificationText, type Clarification, type RequestInput } from "./clarification.js";
 import { type ChangeStatus, type ChangedFile, changedLines } from "./diff-lines.js";
 import type { Evidence } from "./evidence.js";
 import { git, gitOutput, headCommit } from "./git.js";
@@ -422,6 +423,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
   let fingerprints: Promise<ReadonlyMap<string, Fingerprint>> | undefined;
   /** What the operator asked during the request, for ClaimCheck to compare the contracts with. */
   let requests: string[] = [];
+  let clarifications: readonly Clarification[] = [];
   /** The request's units and bases, recorded before the agent can run anything; a run no operator input started takes them as it settles. */
   let start: Promise<Start> | undefined;
   let startedAt: string | undefined;
@@ -435,6 +437,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     weakSentBack = new Map();
     mayHaveChanged = false;
     fingerprints = undefined;
+    clarifications = [];
     start = undefined;
     progress.waiting();
     // On the engine the ledger holds the request and its start; the gate reads them as it settles.
@@ -446,7 +449,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     return undefined;
   });
   pi.on("tool_execution_start", async (event, ctx) => {
-    if (!toolMayChangeFiles(event.toolName)) return;
+    if (!toolMayChangeFiles(event.toolName, event.nativeQuestion === true)) return;
     mayHaveChanged = true;
     const request = recorded?.();
     if (request !== undefined) start ??= Promise.resolve(recordedStart(request.base));
@@ -463,7 +466,9 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     await loadChecks();
     const request = recorded?.();
     if (request !== undefined) {
-      requests = [request.text, ...request.amendments.flatMap(({ origin, text }) => origin === "extension" ? [] : [text])];
+      requests = [request.text, ...request.inputs.flatMap((input) => input.kind === "clarification"
+        ? [clarificationText(input.clarification)] : input.origin === "extension" ? [] : [input.text])];
+      clarifications = request.inputs.flatMap((input) => input.kind === "clarification" ? [input.clarification] : []);
       startedAt = request.at;
       start = Promise.resolve(recordedStart(request.base));
     }
@@ -492,12 +497,13 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     const receipt: Receipt = { version: 1,
       repository: begun?.units.some(({ folder, repository }) => repository && begun.bases.has(folder)) ?? false,
       base: workspace ? null : begun?.bases.get("") ?? null, startedAt: startedAt ?? new Date().toISOString(),
-      settledAt: new Date().toISOString(), engine: host().version, ...sessionModel(ctx), ...noEvidence, stopped: reason };
+      settledAt: new Date().toISOString(), engine: host().version, ...sessionModel(ctx), ...noEvidence, stopped: reason,
+      ...clarifications.length === 0 ? {} : { clarifications } };
     progress.publish({ step: "settled", receipt });
     return { entries: [receiptEntry(ctx.mode, receipt)] };
   };
   /** Outside Git nothing tells which files changed: a request that may have changed some settles saying none was verified. */
-  const outsideGit = (ctx: ExtensionContext, run: Pick<Receipt, "base" | "startedAt" | "engine" | "model">,
+  const outsideGit = (ctx: ExtensionContext, run: Pick<Receipt, "base" | "startedAt" | "engine" | "model" | "clarifications">,
     reason: string | undefined): SettleResult | undefined => {
     if (!mayHaveChanged) return undefined;
     const receipt: Receipt = { version: 1, repository: false, ...run, settledAt: new Date().toISOString(), ...noEvidence,
@@ -571,7 +577,8 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     const { units, bases, tooLarge, refused } = yield* step(() => start ??= begin(ctx.cwd));
     startedAt ??= new Date().toISOString();
     const workspace = units.some(({ folder }) => folder !== "");
-    const run = { base: workspace ? null : bases.get("") ?? null, startedAt, engine: host().version, ...sessionModel(ctx) };
+    const run = { base: workspace ? null : bases.get("") ?? null, startedAt, engine: host().version, ...sessionModel(ctx),
+      ...clarifications.length === 0 ? {} : { clarifications } };
     // Each repository and each folder Tesota snapshotted, measured from its base.
     const measurable = units.filter(({ folder }) => bases.has(folder));
     const initial = yield* step(async () => fingerprints);
@@ -636,13 +643,13 @@ interface Start {
 
 /**
  * A request as the engine's ledger records it (#439), before any tool ran:
- * its text and amendments, when it started, and each unit's base, a
+ * its text and ordered inputs, when it started, and each unit's base, a
  * repository's commit, a snapshot, or why there is neither.
  */
 export interface RecordedRequest {
   readonly text: string;
   readonly at: string;
-  readonly amendments: readonly { readonly origin: string; readonly text: string }[];
+  readonly inputs: readonly RequestInput[];
   readonly base: { readonly units: readonly RecordedUnit[] };
 }
 

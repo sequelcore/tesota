@@ -17,6 +17,25 @@ history, permissions and receipts. Tesota's shell runs several at once.
 Every session is saved as it runs, in `~/.tesota/sessions`. A session that
 was cut off, by a crash or a closed terminal, resumes where its file ends:
 a tool call that may have run is marked as such and never runs again.
+Session files use format version 3; other versions are refused without
+changing their files.
+
+## Answer the agent
+
+The agent can ask up to three questions with two to four choices each.
+Select one or several choices as the question allows, add your own text,
+then submit the answers. A recommendation is a suggestion; nothing is
+selected or submitted for you. Questions wait until you answer, dismiss
+them or stop the run.
+
+Ctrl+T opens the dashboard while a question is shown. Switching sessions
+keeps its unfinished answers; showing it again restores them. Esc dismisses
+the questions without an answer. Ctrl+C stops the run while its question
+form is open.
+
+Submitted answers are saved before the agent receives them. They stay with
+your request through compaction and resume, and qualify what verification
+checks. An answer does not grant execution permission or accept a change.
 
 ## Several sessions at once
 
@@ -58,7 +77,7 @@ and the footer says how many are waiting.
 
 When the conversation nears the model's context window, Tesota summarizes
 the older part and keeps the recent part word for word. Your request
-itself is never summarized: verification always checks the change against
+and submitted answers are never summarized: verification checks the change against
 what you actually asked. `/compact` does the same on demand.
 
 ## Related
