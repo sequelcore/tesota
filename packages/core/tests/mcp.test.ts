@@ -367,6 +367,26 @@ describe("a remote server", () => {
     expect(server.log.filter((line) => line === "token refresh")).toHaveLength(1);
   });
 
+  test("signing out in one shell stays signed out when another shell's refresh is answered after it", async () => {
+    const server = await remote(true);
+    const home = folder("tesota-core-mcp-home-");
+    const first = started([http("issues", server.url)], { home });
+    await ready(first);
+    await first.signIn("issues", browser, new AbortController().signal);
+    const second = started([http("issues", server.url)], { home });
+    await ready(second);
+    server.expire();
+    const hold = server.holdRefresh();
+    const calling = call(second, "mcp__issues__whoami");
+    await hold.arrived;
+    // Signing out either finishes now or waits for the refresh; both are allowed, only the outcome counts.
+    const out = first.signOut("issues");
+    await Promise.race([out, Bun.sleep(500)]);
+    hold.release();
+    await Promise.all([out, calling]);
+    expect(JSON.parse(readFileSync(join(home, "mcp-auth.json"), "utf8"))).toEqual({});
+  });
+
   test("a server that restarted and forgot the session is reached again on a new one", async () => {
     const server = await remote(false);
     const servers = started([http("keyed", server.url, { headers: { Authorization: "Bearer static" } })]);

@@ -18,6 +18,8 @@ export interface HttpMcp {
   expire(): void;
   /** The server forgets its sessions, as when it restarts. */
   restart(): void;
+  /** The next refresh waits for `release` before it is answered; `arrived` settles once it is asked. */
+  holdRefresh(): { readonly arrived: Promise<void>; release(): void };
   close(): void;
 }
 
@@ -30,6 +32,7 @@ export async function startHttpMcp(options: { oauth?: boolean } = {}): Promise<H
   let issued = 0;
   let origin = "";
   let session = 1;
+  let held: { readonly arrive: () => void; readonly released: Promise<void> } | undefined;
 
   const json = (body: unknown, status = 200, headers: Record<string, string> = {}): Response =>
     new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } });
@@ -90,6 +93,9 @@ export async function startHttpMcp(options: { oauth?: boolean } = {}): Promise<H
       return json(tokens());
     }
     if (!refreshes.delete(params.get("refresh_token") ?? "")) return json({ error: "invalid_grant" }, 400);
+    const hold = held;
+    held = undefined;
+    if (hold !== undefined) { hold.arrive(); await hold.released; }
     log.push("token refresh");
     return json(tokens());
   }
@@ -123,6 +129,12 @@ export async function startHttpMcp(options: { oauth?: boolean } = {}): Promise<H
     registrations,
     expire: () => { valid.clear(); },
     restart: () => { session++; },
+    holdRefresh: () => {
+      const arrived = Promise.withResolvers<void>();
+      const released = Promise.withResolvers<void>();
+      held = { arrive: arrived.resolve, released: released.promise };
+      return { arrived: arrived.promise, release: released.resolve };
+    },
     close: () => { void server.stop(true); },
   };
 }
