@@ -139,7 +139,11 @@ export class QuestionForm extends ScrollView implements Focusable {
     const submit = this.draft.field === "submit" ? this.theme.fg("accent", "› [Submit answers]") : "  [Submit answers]";
     if (this.draft.field === "submit") this.#focusRow = lines.length;
     lines.push(...new Text(submit, 0, 0).render(width));
-    lines.push(...new Text(this.theme.fg("dim", "←/→ questions · Space selects · Tab edits text · Esc cancels"), 0, 0).render(width));
+    // The hint names the way on from where the focus is, so the submit action is found without knowing the keys.
+    const hint = this.draft.field === "choices" ? "←/→ questions · Space selects · Tab adds text · Esc cancels"
+      : this.draft.field === "text" ? "Tab or Enter goes to Submit · Esc cancels"
+        : "Enter submits · Tab goes back to the choices · Esc cancels";
+    lines.push(...new Text(this.theme.fg("dim", hint), 0, 0).render(width));
     if (this.#error !== undefined) lines.push(...new Text(this.theme.fg("error", this.#error), 0, 0).render(width));
     return lines;
   }

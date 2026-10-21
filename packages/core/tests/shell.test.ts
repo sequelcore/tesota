@@ -325,14 +325,16 @@ describe("the shell", () => {
     await terminal.untilGone("Answer the agent");
   });
 
-  test("selection keys pressed on the submit action do not change the answer it submits", async () => {
+  test("the hint says how to reach and use the submit action, and selection keys there do not change the answer", async () => {
     const { terminal, shell, session } = shellOn([]);
     const submitted: unknown[] = [];
     const release = shell.askUser(session, choices, (answers) => { submitted.push(answers); return undefined; }, () => undefined);
-    await terminal.until("recommended");
+    expect(await terminal.until("recommended")).toContain("Tab adds text");
     terminal.type("2");
     terminal.type("\t");
+    expect(await terminal.until("Tab or Enter goes to Submit")).toContain("Esc cancels");
     terminal.type("\t");
+    expect(await terminal.until("Enter submits")).toContain("Tab goes back to the choices");
     terminal.type(" ");
     terminal.type("1");
     terminal.type(enter);
