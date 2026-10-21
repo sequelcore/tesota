@@ -92,7 +92,10 @@ export async function startHttpMcp(options: { oauth?: boolean } = {}): Promise<H
       log.push(`token code ${params.get("client_id") ?? ""}${params.has("client_secret") ? ` with secret ${params.get("client_secret") ?? ""}` : ""}`);
       return json(tokens());
     }
-    if (!refreshes.delete(params.get("refresh_token") ?? "")) return json({ error: "invalid_grant" }, 400);
+    if (!refreshes.delete(params.get("refresh_token") ?? "")) {
+      log.push("token refresh refused");
+      return json({ error: "invalid_grant" }, 400);
+    }
     const hold = held;
     held = undefined;
     if (hold !== undefined) { hold.arrive(); await hold.released; }
