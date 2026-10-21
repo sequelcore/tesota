@@ -1,24 +1,20 @@
 import { spawnSync } from "node:child_process";
-import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { installedPi } from "./pi.js";
-import { runProcess } from "../src/process.js";
+import { appendFileSync, mkdirSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { type SessionResult, session } from "./engine-session.js";
 import type { Finding } from "./finding-cases.js";
-import { read, sessionFacts } from "./sessions.js";
+import { read } from "./sessions.js";
 
 /**
  * What the findings evaluations (#375) share: the command line, the results
  * file, the reviewer's and Jev's questions, registered on 2026-10-10 before
- * any run, and a `pi -p` session.
+ * any run, and a model's session.
  */
 
 export const option = (name: string): string | undefined =>
   process.argv.find((argument) => argument.startsWith(`--${name}=`))?.slice(name.length + 3);
 
-const checkout = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-// The models come from the operator's Pi sign-in, never an API key.
+// The models come from the operator's sign-in, never an API key.
 delete process.env["OPENAI_API_KEY"];
 
 /** The results file: one JSON line per record, which a later call resumes from. */
@@ -76,28 +72,14 @@ export function parseFindings(reply: string): Finding[] | undefined {
 }
 
 /**
- * A `pi -p` session in `directory` from the operator's Pi sign-in, with its sessions beside the directory: `tools`
- * names the tools it may use, none when empty, and Pi's own when undefined.
+ * A session in `directory` (`session`), on the engine without Tesota or through `claude -p`: `tools` names the tools
+ * it may use, none when empty, and a coding agent's when undefined.
  */
-export async function pi(model: string, directory: string, tools: readonly string[] | undefined, prompt: string):
-  Promise<Record<string, any>> {
-  const installed = installedPi(checkout);
-  if (installed === undefined) throw new Error("No Pi is installed in the checkout; run bun install.");
-  const sessions = join(dirname(directory), "sessions");
-  // Claude models come through the operator's pi-claude-bridge, the one extension loaded, on their Claude sign-in.
-  const bridge = model.startsWith("claude-bridge/") ? ["-e", join(homedir(), ".pi", "agent", "npm", "node_modules", "pi-claude-bridge")] : [];
-  // Windows caps a command line near 32K characters, so a longer prompt goes as an attached file.
-  const promptFile = join(dirname(directory), "prompt.md");
-  if (prompt.length > 30_000) writeFileSync(promptFile, prompt);
-  const message = prompt.length > 30_000 ? [`@${promptFile}`, "Follow the instructions in the attached file."] : [prompt];
-  const args = [installed.cli, "-p", "--model", model, "--no-extensions", ...bridge, "--no-skills", "--no-prompt-templates",
-    "--no-context-files", "--no-mcp", ...tools === undefined ? [] : tools.length === 0 ? ["--no-tools"] : ["--tools", tools.join(",")],
-    "--session-dir", sessions, ...message];
-  const started = Date.now();
-  const ended = await runProcess(process.execPath, args, directory, new AbortController().signal, 20 * 60_000);
-  const facts = sessionFacts(sessions);
-  return { ended: ended.ended, exitCode: ended.exitCode, output: ended.output, durationMs: Date.now() - started,
-    modelRequests: facts["modelRequests"], tokens: facts["tokens"] };
+export async function agent(model: string, directory: string, tools: readonly string[] | undefined, prompt: string):
+  Promise<Omit<SessionResult, "facts">> {
+  const ran = await session({ model, directory, ...tools === undefined ? {} : { tools }, prompt, timeoutMs: 20 * 60_000 });
+  return { ended: ran.ended, exitCode: ran.exitCode, output: ran.output, durationMs: ran.durationMs, modelRequests: ran.modelRequests,
+    tokens: ran.tokens };
 }
 
 /**

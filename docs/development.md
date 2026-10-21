@@ -57,7 +57,7 @@ model, and run real commands.
 | `src` | The verification layer, written against `src/contract.ts`; the engine gives it its parts through `src/host.ts` |
 | `src/verification` | Verification's proved rules and LemmaScript runner |
 | `tests` | The verification layer's tests, with Vitest, on a test host (`tests/host.ts`) |
-| `evaluation` | Measurements of Tesota's defaults on live models; they still run on Pi ([#464](https://github.com/sequelcore/tesota/issues/464)) |
+| `evaluation` | Measurements of Tesota's defaults on live models, run on the engine from your Tesota sign-in, and Claude through `claude -p` on your Claude sign-in (`engine-session.ts`, [#464](https://github.com/sequelcore/tesota/issues/464)) |
 | `themes`, `terminal-schemes`, `grammars` | The two themes, the terminal color schemes, and the tree-sitter grammars coverage reads |
 
 `lemmascript` and `web-tree-sitter` are runtime dependencies. The grammars

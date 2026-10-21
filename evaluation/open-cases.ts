@@ -1,7 +1,7 @@
 import { appendFileSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { openCases } from "../src/open-cases.js";
+import { engineRegistry } from "./engine-session.js";
 import { FIRST_CONTRACT_CASES, FRESH, HELD_OUT, LEFT_OPEN, OPEN_CASES, SETTLED, STANDARD } from "./cases.js";
 
 /**
@@ -75,7 +75,7 @@ function items(): { case: string; file: string; run: number }[] {
   return Object.keys(LEFT_OPEN).flatMap((name) => shuffled.filter((item) => item.case === name).slice(0, 5));
 }
 
-const ctx = { model: undefined, modelRegistry: new ModelRegistry(await ModelRuntime.create()) };
+const ctx = { model: undefined, modelRegistry: engineRegistry() };
 const done = new Set((() => { try { return readFileSync(out, "utf8"); } catch { return ""; } })().split("\n")
   .filter((line) => line.trim() !== "").map((line) => JSON.parse(line) as Record<string, any>)
   .map((record) => `${record["model"]}|${record["context"]}|${record["file"]}|${record["case"]}|${record["run"]}`));

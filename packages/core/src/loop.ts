@@ -34,6 +34,8 @@ export interface LoopOptions {
   readonly models: Models;
   readonly model: Model<Api>;
   readonly systemPrompt?: string;
+  /** The instructions and skills after the default prompt; the operator's and the project's (#457) when not given. */
+  readonly instructions?: string;
   /** The tools the model may call; the file tools and platform's shell when not given. */
   readonly tools?: (spool: () => string) => readonly EngineTool[];
   /** Where the session's entries go. */
@@ -186,6 +188,10 @@ export function defaultPrompt(cwd: string, active: readonly EngineTool[]): strin
     ...listed.length > 0 ? [`Available tools:\n${listed.join("\n")}`] : [],
     ...rules.length > 0 ? [`Guidelines:\n${rules.join("\n")}`] : []].join("\n\n");
 }
+
+/** The instructions given, or the operator's and the project's and their skills (#457), read once as the session starts, from its own folder. */
+const instructionsOf = (options: LoopOptions): string => options.instructions
+  ?? instructionsText(contextFiles(options.cwd), skillCatalog(skills(options.cwd), options.model.contextWindow));
 
 /** A call's result as the model sees it, with an extension tool's details. */
 export const toolResult = (call: Pick<ToolCall, "id" | "name">, output: ToolOutput, timestamp: number = Date.now()): ToolResultMessage => ({
@@ -469,9 +475,7 @@ export function createLoop(options: LoopOptions): LoopSession {
   const tools = toolbox([...options.tools?.(spool) ?? codingTools(options.cwd, spool, undefined, questionHost)], writer);
   const thinkingLevel = thinkingOf(options.model, options.thinkingLevel);
   const base = options.captureBase ?? captureBase;
-  // The operator's and the project's instructions and skills (#457), read once as the session starts, from its own folder.
-  const instructions = options.systemPrompt === undefined
-    ? instructionsText(contextFiles(options.cwd), skillCatalog(skills(options.cwd), options.model.contextWindow)) : "";
+  const instructions = options.systemPrompt === undefined ? instructionsOf(options) : "";
   const promptFor = (): string => options.systemPrompt
     ?? [defaultPrompt(options.cwd, tools.activeTools()), instructions].filter((part) => part !== "").join("\n\n");
   const resumedCompaction = compactionAtStart(options);

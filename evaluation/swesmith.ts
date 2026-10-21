@@ -1,10 +1,11 @@
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { runProcess } from "../src/process.js";
+import { capture } from "./engine-session.js";
 import type { Finding } from "./finding-cases.js";
-import { JEV_SKIP_BELOW, diffFiles, git, jevSkips, jevTriage, option, parseFindings, pi, pool, results, reviewPrompt, ruleSkips, where }
+import { JEV_SKIP_BELOW, diffFiles, git, jevSkips, jevTriage, option, parseFindings, agent, pool, results, reviewPrompt, ruleSkips, where }
   from "./review-session.js";
 
 /**
@@ -37,16 +38,15 @@ import { JEV_SKIP_BELOW, diffFiles, git, jevSkips, jevTriage, option, parseFindi
  *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=triage
  *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=judge [--model=openai/gpt-6-sol]
  *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=gate [--model=openai/gpt-6-luna]
- *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=rerun [--model=openai/gpt-6-luna]
  *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=fix [--model=openai/gpt-6-luna] [--gate-model=<model>]
  *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=cases [--model=openai/gpt-6-sol] [--source=<reviewer>] [--per-bug=1|all]
- *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=checks [--model=claude-bridge/claude-sonnet-5-5] [--prompt=1|2]
- *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=refute --source=<checks source> [--model=claude-bridge/claude-sonnet-5-5]
+ *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=checks [--model=claude-code/claude-sonnet-5-5] [--prompt=1|2]
+ *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=refute --source=<checks source> [--model=claude-code/claude-sonnet-5-5]
  *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=score-arms [--refuter=<model>]
  *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=code-review [--model=claude-sonnet-5-5] [--effort=high]
  *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=ultrareview --instance=<id> --arm=bug|control
- *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=approve --source=<reviewer|checks:model> [--arm=bug|control] [--model=claude-bridge/claude-opus-5-5] [--prompt=1|2] [--limit=<n>]
- *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=faithful [--source=<source>] [--arm=bug|control] [--model=claude-bridge/claude-sonnet-5-5]
+ *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=approve --source=<reviewer|checks:model> [--arm=bug|control] [--model=claude-code/claude-opus-5-5] [--prompt=1|2] [--limit=<n>]
+ *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=faithful [--source=<source>] [--arm=bug|control] [--model=claude-code/claude-sonnet-5-5]
  *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=score-checks [--model=<approver>]
  *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=export-cases --file=<cases.json>
  *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=score [--model=<gate model>] [--table=<file>]
@@ -209,7 +209,7 @@ async function review(): Promise<void> {
     .filter(({ instance, arm }) => !done.has(`${model}|${instance.instance_id}|${arm}`));
   await pool(items, Number(option("parallel") ?? "4"), async ({ instance, arm }) => {
     const directory = changed(instance, arm);
-    const session = await pi(model, directory, ["read", "grep", "find", "ls"], reviewPrompt(request(instance, arm), git(directory, "diff")));
+    const session = await agent(model, directory, ["read", "grep", "find", "ls"], reviewPrompt(request(instance, arm), git(directory, "diff")));
     const findings = parseFindings(String(session["output"]));
     append({ kind: "review", model, instance: instance.instance_id, arm, findings: findings ?? [], parsed: findings !== undefined,
       ...session, output: String(session["output"]).slice(-3000) });
@@ -246,7 +246,7 @@ async function judge(): Promise<void> {
   await pool(allFindings().filter((item) => item.arm === "bug" && !done.has(item.key)), Number(option("parallel") ?? "4"), async (item) => {
     const directory = join(mkdtempSync(join(work, "judge-")), "empty");
     mkdirSync(directory);
-    const session = await pi(model, directory, [], judgePrompt(item.instance, item.finding));
+    const session = await agent(model, directory, [], judgePrompt(item.instance, item.finding));
     const block = [...String(session["output"]).matchAll(/```json\s*([\s\S]*?)```/gu)].at(-1)?.[1];
     let real: boolean | null = null;
     let why = "";
@@ -272,25 +272,6 @@ const withBug = (instance: Instance, testPatch: string): string =>
   `${instance.patch}${instance.patch.endsWith("\n") ? "" : "\n"}${testPatch}`;
 
 /**
- * Runs again, on the change, the tests of gate records whose combined patch did not apply: before 2026-10-11 the
- * bug's patch was trimmed, which broke a hunk ending in a blank context line. Appends a corrected record, which the
- * score reads in place of the first.
- */
-async function rerun(): Promise<void> {
-  const model = option("model") ?? "openai/gpt-6-luna";
-  const broken = records().filter((record) => record["kind"] === "gate" && record["model"] === model && record["wrote"] === true &&
-    record["appliedOnChange"] === false && !String(record["key"]).includes("|control|"));
-  const fixed = new Set(records().filter((record) => record["kind"] === "gate" && record["rerun"] === true).map((record) => record["key"]));
-  for (const record of broken.filter((item) => !fixed.has(item["key"]))) {
-    const instance = instances.get(String(record["key"]).split("|")[1] ?? "");
-    if (instance === undefined) continue;
-    const change = await runTests(instance, withBug(instance, String(record["testPatch"])));
-    append({ ...record, at: undefined, rerun: true, onChange: repro(change), appliedOnChange: change["applied"] });
-    process.stdout.write(`rerun ${String(record["key"])}: ${JSON.stringify(repro(change))}\n`);
-  }
-}
-
-/**
  * The script beside `directory` the agent runs its tests with: the working tree's diff from the clean code, in the
  * instance's container, showing the `tesota repro` tests and, given `visible`, which of those tests do not pass.
  */
@@ -314,7 +295,7 @@ async function gate(): Promise<void> {
   await pool(allFindings().filter((item) => !done.has(item.key)), parallel, async (item) => {
     const directory = changed(item.instance, item.arm);
     const script = agentScript(directory, item.instance);
-    const session = await pi(model, directory, undefined, gatePrompt(request(item.instance, item.arm), item.finding, script));
+    const session = await agent(model, directory, undefined, gatePrompt(request(item.instance, item.arm), item.finding, script));
     const paths = git(directory, "status", "--porcelain", "--untracked-files=all").split("\n").filter((line) => line.length > 3)
       .map((line) => line.slice(3).trim());
     const tests = paths.filter((path) => path.includes("tesota-repro"));
@@ -387,7 +368,7 @@ async function fix(): Promise<void> {
     git(directory, "commit", "-q", "--no-verify", "-m", "before the fix");
     const tests = gated["tests"] as string[];
     const script = agentScript(directory, item.instance, visible);
-    const session = await pi(model, directory, undefined, fixPrompt(request(item.instance, item.arm), item.finding, tests, script));
+    const session = await agent(model, directory, undefined, fixPrompt(request(item.instance, item.arm), item.finding, tests, script));
     const changedPaths = git(directory, "status", "--porcelain", "--untracked-files=all").split("\n").filter((line) => line.length > 3)
       .map((line) => line.slice(3).trim());
     const testsTouched = changedPaths.filter(isTestPath);
@@ -502,7 +483,7 @@ async function cases(): Promise<void> {
   const done = new Set(currentCases().filter((record) => record["model"] === model).map((record) => record["key"]));
   await pool(caseFindings().filter((item) => !done.has(item.key)).slice(0, Number(option("limit") ?? Infinity)), parallel, async (item) => {
     const directory = changed(item.instance, item.arm);
-    const session = await pi(model, directory, ["read", "grep", "find", "ls", "write"], casePrompt(request(item.instance, item.arm), item.finding));
+    const session = await agent(model, directory, ["read", "grep", "find", "ls", "write"], casePrompt(request(item.instance, item.arm), item.finding));
     const { written, reply } = writtenCases(String(session["output"]));
     const notJudgeable = typeof reply["notJudgeable"] === "string" && reply["notJudgeable"].trim() !== "" ? reply["notJudgeable"] : undefined;
     const outcome = await runCases(item.instance, item.arm, directory, written);
@@ -569,7 +550,7 @@ const checksSource = (record: Record<string, any>): string =>
   `checks${(record["prompt"] ?? CHECKS_PROMPT) === CHECKS_PROMPT ? "" : String(record["prompt"])}:${String(record["model"])}`;
 
 async function checks(): Promise<void> {
-  const model = option("model") ?? "claude-bridge/claude-sonnet-5-5";
+  const model = option("model") ?? "claude-code/claude-sonnet-5-5";
   const prompt = Number(option("prompt") ?? String(CHECKS_PROMPT));
   const done = new Set(records().filter((record) => record["kind"] === "checks" && record["model"] === model).map((record) => record["key"]));
   const items = sampled().flatMap((instance) => ARMS.map((arm) => ({ instance, arm,
@@ -577,7 +558,7 @@ async function checks(): Promise<void> {
     .filter((item) => !done.has(item.key)).slice(0, Number(option("limit") ?? Infinity));
   await pool(items, parallel, async ({ instance, arm, key }) => {
     const directory = changed(instance, arm);
-    const session = await pi(model, directory, ["read", "grep", "find", "ls", "write"],
+    const session = await agent(model, directory, ["read", "grep", "find", "ls", "write"],
       checksPrompt(request(instance, arm), git(directory, "diff"), prompt));
     const { written, reply } = writtenCases(String(session["output"]));
     const gaps = Array.isArray(reply["gaps"]) ? reply["gaps"] : [];
@@ -590,24 +571,11 @@ async function checks(): Promise<void> {
   });
 }
 
-/** A command's stdout, kept apart from its stderr, and how it ended. */
-function capture(command: string, args: readonly string[], cwd: string, timeoutMs: number):
-  Promise<{ readonly stdout: string; readonly stderr: string; readonly code: number | null }> {
-  return new Promise((settle) => {
-    const child = spawn(command, [...args], { cwd, windowsHide: true, stdio: ["ignore", "pipe", "pipe"], timeout: timeoutMs });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString("utf8"); });
-    child.stderr.on("data", (chunk: Buffer) => { stderr = (stderr + chunk.toString("utf8")).slice(-20_000); });
-    child.on("close", (code) => settle({ stdout, stderr, code }));
-  });
-}
-
 /** An external review's text as findings, in the reviewer's format, read by a model with no tools. */
 async function asFindings(review: string): Promise<{ readonly findings: Finding[] | undefined; readonly tokens: unknown }> {
   const directory = join(mkdtempSync(join(work, "parse-")), "empty");
   mkdirSync(directory);
-  const session = await pi(option("parse-model") ?? "claude-bridge/claude-sonnet-5-5", directory, [],
+  const session = await agent(option("parse-model") ?? "claude-code/claude-sonnet-5-5", directory, [],
     "Below is a code review. List each defect it reports, and nothing it does not report, as a JSON array in a ```json " +
     "block, one object per defect: {\"path\": \"src/file.js\", \"line\": 3, \"statement\": \"what is wrong\", \"reason\": " +
     `"why it is wrong"}. Use [] when it reports none.\n\n${review}`);
@@ -728,7 +696,7 @@ const approveVerdicts: Readonly<Record<number, readonly string[]>> = { 1: ["righ
 const approvedAs: Readonly<Record<number, string>> = { 1: "right", 2: "follows" };
 
 async function approve(): Promise<void> {
-  const model = option("model") ?? "claude-bridge/claude-opus-5-5";
+  const model = option("model") ?? "claude-code/claude-opus-5-5";
   const source = option("source");
   if (source === undefined) throw new Error("Name whose cases with --source=<reviewer model or checks:model>.");
   const seed = option("seed") ?? "375";
@@ -753,7 +721,7 @@ async function approve(): Promise<void> {
     mkdirSync(directory);
     const asked = prompt === 2 ? approvePrompt2(request(item.instance, item.arm), contextOf(item), item.text)
       : approvePrompt(request(item.instance, item.arm), contextOf(item), item.text);
-    const session = await pi(model, directory, [], asked);
+    const session = await agent(model, directory, [], asked);
     const parsed = lastJson(String(session["output"]));
     const verdict = typeof parsed["verdict"] === "string" && approveVerdicts[prompt]?.includes(parsed["verdict"]) ? parsed["verdict"] : null;
     append({ kind: "approve", prompt, model, case: item.id, source, verdict, why: String(parsed["why"] ?? ""),
@@ -787,7 +755,7 @@ const faithfulPrompt = (text: string, number: number, testPatch: string): string
   "or \"unsure\", \"why\": \"one sentence\"}.";
 
 async function faithful(): Promise<void> {
-  const model = option("model") ?? "claude-bridge/claude-sonnet-5-5";
+  const model = option("model") ?? "claude-code/claude-sonnet-5-5";
   const source = option("source");
   const arm = option("arm");
   const done = new Set(records().filter((record) => record["kind"] === "faithful" && record["model"] === model && record["verdict"] !== null)
@@ -797,7 +765,7 @@ async function faithful(): Promise<void> {
   await pool(items, parallel, async (item) => {
     const directory = join(mkdtempSync(join(work, "faithful-")), "empty");
     mkdirSync(directory);
-    const session = await pi(model, directory, [], faithfulPrompt(item.text, item.number, item.testPatch));
+    const session = await agent(model, directory, [], faithfulPrompt(item.text, item.number, item.testPatch));
     const parsed = lastJson(String(session["output"]));
     const verdict = parsed["verdict"] === "yes" || parsed["verdict"] === "no" || parsed["verdict"] === "unsure" ? parsed["verdict"] : null;
     append({ kind: "faithful", model, case: item.id, source: item.source, verdict, why: String(parsed["why"] ?? ""),
@@ -823,7 +791,7 @@ const refutePrompt = (requested: string, text: string): string =>
   "\"the quote, or the file and line\"}.";
 
 async function refute(): Promise<void> {
-  const model = option("model") ?? "claude-bridge/claude-sonnet-5-5";
+  const model = option("model") ?? "claude-code/claude-sonnet-5-5";
   const source = option("source");
   if (source === undefined) throw new Error("Name whose cases with --source=<checks source>.");
   const done = new Set(records().filter((record) => record["kind"] === "refute" && record["model"] === model && record["verdict"] !== null)
@@ -831,7 +799,7 @@ async function refute(): Promise<void> {
   const items = proposedCases().filter((item) => item.source === source && !done.has(item.id)).slice(0, Number(option("limit") ?? Infinity));
   await pool(items, parallel, async (item) => {
     const directory = changed(item.instance, item.arm);
-    const session = await pi(model, directory, ["read", "grep", "find", "ls"], refutePrompt(request(item.instance, item.arm), item.text));
+    const session = await agent(model, directory, ["read", "grep", "find", "ls"], refutePrompt(request(item.instance, item.arm), item.text));
     const parsed = lastJson(String(session["output"]));
     const verdict = parsed["verdict"] === "refuted" || parsed["verdict"] === "stands" ? parsed["verdict"] : null;
     append({ kind: "refute", model, case: item.id, source, verdict, reason: String(parsed["reason"] ?? ""),
@@ -847,7 +815,7 @@ async function refute(): Promise<void> {
  */
 function scoreArms(): void {
   const all = records();
-  const refuter = option("refuter") ?? "claude-bridge/claude-sonnet-5-5";
+  const refuter = option("refuter") ?? "claude-code/claude-sonnet-5-5";
   const refutes = all.filter((record) => record["kind"] === "refute" && record["model"] === refuter);
   const refuted = new Set(refutes.filter((record) => record["verdict"] === "refuted").map((record) => record["case"]));
   const proposed = proposedCases();
@@ -884,12 +852,12 @@ function scoreArms(): void {
  */
 function scoreChecks(): void {
   const all = records();
-  const model = option("model") ?? "claude-bridge/claude-opus-5-5";
+  const model = option("model") ?? "claude-code/claude-opus-5-5";
   const verdictsOf = (kind: string, test: (record: Record<string, any>) => boolean): Map<unknown, unknown> =>
     new Map(all.filter((record) => record["kind"] === kind && record["verdict"] !== null && test(record))
       .map((record) => [record["case"], record["verdict"]]));
   const approvals = [1, 2].map((prompt) => verdictsOf("approve", (record) => record["model"] === model && (record["prompt"] ?? 1) === prompt));
-  const faithfulness = verdictsOf("faithful", (record) => record["model"] === (option("faithful-model") ?? "claude-bridge/claude-sonnet-5-5"));
+  const faithfulness = verdictsOf("faithful", (record) => record["model"] === (option("faithful-model") ?? "claude-code/claude-sonnet-5-5"));
   const proposed = proposedCases();
   const lines: string[] = [];
   for (const source of [...new Set(proposed.map((item) => item.source))].sort()) {
@@ -1006,7 +974,6 @@ else if (stage === "review") await review();
 else if (stage === "triage") await triage();
 else if (stage === "judge") await judge();
 else if (stage === "gate") await gate();
-else if (stage === "rerun") await rerun();
 else if (stage === "fix") await fix();
 else if (stage === "cases") await cases();
 else if (stage === "export-cases") exportCases();
@@ -1019,5 +986,5 @@ else if (stage === "faithful") await faithful();
 else if (stage === "refute") await refute();
 else if (stage === "score-arms") scoreArms();
 else if (stage === "score-checks") scoreChecks();
-else throw new Error("Use --stage=sample, review, triage, judge, gate, rerun, fix, cases, export-cases, score, checks, code-review, " +
+else throw new Error("Use --stage=sample, review, triage, judge, gate, fix, cases, export-cases, score, checks, code-review, " +
   "ultrareview, approve, faithful, refute, score-checks or score-arms.");

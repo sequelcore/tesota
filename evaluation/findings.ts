@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FINDING_CASES, type Finding, type FindingCase, label } from "./finding-cases.js";
-import { JEV_SKIP_BELOW, git, jevSkips, jevTriage, option, parseFindings, pi, pool, results, reviewPrompt, ruleSkips, where }
+import { JEV_SKIP_BELOW, git, jevSkips, jevTriage, option, parseFindings, agent, pool, results, reviewPrompt, ruleSkips, where }
   from "./review-session.js";
 import { manifest, read, write } from "./sessions.js";
 
@@ -13,8 +13,8 @@ import { manifest, read, write } from "./sessions.js";
  * removes false findings without losing real ones. Every stage appends JSON
  * lines to `--out`, and a later call resumes from them.
  *
- * - `review`: a model reviews each case's uncommitted change through `pi -p`,
- *   with read-only tools, and lists its findings.
+ * - `review`: a model reviews each case's uncommitted change in a session
+ *   (`agent`), with read-only tools, and lists its findings.
  * - `triage`: TypeSafe's Jev, a typed decision model, gives each finding a
  *   probability of describing behavior a test could show, to decide only
  *   whether the gate is worth running, never whether the finding is true
@@ -31,8 +31,8 @@ import { manifest, read, write } from "./sessions.js";
  *   bun run findings:eval --out=<file> --stage=gate [--model=openai/gpt-6-luna]
  *   bun run findings:eval --out=<file> --stage=score [--model=<gate model>] [--table=<file>]
  *
- * The models come from the operator's Pi sign-in: `OPENAI_API_KEY` is removed
- * and stdin is closed. `--parallel=N` runs that many sessions at once.
+ * The models come from the operator's sign-in: `OPENAI_API_KEY` is removed.
+ * `--parallel=N` runs that many sessions at once.
  */
 const { records, append } = results(option("out"));
 const parallel = Number(option("parallel") ?? "3");
@@ -76,7 +76,7 @@ async function review(): Promise<void> {
     .filter(({ testCase, run }) => !done.has(`${model}|${testCase.name}|${run}`));
   await pool(work, parallel, async ({ testCase, run }) => {
     const directory = changed(testCase);
-    const session = await pi(model, directory, ["read", "grep", "find", "ls"], reviewPrompt(testCase.request, git(directory, "diff")));
+    const session = await agent(model, directory, ["read", "grep", "find", "ls"], reviewPrompt(testCase.request, git(directory, "diff")));
     const findings = parseFindings(String(session["output"]));
     append({ kind: "review", model, case: testCase.name, run, findings: findings ?? [], parsed: findings !== undefined,
       ...session, output: String(session["output"]).slice(-3000) });
@@ -120,7 +120,7 @@ async function gate(): Promise<void> {
   const done = new Set(records().filter((record) => record["kind"] === "gate" && record["model"] === model).map((record) => record["key"]));
   await pool(allFindings().filter((entry) => !done.has(entry.key)), parallel, async ({ key, testCase, finding }) => {
     const directory = changed(testCase);
-    const session = await pi(model, directory, undefined, gatePrompt(testCase.request, finding));
+    const session = await agent(model, directory, undefined, gatePrompt(testCase.request, finding));
     const testText = read(join(directory, TEST_PATH));
     const expected = { ...testCase.base, ...testCase.candidate };
     const touched = git(directory, "status", "--porcelain", "--untracked-files=all").split("\n").filter((line) => line.length > 3)

@@ -22,7 +22,6 @@
   },
   "include": [
     "src/**/*.ts",
-    "evaluation/**/*.ts",
     "tests/**/*.ts"
   ]
 }
