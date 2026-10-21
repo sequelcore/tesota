@@ -5,7 +5,6 @@ import {
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
-import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -219,19 +218,23 @@ const stopGraceMs = 2_000;
  * a turn. `record` is told once what the work gave, before anything can
  * interrupt the step again: its result; or, once a stop interrupted the
  * wait, what it gave within `stopGraceMs` of being told by the run's signal,
- * or nothing, with how long it ran. The run then goes on without it. A
- * promise cannot be ended, so work that ignores the signal settles
- * unobserved; a process it started is stopped by its own runner
- * (`process.ts`).
+ * or nothing, with how long it ran. The run then goes on without it, and
+ * `left` tells the work so, so it reports nothing more. A promise cannot be
+ * ended, so work that ignores the signal settles unobserved; a process it
+ * started is stopped by its own runner (`process.ts`).
  */
-function step<A>(work: () => Promise<A>, record: (given: Option.Option<A>, ms: number) => void): Effect.Effect<A> {
+function step<A>(work: (left: AbortSignal) => Promise<A>, record: (given: Option.Option<A>, ms: number) => void): Effect.Effect<A> {
   return Effect.uninterruptibleMask((restore) => Effect.suspend(() => {
     const begun = Date.now();
-    const running = work();
+    const leaving = new AbortController();
+    const running = work(leaving.signal);
     const awaited = Effect.callback<A>((resume) => {
       running.then((value) => { resume(Effect.succeed(value)); }, (error: unknown) => { resume(Effect.die(error)); });
     });
-    const recorded = (given: Option.Option<A>) => Effect.sync(() => { record(given, Date.now() - begun); });
+    const recorded = (given: Option.Option<A>) => Effect.sync(() => {
+      if (Option.isNone(given)) leaving.abort();
+      record(given, Date.now() - begun);
+    });
     return restore(awaited).pipe(
       Effect.onInterrupt(() => Effect.timeoutOption(awaited, stopGraceMs).pipe(Effect.flatMap(recorded))),
       Effect.tap((value) => recorded(Option.some(value))));
@@ -244,10 +247,6 @@ function endedBy(exit: Exit.Exit<Ended>): Ended {
   if (Cause.hasInterruptsOnly(exit.cause)) return { outcome: "aborted", reason: stoppedReason };
   throw Cause.squash(exit.cause);
 }
-
-/** Interrupts `fiber`, if any, and waits for what its interruption still records. */
-const interrupt = (fiber: Fiber.Fiber<unknown, unknown> | undefined): Promise<void> =>
-  fiber === undefined ? Promise.resolve() : Effect.runPromise(Fiber.interrupt(fiber));
 
 async function execute(tools: readonly EngineTool[], call: ToolCall, signal: AbortSignal): Promise<ToolOutput> {
   const tool = tools.find((candidate) => candidate.name === call.name);
@@ -440,7 +439,7 @@ export function createLoop(options: LoopOptions): LoopSession {
   /** Set when a compaction left the conversation past the margin: until another brings it under, only an overflow compacts. */
   let stuck = false;
   /** A compaction `/compact` started between runs, which a prompt waits for and stopping stops. */
-  let compacting: { readonly done: Promise<void>; readonly controller: AbortController; readonly fiber: Fiber.Fiber<string | undefined> } | undefined;
+  let compacting: { readonly done: Promise<void>; readonly controller: AbortController } | undefined;
   const usage = () => contextUsage(history, promptFor(), tools.activeTools().map(declaration), options.model.contextWindow,
     compacted?.counted ?? 0);
   const host = createHost({
@@ -461,8 +460,6 @@ export function createLoop(options: LoopOptions): LoopSession {
   const admitting = new Set<AbortController>();
   let controller: AbortController | undefined;
   let running: Promise<void> | undefined;
-  /** The running request's model turns, which the operator's stop interrupts; its settlement it only signals. */
-  let turning: Fiber.Fiber<Ended> | undefined;
   /** Settles once the running request is in the ledger, so no amendment comes before it. */
   let recorded: Promise<void> = Promise.resolve();
   let queue: Queued[] = [];
@@ -475,15 +472,19 @@ export function createLoop(options: LoopOptions): LoopSession {
   /** Settles once the session is disposed; disposing again waits for the same. */
   let disposed: Promise<void> | undefined;
 
-  /** Streams one reply; a provider that throws ends the turns as an error, as one that returns its error does. */
-  async function streamed(signal: AbortSignal, offered: readonly EngineTool[]): Promise<AssistantMessage | Ended> {
+  /**
+   * Streams one reply, shown as it comes until the run goes on without it
+   * (`left`); a provider that throws ends the turns as an error, as one that
+   * returns its error does.
+   */
+  async function streamed(signal: AbortSignal, left: AbortSignal, offered: readonly EngineTool[]): Promise<AssistantMessage | Ended> {
     try {
       const stream = options.models.streamSimple(options.model,
         { systemPrompt: promptFor(), messages: modelContext(history), tools: offered.map(declaration) },
         // The session's id is the provider's prompt-cache key and session affinity, as Pi passed it (`prompt_cache_key` for OpenAI).
         { signal, ...options.sessionId === undefined ? {} : { sessionId: options.sessionId },
           ...thinkingLevel === "off" ? {} : { reasoning: thinkingLevel } });
-      for await (const event of stream) if ("partial" in event) emit({ type: "reply", partial: event.partial });
+      for await (const event of stream) if ("partial" in event && !left.aborted) emit({ type: "reply", partial: event.partial });
       return await stream.result();
     } catch (error) {
       return signal.aborted ? { outcome: "aborted", reason: stoppedReason }
@@ -502,7 +503,7 @@ export function createLoop(options: LoopOptions): LoopSession {
 
   /** One reply, recorded; a stop interrupts it, and what the provider gives in time is still recorded (`step`). */
   const reply = (run: number, signal: AbortSignal, offered: readonly EngineTool[]): Effect.Effect<AssistantMessage | Ended> =>
-    step(() => streamed(signal, offered), (given) => { if (Option.isSome(given) && "role" in given.value) replied(run, given.value); });
+    step((left) => streamed(signal, left, offered), (given) => { if (Option.isSome(given) && "role" in given.value) replied(run, given.value); });
 
   /** Moves the queued amendments of the given behaviors into the conversation, in the order they came. */
   function deliver(run: number, behaviors: readonly Behavior[]): boolean {
@@ -552,8 +553,12 @@ export function createLoop(options: LoopOptions): LoopSession {
     return decision === "allow";
   }
 
-  /** Runs `call`, allowed, with its intent on disk first; a run stopped while the operator was asked does not run it. */
-  async function runCall(run: number, call: ToolCall, signal: AbortSignal, offered: readonly EngineTool[]): Promise<ToolOutput> {
+  /**
+   * Runs `call`, allowed, with its intent on disk first; a run stopped while
+   * the operator was asked does not run it. A call the run went on without
+   * (`left`) tells the extensions nothing when it ends, after the run.
+   */
+  async function runCall(run: number, call: ToolCall, signal: AbortSignal, left: AbortSignal, offered: readonly EngineTool[]): Promise<ToolOutput> {
     if (signal.aborted) return stoppedCall;
     writer.append({ type: "call_intent", run, callId: call.id });
     writer.sync();
@@ -561,6 +566,7 @@ export function createLoop(options: LoopOptions): LoopSession {
     await host.toolStart({ type: "tool_execution_start", toolCallId: call.id, toolName: call.name, args: call.arguments }, signal);
     if (signal.aborted) return stoppedCall;
     const output = await execute(offered, call, signal);
+    if (left.aborted) return output;
     await host.toolResult({ type: "tool_result", toolCallId: call.id, toolName: call.name, input: call.arguments,
       isError: output.isError }, signal);
     return output;
@@ -572,9 +578,9 @@ export function createLoop(options: LoopOptions): LoopSession {
    * see its result, and one that blocks has its reason added for the model.
    * What hooks say for the operator is a note.
    */
-  async function hooked(run: number, call: ToolCall, signal: AbortSignal, offered: readonly EngineTool[]): Promise<ToolOutput> {
+  async function hooked(run: number, call: ToolCall, signal: AbortSignal, left: AbortSignal, offered: readonly EngineTool[]): Promise<ToolOutput> {
     const hooks = options.hooks?.();
-    if (hooks === undefined) return await runCall(run, call, signal, offered);
+    if (hooks === undefined) return await runCall(run, call, signal, left, offered);
     const asked = { session_id: options.sessionId ?? "", cwd: options.cwd, tool_name: call.name, tool_input: call.arguments };
     const before = await runHooks(hooks, { ...asked, hook_event_name: "PreToolUse" }, signal);
     for (const text of before.notes) emit({ type: "note", text });
@@ -583,7 +589,8 @@ export function createLoop(options: LoopOptions): LoopSession {
       writer.append({ type: "permission", run, callId: call.id, decision: "deny", by: "hook", reason });
       return { text: `Not run: ${reason}`, isError: true };
     }
-    const output = await runCall(run, call, signal, offered);
+    const output = await runCall(run, call, signal, left, offered);
+    if (left.aborted) return output;
     const after = await runHooks(hooks, { ...asked, hook_event_name: "PostToolUse",
       tool_response: { output: output.text, isError: output.isError } }, signal);
     for (const text of after.notes) emit({ type: "note", text });
@@ -591,10 +598,10 @@ export function createLoop(options: LoopOptions): LoopSession {
   }
 
   /** What one allowed or refused call gives, asked about first; a call made after the stop does not run. */
-  async function outcomeOf(run: number, call: ToolCall, signal: AbortSignal, offered: readonly EngineTool[]): Promise<ToolOutput> {
+  async function outcomeOf(run: number, call: ToolCall, signal: AbortSignal, left: AbortSignal, offered: readonly EngineTool[]): Promise<ToolOutput> {
     if (signal.aborted) return stoppedCall;
     if (!await permitted(run, call, offered, signal)) return signal.aborted ? stoppedCall : refusedCall(call);
-    return await hooked(run, call, signal, offered);
+    return await hooked(run, call, signal, left, offered);
   }
 
   /**
@@ -619,7 +626,7 @@ export function createLoop(options: LoopOptions): LoopSession {
         while (next < calls.length) {
           const call = calls[next] as ToolCall;
           if (message.stopReason === "length") answer(truncatedCall(call));
-          else yield* step(() => outcomeOf(run, call, signal, offered), (given, ms) => { answer(Option.isSome(given) ? given.value : stoppedAfter(ms)); });
+          else yield* step((left) => outcomeOf(run, call, signal, left, offered), (given, ms) => { answer(Option.isSome(given) ? given.value : stoppedAfter(ms)); });
         }
       });
       return each.pipe(Effect.onInterrupt(() => Effect.sync(() => { while (next < calls.length) answer(stoppedCall); })));
@@ -736,19 +743,14 @@ export function createLoop(options: LoopOptions): LoopSession {
   });
 
   /**
-   * Runs the model's turns as a fiber the operator's stop interrupts: a run
-   * already stopped takes no turn, and one interrupted ends aborted with
+   * Runs the model's turns as a fiber the run's signal interrupts, also
+   * when the stop comes while the fiber's first steps run synchronously: a
+   * run already stopped takes no turn, and one interrupted ends aborted with
    * every step it was in recorded.
    */
   async function turnsOf(run: number, signal: AbortSignal, settled: boolean): Promise<Ended> {
     if (signal.aborted) return { outcome: "aborted", reason: stoppedReason };
-    const fiber = Effect.runFork(turns(run, signal, settled));
-    turning = fiber;
-    try {
-      return endedBy(await Effect.runPromise(Fiber.await(fiber)));
-    } finally {
-      turning = undefined;
-    }
+    return endedBy(await Effect.runPromiseExit(turns(run, signal, settled), { signal }));
   }
 
   /** Records what a settle phase added: messages into the conversation, data beside it. */
@@ -931,12 +933,11 @@ export function createLoop(options: LoopOptions): LoopSession {
       }
     },
     async abort() {
-      // The signal first, so what runs cooperatively hears the stop, then the interruption, which waits for what it records.
+      // The signal both tells what runs cooperatively and interrupts the turns and a compaction; waiting for them waits
+      // for what their interruption records.
       for (const admission of admitting) admission.abort();
       controller?.abort();
       compacting?.controller.abort();
-      await interrupt(turning);
-      await interrupt(compacting?.fiber);
       await running?.catch(() => undefined);
       await compacting?.done.catch(() => undefined);
     },
@@ -948,14 +949,13 @@ export function createLoop(options: LoopOptions): LoopSession {
       if (compacting !== undefined) throw new Error("The conversation is already being compacted.");
       if (runs === 0) throw new Error("There is nothing to compact yet.");
       const stopper = new AbortController();
-      const fiber = Effect.runFork(compact(runs, stopper.signal));
       const done = (async () => {
-        const exit = await Effect.runPromise(Fiber.await(fiber));
+        const exit = await Effect.runPromiseExit(compact(runs, stopper.signal), { signal: stopper.signal });
         if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)) throw Cause.squash(exit.cause);
         const failed = Exit.isSuccess(exit) ? exit.value : stoppedReason;
         if (failed !== undefined) throw new Error(failed === nothingToSummarize ? `Nothing to compact: ${failed}.` : failed);
       })();
-      compacting = { done, controller: stopper, fiber };
+      compacting = { done, controller: stopper };
       try { await done; } finally { compacting = undefined; }
     },
     messages: () => history.map(conversationMessage),
@@ -972,8 +972,6 @@ export function createLoop(options: LoopOptions): LoopSession {
       for (const admission of admitting) admission.abort();
       controller?.abort();
       compacting?.controller.abort();
-      await interrupt(turning);
-      await interrupt(compacting?.fiber);
       // Its startup handlers finish before the session's file and lock go, so none runs on after it.
       await started;
       await running?.catch(() => undefined);

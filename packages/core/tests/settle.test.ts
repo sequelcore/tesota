@@ -181,6 +181,30 @@ describe("the operator's stop during a call", () => {
     expect(runEnd(run.file)).toMatchObject({ outcome: "aborted", reason: "the operator stopped the run" });
   });
 
+  test("a call that reports after the run went on without it tells the extensions nothing, so the next run is not blamed", async () => {
+    let started: () => void = () => undefined;
+    const calling = new Promise<void>((resolve) => { started = resolve; });
+    let reported: () => void = () => undefined;
+    const late = new Promise<void>((resolve) => { reported = resolve; });
+    const run = session([{ tool: "late", args: {} }, "second"], {
+      // It ignores the stop and reports only after the run has gone on without it.
+      tools: () => [tool("late", started, () => new Promise((resolve) => {
+        setTimeout(() => { resolve({ text: "too late", isError: false }); reported(); }, 3_000);
+      }))],
+      extensions: [(pi) => { pi.on("tool_result", () => { throw new Error("a handler that fails"); }); }],
+      verifier: (pi) => { pi.on("agent_before_settle", () => undefined); },
+    });
+    const first = run.prompt("go");
+    await calling;
+    await run.abort();
+    await first;
+    await late;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(run.messages().some((message) => message.role === "toolResult" && message.text === "too late")).toBe(false);
+    await run.prompt("again");
+    expect(run.outcome()).toBe("completed");
+  });
+
   test("a call that stops when told reports its own result", async () => {
     let started: () => void = () => undefined;
     const calling = new Promise<void>((resolve) => { started = resolve; });
