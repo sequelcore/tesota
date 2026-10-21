@@ -45,6 +45,9 @@ function callbackFor(oauth: McpOAuthConfig): { host: string; redirectHost: strin
 const authFile = (home: string): string => join(home, "mcp-auth.json");
 /** A server's credentials are its name's and its URL's: servers sharing a URL keep separate accounts. */
 const keyOf = (server: string, url: string): string => `${server}|${new URL(url).href}`;
+/** The account's lock, held by whoever changes its tokens over the network or deletes them, in this shell or another (#542). */
+const accountLock = (server: string, url: string, home: string): string =>
+  `${authFile(home)}.${createHash("sha256").update(keyOf(server, url)).digest("hex").slice(0, 16)}.refresh`;
 
 function readStates(home: string): Record<string, McpOAuthState> {
   try {
@@ -93,7 +96,7 @@ export const needsSignIn = (error: unknown): boolean =>
 
 /** A remote server's stored credentials, as its connections send them. */
 export interface StoredAuth extends AuthProvider {
-  /** Settles once no refresh is running, so signing out or closing does not race a token being saved. */
+  /** Settles once this shell's refresh is done, so closing does not lose a token being saved. */
   settled(): Promise<void>;
   /** What the server last said when it refused a request, for the next sign-in: where its metadata is and the scope it wants. */
   challenge(): OAuthChallenge | undefined;
@@ -113,7 +116,7 @@ export function storedAuth(server: string, url: string, oauth: McpOAuthConfig, h
   let refused: OAuthChallenge | undefined;
   /** Replaces `stale`, the token that expired or was refused; tokens that changed meanwhile, here or in another shell, are kept. */
   const refresh = (stale: string | undefined, fetch: McpFetch = globalThis.fetch, scope?: string): Promise<void> => refreshing ??= withLockWhile(
-    `${authFile(home)}.${createHash("sha256").update(keyOf(server, url)).digest("hex").slice(0, 16)}.refresh`, async () => {
+    accountLock(server, url, home), async () => {
     const state = await store.load();
     if (state?.tokens?.access_token !== stale) return;
     if (state?.tokens?.refresh_token === undefined) throw new McpOAuthAuthorizationRequiredError();
@@ -150,11 +153,23 @@ export function storedAuth(server: string, url: string, oauth: McpOAuthConfig, h
  * works, else the browser's authorization code flow with PKCE and, without
  * a configured client, dynamic registration, answered on a loopback
  * callback. `open` shows the operator the page. Stopping `signal` stops
- * it, and its callback closes either way.
+ * it, and its callback closes either way. It holds the account's lock
+ * throughout, the browser's wait included, so it and another shell's
+ * refresh never spend the same refresh token; that refresh waits or fails.
  */
 export async function signIn(server: string, url: string, oauth: McpOAuthConfig, open: (page: URL) => void, signal: AbortSignal,
   home: string = tesotaHome(), challenge?: OAuthChallenge): Promise<void> {
   if (signal.aborted) throw new Error("Sign-in cancelled.");
+  try {
+    await withLockWhile(accountLock(server, url, home), () => signInLocked(server, url, oauth, open, signal, home, challenge), refreshWaitMs, signal);
+  } catch (error) {
+    if (signal.aborted) throw new Error("Sign-in cancelled.", { cause: error });
+    throw error;
+  }
+}
+
+async function signInLocked(server: string, url: string, oauth: McpOAuthConfig, open: (page: URL) => void, signal: AbortSignal,
+  home: string, challenge: OAuthChallenge | undefined): Promise<void> {
   const store = storeFor(server, url, home);
   const stored = await store.load();
   const callback = callbackFor(oauth);
@@ -182,9 +197,6 @@ export async function signIn(server: string, url: string, oauth: McpOAuthConfig,
     open(page);
     const { code, iss } = await answered(listener, state, expected, signal);
     await authorizeMcp(flow, { ...options, authorizationCode: code, ...iss === undefined ? {} : { iss } });
-  } catch (error) {
-    if (signal.aborted) throw new Error("Sign-in cancelled.", { cause: error });
-    throw error;
   } finally {
     await listener.close();
   }
@@ -228,11 +240,13 @@ async function answered(callback: OAuthCallbackServer, state: string, expected: 
   }
 }
 
-/** Forgets the server's credentials. */
-export function signOut(server: string, url: string, home: string = tesotaHome()): void {
+/** Forgets the server's credentials, once no refresh of them is running in this shell or another, so none saves them again. */
+export async function signOut(server: string, url: string, home: string = tesotaHome()): Promise<void> {
   const key = keyOf(server, url);
-  if (readStates(home)[key] === undefined) return;
-  changeStates(home, (states) => { delete states[key]; });
+  await withLockWhile(accountLock(server, url, home), async () => {
+    if (readStates(home)[key] === undefined) return;
+    changeStates(home, (states) => { delete states[key]; });
+  }, refreshWaitMs);
 }
 
 /** Whether tokens are stored for the server. */
