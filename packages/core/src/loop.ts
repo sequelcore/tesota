@@ -2,6 +2,10 @@ import {
   type Api, type AssistantMessage, type JsonValue, type Message, type Model, type Models, type ModelThinkingLevel, type ToolCall, type ToolResultMessage,
   isContextOverflow, validateToolArguments,
 } from "@earendil-works/pi-ai";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Option from "effect/Option";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -198,15 +202,50 @@ function operatorDecision(answer: "once" | "session" | "deny" | undefined): { de
   return { decision: "allow", reason: answer === "session" ? "The operator allowed it for this session." : "The operator allowed it once." };
 }
 
-/** What `promise` gives, or nothing once `signal` stops first; the promise itself is left to settle on its own. */
-function untilStopped<T>(promise: Promise<T>, signal: AbortSignal): Promise<T | undefined> {
-  if (signal.aborted) return Promise.resolve(undefined);
-  return new Promise((resolve, reject) => {
-    const stop = (): void => { resolve(undefined); };
-    signal.addEventListener("abort", stop, { once: true });
-    promise.then((value) => { signal.removeEventListener("abort", stop); resolve(value); },
-      (error: unknown) => { signal.removeEventListener("abort", stop); reject(error); });
-  });
+/** What `promise` gives, or nothing once `signal` stops first, which interrupts the wait. */
+async function untilStopped<T>(promise: Promise<T>, signal: AbortSignal): Promise<T | undefined> {
+  const exit = await Effect.runPromiseExit(Effect.promise(() => promise), { signal });
+  if (Exit.isSuccess(exit)) return exit.value;
+  if (Cause.hasInterruptsOnly(exit.cause)) return undefined;
+  throw Cause.squash(exit.cause);
+}
+
+/** How long work the operator's stop interrupted gets to finish and report on its own before the run goes on without it. */
+const stopGraceMs = 2_000;
+
+/**
+ * Waits for `work` as a step the operator's stop interrupts, as Codex stops
+ * a turn. `record` is told once what the work gave, before anything can
+ * interrupt the step again: its result; or, once a stop interrupted the
+ * wait, what it gave within `stopGraceMs` of being told by the run's signal,
+ * or nothing, with how long it ran. The run then goes on without it, and
+ * `left` tells the work so, so it reports nothing more. A promise cannot be
+ * ended, so work that ignores the signal settles unobserved; a process it
+ * started is stopped by its own runner (`process.ts`).
+ */
+function step<A>(work: (left: AbortSignal) => Promise<A>, record: (given: Option.Option<A>, ms: number) => void): Effect.Effect<A> {
+  return Effect.uninterruptibleMask((restore) => Effect.suspend(() => {
+    const begun = Date.now();
+    const leaving = new AbortController();
+    const running = work(leaving.signal);
+    const awaited = Effect.callback<A>((resume) => {
+      running.then((value) => { resume(Effect.succeed(value)); }, (error: unknown) => { resume(Effect.die(error)); });
+    });
+    const recorded = (given: Option.Option<A>) => Effect.sync(() => {
+      if (Option.isNone(given)) leaving.abort();
+      record(given, Date.now() - begun);
+    });
+    return restore(awaited).pipe(
+      Effect.onInterrupt(() => Effect.timeoutOption(awaited, stopGraceMs).pipe(Effect.flatMap(recorded))),
+      Effect.tap((value) => recorded(Option.some(value))));
+  }));
+}
+
+/** How the model's turns that `exit` gave ended: aborted when the stop interrupted them; a failure is rethrown. */
+function endedBy(exit: Exit.Exit<Ended>): Ended {
+  if (Exit.isSuccess(exit)) return exit.value;
+  if (Cause.hasInterruptsOnly(exit.cause)) return { outcome: "aborted", reason: stoppedReason };
+  throw Cause.squash(exit.cause);
 }
 
 async function execute(tools: readonly EngineTool[], call: ToolCall, signal: AbortSignal): Promise<ToolOutput> {
@@ -240,6 +279,10 @@ const truncatedCall = (call: ToolCall): ToolOutput => ({
 });
 
 const stoppedCall: ToolOutput = { text: "Not run: the operator stopped the agent.", isError: true };
+
+/** A call the stop interrupted that did not report in time, `ms` after it began. */
+const stoppedAfter = (ms: number): ToolOutput => ({ text: `Stopped: the operator stopped the agent ${(ms / 1000).toFixed(1)} s into this call, `
+  + "before it reported; what it changed is not known.", isError: true });
 
 const stoppedReason = "the operator stopped the run";
 const disposedReason = "The session is closed; start or resume one to go on.";
@@ -430,31 +473,37 @@ export function createLoop(options: LoopOptions): LoopSession {
   let disposed: Promise<void> | undefined;
 
   /**
-   * Streams one reply, records it and counts its usage once, partial usage
-   * included when it failed. A provider that throws ends the turns as an
-   * error, as one that returns its error does; a failed write still rejects.
+   * Streams one reply, shown as it comes until the run goes on without it
+   * (`left`); a provider that throws ends the turns as an error, as one that
+   * returns its error does.
    */
-  async function reply(run: number, signal: AbortSignal, offered: readonly EngineTool[]): Promise<AssistantMessage | Ended> {
-    let message: AssistantMessage;
+  async function streamed(signal: AbortSignal, left: AbortSignal, offered: readonly EngineTool[]): Promise<AssistantMessage | Ended> {
     try {
       const stream = options.models.streamSimple(options.model,
         { systemPrompt: promptFor(), messages: modelContext(history), tools: offered.map(declaration) },
         // The session's id is the provider's prompt-cache key and session affinity, as Pi passed it (`prompt_cache_key` for OpenAI).
         { signal, ...options.sessionId === undefined ? {} : { sessionId: options.sessionId },
           ...thinkingLevel === "off" ? {} : { reasoning: thinkingLevel } });
-      for await (const event of stream) if ("partial" in event) emit({ type: "reply", partial: event.partial });
-      message = await stream.result();
+      for await (const event of stream) if ("partial" in event && !left.aborted) emit({ type: "reply", partial: event.partial });
+      return await stream.result();
     } catch (error) {
       return signal.aborted ? { outcome: "aborted", reason: stoppedReason }
         : { outcome: "error", reason: error instanceof Error ? error.message : String(error) };
     }
+  }
+
+  /** Records a reply and counts its usage once, partial usage included when it failed; a failed write rejects. */
+  function replied(run: number, message: AssistantMessage): void {
     writer.append({ type: "assistant", run, message });
     add(message);
     tokens.input += message.usage.input;
     tokens.output += message.usage.output;
     tokens.total += message.usage.totalTokens;
-    return message;
   }
+
+  /** One reply, recorded; a stop interrupts it, and what the provider gives in time is still recorded (`step`). */
+  const reply = (run: number, signal: AbortSignal, offered: readonly EngineTool[]): Effect.Effect<AssistantMessage | Ended> =>
+    step((left) => streamed(signal, left, offered), (given) => { if (Option.isSome(given) && "role" in given.value) replied(run, given.value); });
 
   /** Moves the queued amendments of the given behaviors into the conversation, in the order they came. */
   function deliver(run: number, behaviors: readonly Behavior[]): boolean {
@@ -504,17 +553,21 @@ export function createLoop(options: LoopOptions): LoopSession {
     return decision === "allow";
   }
 
-  /** Runs `call`, allowed, with its intent on disk first; a run stopped while the operator was asked does not run it. */
-  async function runCall(run: number, call: ToolCall, signal: AbortSignal, offered: readonly EngineTool[]): Promise<ToolOutput> {
+  /**
+   * Runs `call`, allowed, with its intent on disk first; a run stopped while
+   * the operator was asked does not run it. Once the run goes on without
+   * the call (`left`), its events reach no more handlers (`ExtensionHost`).
+   */
+  async function runCall(run: number, call: ToolCall, signal: AbortSignal, left: AbortSignal, offered: readonly EngineTool[]): Promise<ToolOutput> {
     if (signal.aborted) return stoppedCall;
     writer.append({ type: "call_intent", run, callId: call.id });
     writer.sync();
     emit({ type: "call", call });
-    await host.toolStart({ type: "tool_execution_start", toolCallId: call.id, toolName: call.name, args: call.arguments }, signal);
+    await host.toolStart({ type: "tool_execution_start", toolCallId: call.id, toolName: call.name, args: call.arguments }, signal, left);
     if (signal.aborted) return stoppedCall;
     const output = await execute(offered, call, signal);
     await host.toolResult({ type: "tool_result", toolCallId: call.id, toolName: call.name, input: call.arguments,
-      isError: output.isError }, signal);
+      isError: output.isError }, signal, left);
     return output;
   }
 
@@ -524,9 +577,9 @@ export function createLoop(options: LoopOptions): LoopSession {
    * see its result, and one that blocks has its reason added for the model.
    * What hooks say for the operator is a note.
    */
-  async function hooked(run: number, call: ToolCall, signal: AbortSignal, offered: readonly EngineTool[]): Promise<ToolOutput> {
+  async function hooked(run: number, call: ToolCall, signal: AbortSignal, left: AbortSignal, offered: readonly EngineTool[]): Promise<ToolOutput> {
     const hooks = options.hooks?.();
-    if (hooks === undefined) return await runCall(run, call, signal, offered);
+    if (hooks === undefined) return await runCall(run, call, signal, left, offered);
     const asked = { session_id: options.sessionId ?? "", cwd: options.cwd, tool_name: call.name, tool_input: call.arguments };
     const before = await runHooks(hooks, { ...asked, hook_event_name: "PreToolUse" }, signal);
     for (const text of before.notes) emit({ type: "note", text });
@@ -535,30 +588,48 @@ export function createLoop(options: LoopOptions): LoopSession {
       writer.append({ type: "permission", run, callId: call.id, decision: "deny", by: "hook", reason });
       return { text: `Not run: ${reason}`, isError: true };
     }
-    const output = await runCall(run, call, signal, offered);
+    const output = await runCall(run, call, signal, left, offered);
+    if (left.aborted) return output;
     const after = await runHooks(hooks, { ...asked, hook_event_name: "PostToolUse",
       tool_response: { output: output.text, isError: output.isError } }, signal);
     for (const text of after.notes) emit({ type: "note", text });
     return after.blocked === undefined ? output : { ...output, text: `${output.text}\n\nA hook says: ${after.blocked}` };
   }
 
+  /** What one allowed or refused call gives, asked about first; a call made after the stop does not run. */
+  async function outcomeOf(run: number, call: ToolCall, signal: AbortSignal, left: AbortSignal, offered: readonly EngineTool[]): Promise<ToolOutput> {
+    if (signal.aborted) return stoppedCall;
+    if (!await permitted(run, call, offered, signal)) return signal.aborted ? stoppedCall : refusedCall(call);
+    return await hooked(run, call, signal, left, offered);
+  }
+
   /**
    * Runs the reply's calls in order. Each call's intent is synced before it
    * runs, with everything appended before it, so a call that may have
-   * changed files is never missing from the session.
+   * changed files is never missing from the session. Every call ends with a
+   * result, as Codex gives each one: once the stop interrupts them, the call
+   * running has what it reported in time or says it was stopped, and the
+   * rest were not run.
    */
-  async function runCalls(run: number, message: AssistantMessage, calls: readonly ToolCall[], signal: AbortSignal,
-    offered: readonly EngineTool[]): Promise<void> {
-    for (const call of calls) {
-      let output: ToolOutput;
-      if (message.stopReason === "length") output = truncatedCall(call);
-      else if (signal.aborted) output = stoppedCall;
-      else if (!await permitted(run, call, offered, signal)) output = signal.aborted ? stoppedCall : refusedCall(call);
-      else output = await hooked(run, call, signal, offered);
-      const result = toolResult(call, output);
-      writer.append({ type: "tool_result", run, message: result });
-      add(result);
-    }
+  function runCalls(run: number, message: AssistantMessage, calls: readonly ToolCall[], signal: AbortSignal,
+    offered: readonly EngineTool[]): Effect.Effect<void> {
+    return Effect.suspend(() => {
+      let next = 0;
+      const answer = (output: ToolOutput): void => {
+        const result = toolResult(calls[next] as ToolCall, output);
+        writer.append({ type: "tool_result", run, message: result });
+        add(result);
+        next += 1;
+      };
+      const each = Effect.gen(function* () {
+        while (next < calls.length) {
+          const call = calls[next] as ToolCall;
+          if (message.stopReason === "length") answer(truncatedCall(call));
+          else yield* step((left) => outcomeOf(run, call, signal, left, offered), (given, ms) => { answer(Option.isSome(given) ? given.value : stoppedAfter(ms)); });
+        }
+      });
+      return each.pipe(Effect.onInterrupt(() => Effect.sync(() => { while (next < calls.length) answer(stoppedCall); })));
+    });
   }
 
   /**
@@ -567,9 +638,10 @@ export function createLoop(options: LoopOptions): LoopSession {
    * previous summary, and replaced by the run's request and amendments as
    * given followed by the summary. A failed summary is tried once more; one
    * larger than what it replaced ends it. Returns why it did not compact, or
-   * nothing once it did.
+   * nothing once it did. A stop interrupts the summary; its usage, when the
+   * model reports it in time, is still counted.
    */
-  async function compact(run: number, signal: AbortSignal): Promise<string | undefined> {
+  const compact = (run: number, signal: AbortSignal): Effect.Effect<string | undefined> => Effect.gen(function* () {
     const head = compacted === undefined ? 0 : 1;
     const sizes = history.map(estimateTokens);
     const cut = cutPoint(sizes, history.map((message, index) => index >= head && message.role !== "toolResult"), margins.keep);
@@ -583,17 +655,18 @@ export function createLoop(options: LoopOptions): LoopSession {
     const tokensBefore = usage()?.tokens ?? sizes.reduce((sum, size) => sum + size, 0);
     const replaced = sizes.slice(0, cut).reduce((sum, size) => sum + size, 0);
     emit({ type: "compacting" });
+    const counted = (result: Awaited<ReturnType<typeof summarize>>): void => {
+      if (result.usage === undefined) return;
+      tokens.input += result.usage.input;
+      tokens.output += result.usage.output;
+      tokens.total += result.usage.totalTokens;
+      writer.append({ type: "summary_usage", run, input: result.usage.input, output: result.usage.output,
+        total: result.usage.totalTokens });
+    };
     let failure = "";
     for (let attempt = 0; attempt < 2; attempt++) {
-      const result = await summarize({ models: options.models, model: options.model, previous: compacted?.summary, messages: older,
-        files, signal });
-      if (result.usage !== undefined) {
-        tokens.input += result.usage.input;
-        tokens.output += result.usage.output;
-        tokens.total += result.usage.totalTokens;
-        writer.append({ type: "summary_usage", run, input: result.usage.input, output: result.usage.output,
-          total: result.usage.totalTokens });
-      }
+      const result = yield* step(() => summarize({ models: options.models, model: options.model, previous: compacted?.summary,
+        messages: older, files, signal }), (given) => { if (Option.isSome(given)) counted(given.value); });
       if (signal.aborted) return stoppedReason;
       if ("error" in result) { failure = result.error; continue; }
       const head = compactedHead(ledger, result.summary, files, history.slice(cut));
@@ -610,7 +683,7 @@ export function createLoop(options: LoopOptions): LoopSession {
       return undefined;
     }
     return `compaction failed twice: ${failure}`;
-  }
+  });
 
   /**
    * Compacts before a request once the conversation is past the margin, or
@@ -618,39 +691,40 @@ export function createLoop(options: LoopOptions): LoopSession {
    * with nothing old enough to summarize the request goes as it is; after an
    * overflow that ends the turns. Returns how they end, or nothing.
    */
-  async function compactFor(run: number, signal: AbortSignal, overflow: boolean): Promise<Ended | undefined> {
+  const compactFor = (run: number, signal: AbortSignal, overflow: boolean): Effect.Effect<Ended | undefined> => Effect.gen(function* () {
     const used = usage();
     if (!overflow && (stuck || used?.tokens == null || !shouldCompact(used.tokens, used.contextWindow, margins.reserve))) {
       return undefined;
     }
-    const failed = await compact(run, signal);
+    const failed = yield* compact(run, signal);
     if (signal.aborted) return { outcome: "aborted", reason: stoppedReason };
     if (failed === undefined || (!overflow && failed === nothingToSummarize)) return undefined;
     return { outcome: "error", reason: failed };
-  }
+  });
 
   /**
    * The model's turns, until it answers without calling a tool and no input
    * waits, fails, or is stopped. After settlement sent the run back, the run
    * is at the boundary where follow-ups enter, so they enter with the steers.
+   * The operator's stop interrupts them (`turnsOf`).
    */
-  async function turns(run: number, signal: AbortSignal, settled: boolean): Promise<Ended> {
+  const turns = (run: number, signal: AbortSignal, settled: boolean): Effect.Effect<Ended> => Effect.gen(function* () {
     let boundary = settled;
     let overflowed = false;
     for (;;) {
       deliver(run, boundary ? ["steer", "followUp"] : ["steer"]);
       boundary = false;
-      const due = await compactFor(run, signal, false);
+      const due = yield* compactFor(run, signal, false);
       if (due !== undefined) return due;
       tools.offer(options.mcp?.()?.tools(spool) ?? []);
       // A reply's calls run with the tools its request offered, whatever extensions change meanwhile.
       const offered = tools.forRequest();
-      const message = await reply(run, signal, offered);
+      const message = yield* reply(run, signal, offered);
       if (!("role" in message)) return message;
       // A provider that rejects the conversation as too long gets it once more, compacted.
       if (message.stopReason === "error" && !overflowed && isContextOverflow(message, options.model.contextWindow)) {
         overflowed = true;
-        const ended = await compactFor(run, signal, true);
+        const ended = yield* compactFor(run, signal, true);
         if (ended !== undefined) return ended;
         continue;
       }
@@ -662,9 +736,20 @@ export function createLoop(options: LoopOptions): LoopSession {
         if (deliver(run, ["steer", "followUp"])) continue;
         return { outcome: "completed" };
       }
-      await runCalls(run, message, calls, signal, offered);
+      yield* runCalls(run, message, calls, signal, offered);
       if (signal.aborted) return { outcome: "aborted", reason: stoppedReason };
     }
+  });
+
+  /**
+   * Runs the model's turns as a fiber the run's signal interrupts, also
+   * when the stop comes while the fiber's first steps run synchronously: a
+   * run already stopped takes no turn, and one interrupted ends aborted with
+   * every step it was in recorded.
+   */
+  async function turnsOf(run: number, signal: AbortSignal, settled: boolean): Promise<Ended> {
+    if (signal.aborted) return { outcome: "aborted", reason: stoppedReason };
+    return endedBy(await Effect.runPromiseExit(turns(run, signal, settled), { signal }));
   }
 
   /** Records what a settle phase added: messages into the conversation, data beside it. */
@@ -766,7 +851,7 @@ export function createLoop(options: LoopOptions): LoopSession {
     let generation = 0;
     let continuations = 0;
     for (;;) {
-      const ended = await turns(run, signal, generation > 0);
+      const ended = await turnsOf(run, signal, generation > 0);
       settling = true;
       emit({ type: "state", state: "settling" });
       const decided = await settle(run, generation, ended, continuations, signal).finally(release);
@@ -811,12 +896,14 @@ export function createLoop(options: LoopOptions): LoopSession {
         if (admission.signal.aborted) throw new Error(stoppedReason);
       };
       try {
+        // Startup is awaited directly, so a prompt asked before `/compact` claims the session first; a stop interrupts the
+        // wait for a compaction.
         await started;
         refused();
         // Checked again after each wait, with no wait between the last check and the run's start, so a compaction
         // asked for meanwhile cannot start under it.
         while (compacting !== undefined) {
-          await compacting.done.catch(() => undefined);
+          await untilStopped(compacting.done.catch(() => undefined), admission.signal);
           refused();
         }
       } finally { admitting.delete(admission); }
@@ -845,6 +932,8 @@ export function createLoop(options: LoopOptions): LoopSession {
       }
     },
     async abort() {
+      // The signal both tells what runs cooperatively and interrupts the turns and a compaction; waiting for them waits
+      // for what their interruption records.
       for (const admission of admitting) admission.abort();
       controller?.abort();
       compacting?.controller.abort();
@@ -860,7 +949,11 @@ export function createLoop(options: LoopOptions): LoopSession {
       if (runs === 0) throw new Error("There is nothing to compact yet.");
       const stopper = new AbortController();
       const done = (async () => {
-        const failed = await compact(runs, stopper.signal);
+        // It starts once `compacting` names it, so a stop from its own `compacting` event reaches it.
+        await Promise.resolve();
+        const exit = await Effect.runPromiseExit(compact(runs, stopper.signal), { signal: stopper.signal });
+        if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)) throw Cause.squash(exit.cause);
+        const failed = Exit.isSuccess(exit) ? exit.value : stoppedReason;
         if (failed !== undefined) throw new Error(failed === nothingToSummarize ? `Nothing to compact: ${failed}.` : failed);
       })();
       compacting = { done, controller: stopper };

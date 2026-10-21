@@ -3,9 +3,11 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Type } from "typebox";
 import type { ExtensionFactory, RunOutcome, SettleEvent, SettleResult } from "../../../src/contract.ts";
 import { createSession, type EngineSession, openSession, type SessionOptions } from "../src/session.ts";
 import { continuationLimit } from "../src/settle-rule.ts";
+import type { EngineTool, ToolOutput } from "../src/tool.ts";
 import type { ScriptStep } from "./engine.ts";
 import { scriptedReply } from "./scripted.ts";
 
@@ -147,6 +149,102 @@ describe("a run that does not complete is finalized once, with its reason", () =
     expect(outcomes).toEqual(["completed"]);
     expect(run.outcome()).toBe("aborted");
     expect(runEnd(run.file)).toMatchObject({ outcome: "aborted", reason: "the operator stopped the run" });
+  });
+});
+
+describe("the operator's stop during a call", () => {
+  /** A tool named `name` that tells `begun` it started, then does what `run` does with the run's signal. */
+  const tool = (name: string, begun: () => void, run: (signal: AbortSignal) => Promise<ToolOutput>): EngineTool => ({
+    name, description: name, parameters: Type.Object({}), execute: (_args, signal) => { begun(); return run(signal); },
+  });
+
+  test("a call that ignores it is recorded as stopped, the calls after it as not run, and the run still settles aborted", async () => {
+    const told: RunOutcome[] = [];
+    let started: () => void = () => undefined;
+    const calling = new Promise<void>((resolve) => { started = resolve; });
+    const run = session([{ calls: [{ tool: "hang", args: {} }, { tool: "hang", args: {} }] }, "never reached"], {
+      tools: () => [tool("hang", started, () => new Promise(() => undefined))],
+      verifier: (pi) => { pi.on("agent_before_settle", (event) => { told.push(event.outcome); return undefined; }); },
+    });
+    const prompt = run.prompt("go");
+    await calling;
+    const stopping = Date.now();
+    await run.abort();
+    await prompt;
+    expect(Date.now() - stopping).toBeLessThan(5_000);
+    expect(run.messages().filter((message) => message.role === "toolResult").map((message) => message.role === "toolResult"
+      && message.text?.replace(/\d+\.\d s/u, "N s"))).toEqual([
+      "Stopped: the operator stopped the agent N s into this call, before it reported; what it changed is not known.",
+      "Not run: the operator stopped the agent.",
+    ]);
+    expect(told).toEqual(["aborted"]);
+    expect(runEnd(run.file)).toMatchObject({ outcome: "aborted", reason: "the operator stopped the run" });
+  });
+
+  test("a call that reports after the run went on without it tells the extensions nothing, so the next run is not blamed", async () => {
+    let started: () => void = () => undefined;
+    const calling = new Promise<void>((resolve) => { started = resolve; });
+    let reported: () => void = () => undefined;
+    const late = new Promise<void>((resolve) => { reported = resolve; });
+    const run = session([{ tool: "late", args: {} }, "second"], {
+      // It ignores the stop and reports only after the run has gone on without it.
+      tools: () => [tool("late", started, () => new Promise((resolve) => {
+        setTimeout(() => { resolve({ text: "too late", isError: false }); reported(); }, 3_000);
+      }))],
+      extensions: [(pi) => { pi.on("tool_result", () => { throw new Error("a handler that fails"); }); }],
+      verifier: (pi) => { pi.on("agent_before_settle", () => undefined); },
+    });
+    const first = run.prompt("go");
+    await calling;
+    await run.abort();
+    await first;
+    await late;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(run.messages().some((message) => message.role === "toolResult" && message.text === "too late")).toBe(false);
+    await run.prompt("again");
+    expect(run.outcome()).toBe("completed");
+  });
+
+  test("an extension's handler that fails after the run went on without its call is not charged to the next run", async () => {
+    let handling: () => void = () => undefined;
+    const handled = new Promise<void>((resolve) => { handling = resolve; });
+    let failed: () => void = () => undefined;
+    const late = new Promise<void>((resolve) => { failed = resolve; });
+    const run = session([{ tool: "quick", args: {} }, "second"], {
+      tools: () => [tool("quick", () => undefined, () => Promise.resolve({ text: "done", isError: false }))],
+      // It ignores the stop and fails only after the run has gone on without the call.
+      extensions: [(pi) => { pi.on("tool_result", async () => {
+        handling();
+        await new Promise((resolve) => setTimeout(resolve, 3_000));
+        failed();
+        throw new Error("a handler that fails late");
+      }); }],
+      verifier: (pi) => { pi.on("agent_before_settle", () => undefined); },
+    });
+    const first = run.prompt("go");
+    await handled;
+    await run.abort();
+    await first;
+    await late;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await run.prompt("again");
+    expect(run.outcome()).toBe("completed");
+  });
+
+  test("a call that stops when told reports its own result", async () => {
+    let started: () => void = () => undefined;
+    const calling = new Promise<void>((resolve) => { started = resolve; });
+    const run = session([{ tool: "listens", args: {} }, "never reached"], {
+      tools: () => [tool("listens", started, (signal) => new Promise((resolve) => {
+        signal.addEventListener("abort", () => { resolve({ text: "stopped after writing half", isError: true }); });
+      }))],
+    });
+    const prompt = run.prompt("go");
+    await calling;
+    await run.abort();
+    await prompt;
+    expect(run.messages().find((message) => message.role === "toolResult")).toMatchObject({ text: "stopped after writing half" });
+    expect(run.outcome()).toBe("aborted");
   });
 });
 

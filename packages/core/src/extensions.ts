@@ -47,8 +47,9 @@ export interface ExtensionHost {
   /** `signal` stops when the session is disposed, which waits for these handlers. */
   sessionStart(event: SessionStartEvent, signal: AbortSignal): Promise<void>;
   input(event: InputEvent, signal: AbortSignal | undefined): Promise<void>;
-  toolStart(event: ToolExecutionStartEvent, signal: AbortSignal): Promise<void>;
-  toolResult(event: ToolResultEvent, signal: AbortSignal): Promise<void>;
+  /** A call's events stop reaching handlers, and their failures stop counting, once the run goes on without it (`left`). */
+  toolStart(event: ToolExecutionStartEvent, signal: AbortSignal, left: AbortSignal): Promise<void>;
+  toolResult(event: ToolResultEvent, signal: AbortSignal, left: AbortSignal): Promise<void>;
   /**
    * Runs one phase's settle handlers in order. Their results accumulate: a
    * later handler sees what earlier ones added and cannot drop it or cancel
@@ -123,19 +124,27 @@ export function createHost(options: HostOptions, extensions: readonly ExtensionF
   for (const factory of extensions) factory(api(ordinary));
   verifier(api(verifying));
 
-  /** Sends an event to every handler, the extensions' first, recording what each throws. */
+  /**
+   * Sends an event to every handler, the extensions' first, recording what
+   * each throws, until the run goes on without the call it is about
+   * (`left`): from then on nothing more is sent, and what a handler still
+   * running throws belongs to no run.
+   */
   async function emit<Name extends Exclude<keyof Events, "agent_before_settle">>(name: Name, event: Events[Name][0],
-    signal: AbortSignal | undefined): Promise<void> {
+    signal: AbortSignal | undefined, left?: AbortSignal): Promise<void> {
+    // Read again after each wait: the run may go on without the call meanwhile.
+    const gone = (): boolean => left?.aborted === true;
     for (const handler of [...ordinary[name], ...verifying[name]] as Handler<Events[Name][0], unknown>[]) {
-      try { await handler(event, context(signal)); } catch (error) { errors.push(`${name}: ${message(error)}`); }
+      if (gone()) return;
+      try { await handler(event, context(signal)); } catch (error) { if (!gone()) errors.push(`${name}: ${message(error)}`); }
     }
   }
 
   return {
     sessionStart: (event, signal) => emit("session_start", event, signal),
     input: (event, signal) => emit("input", event, signal),
-    toolStart: (event, signal) => emit("tool_execution_start", event, signal),
-    toolResult: (event, signal) => emit("tool_result", event, signal),
+    toolStart: (event, signal, left) => emit("tool_execution_start", event, signal, left),
+    toolResult: (event, signal, left) => emit("tool_result", event, signal, left),
     async settle(phase, outcome, signal, reason) {
       const handlers = (phase === "extensions" ? ordinary : verifying).agent_before_settle;
       const entries: EntryDraft[] = [];

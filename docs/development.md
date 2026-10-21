@@ -148,9 +148,20 @@ with `Effect.runPromise(effect, { signal })`.
   modules through `src/process.ts`; code on the shell's path that would load
   more, as the gate's checks would, loads it when first used (`loadChecks`
   in `src/gate.ts`).
-- **An interrupted step is awaited.** `Effect.promise` abandons its promise
-  when interrupted; a step that started processes aborts them and waits, as
-  the gate's `step` does, so nothing runs after Tesota reports.
+- **A verification step that is interrupted is awaited.** `Effect.promise`
+  abandons its promise when interrupted. A gate step that started processes
+  aborts them and waits, as the gate's `step` does, so no check runs after
+  Tesota reports.
+- **The operator's stop interrupts the model's turns, as Codex's does**
+  (`step` in `packages/core/src/loop.ts`). Each step a turn waits on (a
+  reply, a call, a summary) is told by the run's signal and gets a short
+  grace to report on its own; past that the run records it as stopped and
+  goes on. Every call still ends with a result: what it reported in time,
+  `Stopped: … s into this call`, or `Not run` for the calls after it. A
+  promise can't be ended, so work that ignores the signal settles
+  unobserved; the processes a tool starts are stopped by `process.ts`.
+  Settlement is not interrupted: the stop only signals it, so the verifier
+  can finalize the stopped run.
 - **Stable core modules only.** Effect tags each module's stability, and an
   `unstable` one may break in a minor release, an `experimental` one in a
   patch release. Every
