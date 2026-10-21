@@ -224,6 +224,17 @@ describe("compaction", () => {
     expect(head.content.match(/Use X/gu)).toHaveLength(1);
   });
 
+  test("the head keeps an answer the tail lost, though an amendment given before it was delivered after it", () => {
+    const asked: HistoryMessage = { role: "user", content: "Choose", timestamp: 0 };
+    const amended: HistoryMessage = { role: "user", content: "Also Z", timestamp: 0 };
+    const answer: HistoryMessage = { role: "toolResult", toolCallId: "ask", toolName: "ask_user", isError: false, timestamp: 0,
+      content: [{ type: "text", text: "Operator selected: B" }] };
+    const head = compactedHead([asked, amended, answer], "## Goal\nx", { read: [], changed: [] }, [amended]);
+    expect(head.content).toStartWith("The operator's request, exactly as given:\n\nChoose\n\n"
+      + "The operator answered your question:\n\nOperator selected: B\n\n");
+    expect(head.content).not.toContain("Also Z");
+  });
+
   test("a summary's tokens are written down, so a resumed session counts them too", async () => {
     const model = scripted([...writes(6), { text: "done" }], ["## Goal\nwrite notes"], smallWindow);
     const created = session(model);

@@ -27,7 +27,6 @@ import { isNativeAskTool } from "./tools/ask.ts";
 import { askQuestions, type QuestionResponder } from "./questions.ts";
 import { askAccepted } from "./questions-rule.ts";
 import type { Clarification, ClarificationAnswer, ClarificationQuestion } from "../../../src/clarification.ts";
-import { clarificationText } from "../../../src/clarification.ts";
 
 export interface LoopOptions {
   /** The session's folder: tools resolve paths and run commands from here. */
@@ -147,26 +146,26 @@ export interface LoopState {
   readonly outcome: SessionOutcome | undefined;
   /** The tools the model could call when the session was last written, when an extension changed them. */
   readonly activeTools?: readonly string[];
-  /** The last run's request and the amendments delivered to it, as the messages that brought them. */
+  /** The last run's request, its delivered amendments and its submitted answers, as the messages that brought them. */
   readonly ledger?: readonly HistoryMessage[];
   /** The last compaction (#451): its summary, the files summarized so far, and where replies count toward usage again. */
   readonly compacted?: { readonly summary: string; readonly files: FilesTouched; readonly counted: number };
 }
 
 /**
- * What a compacted conversation starts with (#451): the run's request and its
- * amendments exactly as given, which no summary replaces, then the summary.
- * It is context the model reads as the operator's; the shell does not show it.
+ * What a compacted conversation starts with (#451): the run's request, its
+ * amendments and the operator's answers exactly as given, which no summary
+ * replaces, then the summary. It is context the model reads as the
+ * operator's; the shell does not show it.
  */
 export function compactedHead(ledger: readonly HistoryMessage[], summary: string, files: FilesTouched,
   tail: readonly HistoryMessage[]): CustomMessage {
-  // What the tail still holds is not repeated: the ledger's messages come in the conversation's order, so those
-  // before the first the tail holds are what it gives, the request first.
-  const kept = ledger.findIndex((message) => tail.includes(message));
-  const [request, ...added] = (kept < 0 ? ledger : ledger.slice(0, kept))
-    .map((message) => typeof message.content === "string" ? message.content : "");
-  const content = [...request === undefined ? [] : ["The operator's request, exactly as given:", request],
-    ...added.flatMap((text) => ["Added while you worked:", text]), summaryMessage(summary, files)].join("\n\n");
+  // What the tail still holds is not repeated. An answer enters the conversation in its call's result, which can
+  // come after an amendment given before it, so the ledger is not in the conversation's order: each is looked for.
+  const given = ledger.flatMap((message, index) => tail.includes(message) ? [] : [(index === 0
+    ? ["The operator's request, exactly as given:"] : message.role === "toolResult" ? ["The operator answered your question:"]
+      : ["Added while you worked:"]).concat(conversationMessage(message).text ?? "")]);
+  const content = [...given.flat(), summaryMessage(summary, files)].join("\n\n");
   return { role: "custom", customType: "tesota.compaction", content, display: false, timestamp: Date.now() };
 }
 
@@ -459,10 +458,7 @@ export function createLoop(options: LoopOptions): LoopSession {
           const clarification: Clarification = { reply: active.reply, callId, at: new Date().toISOString(), questions, answers };
           writer.append({ type: "clarification", run: active.run, clarification });
           writer.sync();
-          const message: HistoryMessage = { role: "user", content: clarificationText(clarification), timestamp: Date.now() };
-          ledger.push(message);
-          inputOrder.set(message, nextInputOrder++);
-          pendingClarifications.push(message);
+          answered.set(callId, nextInputOrder++);
         });
       } catch (error) {
         questionFailure = error instanceof Error ? error : new Error(String(error));
@@ -482,9 +478,17 @@ export function createLoop(options: LoopOptions): LoopSession {
   const margins = resumedCompaction.margins;
   /** The current run's request and delivered amendments, which a compaction keeps as given. */
   let ledger = resumedCompaction.ledger;
-  const pendingClarifications: HistoryMessage[] = [];
+  /** Where each of the ledger's messages came among the request's input: an amendment is delivered, and an answer reaches
+   * the conversation in its call's result, after input that came later may have. */
   const inputOrder = new Map(ledger.map((message, index) => [message, index]));
   let nextInputOrder = ledger.length;
+  /** Each submitted answer's place in the input, by its call, until that call's result carries it into the conversation. */
+  const answered = new Map<string, number>();
+  const toLedger = (message: HistoryMessage, order: number): void => {
+    ledger.push(message);
+    inputOrder.set(message, order);
+    ledger.sort((a, b) => (inputOrder.get(a) ?? 0) - (inputOrder.get(b) ?? 0));
+  };
   let compacted = resumedCompaction.compacted;
   /** Set when a compaction left the conversation past the margin: until another brings it under, only an overflow compacts. */
   let stuck = false;
@@ -561,19 +565,13 @@ export function createLoop(options: LoopOptions): LoopSession {
   function deliver(run: number, behaviors: readonly Behavior[]): boolean {
     const due = queue.filter((amendment) => behaviors.includes(amendment.behavior));
     queue = queue.filter((amendment) => !behaviors.includes(amendment.behavior));
-    const incoming = pendingClarifications.splice(0);
     for (const { id, text, order } of due) {
       writer.append({ type: "delivered", run, amendment: id });
       const delivered: HistoryMessage = { role: "user", content: text, timestamp: Date.now() };
-      ledger.push(delivered);
-      inputOrder.set(delivered, order);
-      incoming.push(delivered);
+      toLedger(delivered, order);
+      add(delivered);
     }
-    const byOrder = (a: HistoryMessage, b: HistoryMessage): number => (inputOrder.get(a) ?? 0) - (inputOrder.get(b) ?? 0);
-    ledger.sort(byOrder);
-    incoming.sort(byOrder);
-    for (const message of incoming) add(message);
-    return incoming.length > 0;
+    return due.length > 0;
   }
 
   /** Calls the operator allowed for the rest of the session, by tool and what they were about. */
@@ -690,6 +688,9 @@ export function createLoop(options: LoopOptions): LoopSession {
         const result = toolResult(call, output);
         writer.append({ type: "tool_result", run, message: result });
         add(result);
+        // A submitted answer enters the conversation once, in its call's result, and the ledger keeps that message.
+        const given = answered.get(call.id);
+        if (given !== undefined) { answered.delete(call.id); toLedger(result, given); }
         answeredIds.add(call.id);
         next += 1;
         const native = offered.find((tool) => tool.name === call.name);
@@ -935,7 +936,7 @@ export function createLoop(options: LoopOptions): LoopSession {
     inputOrder.clear();
     inputOrder.set(asked, 0);
     nextInputOrder = 1;
-    pendingClarifications.length = 0;
+    answered.clear();
     add(asked);
     let generation = 0;
     let continuations = 0;

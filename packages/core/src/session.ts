@@ -164,74 +164,41 @@ function conversation(entries: readonly SessionEntry[]): Pick<LoopState, "histor
   let ledger: HistoryMessage[] = [];
   let compacted: LoopState["compacted"];
   const amendments = new Map<number, { readonly text: string; readonly order: number }>();
+  /** Where each of the ledger's messages came among the request's input, as the loop keeps it. */
   const inputOrder = new Map<HistoryMessage, number>();
-  const pendingContext: HistoryMessage[] = [];
-  /** Each reply by its run and its place in the run, so a repair written later finds it. */
-  const replies = new Map<string, HistoryMessage>();
-  const replyCalls = new Map<string, Set<string>>();
-  const replySeen = new Map<string, Set<string>>();
-  const latestReply = new Map<number, number>();
-  const clarificationContext = new Map<string, HistoryMessage[]>();
-  const counts = new Map<number, number>();
-  const completeReply = (key: string): void => {
-    const context = clarificationContext.get(key);
-    const calls = replyCalls.get(key);
-    const seen = replySeen.get(key);
-    if (context === undefined || calls === undefined || ![...calls].every((call) => seen?.has(call))) return;
-    pendingContext.push(...context);
-    clarificationContext.delete(key);
+  /** Each submitted answer's place in the input, by its run and call, until that call's result carries it. */
+  const answered = new Map<string, number>();
+  const toLedger = (message: HistoryMessage, order: number): void => {
+    ledger.push(message);
+    inputOrder.set(message, order);
+    ledger.sort((a, b) => (inputOrder.get(a) ?? 0) - (inputOrder.get(b) ?? 0));
   };
-  const flushContext = (): void => {
-    const byOrder = (a: HistoryMessage, b: HistoryMessage): number => (inputOrder.get(a) ?? 0) - (inputOrder.get(b) ?? 0);
-    ledger.sort(byOrder);
-    pendingContext.sort(byOrder);
-    history.push(...pendingContext.splice(0));
-  };
-  const retainClarification = (entry: Extract<SessionEntry, { readonly type: "clarification" }>, order: number): void => {
-    const clarification: HistoryMessage = { role: "user", content: clarificationText(entry.clarification), timestamp: Date.parse(entry.clarification.at) };
-    ledger.push(clarification);
-    inputOrder.set(clarification, order);
-    const key = `${entry.run}:${entry.clarification.reply}`;
-    clarificationContext.set(key, [...clarificationContext.get(key) ?? [], clarification]);
-  };
-  const deliverAmendment = (entry: Extract<SessionEntry, { readonly type: "delivered" }>, order: number): void => {
+  const deliver = (entry: Extract<SessionEntry, { readonly type: "delivered" }>, order: number): void => {
     const amendment = amendments.get(entry.amendment);
     const delivered: HistoryMessage = { role: "user", content: amendment?.text ?? "", timestamp: 0 };
-    ledger.push(delivered);
-    inputOrder.set(delivered, amendment?.order ?? order);
-    pendingContext.push(delivered);
+    toLedger(delivered, amendment?.order ?? order);
+    history.push(delivered);
   };
-  const rememberReply = (entry: Extract<SessionEntry, { readonly type: "assistant" }>): void => {
-    const index = counts.get(entry.run) ?? 0;
-    counts.set(entry.run, index + 1);
-    const key = `${entry.run}:${index}`;
-    replies.set(key, entry.message);
-    latestReply.set(entry.run, index);
-    replyCalls.set(key, new Set(entry.message.content.flatMap((part) => part.type === "toolCall" ? [part.id] : [])));
-    replySeen.set(key, new Set());
+  /** A call's result; a submitted answer entered the conversation once, in it, and the ledger keeps that message. */
+  const result = (entry: Extract<SessionEntry, { readonly type: "tool_result" }>): void => {
     history.push(entry.message);
+    const key = `${entry.run}:${entry.message.toolCallId}`;
+    const answer = answered.get(key);
+    if (answer !== undefined) { answered.delete(key); toLedger(entry.message, answer); }
   };
-  const acceptResult = (entry: Extract<SessionEntry, { readonly type: "tool_result" }>): void => {
-    history.push(entry.message);
-    const index = latestReply.get(entry.run);
-    if (index === undefined) return;
-    const key = `${entry.run}:${index}`;
-    replySeen.get(key)?.add(entry.message.toolCallId);
-    completeReply(key);
-  };
+  /** Each reply by its run and its place in the run, so a repair written later finds it. */
+  const replies = new Map<string, HistoryMessage>();
+  const counts = new Map<number, number>();
   for (const [order, entry] of entries.entries()) {
-    if (["assistant", "request", "settle", "run_end", "compaction"].includes(entry.type)) flushContext();
     if (entry.type === "request") {
       const asked: HistoryMessage = { role: "user", content: entry.text, timestamp: Date.parse(entry.at) };
       ledger = [asked];
       inputOrder.set(asked, order);
       history.push(asked);
     } else if (entry.type === "amendment") amendments.set(entry.id, { text: entry.text, order });
-    else if (entry.type === "delivered") {
-      deliverAmendment(entry, order);
-    } else if (entry.type === "clarification") {
-      retainClarification(entry, order);
-    } else if (entry.type === "reconciliation") {
+    else if (entry.type === "delivered") deliver(entry, order);
+    else if (entry.type === "clarification") answered.set(`${entry.run}:${entry.clarification.callId}`, order);
+    else if (entry.type === "reconciliation") {
       // A repair goes after the other results of its reply, in the order repairs were written: a compaction
       // written before it kept what the session held then, and a reply it summarized takes its repair with it.
       const reply = replies.get(`${entry.run}:${entry.reply}`);
@@ -241,25 +208,22 @@ function conversation(entries: readonly SessionEntry[]): Pick<LoopState, "histor
       while (history[after]?.role === "toolResult") after += 1;
       history.splice(after, 0,
         toolResult({ id: entry.callId, name: entry.toolName }, { text: repairText[entry.repair], isError: true }, 0));
-      const key = `${entry.run}:${entry.reply}`;
-      replySeen.get(key)?.add(entry.callId);
-      completeReply(key);
     } else if (entry.type === "compaction") {
       const files = { read: entry.read, changed: entry.changed };
       const cut = Math.max(0, history.length - entry.kept);
       history.splice(0, cut, compactedHead(ledger, entry.summary, files, history.slice(cut)));
       compacted = { summary: entry.summary, files, counted: history.length };
     } else if (entry.type === "assistant") {
-      rememberReply(entry);
-    } else if (entry.type === "tool_result") {
-      acceptResult(entry);
-    }
+      const index = counts.get(entry.run) ?? 0;
+      counts.set(entry.run, index + 1);
+      replies.set(`${entry.run}:${index}`, entry.message);
+      history.push(entry.message);
+    } else if (entry.type === "tool_result") result(entry);
     else if (entry.type === "custom_message") {
       const { customType, content, display, details } = entry;
       history.push({ role: "custom", customType, content, display, ...details === undefined ? {} : { details }, timestamp: 0 });
     }
   }
-  flushContext();
   return { history, ledger, ...compacted === undefined ? {} : { compacted } };
 }
 

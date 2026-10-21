@@ -47,7 +47,7 @@ test("a question returns to the model before any remaining sibling call can chan
   await session.prompt("Help me choose.");
   expect(existsSync(join(session.workspace.cwd, "forbidden.txt"))).toBe(false);
   expect(observedText).toContain("Explain first; do not implement.");
-  expect(observedRoles).toEqual(["system", "user", "assistant", "toolResult", "toolResult", "user"]);
+  expect(observedRoles).toEqual(["system", "user", "assistant", "toolResult", "toolResult"]);
   expect(session.outcome()).toBe("completed");
   const entries = readSessionFile(session.file).entries;
   expect(entries.filter((entry) => entry.type === "call_intent")).toHaveLength(1);
@@ -167,7 +167,7 @@ test("a submitted answer recovers once when the process ended before its ordinar
   expect(results[0]).toMatchObject({ toolName: "ask_user", isError: false });
   expect(results[0]?.text).toContain("Keep my exact words.");
   expect(results[1]).toMatchObject({ toolName: "read", isError: true });
-  expect(reopened.messages().map((message) => message.role)).toEqual(["user", "assistant", "toolResult", "toolResult", "user"]);
+  expect(reopened.messages().map((message) => message.role)).toEqual(["user", "assistant", "toolResult", "toolResult"]);
   await reopened.dispose();
   const again = openSession(session.file, models([]));
   sessions.push(again);
@@ -203,23 +203,24 @@ test.each(["append", "sync", "release"] as const)("a question host %s failure pr
   if (failure !== "release") expect(session.ledger()[0]?.inputs).toEqual([]);
 });
 
-test("an amendment accepted before an answer stays before it in model context and after resume", async () => {
+test("an answer reaches the model once, in its call's result; an amendment given before it stays before it in the ledger", async () => {
   let ready = (): void => undefined;
   const registered = new Promise<void>((resolve) => { ready = resolve; });
   let submitAnswer: QuestionSubmit = () => "not registered";
-  let seen: string[] = [];
+  let seen = "";
+  let users: string[] = [];
   const session = start([{ tool: "ask_user", args: { questions } }, { seen: (context) => {
-    seen = context.messages.flatMap((message) => message.role === "user" && typeof message.content === "string" ? [message.content] : []);
+    seen = JSON.stringify(context.messages);
+    users = context.messages.flatMap((message) => message.role === "user" && typeof message.content === "string" ? [message.content] : []);
   }, reply: "done" }], { questions: (_batch, submit) => { submitAnswer = submit; ready(); return () => undefined; } });
   const completion = session.prompt("Choose.");
   await registered;
   await session.prompt("Earlier amendment.", { streamingBehavior: "steer" });
   submitAnswer([{ selected: [1], text: "Later answer." }]);
   await completion;
-  expect(seen).toHaveLength(3);
-  expect(seen[0]).toBe("Choose.");
-  expect(seen[1]).toBe("Earlier amendment.");
-  expect(seen[2]).toContain("Later answer.");
+  expect(users).toEqual(["Choose.", "Earlier amendment."]);
+  expect(seen.split("Later answer.")).toHaveLength(2);
+  expect(session.ledger()[0]?.inputs.map((input) => input.kind)).toEqual(["amendment", "clarification"]);
   const history = session.messages();
   await session.dispose();
   const reopened = openSession(session.file, models([]));
