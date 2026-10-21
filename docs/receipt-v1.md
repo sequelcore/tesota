@@ -93,7 +93,7 @@ The Statement is not signed. Only a receipt with `version` 1 and
 `repository` true is written as a Statement. A receipt with `units` is not:
 run in one of its repositories, `tesota receipt` writes that repository's
 unit as a receipt of its own, with the run's `version`, `startedAt`,
-`settledAt`, `engine` and `model`, and the unit's `folder` kept.
+`settledAt`, `engine`, `model` and `clarifications`, and the unit's `folder` kept.
 
 ## The receipt
 
@@ -124,6 +124,20 @@ unit as a receipt of its own, with the run's `version`, `startedAt`,
 | `startState`, `endState` | CaptureState, optional | Each repository's capture at the first non-reader tool and at settlement. Absent for snapshots and stopped runs |
 | `units` | Unit[], optional | Present when the session ran in a folder that is in no Git repository and holds repositories directly. Then the fields from `snapshot` to `endState` are empty or absent, `repository` is true and `base` is null |
 | `openCases` | OpenCases, optional | The cases the operator's request leaves open, as a model listed them for the operator to settle. A model's opinion, never evidence, and never one of the receipt's decisions. Absent when the operator ran Tesota with `--open-cases-model off` |
+| `clarifications` | Clarification[], optional | Explicitly submitted answers to the agent's questions, in submission order. Request context, never evidence, execution permission or acceptance. Absent when no batch was submitted |
+
+### Clarification
+
+Each batch has `reply` (zero-based assistant reply within the run), `callId`,
+`at` (submission timestamp), `questions` and `answers`. Together the reply
+and call identify the invocation; a call ID can recur in another reply.
+
+A question has `question`, `options` (`label` and `description`), optional
+`multiple` and optional `recommended` (zero-based option index). These words
+were supplied by the agent. Its matching answer has `selected` (zero-based
+option indices) and optional `text`, the operator's words kept verbatim.
+An answer can include both selections and text. Unsubmitted drafts,
+dismissed questions and unavailable answers do not enter this list.
 
 ### Unit
 

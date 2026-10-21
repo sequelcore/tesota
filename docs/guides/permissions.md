@@ -57,6 +57,9 @@ Rules are JSON, as `tool(pattern)` or a tool's name alone:
 - **Tools:** `read`, `ls`, `find`, `grep`, `write`, `edit`, `prove`, `shell` (whichever shell the
   platform runs: PowerShell on Windows, bash elsewhere), and MCP tools by
   their name, `mcp__<server>__<tool>`.
+- **Questions:** `ask_user` has read access in every mode, subject to your
+  rules and hooks. Its answer never allows a later tool call; that call
+  passes the same permission boundary as every other one.
 - **Patterns** match a path, relative to the session's folder, or a shell
   command. `*` matches anything but `/` in a path and anything in a
   command; `**` matches across folders.

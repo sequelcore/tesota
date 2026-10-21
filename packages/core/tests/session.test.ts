@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { Type } from "typebox";
 import type { Session } from "../../../src/contract.ts";
 import { createSession, type EngineSession, openSession, type SessionOptions } from "../src/session.ts";
+import { captureBase } from "../src/base.ts";
 import { readSessionFile, SessionFileError } from "../src/session-file.ts";
 import { SessionLockedError } from "../src/session-lock.ts";
 import type { EngineTool } from "../src/tool.ts";
@@ -132,6 +133,26 @@ describe("the request ledger", () => {
     await expect(created.prompt("go")).rejects.toThrow("disk full");
     expect(existsSync(join(cwd, "a.txt"))).toBe(false);
     expect(created.outcome()).toBe("error");
+  });
+
+  test("a request whose base could not be captured is not a run: input for it is refused and the next request is run 1", async () => {
+    let fail: (error: Error) => void = () => undefined;
+    let attempts = 0;
+    const created = session(["done"], { captureBase: (cwd, signal) => ++attempts === 1
+      ? new Promise((_resolve, reject) => { fail = reject; }) : captureBase(cwd, signal) });
+    const failure = (promise: Promise<void>): Promise<string> => promise.then(() => "resolved", (error: Error) => error.message);
+    const first = failure(created.prompt("first"));
+    const steer = failure(created.prompt("also this", { streamingBehavior: "steer" }));
+    await Bun.sleep(20);
+    fail(new Error("snapshot store locked"));
+    expect(await first).toBe("snapshot store locked");
+    expect(await steer).toContain("send it as a new prompt");
+    expect(created.outcome()).toBeUndefined();
+    await created.prompt("second");
+    expect(created.outcome()).toBe("completed");
+    const saved = readSessionFile(created.file).entries;
+    expect(saved.filter((entry) => entry.type === "request")).toMatchObject([{ run: 1, text: "second" }]);
+    expect(saved.some((entry) => entry.type === "amendment")).toBe(false);
   });
 });
 
@@ -321,20 +342,20 @@ describe("the session file", () => {
     expect(entriesOf(file).slice(-2).map((entry) => entry.type)).toEqual(["active_tools", "run_end"]);
   });
 
-  // Version 1 promised no verification behind "completed" (#439), so it is refused, not reinterpreted.
-  for (const version of [1, 3]) {
+  // Older formats are refused, not reinterpreted or migrated.
+  for (const version of [1, 2]) {
     test(`a session of version ${version} refuses to open, naming it`, async () => {
       const file = await finished();
       const lines = readFileSync(file, "utf8").split("\n");
-      lines[0] = (lines[0] ?? "").replace("\"version\":2", `"version":${version}`);
+      lines[0] = (lines[0] ?? "").replace("\"version\":3", `"version":${version}`);
       writeFileSync(file, lines.join("\n"));
       expect(() => openSession(file, scriptless())).toThrow(`version ${version}`);
     });
   }
 
-  test("version 2 as committed still reads, with the verifier's message in the conversation and its data outside it", () => {
-    const fixture = join(import.meta.dir, "fixtures", "session-v2.jsonl");
-    const copy = join(folder(), "session-v2.jsonl");
+  test("version 3 reads, with the verifier's message in the conversation and its data outside it", () => {
+    const fixture = join(import.meta.dir, "fixtures", "session-v3.jsonl");
+    const copy = join(folder(), "session-v3.jsonl");
     writeFileSync(copy, readFileSync(fixture));
     const resumed = openSession(copy, scriptless());
     open.push(resumed);

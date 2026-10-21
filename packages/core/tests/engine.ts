@@ -2,8 +2,8 @@ import type { Context, JsonObject, SimpleStreamOptions } from "@earendil-works/p
 import type { ExtensionAPI, ExtensionFactory, Session } from "../../../src/contract.ts";
 import type { LedgerRequest } from "../src/session.ts";
 
-/** A call to a tool with its arguments. */
-export interface ToolStep { readonly tool: string; readonly args: JsonObject }
+/** A call to a tool with its arguments, and the id the provider gave it when a test sets one. */
+export interface ToolStep { readonly tool: string; readonly args: JsonObject; readonly id?: string }
 
 /**
  * One scripted model reply: text; a call to a tool; several calls in one

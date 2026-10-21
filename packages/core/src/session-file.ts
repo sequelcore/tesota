@@ -2,18 +2,21 @@ import type { AssistantMessage, ToolResultMessage } from "@earendil-works/pi-ai"
 import { closeSync, fsyncSync, ftruncateSync, openSync, readFileSync, renameSync, writeSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Base } from "./base.ts";
+import type { Clarification } from "../../../src/clarification.ts";
+import { validateAnswers, validateQuestions } from "./questions-schema.ts";
 import type { PromptOptions, RunOutcome, SessionOutcome } from "../../../src/contract.ts";
 
 /**
  * Tesota's session format (#437): one JSON Lines file per session, written
  * by one writer and only appended to. Its first line is the header; the
  * rest are entries, in the order they happened. The request ledger is the
- * `request` and `amendment` entries: written, and synced, before the model
+ * `request`, `amendment` and `clarification` entries: written, and synced, before the model
  * hears of them, and never rewritten. Version 2 (#439) records each run's
- * settlement, and a run ends `completed` only after its verifier's.
+ * settlement, and a run ends `completed` only after its verifier's. Version 3
+ * (#520) records submitted native questions as attributed request input.
  */
 export const sessionFormat = "tesota-session";
-export const sessionVersion = 2;
+export const sessionVersion = 3;
 
 export interface SessionHeader {
   readonly type: "session";
@@ -49,6 +52,8 @@ export type SessionEntry =
   /** Input accepted while run `run` was going. */
   | { readonly type: "amendment"; readonly run: number; readonly id: number; readonly behavior: Behavior;
     readonly origin: Origin; readonly text: string; readonly at: string }
+  /** A submitted native answer. Its batch is immutable and belongs to one assistant reply and call. */
+  | { readonly type: "clarification"; readonly run: number; readonly clarification: Clarification }
   /** An amendment entered the conversation. */
   | { readonly type: "delivered"; readonly run: number; readonly amendment: number }
   | { readonly type: "assistant"; readonly run: number; readonly message: AssistantMessage }
@@ -121,6 +126,9 @@ const shapes: Record<SessionEntry["type"], (entry: Record<string, unknown>) => b
     && isObject(entry["base"]) && Array.isArray(entry["base"]["units"]),
   amendment: (entry) => isCount(entry["id"]) && (entry["behavior"] === "steer" || entry["behavior"] === "followUp")
     && origins.has(entry["origin"] as string) && isText(entry["text"]) && isText(entry["at"]),
+  clarification: (entry) => isObject(entry["clarification"]) && Number.isInteger(entry["clarification"]["reply"])
+    && isText(entry["clarification"]["callId"]) && isText(entry["clarification"]["at"])
+    && Array.isArray(entry["clarification"]["questions"]) && Array.isArray(entry["clarification"]["answers"]),
   delivered: (entry) => isCount(entry["amendment"]),
   assistant: (entry) => isObject(entry["message"]) && entry["message"]["role"] === "assistant" && Array.isArray(entry["message"]["content"]),
   call_intent: (entry) => isText(entry["callId"]),
@@ -161,6 +169,27 @@ function entryAt(value: unknown, runs: number, previous: SessionEntry | undefine
   const completes = type === "run_end" && value["outcome"] === "completed";
   return placed && shapes[type](value) && (!completes || (previous?.type === "settled" && verifiedBy(previous) && previous.run === run))
     ? value as unknown as SessionEntry : undefined;
+}
+
+/** A retained answer is trusted only when it names an earlier native call and its immutable offered batch. */
+function linkedClarification(entry: Extract<SessionEntry, { readonly type: "clarification" }>, entries: readonly SessionEntry[]): boolean {
+  const clarification = entry.clarification;
+  if (clarification.reply < 0 || validateQuestions(clarification.questions) !== undefined
+    || validateAnswers(clarification.questions, clarification.answers) !== undefined) return false;
+  const replies = entries.filter((prior): prior is Extract<SessionEntry, { readonly type: "assistant" }> => prior.type === "assistant" && prior.run === entry.run);
+  if (clarification.reply !== replies.length - 1) return false;
+  const message = replies.at(-1)?.message;
+  const call = message?.content.find((part) => part.type === "toolCall" && part.id === clarification.callId);
+  if (call?.type !== "toolCall" || call.name !== "ask_user") return false;
+  const priorReply = entries.lastIndexOf(replies.at(-1) as SessionEntry);
+  const invocation = entries.slice(priorReply + 1);
+  if (!invocation.some((prior) => prior.type === "call_intent" && prior.callId === clarification.callId)) return false;
+  if (invocation.some((prior) => prior.type === "clarification" && prior.clarification.callId === clarification.callId
+    || prior.type === "tool_result" && prior.message.toolCallId === clarification.callId
+    || prior.type === "run_end")) return false;
+  const argumentsOf = call.arguments as Record<string, unknown>;
+  return JSON.stringify(argumentsOf["questions"]) === JSON.stringify(clarification.questions)
+    && clarification.answers.length === clarification.questions.length;
 }
 
 function headerOf(value: unknown, path: string): SessionHeader {
@@ -235,7 +264,7 @@ function wholeLines(path: string, bytes: Buffer): { header: SessionHeader; entri
   /** Takes the line as the next entry, when it is one. */
   const take = (line: string): boolean => {
     const entry = entryAt(parsed(line), runs, entries.at(-1));
-    if (entry === undefined) return false;
+    if (entry === undefined || (entry.type === "clarification" && !linkedClarification(entry, entries))) return false;
     if (entry.type === "request") runs = entry.run;
     entries.push(entry);
     return true;

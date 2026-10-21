@@ -15,6 +15,8 @@ export function branchOf(entries: readonly SessionEntry[]): BranchEntry[] {
     else if (entry.type === "delivered") {
       const message = { role: "user", content: amendments.get(entry.amendment) ?? "", timestamp: 0 };
       branch.push({ type: "message", message });
+    } else if (entry.type === "clarification") {
+      branch.push({ type: "custom", customType: "tesota.clarification", data: entry.clarification });
     } else if (entry.type === "assistant" || entry.type === "tool_result") branch.push({ type: "message", message: entry.message });
     else if (entry.type === "reconciliation") {
       branch.push({ type: "message",

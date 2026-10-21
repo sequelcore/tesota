@@ -3,6 +3,7 @@ import { type Component, Container, Markdown, Text, truncateToWidth } from "@ear
 import type { CustomMessage, HistoryMessage } from "../loop.ts";
 import type { MessageRenderer, ToolDrawing } from "./surface.ts";
 import type { ShellTheme } from "../../../../src/theme.ts";
+import { terminalText } from "../../../../src/terminal-text.ts";
 
 /** How extensions draw their messages and tool calls (#446), and whether drawings are expanded. */
 export interface Drawings {
@@ -42,9 +43,9 @@ function prefixedText(text: string, prefix: string): Component {
     truncateToWidth(`${MARGIN}${index === 0 ? prefix : "  "}${line}`, width)), () => { body.invalidate(); });
 }
 
-/** The operator's message, with a quiet prompt and no background. */
+/** The operator's message, with a quiet prompt and no background; an answer quotes the agent's words, so controls are removed. */
 function userView(text: string, theme: ShellTheme): Component {
-  return prefixedText(theme.fg("userMessageText", text), theme.bold(theme.fg("dim", "› ")));
+  return prefixedText(theme.fg("userMessageText", terminalText(text)), theme.bold(theme.fg("dim", "› ")));
 }
 
 /** A reply: its thinking, quieter, then its text as Markdown. */

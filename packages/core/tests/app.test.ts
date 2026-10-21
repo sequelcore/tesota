@@ -76,6 +76,48 @@ async function app(replies: readonly ScriptStep[] = [], { repository = false, mc
 
 const send = (terminal: VirtualTerminal, text: string): void => { terminal.type(text); terminal.type(enter); };
 
+test("a native question remains waiting after reattachment and can close while hidden", async () => {
+  const { terminal, running } = await app([{ tool: "ask_user", args: { questions: [{ question: "Choose a path.", options: [
+    { label: "Small", description: "Use the small change." }, { label: "Full", description: "Use the complete change." },
+  ] }] } }, "answered"], { repository: true });
+  send(terminal, "/model");
+  await terminal.until("Model"); terminal.type(enter); await terminal.until("Model: ");
+  send(terminal, "Choose for this request.");
+  await terminal.until("Submit answers");
+  terminal.type("\x14"); await terminal.until("Sessions"); terminal.type("n");
+  await terminal.untilGone("Submit answers");
+  await terminal.until("1 session waits for you");
+  terminal.type("\x14"); await terminal.until("Sessions"); terminal.type("\x1b[A"); terminal.type(enter);
+  await terminal.until("Submit answers");
+  terminal.type("\x14"); await terminal.until("Sessions"); terminal.type("\x1b[B"); terminal.type(enter);
+  await terminal.untilGone("Submit answers");
+  try {
+    expect((await terminal.screen()).join("\n")).toContain("1 session waits for you");
+    terminal.type("\x14"); await terminal.until("Sessions"); terminal.type("\x1b[B"); terminal.type("x");
+    await terminal.until("Sessions (1)");
+    terminal.type("\x1b"); await terminal.untilGone("Sessions");
+    await terminal.until("Submit answers");
+    terminal.type("1"); terminal.type("\t"); terminal.type("\t"); terminal.type(enter);
+    await terminal.until("answered");
+  } finally {
+    send(terminal, "/quit");
+    await running;
+  }
+});
+
+test("a question arriving behind the dashboard waits until the dashboard gives focus back", async () => {
+  const { terminal, running } = await app([{ tool: "ask_user", args: { questions: [{ question: "Choose after inspecting sessions.", options: [
+    { label: "A", description: "First path." }, { label: "B", description: "Second path." },
+  ] }] } }, "question dismissed"]);
+  send(terminal, "/model"); await terminal.until("Model"); terminal.type(enter); await terminal.until("Model: ");
+  send(terminal, "Ask me."); terminal.type("\x14");
+  await terminal.until("Sessions"); await terminal.until("waiting for you");
+  expect((await terminal.screen()).join("\n")).not.toContain("Submit answers");
+  terminal.type("\x1b"); await terminal.untilGone("Sessions"); await terminal.until("Submit answers");
+  terminal.type("\x1b"); await terminal.until("question dismissed");
+  send(terminal, "/quit"); await running;
+});
+
 describe("tesota-core", () => {
   test("/ lists the commands with descriptions, and the list scrolls to /quit", async () => {
     const { terminal, running } = await app();

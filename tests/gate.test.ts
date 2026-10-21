@@ -4,12 +4,13 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Evidence } from "../src/evidence.js";
+import type { Clarification, RequestInput } from "../src/clarification.js";
 import { evidenceParts, evidenceText } from "../src/footer.js";
-import { changedFiles, GateProgress, type GateStatus, registerGate, type SentBack } from "../src/gate.js";
+import { changedFiles, GateProgress, type GateStatus, type RecordedRequest, registerGate, type SentBack } from "../src/gate.js";
 import { headCommit } from "../src/git.js";
 import { openCasesSystemPrompt } from "../src/open-cases.js";
 import { receiptFindings, type Receipt } from "../src/receipt.js";
-import { gateVerdict, keepsWorking } from "../src/verification/gate-rule.js";
+import { gateVerdict, keepsWorking, toolMayChangeFiles } from "../src/verification/gate-rule.js";
 import type { ProofOutcome } from "../src/verification/proof-outcome-rule.js";
 import { emptyReceipt } from "./receipts.js";
 
@@ -30,6 +31,12 @@ vi.mock("../src/verification/lemmascript-verifier.js", async (original) => ({
 }));
 
 const roots: string[] = [];
+
+it("asking a question alone cannot change project files, while unknown tools remain eligible", () => {
+  expect(toolMayChangeFiles("ask_user", true)).toBe(false);
+  expect(toolMayChangeFiles("ask_user", false)).toBe(true);
+  expect(toolMayChangeFiles("unknown_tool", false)).toBe(true);
+});
 beforeEach(() => { scripted.clear(); mutantOutcome = "failed"; });
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
@@ -96,7 +103,7 @@ function priceTest(input: number, expected: number, name = "total"): string {
 interface Settled { entries?: { type?: string; customType: string; content: string; details?: unknown; data?: unknown }[]; continue?: boolean }
 
 /** The gate's handlers on a fake Pi, run as Pi runs them in `root`; the open-case list is off unless `session` sets its flag. */
-function gate(root: string, active = ["read", "edit", "prove"], session: object = {}): {
+function gate(root: string, active = ["read", "edit", "prove"], session: object = {}, recorded?: () => RecordedRequest): {
   input: (source?: string, streamingBehavior?: string, text?: string) => Promise<void>; agentStart: () => void; tool: (name: string) => Promise<void>;
   settle: (outcome?: string, reason?: string) => Promise<Settled | undefined>; progress: GateProgress; steps: GateStatus[];
 } {
@@ -104,7 +111,7 @@ function gate(root: string, active = ["read", "edit", "prove"], session: object 
   const progress = registerGate({ on: (name: string, handler: (event: unknown, ctx: unknown) => unknown) => { handlers.set(name, handler); },
     registerFlag: () => undefined,
     getFlag: (name: string) => ({ "open-cases-model": "off", ...(session as { flags?: Record<string, string | undefined> }).flags })[name],
-    getActiveTools: () => active } as never);
+    getActiveTools: () => active } as never, recorded);
   const steps: GateStatus[] = [];
   progress.subscribe(() => { steps.push(progress.status); });
   const ctx = { cwd: root, signal: undefined, ...session };
@@ -119,6 +126,39 @@ function gate(root: string, active = ["read", "edit", "prove"], session: object 
       await handlers.get("agent_before_settle")?.({ type: "agent_before_settle", outcome, reason }, ctx) as Settled | undefined,
   };
 }
+
+it.each([false, true])("verifies clarifications and amendments in their journal order (answer first: %s)", async (answerFirst) => {
+  const root = project();
+  const commit = await headCommit(root);
+  const clarification: Clarification = { reply: 0, callId: "ask", at: "2026-10-20T00:00:00.000Z",
+    questions: [{ question: "Which behavior?", options: [
+      { label: "A", description: "Use behavior A." }, { label: "B", description: "Use behavior B." },
+    ] }], answers: [{ selected: [0], text: "Explain before implementing." }] };
+  const amendment = { kind: "amendment", origin: "interactive", text: "Use behavior B instead." } as const;
+  const answer = { kind: "clarification", clarification } as const;
+  const inputs: RequestInput[] = answerFirst ? [answer, amendment] : [amendment, answer];
+  inputs.push({ kind: "amendment", origin: "extension", text: "Not operator input." });
+  const prompts: string[] = [];
+  const run = gate(root, undefined, { flags: { "open-cases-model": "test/lister" }, modelRegistry: {
+    find: () => ({ provider: "test", id: "lister" }), complete: (_model: unknown, context: { messages: { content: { text: string }[] }[] }) => {
+      prompts.push(context.messages[0]?.content[0]?.text ?? "");
+      return Promise.resolve({ stopReason: "toolUse", content: [{ type: "toolCall", id: "result", name: "record_open_cases", arguments: { cases: [] } }] });
+    },
+  } }, () => ({ text: "Choose the behavior.", at: clarification.at, inputs,
+    base: { units: [{ folder: "", kind: "commit", commit }] } }));
+  await run.input();
+  await run.tool("write");
+  write(root, { "notes.md": "# Changed\n" });
+  const receipt = entry(await run.settle()).details as Receipt;
+  expect(receipt.clarifications).toEqual([clarification]);
+  expect(prompts).toHaveLength(1);
+  expect(prompts[0]).toContain("Operator selected: A — Use behavior A.");
+  expect(prompts[0]).not.toContain("Not operator input.");
+  const answerAt = prompts[0]?.indexOf("Explain before implementing.") ?? -1;
+  const amendmentAt = prompts[0]?.indexOf("Use behavior B instead.") ?? -1;
+  expect(answerAt >= 0 && amendmentAt >= 0).toBe(true);
+  expect(answerFirst ? answerAt < amendmentAt : amendmentAt < answerAt).toBe(true);
+});
 
 /** The one entry a settle appended. */
 function entry(settled: Settled | undefined): { customType: string; content: string; details?: unknown } {

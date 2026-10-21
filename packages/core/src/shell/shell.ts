@@ -11,7 +11,10 @@ import { copyToClipboard } from "./clipboard.ts";
 import { FileAutocompleteProvider } from "./autocomplete.ts";
 import { expandKey, type Surface } from "./surface.ts";
 import type { ShellTheme } from "../../../../src/theme.ts";
+import type { ClarificationQuestion } from "../../../../src/clarification.ts";
 import { Transcript } from "./transcript.ts";
+import type { QuestionOutcome, QuestionSubmit } from "../questions.ts";
+import { createQuestionDraft, type QuestionDraft, QuestionForm } from "./question.ts";
 
 /** The fullscreen renderer that draws every cell on every frame, for terminals that leave stale fragments otherwise. */
 class RepaintingAltScreen extends TuiAltScreen {
@@ -110,6 +113,11 @@ export interface Shell {
   show(session: EngineSession, surface?: Surface, state?: "working" | "settling"): void;
   /** Shows `body` over the whole shell with the keyboard's focus; the returned function takes it away again. */
   overlay(body: Component): () => void;
+  /** Registers an explicit batch of operator questions for `owner`, and removes it when its run releases the callback. */
+  askUser(owner: EngineSession, questions: readonly ClarificationQuestion[], submit: QuestionSubmit,
+    finish: (outcome: Exclude<QuestionOutcome, { readonly status: "answered" }>) => void): () => void;
+  /** Tells every pending question owned by `owner` that its session can no longer accept an answer. */
+  cancelQuestions(owner: EngineSession, reason: string): void;
   /** Shows the shown session's run as working, verifying or idle, when it goes on without saying so (#455). */
   busy(state: "working" | "settling" | undefined): void;
   /** Writes a line of the shell's own into the conversation. */
@@ -165,7 +173,7 @@ export function startShell(options: ShellOptions): Shell {
   document.addChild(transcript);
   const status = new Container();
   const loader = new Loader(tui, (text) => theme.fg("accent", text), (text) => theme.fg("muted", text), "Working…");
-  const editorSlot = new Container();
+  const editorSlot = new VStack();
   let editor = new Editor(tui, theme.editor);
   const autocomplete = (): FileAutocompleteProvider =>
     new FileAutocompleteProvider([...(options.commands ?? [])], session.workspace.cwd);
@@ -173,12 +181,16 @@ export function startShell(options: ShellOptions): Shell {
   const footer = new Text("", 1, 0);
   const drawFooter = (): void => { footer.setText(theme.fg("dim", options.status())); };
   drawFooter();
+  // While a question waits in the input's place the run waits for the operator, as the footer says, so it does not
+  // also show as working: the question leads, directly under the conversation.
+  const statusRow: Component = { render: (width) => questions.length > 0 ? [] : status.render(width), invalidate: () => { status.invalidate(); } };
   // A blank row always above the input, so the conversation's last card never touches it.
-  const dock: readonly Component[] = [new Spacer(1), status, editorSlot, footerSlot];
+  const dock: readonly Component[] = [new Spacer(1), statusRow, editorSlot, footerSlot];
   if (tui instanceof TuiAltScreen) {
     tui.setLayoutRoot(new VStack([
       { component: new ScrollView(document, { follow: "end", primary: true, overscroll: "chain" }), basis: 0, grow: 1, shrink: 1, minSize: 1 },
-      { component: new VStack(dock.map((component) => ({ component, shrink: 1, minSize: 0 }))), basis: "auto", grow: 0, shrink: 1,
+      // The footer never gives up its row: what waits for the operator, and the mode, show however tall a question is.
+      { component: new VStack(dock.map((component) => ({ component, shrink: component === footerSlot ? 0 : 1, minSize: 0 }))), basis: "auto", grow: 0, shrink: 1,
         minSize: 1 },
     ]));
   } else {
@@ -188,6 +200,7 @@ export function startShell(options: ShellOptions): Shell {
 
   /** What has the keyboard over the shell, a dialog or the dashboard (#455): the editor takes it back only when nothing does. */
   let covering: Component | undefined;
+  let overlayVisible = false;
   /** The questions shown in the input's place, the latest in front: a permission, a picker, a prompt. */
   const questions: { readonly box: Component; readonly body: Component & Focusable }[] = [];
   /** The input's slot: the latest question while one waits, the editor otherwise; the footer says when one waits. */
@@ -196,6 +209,72 @@ export function startShell(options: ShellOptions): Shell {
     editorSlot.addChild(questions.at(-1)?.box ?? editor);
     if (questions.length > 0) surface?.statuses.set(QUESTION_STATUS, "waiting for you");
     else surface?.statuses.delete(QUESTION_STATUS);
+  };
+  interface ClarificationMount {
+    readonly question: { readonly box: Component; readonly body: Component & Focusable };
+    readonly generation: number;
+  }
+  interface ClarificationRegistration {
+    readonly owner: EngineSession;
+    readonly questions: readonly ClarificationQuestion[];
+    readonly submit: QuestionSubmit;
+    readonly draft: QuestionDraft;
+    readonly finish: (outcome: Exclude<QuestionOutcome, { readonly status: "answered" }>) => void;
+    mount: ClarificationMount | undefined;
+    released: boolean;
+    generation: number;
+  }
+  /** Registered calls survive a session switch; only their visible mount is detached. */
+  const clarifications = new Map<EngineSession, Set<ClarificationRegistration>>();
+  let visibleClarification: ClarificationRegistration | undefined;
+  const removeQuestion = (question: { readonly box: Component; readonly body: Component & Focusable }): void => {
+    const index = questions.indexOf(question);
+    if (index >= 0) questions.splice(index, 1);
+  };
+  const detachClarification = (): void => {
+    const visible = visibleClarification;
+    if (visible === undefined) return;
+    const body = visible.mount?.question.body;
+    if (visible.mount !== undefined) removeQuestion(visible.mount.question);
+    visible.mount = undefined;
+    visibleClarification = undefined;
+    showSlot();
+    if (covering === body) {
+      covering = questions.at(-1)?.body;
+      tui.setFocus(covering ?? editor);
+    }
+  };
+  const mountClarification = (registration: ClarificationRegistration): void => {
+    if (ending || overlayVisible || registration.released || registration.owner !== session || visibleClarification === registration) return;
+    detachClarification();
+    const generation = registration.generation + 1;
+    const active = (): boolean => visibleClarification === registration && registration.mount?.generation === generation && !registration.released;
+    // No heading of its own: the question is the form's title, and the call above it says who asks.
+    const inlineViewport = tui instanceof TuiMainScreen ? {
+      height: (width: number): number => Math.max(1, terminal.rows - form.footerLines(width).length
+        - dock.filter((component) => component !== editorSlot).reduce((rows, component) => rows + component.render(width).length, 0)),
+      redraw: (): void => { tui.requestRender(); },
+    } : undefined;
+    const form = new QuestionForm(registration.questions, (answers) => active() ? registration.submit(answers) : "This question is no longer active.",
+      () => { if (active()) registration.finish({ status: "cancelled", reason: "The operator dismissed the question." }); }, theme, registration.draft, active, inlineViewport);
+    const question = { box: new VStack(), body: form };
+    // The choices scroll; the hint and a refusal stay under them.
+    question.box.addChild(form, { shrink: 1, minSize: 1 });
+    question.box.addChild({ render: (width) => form.footerLines(width), invalidate: () => undefined }, { shrink: 0 });
+    const mount = { question, generation };
+    registration.generation = generation;
+    registration.mount = mount;
+    visibleClarification = registration;
+    questions.push(question);
+    showSlot();
+    covering = form;
+    tui.setFocus(form);
+    tui.requestRender();
+  };
+  const mountClarificationsFor = (owner: EngineSession): void => {
+    const registrations = clarifications.get(owner);
+    const registration = registrations === undefined ? undefined : [...registrations].at(-1);
+    if (registration !== undefined) mountClarification(registration);
   };
   /** Each session's unsent text, kept while another is shown (#455). */
   const drafts = new Map<EngineSession, string>();
@@ -310,6 +389,11 @@ export function startShell(options: ShellOptions): Shell {
   const stop = (): void => {
     if (ending) return;
     ending = true;
+    for (const registrations of clarifications.values()) {
+      for (const registration of registrations) registration.finish({ status: "cancelled", reason: "The shell stopped." });
+    }
+    clarifications.clear();
+    visibleClarification = undefined;
     unsubscribe();
     unwatch();
     unfollow();
@@ -328,13 +412,19 @@ export function startShell(options: ShellOptions): Shell {
   };
   /** When Ctrl+C last found the editor empty; a second press soon after ends the shell. */
   let interruptedAt = 0;
+  const dashboardAvailable = (): boolean => covering === undefined || covering === visibleClarification?.mount?.question.body;
   tui.addInputListener((data) => {
     if (matchesKey(data, "ctrl+c")) {
+      if (visibleClarification !== undefined) { void session.abort(); return { consume: true }; }
       if (editor.getText() !== "") editor.setText("");
       else if (Date.now() - interruptedAt < 1500) stop();
       else { interruptedAt = Date.now(); note("Press Ctrl+C again to end the shell."); }
       tui.requestRender();
       return { consume: true };
+    }
+    // Ctrl+T remains available while a clarification owns focus, so another live session can be selected (#520).
+    if (matchesKey(data, "ctrl+t") && options.agents !== undefined && dashboardAvailable()) {
+      options.agents(); return { consume: true };
     }
     // A dialog or the dashboard has the keyboard: Esc goes back there, and the shell's own keys wait (#455).
     if (covering !== undefined) return undefined;
@@ -352,7 +442,6 @@ export function startShell(options: ShellOptions): Shell {
       return { consume: true };
     }
     if (matchesKey(data, "shift+tab") && options.nextMode !== undefined) { options.nextMode(); return { consume: true }; }
-    if (matchesKey(data, "ctrl+t") && options.agents !== undefined) { options.agents(); return { consume: true }; }
     return undefined;
   });
   tui.start();
@@ -424,6 +513,7 @@ export function startShell(options: ShellOptions): Shell {
       });
     },
     show(next, nextSurface, state) {
+      detachClarification();
       unsubscribe();
       drafts.set(session, editor.getText());
       session = next;
@@ -441,20 +531,48 @@ export function startShell(options: ShellOptions): Shell {
       transcript.load(session.history());
       working(state);
       drawFooter();
+      mountClarificationsFor(next);
       tui.requestRender();
     },
     overlay(body) {
       const handle = tui.showOverlay(body, { width: "100%", maxHeight: "100%", anchor: "center" });
+      overlayVisible = true;
       covering = body;
       tui.setFocus(body);
       tui.requestRender();
       return () => {
         handle.hide();
+        overlayVisible = false;
         // A question that waited in the input's place keeps the keyboard; the editor gets it otherwise.
         covering = questions.at(-1)?.body;
+        mountClarificationsFor(session);
         tui.setFocus(covering ?? editor);
         tui.requestRender();
       };
+    },
+    askUser(owner, asked, submitAnswer, finish) {
+      const registration: ClarificationRegistration = { owner, questions: asked, submit: submitAnswer, draft: createQuestionDraft(asked), finish, mount: undefined,
+        released: false, generation: 0 };
+      const registrations = clarifications.get(owner) ?? new Set<ClarificationRegistration>();
+      registrations.add(registration);
+      clarifications.set(owner, registrations);
+      mountClarification(registration);
+      return () => {
+        if (registration.released) return;
+        registration.released = true;
+        if (visibleClarification === registration) {
+          detachClarification();
+          covering = questions.at(-1)?.body;
+          tui.setFocus(covering ?? editor);
+        }
+        const registrations = clarifications.get(owner);
+        registrations?.delete(registration);
+        if (registrations?.size === 0) clarifications.delete(owner);
+        if (!ending) tui.requestRender();
+      };
+    },
+    cancelQuestions(owner, reason) {
+      for (const registration of clarifications.get(owner) ?? []) registration.finish({ status: "cancelled", reason });
     },
     busy: (state) => { working(state); tui.requestRender(); },
     note,

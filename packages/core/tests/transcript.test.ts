@@ -19,6 +19,15 @@ test("operator messages start at the replies' column and wrap with a two-column 
   }
 });
 
+test("a user message cannot repaint the terminal, such as a submitted answer quoting the agent's question", () => {
+  const transcript = new Transcript(theme);
+  transcript.add({ role: "user", content: "Agent question: pick\x1b[2J\x1b]0;owned\x07 one", timestamp: 0 });
+  const rows = transcript.render(80).join("\n");
+  expect(rows).not.toContain("\x1b[2J");
+  expect(rows).not.toContain("\x1b]0;");
+  expect(plain(transcript, 80)).toEqual([" › Agent question: pick one"]);
+});
+
 test("a pending call has a muted glyph, a single clipped row and no result note", () => {
   const transcript = new Transcript(theme);
   transcript.start({ type: "toolCall", id: "edit", name: "edit", arguments: {

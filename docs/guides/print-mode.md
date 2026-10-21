@@ -45,6 +45,9 @@ access in the shell with Shift+Tab, or allow what it needs with
 Your hooks and MCP servers run. The project's run only once you've trusted
 them in the shell; print mode says when it leaves them out.
 
+`ask_user` returns that no answer is available immediately. It never reads
+standard input or treats the agent's recommendation as your choice.
+
 ## Related
 
 - [Receipts](receipts.md)

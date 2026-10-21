@@ -53,10 +53,17 @@ Opening a session checks every line, and repairs only an interrupted last
 one. A tool call the session was running when it ended is marked "outcome
 unknown"; one it hadn't started, "not run". Neither runs again.
 
-**The request ledger.** The request and every amendment are kept as given.
+**The request ledger.** The request, amendments and submitted answers to
+the agent's questions are kept as given, in their recorded order.
 When the conversation nears the context window, compaction summarizes the
 older part, keeps the recent part word for word, and puts the ledger back
 at the top. Verification always sees what you actually asked.
+
+Questions use the shell's input slot and the session's permission boundary.
+Effect 4 scopes each pending interaction: stopping or closing a session
+releases its form before the wait ends. Submitted answers are synced before
+acknowledgment; a storage failure ends the session's ability to run rather
+than continuing with an answer it could not save.
 
 ## Workspaces
 

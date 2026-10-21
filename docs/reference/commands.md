@@ -63,3 +63,10 @@ In the dashboard:
 | `n` | New session |
 | `x` | Close it; `y` confirms for a running one |
 | Esc | Back |
+
+While answering an agent question, use 1–4 or Space to select options, the
+arrow keys to move, and Tab to reach custom text and Submit. Enter on Submit
+sends the whole batch; a recommended option starts unselected. Esc dismisses
+the question, Ctrl+C stops its run, and Ctrl+T opens the session dashboard.
+Page Up and Page Down scroll the question's descriptions;
+moving to another choice or field brings it into view.
