@@ -270,7 +270,7 @@ export async function exerciseTests(root: string, base: string, tests: readonly 
   }
 }
 
-/** Whether the commit `base` holds `path`, relative to `root`. */
-async function atCommit(root: string, base: string, path: string): Promise<boolean> {
-  try { await git(root, ["cat-file", "-e", `${base}:./${path}`]); return true; } catch { return false; }
+/** Whether the commit `base` holds a file at `path`, relative to `root`; a folder there is not the file. */
+export async function atCommit(root: string, base: string, path: string): Promise<boolean> {
+  try { return (await git(root, ["cat-file", "-t", `${base}:./${path}`])).trim() === "blob"; } catch { return false; }
 }

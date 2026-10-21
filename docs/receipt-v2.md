@@ -40,7 +40,7 @@ Paths are relative to the project folder where the session ran, with `/`.
     "traceId": "<session id>",
     "custom": {
       "baseCommit": { "uri": "git+https://github.com/owner/repo@<base>", "digest": { "gitCommit": "<base>" } },
-      "receipt": { "version": 1, "repository": true, "...": "..." },
+      "receipt": { "version": 2, "repository": true, "...": "..." },
       "stale": [],
       "changedAfter": []
     },
@@ -89,7 +89,7 @@ nothing. It lists, sorted:
 - every recorded file whose blob in the commit differs from the recorded
   one, a file the commit lacks counting as `null`.
 
-The Statement is not signed. Only a receipt with `version` 1 and
+The Statement is not signed. Only a receipt with `version` 2 and
 `repository` true is written as a Statement. A receipt with `units` is not:
 run in one of its repositories, `tesota receipt` writes that repository's
 unit as a receipt of its own, with the run's `version`, `startedAt`,
@@ -309,14 +309,19 @@ base.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `implementation`, `tests`, `other` | { added: number, removed: number } | Each category's text lines: added and removed as `git diff --numstat` counts them against `base`; a file the base lacks, untracked or before the first commit, counts as added whole |
-| `binary` | string[] | The files Git counts no lines for, such as images, or that hold a NUL byte |
+| `implementation`, `tests`, `other` | { added: number, removed: number } | Each category's text lines: added and removed as `git diff --numstat` counts them against `base`; an untracked file, or any file before the first commit, counts as added whole, a symbolic link as its one line. A changed file Git finds no different from the base, such as one the request restored, counts nothing |
+| `binary` | string[] | The files Git counts no lines for, such as images, or untracked ones that hold a NUL byte |
+| `generated` | string[] | The files the repository marks as generated, whatever category they count in: a generated test counts in `tests` and is listed here |
+
+`lines` is `"unreadable"` when Git could not show the change or an untracked
+file could not be read, never a count that leaves a file out.
 
 A file's category, in this order: `tests` by the gate's test paths; then
 `other` when the repository marks it as generated (`linguist-generated` in
 `.gitattributes`) or it is in no programming language, such as
-documentation, configuration, a manifest or lockfile, SQL, or an asset;
-then `implementation`. A category says where lines are, never how risky
+documentation, configuration (including a tool's configuration written in
+one, such as `vite.config.ts` or `.eslintrc.js`), a manifest or lockfile,
+SQL, or an asset; then `implementation`. A category says where lines are, never how risky
 they are or what verified them. In a folder of repositories, the receipt's
 one row adds every unit's lines together.
 

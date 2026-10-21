@@ -129,7 +129,7 @@ export type ReceiptUnit = UnitEvidence & { readonly folder: string };
 const none: LineCount = { added: 0, removed: 0 };
 
 /** A change of no lines. */
-export const noLines: ChangeLines = { implementation: none, tests: none, other: none, binary: [] };
+export const noLines: ChangeLines = { implementation: none, tests: none, other: none, binary: [], generated: [] };
 
 /** Several units' lines as one count; `unreadable` when any unit's was. */
 function linesTogether(each: readonly UnitEvidence["lines"][]): UnitEvidence["lines"] {
@@ -139,7 +139,7 @@ function linesTogether(each: readonly UnitEvidence["lines"][]): UnitEvidence["li
     added: counts.reduce((total, lines) => total + pick(lines).added, 0),
     removed: counts.reduce((total, lines) => total + pick(lines).removed, 0) });
   return { implementation: sum(({ implementation }) => implementation), tests: sum(({ tests }) => tests), other: sum(({ other }) => other),
-    binary: counts.flatMap(({ binary }) => binary) };
+    binary: counts.flatMap(({ binary }) => binary), generated: counts.flatMap(({ generated }) => generated) };
 }
 
 /** The evidence of a unit that verified nothing. */
@@ -172,7 +172,7 @@ export function fromFolder(unit: ReceiptUnit): UnitEvidence {
     unmeasured: unit.unmeasured.map((item) => ({ ...item, path: at(item.path) })),
     uncovered: unit.uncovered.map((lines) => ({ ...lines, path: at(lines.path) })),
     changed: typeof unit.changed === "string" ? unit.changed : unit.changed.map((file) => ({ ...file, path: at(file.path) })),
-    lines: typeof unit.lines === "string" ? unit.lines : { ...unit.lines, binary: unit.lines.binary.map(at) },
+    lines: typeof unit.lines === "string" ? unit.lines : { ...unit.lines, binary: unit.lines.binary.map(at), generated: unit.lines.generated.map(at) },
     ...unit.tooLarge === undefined ? {} : { tooLarge: unit.tooLarge.map(at) } };
 }
 
@@ -264,13 +264,15 @@ const exerciseDetail = ({ provenance, reason }: TestExercise): string => `${reas
 
 /** The change's lines by category in one row, when it changed any; a summary of the diff, not of what was verified. */
 function linesRow(lines: UnitEvidence["lines"]): string[] {
-  if (lines === "unreadable") return ["  changed lines not counted: Git could not show the change"];
+  if (lines === "unreadable") return ["  changed lines not counted: Git could not show the change, or a file could not be read"];
   const counts = (["implementation", "tests", "other"] as const).flatMap((category) => {
     const { added, removed } = lines[category];
     return added + removed === 0 ? [] : [`${category} +${added} -${removed}`];
   });
-  const binary = lines.binary.length === 0 ? [] : [`${lines.binary.length} binary ${lines.binary.length === 1 ? "file" : "files"}`];
-  return counts.length + binary.length === 0 ? [] : [`  changed lines ${[...counts, ...binary].join(" · ")}`];
+  const files = (count: number, kind: string): string[] => count === 0 ? [] : [`${count} ${kind} ${count === 1 ? "file" : "files"}`];
+  const binary = files(lines.binary.length, "binary");
+  return counts.length + binary.length === 0 ? []
+    : [`  changed lines ${[...counts, ...binary, ...files(lines.generated.length, "generated")].join(" · ")}`];
 }
 
 /**
