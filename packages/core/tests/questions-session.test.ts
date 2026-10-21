@@ -270,3 +270,55 @@ test("a custom tool sharing the question name does not gain the native host's er
   expect(session.lastAssistantText()).toBe("recovered");
   expect(session.ledger()[0]?.inputs).toEqual([]);
 });
+
+test("a stop that leaves a submitted answer's result handlers unfinished still gives the model the answer, not a stop", async () => {
+  let reached = (): void => undefined;
+  const blocked = new Promise<void>((resolve) => { reached = resolve; });
+  const session = start([{ tool: "ask_user", args: { questions } }, "must not run"], {
+    questions: (_batch, submit) => { submit([{ selected: [0], text: "Keep my words." }]); return () => undefined; },
+    verifier: (pi) => {
+      accepts(pi);
+      pi.on("tool_result", async (event) => { if (event.toolName === "ask_user") { reached(); await new Promise(() => undefined); } });
+    },
+  });
+  const done = session.prompt("Ask me.");
+  await blocked;
+  await session.abort();
+  await done;
+  expect(session.outcome()).toBe("aborted");
+  const result = session.messages().find((message) => message.role === "toolResult");
+  expect(result).toMatchObject({ toolName: "ask_user", isError: false });
+  expect(result?.text).toContain("Keep my words.");
+  expect(result?.text).not.toContain("Stopped");
+});
+
+test("a steer given while the next request starts stays before a later answer when the conversation is compacted", async () => {
+  let release = (): void => undefined;
+  const starting = new Promise<void>((resolve) => { release = resolve; });
+  let entered = (): void => undefined;
+  const waiting = new Promise<void>((resolve) => { entered = resolve; });
+  let third = "";
+  const ask = { tool: "ask_user", args: { questions } };
+  const session = start([ask, "first done", ask, "second done", "## Goal\nsummarized", {
+    seen: (context) => { third = context.messages.map((message) => typeof message.content === "string" ? message.content
+      : message.content.map((part) => part.type === "text" ? part.text : "").join("")).join("\n"); }, reply: "third done" }], {
+    compaction: { reserve: 0, keep: 1 },
+    questions: (_batch, submit) => { submit([{ selected: [1], text: "Later answer." }]); return () => undefined; },
+    verifier: (pi) => {
+      accepts(pi);
+      pi.on("input", async (event) => { if (event.text === "Second.") { entered(); await starting; } return undefined; });
+    },
+  });
+  await session.prompt("First.");
+  const second = session.prompt("Second.");
+  await waiting;
+  await session.prompt("Earlier steer.", { streamingBehavior: "steer" });
+  release();
+  await second;
+  await session.compact();
+  await session.prompt("Third.");
+  const steer = third.indexOf("Added while you worked:\n\nEarlier steer.");
+  const answer = third.indexOf("The operator answered your question:");
+  expect(steer).toBeGreaterThan(-1);
+  expect(answer).toBeGreaterThan(steer);
+});

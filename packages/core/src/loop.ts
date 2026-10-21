@@ -26,7 +26,7 @@ import { codingTools } from "./tools/index.ts";
 import { isNativeAskTool } from "./tools/ask.ts";
 import { askQuestions, type QuestionResponder } from "./questions.ts";
 import { askAccepted } from "./questions-rule.ts";
-import type { Clarification, ClarificationAnswer, ClarificationQuestion } from "../../../src/clarification.ts";
+import { clarificationText, type Clarification, type ClarificationAnswer, type ClarificationQuestion } from "../../../src/clarification.ts";
 
 export interface LoopOptions {
   /** The session's folder: tools resolve paths and run commands from here. */
@@ -458,7 +458,7 @@ export function createLoop(options: LoopOptions): LoopSession {
           const clarification: Clarification = { reply: active.reply, callId, at: new Date().toISOString(), questions, answers };
           writer.append({ type: "clarification", run: active.run, clarification });
           writer.sync();
-          answered.set(callId, nextInputOrder++);
+          answered.set(callId, { order: nextInputOrder++, text: clarificationText(clarification) });
         });
       } catch (error) {
         questionFailure = error instanceof Error ? error : new Error(String(error));
@@ -482,8 +482,8 @@ export function createLoop(options: LoopOptions): LoopSession {
    * the conversation in its call's result, after input that came later may have. */
   const inputOrder = new Map(ledger.map((message, index) => [message, index]));
   let nextInputOrder = ledger.length;
-  /** Each submitted answer's place in the input, by its call, until that call's result carries it into the conversation. */
-  const answered = new Map<string, number>();
+  /** Each submitted answer's place in the input and its words, by its call, until that call's result carries it into the conversation. */
+  const answered = new Map<string, { readonly order: number; readonly text: string }>();
   const toLedger = (message: HistoryMessage, order: number): void => {
     ledger.push(message);
     inputOrder.set(message, order);
@@ -690,20 +690,25 @@ export function createLoop(options: LoopOptions): LoopSession {
         add(result);
         // A submitted answer enters the conversation once, in its call's result, and the ledger keeps that message.
         const given = answered.get(call.id);
-        if (given !== undefined) { answered.delete(call.id); toLedger(result, given); }
+        if (given !== undefined) { answered.delete(call.id); toLedger(result, given.order); }
         answeredIds.add(call.id);
         next += 1;
         const native = offered.find((tool) => tool.name === call.name);
         if (native !== undefined && isNativeAskTool(native)) questionBoundary = true;
       };
       const repeated = (): boolean => answeredIds.has((calls[next] as ToolCall).id);
+      // A question answered and saved before the stop keeps its answer, though what ran after it did not report in time.
+      const saved = (call: ToolCall): ToolOutput | undefined => {
+        const given = answered.get(call.id);
+        return given === undefined ? undefined : { isError: false, text: given.text };
+      };
       const each = Effect.gen(function* () {
         while (next < calls.length) {
           const call = calls[next] as ToolCall;
           if (repeated()) next += 1;
           else if (message.stopReason === "length") answer(truncatedCall(call));
           else if (questionBoundary) answer({ isError: true, text: "Not run: reconsider this call after reading the question's outcome." });
-          else yield* step((left) => outcomeOf(run, call, signal, left, offered, reply), (given, ms) => { answer(Option.isSome(given) ? given.value : stoppedAfter(ms)); });
+          else yield* step((left) => outcomeOf(run, call, signal, left, offered, reply), (given, ms) => { answer(Option.isSome(given) ? given.value : saved(call) ?? stoppedAfter(ms)); });
         }
       });
       return each.pipe(Effect.onInterrupt(() => Effect.sync(() => {
@@ -917,6 +922,7 @@ export function createLoop(options: LoopOptions): LoopSession {
   /** A run: its request and base are synced into the ledger before the model hears of it, and its end before it reports. */
   async function start(run: number, text: string, origin: Origin, signal: AbortSignal): Promise<void> {
     const at = new Date().toISOString();
+    const asked: HistoryMessage = { role: "user", content: text, timestamp: Date.parse(at) };
     // A run exists once its request is in the file: one whose base could not be captured is no run, so its
     // number is given again and the input that waited for it is refused, as the file reader requires.
     const written = (async () => {
@@ -924,6 +930,12 @@ export function createLoop(options: LoopOptions): LoopSession {
       try { captured = await base(options.cwd, signal); } catch (error) { closed = true; throw error; }
       writer.append({ type: "request", run, text, origin, at, base: captured });
       runs = run;
+      // The run's input is counted from its request on, before input that came while it starts takes its place.
+      ledger = [asked];
+      inputOrder.clear();
+      inputOrder.set(asked, 0);
+      nextInputOrder = 1;
+      answered.clear();
       writer.sync();
     })();
     recorded = written.catch(() => undefined);
@@ -931,12 +943,6 @@ export function createLoop(options: LoopOptions): LoopSession {
     await host.input({ type: "input", text, source: origin }, signal);
     // The MCP servers starting with the session get a while to connect before the model hears of the request (#459).
     await options.mcp?.()?.ready(signal);
-    const asked: HistoryMessage = { role: "user", content: text, timestamp: Date.parse(at) };
-    ledger = [asked];
-    inputOrder.clear();
-    inputOrder.set(asked, 0);
-    nextInputOrder = 1;
-    answered.clear();
     add(asked);
     let generation = 0;
     let continuations = 0;
