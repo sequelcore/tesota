@@ -181,8 +181,11 @@ export function startShell(options: ShellOptions): Shell {
   const footer = new Text("", 1, 0);
   const drawFooter = (): void => { footer.setText(theme.fg("dim", options.status())); };
   drawFooter();
+  // While a question waits in the input's place the run waits for the operator, as the footer says, so it does not
+  // also show as working: the question leads, directly under the conversation.
+  const statusRow: Component = { render: (width) => questions.length > 0 ? [] : status.render(width), invalidate: () => { status.invalidate(); } };
   // A blank row always above the input, so the conversation's last card never touches it.
-  const dock: readonly Component[] = [new Spacer(1), status, editorSlot, footerSlot];
+  const dock: readonly Component[] = [new Spacer(1), statusRow, editorSlot, footerSlot];
   if (tui instanceof TuiAltScreen) {
     tui.setLayoutRoot(new VStack([
       { component: new ScrollView(document, { follow: "end", primary: true, overscroll: "chain" }), basis: 0, grow: 1, shrink: 1, minSize: 1 },
@@ -245,16 +248,15 @@ export function startShell(options: ShellOptions): Shell {
     detachClarification();
     const generation = registration.generation + 1;
     const active = (): boolean => visibleClarification === registration && registration.mount?.generation === generation && !registration.released;
-    const title = heading("Answer the agent");
+    // No heading of its own: the question is the form's title, and the call above it says who asks.
     const inlineViewport = tui instanceof TuiMainScreen ? {
-      height: (width: number): number => Math.max(1, terminal.rows - title.render(width).length
+      height: (width: number): number => Math.max(1, terminal.rows
         - dock.filter((component) => component !== editorSlot).reduce((rows, component) => rows + component.render(width).length, 0)),
       redraw: (): void => { tui.requestRender(); },
     } : undefined;
     const form = new QuestionForm(registration.questions, (answers) => active() ? registration.submit(answers) : "This question is no longer active.",
       () => { if (active()) registration.finish({ status: "cancelled", reason: "The operator dismissed the question." }); }, theme, registration.draft, active, inlineViewport);
     const question = { box: new VStack(), body: form };
-    question.box.addChild(title, { shrink: 0 });
     question.box.addChild(form, { shrink: 1, minSize: 1 });
     const mount = { question, generation };
     registration.generation = generation;

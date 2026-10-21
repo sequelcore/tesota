@@ -83,20 +83,20 @@ test("a native question remains waiting after reattachment and can close while h
   send(terminal, "/model");
   await terminal.until("Model"); terminal.type(enter); await terminal.until("Model: ");
   send(terminal, "Choose for this request.");
-  await terminal.until("Answer the agent");
+  await terminal.until("Submit answers");
   terminal.type("\x14"); await terminal.until("Sessions"); terminal.type("n");
-  await terminal.untilGone("Answer the agent");
+  await terminal.untilGone("Submit answers");
   await terminal.until("1 session waits for you");
   terminal.type("\x14"); await terminal.until("Sessions"); terminal.type("\x1b[A"); terminal.type(enter);
-  await terminal.until("Answer the agent");
+  await terminal.until("Submit answers");
   terminal.type("\x14"); await terminal.until("Sessions"); terminal.type("\x1b[B"); terminal.type(enter);
-  await terminal.untilGone("Answer the agent");
+  await terminal.untilGone("Submit answers");
   try {
     expect((await terminal.screen()).join("\n")).toContain("1 session waits for you");
     terminal.type("\x14"); await terminal.until("Sessions"); terminal.type("\x1b[B"); terminal.type("x");
     await terminal.until("Sessions (1)");
     terminal.type("\x1b"); await terminal.untilGone("Sessions");
-    await terminal.until("Answer the agent");
+    await terminal.until("Submit answers");
     terminal.type("1"); terminal.type("\t"); terminal.type("\t"); terminal.type(enter);
     await terminal.until("answered");
   } finally {
@@ -112,8 +112,8 @@ test("a question arriving behind the dashboard waits until the dashboard gives f
   send(terminal, "/model"); await terminal.until("Model"); terminal.type(enter); await terminal.until("Model: ");
   send(terminal, "Ask me."); terminal.type("\x14");
   await terminal.until("Sessions"); await terminal.until("waiting for you");
-  expect((await terminal.screen()).join("\n")).not.toContain("Answer the agent");
-  terminal.type("\x1b"); await terminal.untilGone("Sessions"); await terminal.until("Answer the agent");
+  expect((await terminal.screen()).join("\n")).not.toContain("Submit answers");
+  terminal.type("\x1b"); await terminal.untilGone("Sessions"); await terminal.until("Submit answers");
   terminal.type("\x1b"); await terminal.until("question dismissed");
   send(terminal, "/quit"); await running;
 });

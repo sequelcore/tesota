@@ -119,9 +119,13 @@ export class QuestionForm extends ScrollView implements Focusable {
     const question = this.currentQuestion();
     const selected = this.draft.selected[this.draft.question];
     if (selected === undefined) return [];
+    // The question leads, at the transcript's column: a count only when there are several, then the question as the
+    // form's title, a blank row, the choices with the text and submit action that complete them, a blank row, the hint.
+    const several = this.questions.length > 1;
     const lines = [
-      ...new Text(this.theme.bold(this.theme.fg("accent", `Question ${this.draft.question + 1}/${this.questions.length}`)), 0, 0).render(width),
-      ...new Text(terminalText(question.question), 0, 0).render(width),
+      ...several ? new Text(this.theme.fg("dim", `Question ${this.draft.question + 1}/${this.questions.length}`), 1, 0).render(width) : [],
+      ...new Text(this.theme.bold(this.theme.fg("accent", terminalText(question.question))), 1, 0).render(width),
+      "",
     ];
     for (const [index, option] of question.options.entries()) {
       if (this.draft.field === "choices" && index === this.draft.option) this.#focusRow = lines.length;
@@ -129,23 +133,26 @@ export class QuestionForm extends ScrollView implements Focusable {
       const checked = selected.has(index) ? "[x]" : "[ ]";
       const recommended = question.recommended === index ? " (recommended)" : "";
       const label = `${cursor}${index + 1}. ${checked} ${terminalText(option.label)}${recommended}`;
-      lines.push(...new Text(this.draft.field === "choices" && index === this.draft.option ? this.theme.fg("accent", label) : label, 0, 0).render(width));
-      lines.push(...new Text(this.theme.fg("dim", terminalText(option.description)), 5, 0).render(width));
+      lines.push(...new Text(this.draft.field === "choices" && index === this.draft.option ? this.theme.fg("accent", label) : label, 1, 0).render(width));
+      lines.push(...new Text(this.theme.fg("dim", terminalText(option.description)), 6, 0).render(width));
     }
     const text = this.currentText();
     if (this.draft.field === "text") this.#focusRow = lines.length;
     text.focused = this.focused && this.draft.field === "text";
-    lines.push(...text.render(width));
+    // In the choices' column, past the gutter where `›` marks the focus, so the answer's parts line up.
+    lines.push(...text.render(Math.max(1, width - 3)).map((line) => `   ${line}`));
     const submit = this.draft.field === "submit" ? this.theme.fg("accent", "› [Submit answers]") : "  [Submit answers]";
     if (this.draft.field === "submit") this.#focusRow = lines.length;
-    lines.push(...new Text(submit, 0, 0).render(width));
-    // The hint names the way on from where the focus is, so the submit action is found without knowing the keys.
-    const hint = this.draft.field === "choices" ? "←/→ questions · Space selects · Tab adds text · Esc cancels"
-      : this.draft.field === "text" ? "Tab or Enter goes to Submit · Esc cancels"
-        : "Enter submits · Tab goes back to the choices · Esc cancels";
-    lines.push(...new Text(this.theme.fg("dim", hint), 0, 0).render(width));
-    if (this.#error !== undefined) lines.push(...new Text(this.theme.fg("error", this.#error), 0, 0).render(width));
+    lines.push(...new Text(submit, 1, 0).render(width), "");
+    lines.push(...new Text(this.theme.fg("dim", this.hint(several)), 1, 0).render(width));
+    if (this.#error !== undefined) lines.push(...new Text(this.theme.fg("error", this.#error), 1, 0).render(width));
     return lines;
+  }
+
+  /** The way on from where the focus is, so the submit action is found without knowing the keys. */
+  private hint(several: boolean): string {
+    if (this.draft.field === "choices") return `${several ? "←/→ questions · " : ""}Space selects · Tab adds text · Esc cancels`;
+    return this.draft.field === "text" ? "Tab or Enter goes to Submit · Esc cancels" : "Enter submits · Tab goes back to the choices · Esc cancels";
   }
 
   private currentQuestion(): ClarificationQuestion {

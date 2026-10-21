@@ -322,7 +322,26 @@ describe("the shell", () => {
     terminal.type(enter);
     expect(submitted).toEqual([[{ selected: [1] }]]);
     release();
-    await terminal.untilGone("Answer the agent");
+    await terminal.untilGone("Submit answers");
+  });
+
+  test("a question leads its form at the transcript's column, with no spinner while it waits and a count only for several", async () => {
+    const { terminal, shell, session } = shellOn([]);
+    shell.busy("working");
+    await terminal.until("Working…");
+    const release = shell.askUser(session, choices, () => undefined, () => undefined);
+    const screen = await terminal.until("Submit answers");
+    expect(screen).not.toContain("Working…");
+    expect(screen).not.toContain("Question 1/1");
+    expect(screen).toContain("\n Which path should the agent take?");
+    expect(screen).toContain("\n › 1. [ ] conservative (recommended)");
+    release();
+    await terminal.until("Working…");
+    const several = shell.askUser(session, [...choices, { question: "And the tests?", options: [
+      { label: "keep", description: "keep the tests as they are" }, { label: "extend", description: "add tests for the change" },
+    ] }], () => undefined, () => undefined);
+    expect(await terminal.until("Submit answers")).toMatch(/\n Question 1\/2 +┃?\n Which path should the agent take\?/u);
+    several();
   });
 
   test("the hint says how to reach and use the submit action, and selection keys there do not change the answer", async () => {
@@ -380,7 +399,7 @@ describe("the shell", () => {
     const second = shellOn([]);
     const submitted: unknown[] = [];
     const release = first.shell.askUser(first.session, choices, (answers) => { submitted.push(answers); return undefined; }, () => undefined);
-    await first.terminal.until("Answer the agent");
+    await first.terminal.until("Submit answers");
     first.terminal.type("2");
     first.shell.show(second.session);
     first.shell.show(first.session);
@@ -388,7 +407,7 @@ describe("the shell", () => {
     first.shell.show(second.session);
     release();
     first.shell.show(first.session);
-    await first.terminal.untilGone("Answer the agent");
+    await first.terminal.untilGone("Submit answers");
     first.terminal.type("2\t\t\r");
     expect(submitted).toEqual([]);
   });
