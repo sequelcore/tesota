@@ -23,6 +23,8 @@ statement of direction, not a commitment to dates.
   from your project, models from pi-ai, the terminal from pi-tui.
 - **A capability needs a consumer that exists today,** and one that claims
   to improve results is measured against the simplest alternative first.
+  Research and experiments don't wait for one: they need a question and a
+  recorded result, and a result that justifies building names its consumer.
 
 ## Not planned
 
