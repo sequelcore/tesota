@@ -136,7 +136,7 @@ export async function subjectOf(root: string, receipt: Receipt, sessionId: strin
 }
 
 /** The page that describes the receipt's format, the Statement's `predicateType`. */
-const predicateType = "https://github.com/sequelcore/tesota/blob/main/docs/receipt-v1.md";
+const predicateType = "https://github.com/sequelcore/tesota/blob/main/docs/receipt-v2.md";
 
 /** A commit as an in-toto resource descriptor, located in its repository when it has an HTTPS URL. */
 function commitDescriptor(commit: string, repository: string | undefined): object {

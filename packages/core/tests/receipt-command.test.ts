@@ -140,7 +140,7 @@ it("writes the last receipt for a pull request as Markdown and as an in-toto Sta
   expect(statement).toMatchObject({
     _type: "https://in-toto.io/Statement/v1",
     subject: [{ uri: `git+https://github.com/example/project@${commit}`, digest: { gitCommit: commit } }],
-    predicateType: "https://github.com/sequelcore/tesota/blob/main/docs/receipt-v1.md",
+    predicateType: "https://github.com/sequelcore/tesota/blob/main/docs/receipt-v2.md",
     predicate: {
       providers: [{ harness: { name: "tesota", version: "0.1.0" }, languageModels: [{ inferenceProvider: "provider/model" }] }],
       traceId: sessionId,

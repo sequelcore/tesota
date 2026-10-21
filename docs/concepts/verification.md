@@ -212,13 +212,19 @@ the command ran.
 changed or added test file runs alone over the base, in a Git worktree in
 the temporary folder with the checkout's `node_modules` linked in:
 
-- a test that passes there doesn't exercise the change;
-- a test that fails there, while the base passes without it, does
-  (`checkOrigin`, proved);
+- a test that passes there passes on the base: it doesn't depend on the
+  change, though it may still guard against a regression;
+- a test that fails there, while the base passes without it, notices the
+  change: it fails, then passes (`checkOrigin`, proved);
 - when the base fails without it too, the JUnit reports of both runs
-  decide: the test exercises the change when tests fail with it that pass,
+  decide: the test notices the change when tests fail with it that pass,
   or are missing, without it, as SWE-bench grades fail-to-pass;
 - anything else stays unknown, with the reason.
+
+The receipt keeps that apart from the test's provenance (#527): whether the
+base held the file, so the request changed it, or the request added it. A
+test the agent added notices the change by what the agent expects, which
+may be wrong (#396), so neither fact is a score of how much to trust it.
 
 A change to `package.json` or a lockfile leaves the base with the wrong
 dependencies, so no run there gives a verdict.
@@ -296,7 +302,7 @@ each measured contract; ClaimCheck; the open cases; each command; each
 exercise finding; the weakened evidence; what nothing verified; and the Git
 blob of every file changed during the request (by anyone), inherited paths,
 unmeasured paths and capture states.
-[Receipt v1](../receipt-v1.md) specifies every field, and
+[Receipt v2](../receipt-v2.md) specifies every field, and
 [Receipts](../guides/receipts.md) how `tesota receipt` writes it for a pull
 request.
 

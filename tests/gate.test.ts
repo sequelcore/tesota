@@ -502,11 +502,12 @@ it("keeps the agent working while a changed contract fails, and settles with a r
   expect(entry(proved).content).toBe(["## Tesota receipt\n", "- **proved** — src/rule.ts",
     "  - content sha256 hash of src/rule.ts",
     "- **not verified** — src/rule.ts line 3: outside the contracts that proved, and no verifier covers them",
-    "- **not verified** — notes.md: no verifier covers it", "\nThis is check evidence, not your acceptance."].join("\n"));
+    "- **not verified** — notes.md: no verifier covers it",
+    "- **changed lines** — implementation \\+1 \\-0 · other \\+2 \\-1", "\nThis is check evidence, not your acceptance."].join("\n"));
   const receipt = entry(proved).details as Receipt;
   expect(receipt.proofs.map(({ path, verdict, evidence }) => [path, verdict, evidence.contentHash]))
     .toEqual([["src/rule.ts", "proved", "hash of src/rule.ts"]]);
-  expect(receipt).toMatchObject({ version: 1, base: await headCommit(root), engine: "0.1.0" });
+  expect(receipt).toMatchObject({ version: 2, base: await headCommit(root), engine: "0.1.0" });
   expect(receipt.model).toBeUndefined();
   expect(Date.parse(receipt.settledAt)).toBeGreaterThanOrEqual(Date.parse(receipt.startedAt));
 });
@@ -553,7 +554,7 @@ it("leaves a receipt verifying nothing when a run is stopped after a write start
   expect(settled?.continue).toBeUndefined();
   expect(entry(settled).customType).toBe("tesota-receipt");
   const receipt = entry(settled).details as Receipt;
-  expect(receipt).toMatchObject({ version: 1, repository: true, base: await headCommit(root), engine: "0.1.0",
+  expect(receipt).toMatchObject({ version: 2, repository: true, base: await headCommit(root), engine: "0.1.0",
     model: "provider/model", stopped: "the operator stopped the run before Tesota verified it",
     proofs: [], tests: [], contracts: [], exercises: [], weakened: [], unverified: [], uncovered: [], changed: [] });
   expect(receipt.claimcheck).toBeUndefined();
@@ -629,12 +630,12 @@ it("settles a print-mode run with the receipt outside the conversation, so Pi pr
   await printRun.tool("write");
   writeFileSync(join(root, "notes.md"), "# Notes, changed\n");
   const printed = (await printRun.settle())?.entries ?? [];
-  expect(printed).toMatchObject([{ type: "custom", customType: "tesota-receipt", data: { version: 1 } }]);
+  expect(printed).toMatchObject([{ type: "custom", customType: "tesota-receipt", data: { version: 2 } }]);
   const tuiRun = gate(root, undefined, { mode: "tui" });
   await tuiRun.tool("write");
   writeFileSync(join(root, "notes.md"), "# Notes, changed again\n");
   const shown = (await tuiRun.settle())?.entries ?? [];
-  expect(shown).toMatchObject([{ type: "custom_message", customType: "tesota-receipt", display: true, details: { version: 1 } }]);
+  expect(shown).toMatchObject([{ type: "custom_message", customType: "tesota-receipt", display: true, details: { version: 2 } }]);
 });
 
 it("goes back to ready when the gate fails midway or the run changed nothing", async () => {
@@ -848,8 +849,9 @@ it("verifies a folder in no repository against Tesota's snapshot of it, whatever
   expect(entry(settled).content).toBe([
     "## Tesota receipt\n",
     "- **passed** — bun run test",
-    "- **exercises** — test/negative.test.mjs: fails on the base, passes with the change",
-    "- **not proved** — src/price.mjs: no proof covers it; the project's commands pass with it", "\nThis is check evidence, not your acceptance."].join("\n"));
+    "- **notices change** — test/negative.test.mjs: fails on the base, passes with the change; added in this request",
+    "- **not proved** — src/price.mjs: no proof covers it; the project's commands pass with it",
+    "- **changed lines** — implementation \\+1 \\-1 · tests \\+4 \\-0", "\nThis is check evidence, not your acceptance."].join("\n"));
   const receipt = entry(settled).details as Receipt;
   expect([receipt.repository, receipt.snapshot]).toEqual([false, true]);
   expect(receipt.base).toMatch(/^[0-9a-f]{40}$/u);
@@ -956,7 +958,7 @@ it("settles a change of comments and blank lines alone with a receipt and footer
   await run.tool("write");
   write(root, { "src/helper.ts": "// One, as a constant.\n\nexport const one = 1;\n", "src/tool.py": "# The tool's value.\nx = 1\n" });
   const settled = entry(await run.settle());
-  expect(settled.content).toBe("## Tesota receipt\n\n- **no code** — nothing to verify: the changes are comments or blank lines only\n\nThis is check evidence, not your acceptance.");
+  expect(settled.content).toBe("## Tesota receipt\n\n- **no code** — nothing to verify: the changes are comments or blank lines only\n- **changed lines** — implementation \\+3 \\-0\n\nThis is check evidence, not your acceptance.");
   expect((settled.details as Receipt).commentsOnly).toBe(true);
   expect(evidenceText(evidenceParts(run.progress.status), "full")).toBe("✓ receipt · nothing to verify, comments only");
 });
@@ -1032,7 +1034,7 @@ it("settles with a receipt when the only change deletes a test", async () => {
   await run.input();
   await run.tool("write");
   rmSync(join(root, "tests", "old.test.ts"));
-  expect(entry(await run.settle()).content).toBe("## Tesota receipt\n\n- **may weaken** — tests/old.test.ts: deletes a test file\n\nThis is check evidence, not your acceptance.");
+  expect(entry(await run.settle()).content).toBe("## Tesota receipt\n\n- **may weaken** — tests/old.test.ts: deletes a test file\n- **changed lines** — tests \\+0 \\-1\n\nThis is check evidence, not your acceptance.");
 });
 
 it("says a change too large to read was not checked for weakening, instead of listing nothing", async () => {
@@ -1064,9 +1066,10 @@ it("runs the project's tests, and runs each changed test on the request's base e
   expect(entry(settled).content).toBe([
     "## Tesota receipt\n",
     "- **passed** — bun run test",
-    "- **exercises** — test/negative.test.mjs: fails on the base, passes with the change",
-    "- **vacuous test** — test/positive.test.mjs: it passes without the change",
-    "- **not proved** — src/price.mjs: no proof covers it; the project's commands pass with it", "\nThis is check evidence, not your acceptance."].join("\n"));
+    "- **notices change** — test/negative.test.mjs: fails on the base, passes with the change; added in this request",
+    "- **passes on base** — test/positive.test.mjs: it passes without the change too; added in this request",
+    "- **not proved** — src/price.mjs: no proof covers it; the project's commands pass with it",
+    "- **changed lines** — implementation \\+1 \\-1 · tests \\+9 \\-0", "\nThis is check evidence, not your acceptance."].join("\n"));
   const receipt = entry(settled).details as Receipt;
   expect(receipt.tests.map(({ command, evidence }) => [command, evidence.verifier, evidence.files]))
     .toEqual([["bun run test", "command", changed]]);
@@ -1088,8 +1091,9 @@ it("neither flags nor lists as not proved a test file that only gains a test", a
   expect(settled.content).toBe([
     "## Tesota receipt\n",
     "- **passed** — bun run test",
-    "- **exercises** — test/price.test.mjs: fails on the base, passes with the change",
-    "- **not proved** — src/price.mjs: no proof covers it; the project's commands pass with it", "\nThis is check evidence, not your acceptance."].join("\n"));
+    "- **notices change** — test/price.test.mjs: fails on the base, passes with the change; changed in this request",
+    "- **not proved** — src/price.mjs: no proof covers it; the project's commands pass with it",
+    "- **changed lines** — implementation \\+1 \\-1 · tests \\+1 \\-0", "\nThis is check evidence, not your acceptance."].join("\n"));
   const receipt = settled.details as Receipt;
   expect(receipt.weakened).toEqual([]);
   expect(receipt.unverified).toEqual(["src/price.mjs"]);
@@ -1110,7 +1114,8 @@ it("sends failing tests back once when the project writes no test report, then s
   const stuck = await run.settle();
   expect(stuck?.continue).toBeUndefined();
   expect(entry(stuck).content).toBe(["## Tesota receipt\n",
-    "- **NOT passed** — bun run test: it still fails after its failure went back", "\nThis is check evidence, not your acceptance."].join("\n"));
+    "- **NOT passed** — bun run test: it still fails after its failure went back",
+    "- **changed lines** — tests \\+4 \\-0", "\nThis is check evidence, not your acceptance."].join("\n"));
   await run.input();
   await run.tool("write");
   write(root, { "test/negative.test.mjs": priceTest(-2, 0) });
@@ -1155,13 +1160,13 @@ async function newTestOverFailingBase(test: string): Promise<Settled | undefined
 
 it("counts a new test as exercising the change when its tests newly fail on a base that fails anyway", async () => {
   const settled = await newTestOverFailingBase("node --test --test-reporter=junit --test-reporter-destination=report.xml");
-  expect(entry(settled).content).toContain("- **exercises** — test/discount.test.mjs: fails on the base, passes with the change");
+  expect(entry(settled).content).toContain("- **notices change** — test/discount.test.mjs: fails on the base, passes with the change; added in this request");
 }, 60_000);
 
 it("says a test report would tell, when the base fails with and without a new test and writes none", async () => {
   const settled = await newTestOverFailingBase("node --test");
-  expect(entry(settled).content).toContain("- **exercise?** — test/discount.test.mjs: on the base it failed, but so does the " +
-    "base without it, and no test report says which tests fail");
+  expect(entry(settled).content).toContain("- **not checked** — test/discount.test.mjs: on the base it failed, but so does the " +
+    "base without it, and no test report says which tests fail; added in this request");
 }, 60_000);
 
 it("gives no verdict on the base when the change touches what decides the dependencies", async () => {
@@ -1171,8 +1176,8 @@ it("gives no verdict on the base when the change touches what decides the depend
   await run.tool("write");
   write(root, { "package.json": JSON.stringify({ type: "module", scripts: { test: "node --test" }, description: "changed" }),
     "src/price.mjs": "export const total = (n) => Math.max(n, 0);\n", "test/negative.test.mjs": priceTest(-1, 0) });
-  expect(entry(await run.settle()).content).toContain("- **exercise?** — test/negative.test.mjs: the change touches " +
-    "package.json, and the base runs with the checkout's dependencies, so a run there may not be faithful");
+  expect(entry(await run.settle()).content).toContain("- **not checked** — test/negative.test.mjs: the change touches " +
+    "package.json, and the base runs with the checkout's dependencies, so a run there may not be faithful; added in this request");
 }, 60_000);
 
 it("runs only the commands of the projects that own the changed files, there and on the base", async () => {
@@ -1186,7 +1191,8 @@ it("runs only the commands of the projects that own the changed files, there and
   await run.tool("write");
   write(root, { "a/test/y.test.mjs": passing });
   expect(entry(await run.settle()).content).toBe(["## Tesota receipt\n", "- **passed** — cd a && bun run test",
-    "- **vacuous test** — a/test/y.test.mjs: it passes without the change", "\nThis is check evidence, not your acceptance."].join("\n"));
+    "- **passes on base** — a/test/y.test.mjs: it passes without the change too; added in this request",
+    "- **changed lines** — tests \\+2 \\-0", "\nThis is check evidence, not your acceptance."].join("\n"));
 }, 60_000);
 
 /** A folder that is no repository, holding `api`, a tested package, and `rules`, a contract, each its own repository, and plain files. */
@@ -1217,7 +1223,8 @@ it("verifies each repository the request changed in a folder of repositories, fr
     "- **not proved** — api/src/price.mjs: no proof covers it; the project's commands pass with it",
     "- **not verified** — notes/todo.md: no verifier covers it",
     "- **proved** — rules/src/rule.ts",
-    "  - content sha256 hash of src/rule.ts", "\nThis is check evidence, not your acceptance."].join("\n"));
+    "  - content sha256 hash of src/rule.ts",
+    "- **changed lines** — implementation \\+2 \\-1 · other \\+1 \\-0", "\nThis is check evidence, not your acceptance."].join("\n"));
   const receipt = entry(settled).details as Receipt;
   expect(receipt.units?.map(({ folder: at, repository, snapshot }) => [at, repository, snapshot ?? false]))
     .toEqual([["api", true, false], ["notes", false, true], ["rules", true, false]]);

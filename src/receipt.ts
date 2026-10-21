@@ -4,6 +4,7 @@ import type { OpenCases } from "./open-cases.js";
 import { inFolder } from "./projects.js";
 import type { UncoveredLines } from "./proof-coverage.js";
 import type { ClaimCheckRun, ContractStrength } from "./proof-guarantees.js";
+import type { ChangeLines, LineCount } from "./change-lines.js";
 import type { CommandRun, TestExercise } from "./test-rung.js";
 import type { Weakening } from "./verification-changes.js";
 import type { StartState, UnmeasuredPath } from "./request-fingerprint.js";
@@ -15,13 +16,14 @@ import { decisions, partlyHolds, type Standing, verdictTone } from "./verificati
  * changed file with contracts, the gate's verdict on its proof and the
  * evidence, bound to the content it checked; how strong each contract the
  * request added or changed is, once it proved; the project's commands, such as
- * its tests, with theirs; whether each changed or added test exercises the
- * change; the changes that may weaken the evidence; and the changed files and
- * lines no proof covers. Attribution describes what changed during the
- * request (by anyone); weakening and exercise still use its admission commit.
+ * its tests, with theirs; each changed or added test's provenance and whether
+ * it notices the change; the changes that may weaken the evidence; the
+ * changed files and lines no proof covers; and the change in lines by
+ * category. Attribution describes what changed during the request (by
+ * anyone); weakening and exercise still use its admission commit.
  */
 export interface Receipt {
-  readonly version: 1;
+  readonly version: 2;
   /** False when the project has no Git repository, so nothing could tell which files changed or verify them. */
   readonly repository: boolean;
   /**
@@ -73,6 +75,8 @@ export interface Receipt {
    * deleted; `unreadable` when Git could not tell.
    */
   readonly changed: readonly { readonly path: string; readonly blob: string | null }[] | "unreadable";
+  /** The files in `changed` in lines by category (`changeLines`, #527); `unreadable` when Git could not show the change. */
+  readonly lines: ChangeLines | "unreadable";
   /** Paths dirty at the first non-reader tool whose content stayed unchanged; tests ran with them. */
   readonly inherited: readonly string[];
   /** Paths whose content was not hashed at either capture, never called unchanged. */
@@ -99,7 +103,7 @@ export interface Receipt {
 
 /** What a receipt records for one repository or folder; the receipt itself is one, for the folder Pi runs in. */
 export type UnitEvidence = Pick<Receipt, "repository" | "snapshot" | "tooLarge" | "reason" | "base" | "proofs" | "contracts" |
-  "claimcheck" | "tests" | "exercises" | "weakened" | "unverified" | "commentsOnly" | "uncovered" | "changed" |
+  "claimcheck" | "tests" | "exercises" | "weakened" | "unverified" | "commentsOnly" | "uncovered" | "changed" | "lines" |
   "inherited" | "unmeasured" | "startState" | "endState">;
 
 /** Whether anything verified a unit: it is a Git repository, or Tesota snapshotted it. */
@@ -122,10 +126,26 @@ export function addedAssumptions(files: readonly string[], weakened: UnitEvidenc
 /** A unit's evidence and its folder, relative to the folder Pi runs in; empty for that folder's own files. */
 export type ReceiptUnit = UnitEvidence & { readonly folder: string };
 
+const none: LineCount = { added: 0, removed: 0 };
+
+/** A change of no lines. */
+export const noLines: ChangeLines = { implementation: none, tests: none, other: none, binary: [], generated: [] };
+
+/** Several units' lines as one count; `unreadable` when any unit's was. */
+function linesTogether(each: readonly UnitEvidence["lines"][]): UnitEvidence["lines"] {
+  const counts = each.filter((lines): lines is ChangeLines => typeof lines !== "string");
+  if (counts.length < each.length) return "unreadable";
+  const sum = (pick: (lines: ChangeLines) => LineCount): LineCount => ({
+    added: counts.reduce((total, lines) => total + pick(lines).added, 0),
+    removed: counts.reduce((total, lines) => total + pick(lines).removed, 0) });
+  return { implementation: sum(({ implementation }) => implementation), tests: sum(({ tests }) => tests), other: sum(({ other }) => other),
+    binary: counts.flatMap(({ binary }) => binary), generated: counts.flatMap(({ generated }) => generated) };
+}
+
 /** The evidence of a unit that verified nothing. */
 export const noEvidence: Omit<UnitEvidence, "repository" | "snapshot" | "tooLarge" | "reason" | "base" | "claimcheck" |
   "commentsOnly" | "startState" | "endState"> = { proofs: [], contracts: [],
-  tests: [], exercises: [], weakened: [], unverified: [], uncovered: [], changed: [], inherited: [], unmeasured: [] };
+  tests: [], exercises: [], weakened: [], unverified: [], uncovered: [], changed: [], lines: noLines, inherited: [], unmeasured: [] };
 
 /** A unit's path as seen from the folder Pi runs in. */
 export function inUnit(folder: string, path: string): string {
@@ -152,6 +172,7 @@ export function fromFolder(unit: ReceiptUnit): UnitEvidence {
     unmeasured: unit.unmeasured.map((item) => ({ ...item, path: at(item.path) })),
     uncovered: unit.uncovered.map((lines) => ({ ...lines, path: at(lines.path) })),
     changed: typeof unit.changed === "string" ? unit.changed : unit.changed.map((file) => ({ ...file, path: at(file.path) })),
+    lines: typeof unit.lines === "string" ? unit.lines : { ...unit.lines, binary: unit.lines.binary.map(at), generated: unit.lines.generated.map(at) },
     ...unit.tooLarge === undefined ? {} : { tooLarge: unit.tooLarge.map(at) } };
 }
 
@@ -176,6 +197,7 @@ export function allEvidence(receipt: Receipt): UnitEvidence {
     tests: units.flatMap(({ tests }) => tests), exercises: units.flatMap(({ exercises }) => exercises),
     weakened: typeof unread === "string" ? unread : units.flatMap(({ weakened }) => typeof weakened === "string" ? [] : weakened),
     unverified: units.flatMap(({ unverified }) => unverified), uncovered: units.flatMap(({ uncovered }) => uncovered), changed,
+    lines: linesTogether(units.map(({ lines }) => lines)),
     tooLarge: units.flatMap(({ tooLarge }) => tooLarge ?? []),
     inherited: units.flatMap(({ inherited }) => inherited), unmeasured: units.flatMap(({ unmeasured }) => unmeasured),
     ...units.length > 0 && units.every(({ commentsOnly }) => commentsOnly === true) ? { commentsOnly: true as const } : {} };
@@ -227,9 +249,31 @@ function testLine({ command, verdict, evidence, failingTests }: Receipt["tests"]
   return `  NOT passed    ${command}: these tests fail, as they did when they went back: ${failingTests.join("; ")}`;
 }
 
-const exerciseText: Readonly<Record<TestExercise["finding"], string>> = {
-  exercises: "exercises     ", does_not_exercise: "vacuous test  ", unknown: "exercise?     ",
+/** What was observed of a test against the base, never more: one that notices the change may still expect the wrong thing. */
+const sensitivityText: Readonly<Record<TestExercise["sensitivity"], string>> = {
+  fails_then_passes: "notices change", passes_on_base: "passes on base", unknown: "not checked   ",
 };
+
+/** Who set what a test expects: this request, when it added the test or changed it. */
+const provenanceWords: Readonly<Record<TestExercise["provenance"], string>> = {
+  added: "added in this request", changed: "changed in this request",
+};
+
+/** A test against the base, as one line of words: what it did there, then who set what it expects. */
+const exerciseDetail = ({ provenance, reason }: TestExercise): string => `${reason}; ${provenanceWords[provenance]}`;
+
+/** The change's lines by category in one row, when it changed any; a summary of the diff, not of what was verified. */
+function linesRow(lines: UnitEvidence["lines"]): string[] {
+  if (lines === "unreadable") return ["  changed lines not counted: Git could not show the change, or a file could not be read"];
+  const counts = (["implementation", "tests", "other"] as const).flatMap((category) => {
+    const { added, removed } = lines[category];
+    return added + removed === 0 ? [] : [`${category} +${added} -${removed}`];
+  });
+  const files = (count: number, kind: string): string[] => count === 0 ? [] : [`${count} ${kind} ${count === 1 ? "file" : "files"}`];
+  const binary = files(lines.binary.length, "binary");
+  return counts.length + binary.length === 0 ? []
+    : [`  changed lines ${[...counts, ...binary, ...files(lines.generated.length, "generated")].join(" · ")}`];
+}
 
 /**
  * What mutation found about one contract. A survivor proved after the change,
@@ -310,7 +354,7 @@ function weakening(change: Weakening): string {
 /** Whether a session entry's details hold a receipt this Tesota reads. */
 export function isReceipt(value: unknown): value is Receipt {
   // A receipt from before the engine named itself (#463) has `pi` in place of `engine`: an earlier Tesota's.
-  return typeof value === "object" && value !== null && Reflect.get(value, "version") === 1 && typeof Reflect.get(value, "engine") === "string";
+  return typeof value === "object" && value !== null && Reflect.get(value, "version") === 2 && typeof Reflect.get(value, "engine") === "string";
 }
 
 /** A session entry that may carry a receipt: a message, or a custom entry from print mode. */
@@ -511,11 +555,15 @@ function unitFindings(receipt: UnitEvidence): Finding[] {
           : change.kind === "changed_check_script" ? `${weakeningWords[change.kind]} ${change.script}` : weakeningWords[change.kind],
         more: "annotation" in change ? [change.annotation] : [] })),
     ...receipt.contracts.map(contractFinding),
-    ...receipt.exercises.map(({ path, finding, reason }): Finding => finding === "exercises"
-      ? { standing: "holds", check: "exercise", label: "Test catches the change", subject: path, detail: reason, more: [] }
-      : finding === "does_not_exercise"
-        ? { standing: "decide", check: "exercise", label: "Test misses the change", subject: path, detail: reason, more: [] }
-        : { standing: "gap", check: "exercise", label: "Test not checked", subject: path, detail: reason, more: [] }),
+    ...receipt.exercises.map((exercise): Finding => {
+      const { path, sensitivity } = exercise;
+      const detail = exerciseDetail(exercise);
+      return sensitivity === "fails_then_passes"
+        ? { standing: "holds", check: "exercise", label: "Test notices the change", subject: path, detail, more: [] }
+        : sensitivity === "passes_on_base"
+          ? { standing: "decide", check: "exercise", label: "Test passes on base", subject: path, detail, more: [] }
+          : { standing: "gap", check: "exercise", label: "Test not checked", subject: path, detail, more: [] };
+    }),
     ...opinionFindings(receipt.claimcheck, receipt.contracts),
     ...unread && receipt.proofs.length > 0
       ? [{ standing: "gap" as const, check: "coverage" as const, label: "Coverage not checked", subject: "the changed lines",
@@ -617,6 +665,8 @@ function receiptLines(receipt: Receipt): string[] {
   if (receipt.stopped !== undefined) return [`  not verified  this request's changes: ${receipt.stopped}`];
   return [...receipt.units === undefined ? unitLines(receipt) : receipt.units.flatMap((unit) => verified(unit)
     ? unitLines(fromFolder(unit)) : [`  not verified  ${plainName(unit.folder)}: ${plainReason(unit)}`]),
+  // One row for the whole change, every repository's lines together, last: it sums up the diff, not the evidence.
+  ...linesRow(allEvidence(receipt).lines),
   ...openCaseLines(receipt.openCases)];
 }
 
@@ -636,7 +686,7 @@ function unitLines(receipt: UnitEvidence): string[] {
     ...receipt.contracts.flatMap(mutationLines),
     ...claimcheckLines(receipt.claimcheck, receipt.contracts),
     ...receipt.tests.map(testLine),
-    ...receipt.exercises.map(({ path, finding, reason }) => `  ${exerciseText[finding]}${path}: ${reason}`),
+    ...receipt.exercises.map((exercise) => `  ${sensitivityText[exercise.sensitivity]}${exercise.path}: ${exerciseDetail(exercise)}`),
     ...receipt.weakened === "too_large"
       ? ["  not checked   weakened evidence: the change is too large to check for weakening"]
       : receipt.weakened === "unreadable"

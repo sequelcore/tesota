@@ -103,14 +103,19 @@ export async function runCommands(root: string, projects: readonly ProjectChecks
 }
 
 /**
- * Whether a changed or added test exercises the change: it does not when it
- * passes on the base, the commit the request started from; it does when it
- * fails there while the base passes without it, or when the tests it adds
- * newly fail there by the base's test reports (`exercise`, `checkOrigin`).
+ * A changed or added test file against the base, the commit the request
+ * started from (#527), as two facts apart. Its provenance: the base held the
+ * file, so this request changed it, or this request added it, so what it
+ * expects is the request's own. Its sensitivity: it fails on the base while
+ * the base passes without it, or the tests it adds newly fail there by the
+ * base's test reports (`exercise`, `checkOrigin`); or it passes on the base
+ * too. A test that notices the change may still expect the wrong thing, and
+ * one that passes on the base may still guard against a regression.
  */
 export interface TestExercise {
   readonly path: string;
-  readonly finding: "exercises" | "does_not_exercise" | "unknown";
+  readonly provenance: "added" | "changed";
+  readonly sensitivity: "fails_then_passes" | "passes_on_base" | "unknown";
   readonly reason: string;
 }
 
@@ -190,18 +195,18 @@ async function baseRun(commands: readonly string[], project: string, folder: str
  * grades one; so the tests that newly fail with the file (`introducedTests`)
  * count even when the base fails without it (`checkOrigin`).
  */
-function exercise(path: string, withTest: BaseRun, without: BaseRun | undefined): TestExercise {
+function exercise(path: string, provenance: TestExercise["provenance"], withTest: BaseRun, without: BaseRun | undefined): TestExercise {
   if (withTest.outcome === "passed") {
-    return { path, finding: "does_not_exercise", reason: "it passes without the change" };
+    return { path, provenance, sensitivity: "passes_on_base", reason: "it passes without the change too" };
   }
   const ended = withTest.outcome.replace("_", " ");
-  if (without === undefined) return { path, finding: "unknown", reason: `on the base it ${ended}` };
+  if (without === undefined) return { path, provenance, sensitivity: "unknown", reason: `on the base it ${ended}` };
   const introduced = introducedTests(withTest.results, without.results).length;
   if (checkOrigin(withTest.outcome, without.outcome, introduced, true) === "introduced") {
-    return { path, finding: "exercises", reason: "fails on the base, passes with the change" };
+    return { path, provenance, sensitivity: "fails_then_passes", reason: "fails on the base, passes with the change" };
   }
-  if (without.outcome === "passed") return { path, finding: "unknown", reason: `on the base it ${ended}` };
-  return { path, finding: "unknown", reason: withTest.results === undefined || without.results === undefined
+  if (without.outcome === "passed") return { path, provenance, sensitivity: "unknown", reason: `on the base it ${ended}` };
+  return { path, provenance, sensitivity: "unknown", reason: withTest.results === undefined || without.results === undefined
     ? `on the base it ${ended}, but so does the base without it, and no test report says which tests fail`
     : `on the base it ${ended}, but so does the base without it, and no test fails there that passes without it` };
 }
@@ -210,14 +215,15 @@ function exercise(path: string, withTest: BaseRun, without: BaseRun | undefined)
  * Each test file's run over the base with its project's commands, then that
  * project's own run on the base, once, when some of its tests fail there.
  */
-async function againstBase(project: string, root: string, tests: readonly string[], projects: readonly ProjectChecks[],
-  signal: AbortSignal): Promise<TestExercise[]> {
+async function againstBase(project: string, root: string, tests: readonly string[], provenance: ReadonlyMap<string, TestExercise["provenance"]>,
+  projects: readonly ProjectChecks[], signal: AbortSignal): Promise<TestExercise[]> {
   const found: TestExercise[] = [];
   const without = new Map<string, BaseRun>();
   for (const path of tests) {
     const owning = owningProjects(projects, [path])[0];
+    const origin = provenance.get(path) ?? "added";
     if (owning === undefined) {
-      found.push({ path, finding: "unknown", reason: "no project's commands run it" });
+      found.push({ path, provenance: origin, sensitivity: "unknown", reason: "no project's commands run it" });
       continue;
     }
     mkdirSync(dirname(join(project, path)), { recursive: true });
@@ -228,7 +234,7 @@ async function againstBase(project: string, root: string, tests: readonly string
     if (withTest.outcome !== "passed" && !without.has(owning.folder)) {
       without.set(owning.folder, await baseRun(owning.commands, project, owning.folder, signal));
     }
-    found.push(exercise(path, withTest, without.get(owning.folder)));
+    found.push(exercise(path, origin, withTest, without.get(owning.folder)));
   }
   return found;
 }
@@ -249,15 +255,22 @@ const dependencyFiles: ReadonlySet<string> = new Set(["package.json", "package-l
 export async function exerciseTests(root: string, base: string, tests: readonly string[], changed: readonly string[],
   projects: readonly ProjectChecks[], signal: AbortSignal): Promise<TestExercise[]> {
   if (tests.length === 0) return [];
+  const provenance = new Map(await Promise.all(tests.map(async (path) => [path, await atCommit(root, base, path) ? "changed" : "added"] as const)));
+  const unknown = (reason: string): TestExercise[] =>
+    tests.map((path) => ({ path, provenance: provenance.get(path) ?? "added", sensitivity: "unknown", reason }));
   const touched = changed.filter((path) => dependencyFiles.has(posix.basename(path)));
   if (touched.length > 0) {
-    return tests.map((path) => ({ path, finding: "unknown", reason: `the change touches ${touched.join(", ")}, and the ` +
-      "base runs with the checkout's dependencies, so a run there may not be faithful" }));
+    return unknown(`the change touches ${touched.join(", ")}, and the base runs with the checkout's dependencies, so a run there may not be faithful`);
   }
   try {
-    return await atBase(root, base, (project) => againstBase(project, root, tests, projects, signal));
+    return await atBase(root, base, (project) => againstBase(project, root, tests, provenance, projects, signal));
   } catch (error) {
     const why = error instanceof Error ? error.message.trim().split("\n").at(-1) ?? "" : String(error);
-    return tests.map((path) => ({ path, finding: "unknown", reason: `the base could not be checked out: ${why}` }));
+    return unknown(`the base could not be checked out: ${why}`);
   }
+}
+
+/** Whether the commit `base` holds a file at `path`, relative to `root`; a folder there is not the file. */
+export async function atCommit(root: string, base: string, path: string): Promise<boolean> {
+  try { return (await git(root, ["cat-file", "-t", `${base}:./${path}`])).trim() === "blob"; } catch { return false; }
 }

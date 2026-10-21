@@ -60,6 +60,24 @@ export function isTestPath(path: string): boolean {
   return testPaths.some((pattern) => pattern.test(path));
 }
 
+/** Programming languages' file extensions; documentation, configuration, data, SQL and assets are not among them. */
+const sourceExtensions: ReadonlySet<string> = new Set(["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs", "vue", "svelte",
+  "py", "go", "rs", "java", "kt", "kts", "scala", "cs", "fs", "rb", "php", "swift", "m", "mm", "c", "h", "cc", "cpp", "cxx",
+  "hpp", "hh", "dart", "lua", "ex", "exs", "erl", "clj", "hs", "ml", "elm", "zig", "nim", "sh", "bash", "ps1"]);
+
+/** A tool's configuration written in a programming language: `vite.config.ts`, `.eslintrc.js`, `babel.config.cjs`. */
+const configPath = /(^|\/)([^/]+\.config|\.[^/]+rc)\.[^./]+$/u;
+
+/**
+ * Whether a path holds source code in a programming language, by its
+ * extension, other than a tool's configuration written in one
+ * (`changeCategory`).
+ */
+export function isSourcePath(path: string): boolean {
+  const extension = /\.([^./]+)$/u.exec(path)?.[1]?.toLowerCase();
+  return extension !== undefined && sourceExtensions.has(extension) && !configPath.test(path);
+}
+
 function kindOf(path: string, line: string): AnnotationKind | undefined {
   if (path.endsWith(".dfy")) return /^\s*assume\b|\{:axiom\b/u.test(line.replace(/\/\/.*$/u, "")) ? "assume" : undefined;
   const word = /^\s*\/\/@\s*(\w+)/u.exec(line)?.[1];

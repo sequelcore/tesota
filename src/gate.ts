@@ -494,7 +494,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     }
     const begun = await start;
     const workspace = begun?.units.some(({ folder }) => folder !== "") ?? false;
-    const receipt: Receipt = { version: 1,
+    const receipt: Receipt = { version: 2,
       repository: begun?.units.some(({ folder, repository }) => repository && begun.bases.has(folder)) ?? false,
       base: workspace ? null : begun?.bases.get("") ?? null, startedAt: startedAt ?? new Date().toISOString(),
       settledAt: new Date().toISOString(), engine: host().version, ...sessionModel(ctx), ...noEvidence, stopped: reason,
@@ -506,7 +506,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
   const outsideGit = (ctx: ExtensionContext, run: Pick<Receipt, "base" | "startedAt" | "engine" | "model" | "clarifications">,
     reason: string | undefined): SettleResult | undefined => {
     if (!mayHaveChanged) return undefined;
-    const receipt: Receipt = { version: 1, repository: false, ...run, settledAt: new Date().toISOString(), ...noEvidence,
+    const receipt: Receipt = { version: 2, repository: false, ...run, settledAt: new Date().toISOString(), ...noEvidence,
       ...reason === undefined ? {} : { reason } };
     progress.publish({ step: "settled", receipt });
     return { entries: [receiptEntry(ctx.mode, receipt)] };
@@ -616,8 +616,8 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
       { concurrency: "unbounded" });
     const settledAt = new Date().toISOString();
     const only = workspace ? undefined : evidence[0];
-    const receipt: Receipt = only !== undefined ? { version: 1, ...run, ...only, ...open, settledAt }
-      : { version: 1, repository: true, ...run, ...noEvidence, ...open, settledAt, units: [
+    const receipt: Receipt = only !== undefined ? { version: 2, ...run, ...only, ...open, settledAt }
+      : { version: 2, repository: true, ...run, ...noEvidence, ...open, settledAt, units: [
         ...evidence.map((unit, k) => ({ ...unit, folder: changed[k]?.folder ?? "" })),
         ...plain.map(({ folder }) => ({ folder, repository: false, base: null, ...noEvidence,
           reason: refused.get(folder) ?? "Git could not read it, so Tesota cannot tell what changed" }))]
@@ -776,5 +776,6 @@ async function unitEvidence(unit: ChangedUnit, proofs: Receipt["proofs"], rung: 
     ...unit.endState === undefined ? {} : { endState: unit.endState },
     tests: rung?.tests ?? [], exercises: rung?.exercises ?? [], weakened: unit.weakened,
     ...unprovedFiles(unit.changes, unit.changed, measured?.covered ?? new Set()), uncovered: uncovered(sources, unit.changes, unit.weakened),
-    changed: unit.unreadable ? "unreadable" : await recordedChanges(unit.root, unit.changed) };
+    changed: unit.unreadable ? "unreadable" : await recordedChanges(unit.root, unit.changed),
+    lines: unit.unreadable ? "unreadable" : await checks().changeLines(unit.root, unit.base, unit.changed) };
 }

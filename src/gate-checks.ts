@@ -4,6 +4,7 @@
  * loads them when a run first settles rather than with Tesota, so Tesota
  * starts in less time and memory (#446).
  */
+export { changeLines } from "./change-lines.js";
 export { contractStrength } from "./proof-guarantees.js";
 export { uncoveredLines } from "./proof-coverage.js";
 export { exerciseTests, runCommands } from "./test-rung.js";

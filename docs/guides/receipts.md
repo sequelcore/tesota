@@ -38,7 +38,7 @@ tesota receipt --json
 It writes the same receipt as an unsigned
 [in-toto Statement](https://github.com/in-toto/attestation/blob/main/spec/v1/statement.md)
 about the commit `HEAD` names, with the receipt as its predicate.
-[Receipt v1](../receipt-v1.md) specifies every field.
+[Receipt v2](../receipt-v2.md) specifies every field.
 
 ## Who is accountable
 
@@ -66,4 +66,4 @@ session's own worktree, run it there.
 ## Related
 
 - [Verification](verification.md)
-- [Receipt v1](../receipt-v1.md)
+- [Receipt v2](../receipt-v2.md)

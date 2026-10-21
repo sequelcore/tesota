@@ -57,14 +57,16 @@ The run ends with Tesota's receipt:
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="../assets/tesota-turn-light.svg">
-  <img alt="A verified turn: the request, the agent's two file writes and its answer, then Tesota's receipt saying nothing needs you, the tests pass and the new test catches the change." src="../assets/tesota-turn-dark.svg">
+  <img alt="A verified turn: the request, the agent's two file writes and its answer, then Tesota's receipt saying nothing needs you, the tests pass and the new test notices the change." src="../assets/tesota-turn-dark.svg">
 </picture>
 
 - The first row says whether anything needs you: `✓ Nothing needs you`,
   `○ Nothing needs you · 1 unverified` in amber when something is left
   unverified, or `! 2 things need you`.
 - Then what is unverified, and one row of what holds: here, the tests pass
-  and the new test catches the change, since it fails without it.
+  and the new test notices the change, since it fails without it. It
+  notices it by what the agent expects, so the receipt says the test was
+  added in this request.
 - Press Ctrl+O for each finding's details; again to fold them.
 
 The footer keeps the receipt in brief, in the same color: `○ receipt · tests
