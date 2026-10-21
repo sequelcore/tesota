@@ -169,8 +169,13 @@ export function startShell(options: ShellOptions): Shell {
   const loader = new Loader(tui, (text) => theme.fg("accent", text), (text) => theme.fg("muted", text), "Working…");
   const editorSlot = new VStack();
   let editor = new Editor(tui, theme.editor);
-  const autocomplete = (): FileAutocompleteProvider =>
-    new FileAutocompleteProvider([...(options.commands ?? [])], session.workspace.cwd);
+  /** The shell's commands, then the shown session's skills (#540); a command wins over a skill of its name. */
+  const autocomplete = (): FileAutocompleteProvider => {
+    const commands = options.commands ?? [];
+    const skills = session.skills().filter(({ name }) => !commands.some((command) => command.name === name))
+      .map(({ name, description }) => ({ name, description }));
+    return new FileAutocompleteProvider([...commands, ...skills], session.workspace.cwd);
+  };
   const footerSlot = new Container();
   const footer = new Text("", 1, 0);
   const drawFooter = (): void => { footer.setText(theme.fg("dim", options.status())); };
@@ -355,7 +360,13 @@ export function startShell(options: ShellOptions): Shell {
     if (trimmed === "") return;
     editor.setText("");
     if (trimmed.startsWith("/") && options.command !== undefined) {
-      void options.command(trimmed).then((known) => { if (!known) note(`No command ${trimmed.split(/\s/u)[0]}.`, "warning"); });
+      const word = trimmed.split(/\s/u)[0] ?? "";
+      void options.command(trimmed).then((known) => {
+        if (known) return;
+        // A skill is a request, the line typed, whose text only the model reads; during a run it waits as a follow-up (#540).
+        if (!session.skills().some(({ name }) => `/${name}` === word)) note(`No command ${word}.`, "warning");
+        else send(trimmed, busy ? "followUp" : undefined);
+      });
       return;
     }
     send(trimmed, busy ? "steer" : undefined);

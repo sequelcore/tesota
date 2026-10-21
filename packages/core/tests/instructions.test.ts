@@ -1,10 +1,13 @@
 import { expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createModels, fauxProvider } from "@earendil-works/pi-ai";
-import { contextFiles, instructionsText, skillCatalog, skills } from "../src/instructions.ts";
-import { createSession } from "../src/session.ts";
+import { Type } from "typebox";
+import { contextFiles, instructionsText, skillCatalog, skills, skillsIn, startedSkill, withArguments } from "../src/instructions.ts";
+import { compactedHead, skillMessage } from "../src/loop.ts";
+import { createSession, openSession } from "../src/session.ts";
+import type { EngineTool } from "../src/tool.ts";
 import { accepts, scriptedReply } from "./scripted.ts";
 
 function put(path: string, content: string): void {
@@ -316,4 +319,187 @@ test("instruction files keep within 32 KiB together: a larger one is cut and the
   expect(text).toContain(`[Tesota cut this file at ${32 * 1024} of its ${40 * 1024} characters.]`);
   expect(text).toContain("# /repo/sub/AGENTS.md\n[Tesota left this file out");
   expect(text).not.toContain("later");
+});
+
+test("a skill's frontmatter says who may start it: the model, the operator by name, or both (#540)", () => {
+  const home = mkdtempSync(join(tmpdir(), "tesota-core-instructions-invocation-"));
+  const cwd = mkdtempSync(join(tmpdir(), "tesota-core-instructions-invocation-cwd-"));
+  const skill = (name: string, fields: string) => put(join(home, ".agents", "skills", name, "SKILL.md"),
+    `---\nname: ${name}\ndescription: ${name} skill\n${fields}---\nBody.`);
+  skill("both", "");
+  skill("operator", "disable-model-invocation: true\n");
+  skill("model", "user-invocable: false\n");
+  skill("quoted", "disable-model-invocation: \"true\"\nuser-invocable: 'false'\n");
+  skill("explicit", "disable-model-invocation: false\nuser-invocable: true\n");
+  const found = skills(cwd, { user: home, tesota: join(home, "none") });
+  const by = (name: string) => found.find((each) => each.name === name);
+  expect(by("both")).toEqual({ name: "both", description: "both skill", path: join(home, ".agents", "skills", "both", "SKILL.md") });
+  expect(by("explicit")).toEqual({ name: "explicit", description: "explicit skill", path: join(home, ".agents", "skills", "explicit", "SKILL.md") });
+  expect(by("operator")?.disableModelInvocation).toBe(true);
+  expect(by("model")?.userInvocable).toBe(false);
+  expect(by("quoted")).toMatchObject({ disableModelInvocation: true, userInvocable: false });
+  const catalog = skillCatalog(found, 100_000);
+  expect(catalog).toContain("- both: both skill");
+  expect(catalog).toContain("- model: model skill");
+  expect(catalog).not.toContain("operator skill");
+  expect(catalog).not.toContain("quoted skill");
+  expect(skillCatalog(found.filter((each) => each.disableModelInvocation === true), 100_000)).toBe("");
+});
+
+test("the catalog counts only the skills the model may start when it drops some (#540)", () => {
+  const list = [
+    { name: "first", description: "a".repeat(1000), path: "/a" },
+    { name: "hidden", description: "h".repeat(1000), path: "/h", disableModelInvocation: true as const },
+    { name: "third", description: "c".repeat(1000), path: "/c" },
+  ];
+  expect(skillCatalog(list, 5000).split("\n").slice(1)).toEqual(["- first: " + "a".repeat(250) + " (/a)", "1 more skills available."]);
+});
+
+test("arguments take their places as Claude Code places them (#540)", () => {
+  expect(withArguments("Fix $ARGUMENTS now.", "issue 12 fast")).toBe("Fix issue 12 fast now.");
+  expect(withArguments("From $0 to $1, then $ARGUMENTS[0].", "\"hello world\" second")).toBe("From hello world to second, then hello world.");
+  expect(withArguments("One: $0, missing: $2.", "only")).toBe("One: only, missing: $2.");
+  expect(withArguments("Costs \\$1.00 for $0.", "you")).toBe("Costs $1.00 for you.");
+  expect(withArguments("Kept \\\\$0.", "x")).toBe("Kept \\\\x.");
+  expect(withArguments("Arguments are literal: $0.", "$1 $ARGUMENTS")).toBe("Arguments are literal: $1.");
+  expect(withArguments("No placeholder.", "auth module")).toBe("No placeholder.\n\nARGUMENTS: auth module");
+  expect(withArguments("Only $3 is named.", "a b")).toBe("Only $3 is named.\n\nARGUMENTS: a b");
+  expect(withArguments("No placeholder.", "")).toBe("No placeholder.");
+  expect(withArguments("Empty $ARGUMENTS.", "")).toBe("Empty .");
+});
+
+test("/name at the start of a request starts a skill the operator may start, on the rest of the line (#540)", () => {
+  const home = mkdtempSync(join(tmpdir(), "tesota-core-instructions-started-"));
+  const folder = join(home, "skills");
+  put(join(folder, "verify", "SKILL.md"), "---\nname: verify\ndescription: Verify.\ndisable-model-invocation: true\n---\n\n# Verify\n\nVerify $ARGUMENTS.\n");
+  put(join(folder, "background", "SKILL.md"), "---\nname: background\ndescription: Background.\nuser-invocable: false\n---\nBody.");
+  const list = skillsIn(folder);
+  const path = join(folder, "verify", "SKILL.md");
+  expect(startedSkill("/verify the parser", list)).toEqual({ name: "verify", path,
+    instructions: `Base directory for this skill: ${join(folder, "verify")}\n\n# Verify\n\nVerify the parser.` });
+  expect(startedSkill("  /verify\n  across lines  ", list)?.instructions).toEndWith("Verify across lines.");
+  expect(startedSkill("/verify", list)?.instructions).toEndWith("Verify .");
+  expect(startedSkill("/background now", list)).toBeUndefined();
+  expect(startedSkill("/unknown now", list)).toBeUndefined();
+  expect(startedSkill("please /verify the parser", list)).toBeUndefined();
+  expect(startedSkill("/verifyx", list)).toBeUndefined();
+  rmSync(path);
+  expect(() => startedSkill("/verify it", list)).toThrow(`The skill verify could not be read from ${path}.`);
+});
+
+test("a started skill reaches the model after the request, never the ledger's request, and resumes and compacts with it (#540)", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "tesota-core-instructions-run-"));
+  mkdirSync(join(cwd, ".git"));
+  const body = "# Formal verification\n\nVerify the area the operator named.";
+  const folder = join(cwd, ".agents", "skills", "create-formal-verification-skill");
+  put(join(folder, "SKILL.md"), "---\nname: create-formal-verification-skill\n"
+    + `description: "Formally verify where a bug costs most."\ndisable-model-invocation: true\n---\n\n${body}\n`);
+  const faux = fauxProvider();
+  let prompt = "";
+  let sent: unknown[] = [];
+  faux.setResponses([scriptedReply({ seen: (context) => {
+    prompt = context.systemPrompt ?? JSON.stringify(context.messages[0]);
+    sent = context.messages.filter(({ role }) => role !== "system");
+  }, reply: "done" })]);
+  const models = createModels();
+  models.setProvider(faux.provider);
+  const requests: (string | undefined)[] = [];
+  const session = createSession({ cwd, folder: mkdtempSync(join(tmpdir(), "tesota-core-instructions-run-sessions-")), models,
+    model: faux.getModel(),
+    verifier: (pi, request) => { pi.on("agent_before_settle", () => { requests.push(request()?.text); return undefined; }); } });
+  const typed = "/create-formal-verification-skill the session ledger";
+  const instructions = `Base directory for this skill: ${folder}\n\n${body}\n\nARGUMENTS: the session ledger`;
+  try {
+    expect(session.skills().map(({ name }) => name)).toEqual(["create-formal-verification-skill"]);
+    await session.prompt(typed);
+  } finally {
+    await session.dispose();
+  }
+  expect(prompt).not.toContain("create-formal-verification-skill");
+  expect(sent).toEqual([
+    expect.objectContaining({ role: "user", content: typed }),
+    expect.objectContaining({ role: "user", content: instructions }),
+  ]);
+  expect(requests).toEqual([typed]);
+  expect(session.ledger()).toMatchObject([{ run: 1, text: typed }]);
+  expect(JSON.stringify(session.ledger())).not.toContain("Formal verification");
+  expect(session.messages()).toEqual([
+    { role: "user", text: typed },
+    { role: "custom", customType: "tesota.skill", text: instructions },
+    { role: "assistant", text: "done" },
+  ]);
+  const request = readFileSync(session.file, "utf8").trimEnd().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>)
+    .find((entry) => entry["type"] === "request");
+  expect(request).toMatchObject({ text: typed, skill: { name: "create-formal-verification-skill", path: join(folder, "SKILL.md"), instructions } });
+  const resumed = openSession(session.file, { models, model: faux.getModel(), verifier: accepts });
+  try {
+    expect(resumed.messages().map(({ role, text }) => [role, text])).toEqual([["user", typed], ["custom", instructions], ["assistant", "done"]]);
+  } finally {
+    await resumed.dispose();
+  }
+  const asked = { role: "user" as const, content: typed, timestamp: 0 };
+  const head = compactedHead([asked, skillMessage({ name: "s", path: "/s", instructions }, 0)], "summary", { read: [], changed: [] }, []);
+  expect(head.content).toContain(`The operator's request, exactly as given:\n\n${typed}\n\nThe skill the operator started:\n\n${instructions}\n\n`);
+});
+
+test("a skill sent during a run waits as a follow-up, never steers, and its text stays out of the ledger (#540)", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "tesota-core-instructions-queued-"));
+  mkdirSync(join(cwd, ".git"));
+  const folder = join(cwd, ".agents", "skills", "review");
+  put(join(folder, "SKILL.md"), "---\nname: review\ndescription: Review.\ndisable-model-invocation: true\n---\nReview $ARGUMENTS closely.");
+  const typed = "/review the parser";
+  const instructions = `Base directory for this skill: ${folder}\n\nReview the parser closely.`;
+  const faux = fauxProvider();
+  const seen: string[][] = [];
+  const look = (reply: string) => scriptedReply({ seen: (context) => {
+    seen.push(context.messages.flatMap((message) => message.role === "user" && typeof message.content === "string" ? [message.content] : []));
+  }, reply });
+  faux.setResponses([scriptedReply({ tool: "probe", args: {} }), look("first"), look("reviewed")]);
+  const models = createModels();
+  models.setProvider(faux.provider);
+  const probe: EngineTool = { name: "probe", description: "Sends the operator's skill while the run goes.", parameters: Type.Object({}),
+    execute: async () => { await session.prompt(typed, { streamingBehavior: "steer" }); return { text: "ok", isError: false }; } };
+  const session = createSession({ cwd, folder: mkdtempSync(join(tmpdir(), "tesota-core-instructions-queued-sessions-")), models,
+    model: faux.getModel(), verifier: accepts, tools: () => [probe] });
+  try {
+    await session.prompt("start");
+  } finally {
+    await session.dispose();
+  }
+  expect(seen).toEqual([["start"], ["start", typed, instructions]]);
+  expect(session.ledger()).toMatchObject([{ text: "start", amendments: [{ behavior: "followUp", text: typed, delivered: true }] }]);
+  expect(JSON.stringify(session.ledger())).not.toContain("closely");
+  const resumed = openSession(session.file, { models, model: faux.getModel(), verifier: accepts });
+  try {
+    expect(resumed.messages().filter(({ role }) => role === "user" || role === "custom").map(({ text }) => text))
+      .toEqual(["start", typed, instructions]);
+  } finally {
+    await resumed.dispose();
+  }
+});
+
+test("a request that names no skill the operator may start, or comes from an extension, goes to the model as it is (#540)", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "tesota-core-instructions-plain-"));
+  mkdirSync(join(cwd, ".git"));
+  put(join(cwd, ".agents", "skills", "review", "SKILL.md"), "---\nname: review\ndescription: Review.\n---\nReview it.");
+  put(join(cwd, ".agents", "skills", "hidden", "SKILL.md"), "---\nname: hidden\ndescription: Hidden.\nuser-invocable: false\n---\nHidden.");
+  const faux = fauxProvider();
+  const seen: number[] = [];
+  faux.setResponses([1, 2, 3].map(() => scriptedReply({
+    seen: (context) => { seen.push(context.messages.filter(({ role }) => role !== "system").length); }, reply: "ok" })));
+  const models = createModels();
+  models.setProvider(faux.provider);
+  const session = createSession({ cwd, folder: mkdtempSync(join(tmpdir(), "tesota-core-instructions-plain-sessions-")), models,
+    model: faux.getModel(), verifier: accepts });
+  try {
+    expect(session.skills().map(({ name }) => name)).toEqual(["review"]);
+    await session.prompt("/hidden now");
+    await session.prompt("/review", { source: "extension" });
+    await session.prompt("/review");
+  } finally {
+    await session.dispose();
+  }
+  expect(seen).toEqual([1, 3, 6]);
+  expect(session.messages().filter(({ role }) => role === "custom").map(({ text }) => text))
+    .toEqual([`Base directory for this skill: ${join(cwd, ".agents", "skills", "review")}\n\nReview it.`]);
 });

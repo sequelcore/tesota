@@ -1,7 +1,7 @@
 import { createModels, fauxProvider } from "@earendil-works/pi-ai";
 import { Editor, type SlashCommand } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { TuiMode } from "../src/settings.ts";
@@ -30,16 +30,17 @@ const folder = (prefix: string): string => mkdtempSync(join(tmpdir(), prefix));
 const enter = "\r";
 
 function shellOn(script: readonly ScriptStep[], mode: TuiMode = "fullscreen", size: [number, number] = [80, 24],
-  extra: { tokensPerSecond?: number; copy?: (text: string) => Promise<boolean>; commands?: readonly SlashCommand[]; surface?: Surface } = {}) {
+  extra: { tokensPerSecond?: number; copy?: (text: string) => Promise<boolean>; commands?: readonly SlashCommand[]; surface?: Surface;
+    cwd?: string; command?: (text: string) => Promise<boolean> } = {}) {
   const faux = fauxProvider({ tokensPerSecond: extra.tokensPerSecond ?? 400 });
   faux.setResponses(script.map(scriptedReply));
   const models = createModels();
   models.setProvider(faux.provider);
-  const session = createSession({ cwd: folder("tesota-core-shell-"), folder: folder("tesota-core-sessions-"), models,
-    model: faux.getModel(), verifier: accepts });
+  const { cwd = folder("tesota-core-shell-"), ...options } = extra;
+  const session = createSession({ cwd, folder: folder("tesota-core-sessions-"), models, model: faux.getModel(), verifier: accepts });
   const terminal = new VirtualTerminal(...size);
   const shell = startShell({ terminal, mode, fullRepaint: false, theme: shellTheme("dark", "truecolor"), session,
-    status: () => "scripted model", ...extra });
+    status: () => "scripted model", ...options });
   open.push({ session, shell });
   return { terminal, session, shell };
 }
@@ -78,6 +79,41 @@ describe("the shell", () => {
     terminal.type("\x03");
     terminal.type("/");
     expect(await terminal.until("Open an earlier session")).toMatch(/resume\s+Open an earlier session/u);
+  });
+
+  test("/ offers the session's skills beside the commands, and /name runs one as a request of its own (#540)", async () => {
+    const cwd = folder("tesota-core-shell-skills-");
+    const skill = (name: string, fields: string, body: string) => {
+      mkdirSync(join(cwd, ".agents", "skills", name), { recursive: true });
+      writeFileSync(join(cwd, ".agents", "skills", name, "SKILL.md"), `---\nname: ${name}\n${fields}---\n${body}\n`);
+    };
+    skill("verify-ledger", "description: Verify the ledger formally.\ndisable-model-invocation: true\n", "Hidden playbook text.");
+    skill("background-only", "description: Only the model starts this.\nuser-invocable: false\n", "Background.");
+    skill("resume", "description: A skill a command shadows.\n", "Shadowed.");
+    let seen: string[] = [];
+    const { terminal, session } = shellOn([{ seen: (context) => {
+      seen = context.messages.flatMap((message) => message.role === "user" && typeof message.content === "string" ? [message.content] : []);
+    }, reply: "Verified." }], "fullscreen", [100, 24], { cwd, commands: [{ name: "resume", description: "Open an earlier session" }],
+      command: (text) => Promise.resolve(text.startsWith("/resume")) });
+    terminal.type("/");
+    const menu = await terminal.until("Verify the ledger formally.");
+    expect(menu).toMatch(/resume\s+Open an earlier session/u);
+    expect(menu).not.toContain("A skill a command shadows.");
+    expect(menu).not.toContain("Only the model starts this.");
+    terminal.type("\x03");
+    terminal.type("/background-only now");
+    terminal.type(enter);
+    expect(await terminal.until("No command /background-only.")).not.toContain("Background.");
+    terminal.type("/verify-ledger the session file");
+    terminal.type(enter);
+    await settled(session);
+    const screen = shown(await terminal.screen());
+    expect(screen).toContain("/verify-ledger the session file");
+    expect(screen).toContain("Verified.");
+    expect(screen).not.toContain("Hidden playbook text.");
+    expect(seen[0]).toBe("/verify-ledger the session file");
+    expect(seen[1]).toEndWith("Hidden playbook text.\n\nARGUMENTS: the session file");
+    expect(session.ledger().map(({ text }) => text)).toEqual(["/verify-ledger the session file"]);
   });
 
   test("@ suggests files in the shown session's folder, including after switching sessions", async () => {

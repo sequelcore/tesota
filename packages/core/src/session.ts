@@ -6,7 +6,10 @@ import { tesotaHome } from "../../../src/home.ts";
 import type { Base } from "./base.ts";
 import type { ExtensionAPI } from "../../../src/contract.ts";
 import { branchOf } from "./branch.ts";
-import { compactedHead, createLoop, type HistoryMessage, type LoopOptions, type LoopSession, type LoopState, toolResult } from "./loop.ts";
+import type { StartedSkill } from "./instructions.ts";
+import {
+  compactedHead, createLoop, type HistoryMessage, type LoopOptions, type LoopSession, type LoopState, skillMessage, toolResult,
+} from "./loop.ts";
 import { noEffect, notRun, outcomeUnknown, repairs } from "./reconcile-rule.ts";
 import {
   type Behavior, createSessionFile, type Origin, readSessionFile, type Repair, type SessionEntry, sessionFormat, sessionVersion,
@@ -197,9 +200,10 @@ export function recovery(entries: readonly SessionEntry[], output: (callId: stri
 
 /**
  * The conversation the entries hold: requests and delivered amendments as
- * the operator's messages, replies, results, each repair as a failed
- * result placed after the other results of its reply, and the messages
- * settle handlers added; their data stays outside it. A compaction replaces
+ * the operator's messages, each followed by the skill it started (#540),
+ * replies, results, each repair as a failed result placed after
+ * the other results of its reply, and the messages settle handlers added;
+ * their data stays outside it. A compaction replaces
  * what came before its kept messages, as the loop did (#451); with the
  * conversation come the last run's request and amendments, and the last
  * compaction.
@@ -208,7 +212,7 @@ function conversation(entries: readonly SessionEntry[]): Pick<LoopState, "histor
   const history: HistoryMessage[] = [];
   let ledger: HistoryMessage[] = [];
   let compacted: LoopState["compacted"];
-  const amendments = new Map<number, { readonly text: string; readonly order: number }>();
+  const amendments = new Map<number, { readonly text: string; readonly order: number; readonly skill: StartedSkill | undefined }>();
   /** Where each of the ledger's messages came among the request's input, as the loop keeps it. */
   const inputOrder = new Map<HistoryMessage, number>();
   /** Each submitted answer's place in the input, by its run and call, until that call's result carries it. */
@@ -223,6 +227,10 @@ function conversation(entries: readonly SessionEntry[]): Pick<LoopState, "histor
     const delivered: HistoryMessage = { role: "user", content: amendment?.text ?? "", timestamp: 0 };
     toLedger(delivered, amendment?.order ?? order);
     history.push(delivered);
+    if (amendment?.skill === undefined) return;
+    const instructed = skillMessage(amendment.skill, 0);
+    toLedger(instructed, amendment.order);
+    history.push(instructed);
   };
   /** A call's result; a submitted answer entered the conversation once, in it, and the ledger keeps that message. */
   const result = (entry: Extract<SessionEntry, { readonly type: "tool_result" }>): void => {
@@ -237,10 +245,12 @@ function conversation(entries: readonly SessionEntry[]): Pick<LoopState, "histor
   for (const [order, entry] of entries.entries()) {
     if (entry.type === "request") {
       const asked: HistoryMessage = { role: "user", content: entry.text, timestamp: Date.parse(entry.at) };
-      ledger = [asked];
-      inputOrder.set(asked, order);
-      history.push(asked);
-    } else if (entry.type === "amendment") amendments.set(entry.id, { text: entry.text, order });
+      ledger = entry.skill === undefined ? [asked] : [asked, skillMessage(entry.skill, Date.parse(entry.at))];
+      for (const message of ledger) {
+        inputOrder.set(message, order);
+        history.push(message);
+      }
+    } else if (entry.type === "amendment") amendments.set(entry.id, { text: entry.text, order, skill: entry.skill });
     else if (entry.type === "delivered") deliver(entry, order);
     else if (entry.type === "clarification") answered.set(`${entry.run}:${entry.clarification.callId}`, order);
     else if (entry.type === "reconciliation") {
