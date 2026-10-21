@@ -194,6 +194,15 @@ describe("compaction", () => {
       .toEqual(["custom", "reply first", "result first", "reply second", "result second"]);
   });
 
+  test("a stop from /compact's own compacting event stops it before it compacts", async () => {
+    const model = scripted([...writes(3), { text: "done" }], ["## Goal\nby hand"], 1_000_000);
+    const created = session(model, { reserve: 1_000, keep: 600 });
+    await created.prompt(request);
+    created.subscribe((event) => { if (event.type === "compacting") void created.abort(); });
+    await expect(created.compact()).rejects.toThrow("the operator stopped the run");
+    expect(entries(created.file).some(({ type }) => type === "compaction")).toBe(false);
+  });
+
   test("a prompt and /compact asked at once do not overlap: the prompt claims the session first", async () => {
     const model = scripted([...writes(3), { text: "done" }, { text: "next" }], ["## Goal\nby hand"], 1_000_000);
     const created = session(model, { reserve: 1_000, keep: 600 });

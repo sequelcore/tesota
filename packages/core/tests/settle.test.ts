@@ -205,6 +205,32 @@ describe("the operator's stop during a call", () => {
     expect(run.outcome()).toBe("completed");
   });
 
+  test("an extension's handler that fails after the run went on without its call is not charged to the next run", async () => {
+    let handling: () => void = () => undefined;
+    const handled = new Promise<void>((resolve) => { handling = resolve; });
+    let failed: () => void = () => undefined;
+    const late = new Promise<void>((resolve) => { failed = resolve; });
+    const run = session([{ tool: "quick", args: {} }, "second"], {
+      tools: () => [tool("quick", () => undefined, () => Promise.resolve({ text: "done", isError: false }))],
+      // It ignores the stop and fails only after the run has gone on without the call.
+      extensions: [(pi) => { pi.on("tool_result", async () => {
+        handling();
+        await new Promise((resolve) => setTimeout(resolve, 3_000));
+        failed();
+        throw new Error("a handler that fails late");
+      }); }],
+      verifier: (pi) => { pi.on("agent_before_settle", () => undefined); },
+    });
+    const first = run.prompt("go");
+    await handled;
+    await run.abort();
+    await first;
+    await late;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await run.prompt("again");
+    expect(run.outcome()).toBe("completed");
+  });
+
   test("a call that stops when told reports its own result", async () => {
     let started: () => void = () => undefined;
     const calling = new Promise<void>((resolve) => { started = resolve; });

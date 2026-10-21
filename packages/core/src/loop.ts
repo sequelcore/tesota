@@ -555,20 +555,19 @@ export function createLoop(options: LoopOptions): LoopSession {
 
   /**
    * Runs `call`, allowed, with its intent on disk first; a run stopped while
-   * the operator was asked does not run it. A call the run went on without
-   * (`left`) tells the extensions nothing when it ends, after the run.
+   * the operator was asked does not run it. Once the run goes on without
+   * the call (`left`), its events reach no more handlers (`ExtensionHost`).
    */
   async function runCall(run: number, call: ToolCall, signal: AbortSignal, left: AbortSignal, offered: readonly EngineTool[]): Promise<ToolOutput> {
     if (signal.aborted) return stoppedCall;
     writer.append({ type: "call_intent", run, callId: call.id });
     writer.sync();
     emit({ type: "call", call });
-    await host.toolStart({ type: "tool_execution_start", toolCallId: call.id, toolName: call.name, args: call.arguments }, signal);
+    await host.toolStart({ type: "tool_execution_start", toolCallId: call.id, toolName: call.name, args: call.arguments }, signal, left);
     if (signal.aborted) return stoppedCall;
     const output = await execute(offered, call, signal);
-    if (left.aborted) return output;
     await host.toolResult({ type: "tool_result", toolCallId: call.id, toolName: call.name, input: call.arguments,
-      isError: output.isError }, signal);
+      isError: output.isError }, signal, left);
     return output;
   }
 
@@ -950,6 +949,8 @@ export function createLoop(options: LoopOptions): LoopSession {
       if (runs === 0) throw new Error("There is nothing to compact yet.");
       const stopper = new AbortController();
       const done = (async () => {
+        // It starts once `compacting` names it, so a stop from its own `compacting` event reaches it.
+        await Promise.resolve();
         const exit = await Effect.runPromiseExit(compact(runs, stopper.signal), { signal: stopper.signal });
         if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)) throw Cause.squash(exit.cause);
         const failed = Exit.isSuccess(exit) ? exit.value : stoppedReason;
