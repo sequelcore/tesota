@@ -27,6 +27,11 @@ export function framed(theme: ShellTheme, tone: FrameTone, inner: Component): Co
   return {
     invalidate: () => { inner.invalidate(); },
     render: (width) => barLines(theme, tone, inner.render(Math.max(1, width - BAR_WIDTH))),
+    // The mouse reaches what the frame holds, past the bar, as pi-tui's `Box` passes it past its padding.
+    handleMouse: (event) => {
+      const x = event.x - BAR_WIDTH;
+      return x < 0 ? undefined : inner.handleMouse?.({ ...event, x, width: Math.max(1, event.width - BAR_WIDTH) });
+    },
   };
 }
 

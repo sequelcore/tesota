@@ -338,6 +338,10 @@ describe("the shell", () => {
     const end = await terminal.until("Enter submits");
     expect(end).toContain("[Submit answers]");
     expect(end).toContain("scripted model");
+    // The frame's bar runs down the scrolled choices and the pinned hint alike.
+    for (const text of ["[Submit answers]", "Enter submits"]) {
+      expect(end.split("\n").find((line) => line.includes(text))).toStartWith("▌");
+    }
     terminal.type(enter);
     const refused = await terminal.until("Select an option or add text");
     expect(refused).toContain("scripted model");
@@ -394,6 +398,32 @@ describe("the shell", () => {
     await each((shell) => shell.ask("Name the branch"), "Name the branch", "Name the branch", answer);
     await each((shell, session) => shell.askUser(session, choices, () => undefined, () => undefined),
       "Which path should the agent take?", "Esc cancels", answer, "→ 1. [ ] conservative");
+  });
+
+  test("the mouse reaches what a frame holds: a click picks a choice, and moves a prompt's cursor", async () => {
+    const click = (terminal: VirtualTerminal, column: number, row: number): void => {
+      terminal.type(`\x1b[<0;${column};${row}M`);
+      terminal.type(`\x1b[<0;${column};${row}m`);
+    };
+    const picking = shellOn([]);
+    const picked = picking.shell.pick("Choose a model", [{ value: "a", label: "first" }, { value: "b", label: "second" },
+      { value: "c", label: "third" }]);
+    const screen = (await picking.terminal.until("third")).split("\n");
+    const row = screen.findIndex((line) => line.includes("third"));
+    click(picking.terminal, (screen[row] ?? "").indexOf("third") + 1, row + 1);
+    expect(await picked).toBe("c");
+
+    const asking = shellOn([]);
+    const asked = asking.shell.ask("Name the branch");
+    await asking.terminal.until("Name the branch");
+    for (const char of "abc") asking.terminal.type(char);
+    const lines = (await asking.terminal.until("abc")).split("\n");
+    const at = lines.findIndex((line) => line.includes("abc"));
+    expect(lines[at]).toStartWith("▌");
+    click(asking.terminal, (lines[at] ?? "").indexOf("abc") + 2, at + 1);
+    asking.terminal.type("X");
+    asking.terminal.type(enter);
+    expect(await asked).toBe("aXbc");
   });
 
   test("the hint says how to reach and use the submit action, and selection keys there do not change the answer", async () => {
