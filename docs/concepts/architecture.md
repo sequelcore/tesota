@@ -95,6 +95,12 @@ be built on top of a host:
 - **Several sessions in one shell, each in its own worktree,** need a host
   built for them.
 
+Pi's durable runtime, `pi-durable`, has the first limit too: a run ends
+when the model stops unless an `onYield` hook continues it, and only the
+first hook that asks is heard. Its crash recovery does more than the
+engine's; what Tesota takes from it is tracked in
+[#541](https://github.com/sequelcore/tesota/issues/541).
+
 So verification is a mandatory step of the engine's lifecycle, not an
 extension. The engine's scope is what Tesota uses and nothing more:
 channels, gateways and other surfaces wait for a real need.
