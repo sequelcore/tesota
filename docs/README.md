@@ -41,7 +41,7 @@ verify, in a receipt.
 
 - [Commands and keys](reference/commands.md)
 - [Configuration](reference/configuration.md): every file Tesota reads.
-- [Receipt v1](receipt-v1.md): the receipt's format.
+- [Receipt v2](receipt-v2.md): the receipt's format.
 
 ## Project
 

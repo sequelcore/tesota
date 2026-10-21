@@ -12,7 +12,7 @@ The run doesn't end until that's done.
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/tesota-turn-light.svg">
-  <img alt="A verified turn: the request, the agent's two file writes and its answer, then Tesota's receipt saying nothing needs you, the tests pass and the new test catches the change." src="docs/assets/tesota-turn-dark.svg">
+  <img alt="A verified turn: the request, the agent's two file writes and its answer, then Tesota's receipt saying nothing needs you, the tests pass and the new test notices the change." src="docs/assets/tesota-turn-dark.svg">
 </picture>
 
 ## What Tesota checks

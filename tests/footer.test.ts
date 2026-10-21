@@ -111,11 +111,11 @@ it("counts what the checks established and never a model's opinion, as the recei
     contracts: [{ ...strong, judgment: { verdict: "not_justified", explanation: "It allows a negative result." } }],
     claimcheck: { status: "judged", restatedBy: "openai/gpt-5.5", comparedBy: "openai/gpt-5.5" } };
   expect(words({ step: "settled", receipt: judged })).toBe("✓ receipt · 1 proved · tests pass · contracts strong");
-  const misses: Receipt = { ...judged, exercises: [{ path: "tests/clamp.test.ts", finding: "does_not_exercise",
-    reason: "it passes without the change" }] };
-  expect(words({ step: "settled", receipt: misses })).toBe("! receipt · 1 proved · tests pass · contracts strong · 1 test misses the change");
-  expect(words({ step: "settled", receipt: misses }, "short")).toBe("! receipt · 1 proved · tests ✓ · 1 test misses");
-  expect(words({ step: "settled", receipt: misses }, "glyphs")).toBe("! · ✓1 · tests ✓ · miss 1");
+  const misses: Receipt = { ...judged, exercises: [{ path: "tests/clamp.test.ts", provenance: "added", sensitivity: "passes_on_base",
+    reason: "it passes without the change too" }] };
+  expect(words({ step: "settled", receipt: misses })).toBe("! receipt · 1 proved · tests pass · contracts strong · 1 test passes without the change");
+  expect(words({ step: "settled", receipt: misses }, "short")).toBe("! receipt · 1 proved · tests ✓ · 1 test passes on base");
+  expect(words({ step: "settled", receipt: misses }, "glyphs")).toBe("! · ✓1 · tests ✓ · base 1");
   // Strength needs a change the proof caught: two changes that behave the same as the code show nothing.
   const unmeasured: Receipt = { ...judged, contracts: [{ ...strong, mutation: { ...strong.mutation, rejected: 0, equivalent: 2 } }] };
   expect(words({ step: "settled", receipt: unmeasured })).toBe("○ receipt · 1 proved · tests pass · 1 not checked");

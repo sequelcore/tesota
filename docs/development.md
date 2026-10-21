@@ -220,7 +220,7 @@ The docs are for people and agents alike.
 | Using a feature | [Guides](README.md#guides) |
 | How it's built, and why | [Concepts](README.md#concepts) |
 | Exact commands, keys and files | [Reference](README.md#reference) |
-| The receipt's format | [Receipt v1](receipt-v1.md); keep its path, which receipts name |
+| The receipt's format | [Receipt v2](receipt-v2.md); keep its path, which receipts name |
 | Direction and non-goals | [Roadmap](../ROADMAP.md) |
 | Building and testing Tesota | This page |
 | Instructions for agents working on Tesota | [AGENTS.md](../AGENTS.md) |

@@ -19,7 +19,7 @@ test("requests, replies, repairs, extension entries and delivered amendments kee
   ], { stopReason: "toolUse", timestamp: 0 });
   const result: ToolResultMessage = { role: "toolResult", toolCallId: "read-1", toolName: "read", content: [{ type: "text", text: "contents" }],
     details: { path: "file.txt" }, isError: false, timestamp: 0 };
-  const receipt = { version: 1, proofs: [], tests: [], uncovered: [] };
+  const receipt = { version: 2, proofs: [], tests: [], uncovered: [] };
   const entries: SessionEntry[] = [
     { type: "request", run: 1, text: "change the file", origin: "rpc", at, base: { units: [] } },
     { type: "amendment", run: 1, id: 1, behavior: "steer", origin: "interactive", text: "also check it", at },

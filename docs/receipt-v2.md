@@ -1,8 +1,8 @@
-# Receipt v1
+# Receipt v2
 
-This page specifies version 1 of Tesota's receipt. It is the in-toto
+This page specifies version 2 of Tesota's receipt. It is the in-toto
 `predicateType` that `tesota receipt --json` writes:
-`https://github.com/sequelcore/tesota/blob/main/docs/receipt-v1.md`. The
+`https://github.com/sequelcore/tesota/blob/main/docs/receipt-v2.md`. The
 types are defined in `src/receipt.ts` and the modules it imports. The
 Statement is built in `src/pull-request-receipt.ts`. The
 [How verification works](concepts/verification.md) explains what each finding
@@ -33,7 +33,7 @@ Paths are relative to the project folder where the session ran, with `/`.
 {
   "_type": "https://in-toto.io/Statement/v1",
   "subject": [{ "uri": "git+https://github.com/owner/repo@<commit>", "digest": { "gitCommit": "<commit>" } }],
-  "predicateType": "https://github.com/sequelcore/tesota/blob/main/docs/receipt-v1.md",
+  "predicateType": "https://github.com/sequelcore/tesota/blob/main/docs/receipt-v2.md",
   "predicate": {
     "providers": [{ "harness": { "name": "tesota", "version": "0.1.0" },
       "languageModels": [{ "inferenceProvider": "openai/gpt-6-luna" }] }],
@@ -99,7 +99,7 @@ unit as a receipt of its own, with the run's `version`, `startedAt`,
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `version` | `1` | This format |
+| `version` | `2` | This format. Version 2 gives each test its provenance and sensitivity apart, where version 1 had one `finding`, and adds `lines` |
 | `repository` | boolean | False when the project has no Git repository. Unless `snapshot` is present, every list is then empty, `base` is null, and nothing was verified |
 | `snapshot` | `true`, optional | Present when the project has no Git repository and Tesota measured the request against its own snapshot of it. `base` is then that snapshot's commit, which no one else can fetch |
 | `tooLarge` | string[], optional | With `snapshot`, the files the snapshot left out for being over 10 MB, so nothing verified them |
@@ -119,6 +119,7 @@ unit as a receipt of its own, with the run's `version`, `startedAt`,
 | `commentsOnly` | `true`, optional | Present when every line the request added or removed is blank or comment-only, a `//@` line not counting as a comment. When nothing else is listed, the receipt says there was nothing to verify |
 | `uncovered` | UncoveredLines[] | The changed lines of each TypeScript file that proved that no contract's proof covers. Empty when `weakened` is a string |
 | `changed` | Changed[], or `"unreadable"` | Files changed during the request (by anyone), as the run left them, sorted by path: differences between fingerprints plus files changed between `base` and current `HEAD`. Unmeasured paths are listed separately |
+| `lines` | ChangeLines, or `"unreadable"` | The files in `changed` in lines by category. `unreadable` when Git could not show the change |
 | `inherited` | string[] | Paths dirty at the first non-reader tool whose blobs stayed unchanged; not proved or exercised as this request's change. Tests ran with them |
 | `unmeasured` | { path: string, reason: string }[] | Paths not hashed at either capture: a dirty file over 10 MiB or an untracked directory with 200 or more files. These make the unit eligible and are never called unchanged |
 | `startState`, `endState` | CaptureState, optional | Each repository's capture at the first non-reader tool and at settlement. Absent for snapshots and stopped runs |
@@ -293,8 +294,31 @@ One of:
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `path` | string | The test file |
-| `finding` | `"exercises"`, `"does_not_exercise"` or `"unknown"` | `does_not_exercise` when it passes on the base. `exercises` when it fails there while the base passes without it. `unknown` otherwise |
+| `provenance` | `"added"` or `"changed"` | `changed` when the base held the file and this request changed it; `added` when this request added it, so what it expects is the request's own |
+| `sensitivity` | `"fails_then_passes"`, `"passes_on_base"` or `"unknown"` | `fails_then_passes` when it fails on the base while the base passes without it, or the tests it adds newly fail there by the base's test reports. `passes_on_base` when it passes on the base too. `unknown` otherwise |
 | `reason` | string | Why, in words |
+
+Provenance and sensitivity are two facts, never one score. A test that
+fails then passes notices the change, but may expect the wrong thing; one
+that passes on the base doesn't depend on the change, but may still guard
+against a regression. Only changed and added test files are listed: tests
+the request left alone run in the project's commands, not one by one on the
+base.
+
+### ChangeLines
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `implementation`, `tests`, `other` | { added: number, removed: number } | Each category's text lines: added and removed as `git diff --numstat` counts them against `base`; a file the base lacks, untracked or before the first commit, counts as added whole |
+| `binary` | string[] | The files Git counts no lines for, such as images, or that hold a NUL byte |
+
+A file's category, in this order: `tests` by the gate's test paths; then
+`other` when the repository marks it as generated (`linguist-generated` in
+`.gitattributes`) or it is in no programming language, such as
+documentation, configuration, a manifest or lockfile, SQL, or an asset;
+then `implementation`. A category says where lines are, never how risky
+they are or what verified them. In a folder of repositories, the receipt's
+one row adds every unit's lines together.
 
 ### Weakening
 

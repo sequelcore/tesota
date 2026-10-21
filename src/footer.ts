@@ -78,7 +78,7 @@ function receiptParts(settled: Receipt): EvidencePart[] {
   const weakening = receipt.weakened.length;
   // Commands that pass leave the rest tested though not proved, as the receipt words it.
   const unproved = passed && receipt.tests.length > 0 ? "not proved" : "not verified";
-  const misses = receipt.exercises.filter(({ finding }) => finding === "does_not_exercise").length;
+  const unchanged = receipt.exercises.filter(({ sensitivity }) => sensitivity === "passes_on_base").length;
   const findings = receiptFindings(settled);
   const unchecked = uncheckedGaps(findings, receipt);
   const listed = [
@@ -93,8 +93,9 @@ function receiptParts(settled: Receipt): EvidencePart[] {
     ...files > 0 ? [part(`${plural(files, "file", "files")} ${unproved}`, `${plural(files, "file", "files")} unproved`, `○${files}f`,
       "warning")] : [],
     ...unchecked > 0 ? [part(`${unchecked} not checked`, `${unchecked} unchecked`, `?${unchecked}`, "warning")] : [],
-    ...misses > 0 ? [part(`${plural(misses, "test misses", "tests miss")} the change`, `${plural(misses, "test misses", "tests miss")}`,
-      `miss ${misses}`, "warning")] : [],
+    // A test that passes without the change too: observed, not judged, so the words say only that.
+    ...unchanged > 0 ? [part(`${plural(unchanged, "test passes", "tests pass")} without the change`,
+      `${plural(unchanged, "test passes", "tests pass")} on base`, `base ${unchanged}`, "warning")] : [],
     ...typeof receipt.weakened === "string" ? [part("weakening not checked", "unchecked", "unchecked", "warning")]
       : weakening > 0 ? [part(`${weakening} may weaken the evidence`, `${weakening} may weaken`, `weakens ${weakening}`, "warning")] : [],
     ...plain > 0 ? [part(`${plural(plain, "folder", "folders")} not verified, no Git`, `${plain} no Git`, `no Git ${plain}`, "warning")] : [],

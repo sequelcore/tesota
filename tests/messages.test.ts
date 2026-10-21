@@ -50,11 +50,11 @@ const judged = { status: "judged", restatedBy: "openai/gpt-5.5", comparedBy: "op
 
 const clean: Receipt = { ...emptyReceipt, proofs: [proved], tests: [passing],
   contracts: [{ ...contract, judgment: { verdict: "justified", explanation: "Matches." } }], claimcheck: judged,
-  exercises: [{ path: "tests/range.test.ts", finding: "exercises", reason: "fails on the base, passes with the change" }] };
+  exercises: [{ path: "tests/range.test.ts", provenance: "added", sensitivity: "fails_then_passes", reason: "fails on the base, passes with the change" }] };
 const attention: Receipt = { ...clean,
   contracts: [{ ...contract, mutation: { rejected: 5, survived: [survivor], equivalent: 1, inconclusive: 0 },
     judgment: { verdict: "partially_justified", explanation: "It does not say a value inside the range is returned unchanged." } }],
-  exercises: [{ path: "tests/range.test.ts", finding: "does_not_exercise", reason: "it passes without the change" }],
+  exercises: [{ path: "tests/range.test.ts", provenance: "added", sensitivity: "passes_on_base", reason: "it passes without the change too" }],
   weakened: [{ path: "tests/clamp.test.ts", kind: "edited_test" },
     { path: "src/clamp.ts", kind: "removed_contract", annotation: "//@ ensures \\result >= lo && \\result <= hi" }],
   unverified: ["src/format.ts"], uncovered: [{ path: "src/range.ts", lines: [[9, 14]] }] };
@@ -86,7 +86,7 @@ it("shows a clean receipt as its verdict and one row of what holds", () => {
   // The card's padding row, then the two rows, then the padding row.
   expect(rows).toHaveLength(4);
   expect(rows[1]).toMatch(/^ ✓ Nothing needs you +Tesota receipt$/u);
-  expect(rows[2]).toMatch(/^ ✓ {2}Proved · Tests pass · Contract strong · Test catches the change · ◇ model: matches the request +ctrl\+o for details$/u);
+  expect(rows[2]).toMatch(/^ ✓ {2}Proved · Tests pass · Contract strong · Test notices the change · ◇ model: matches the request +ctrl\+o for details$/u);
   expect(rows.join("\n")).not.toContain(hash.slice(0, 12));
 });
 
@@ -157,7 +157,7 @@ it("leads with what needs the operator and keeps the model's opinion out of the 
   const start = rows.indexOf(" NEEDS YOU") + 1;
   const needs = rows.slice(start, start + 4);
   expect(needs.map((row) => row.slice(1, 28).trim())).toEqual(["!  May weaken the evidence", "!  May weaken the evidence",
-    "!  Contract too weak", "!  Test misses the change"]);
+    "!  Contract too weak", "!  Test passes on base"]);
   expect(needs[2]).toContain("inRange · src/range.ts — 1 change to its code still proves");
   expect(rows.join("\n")).toContain("◇  Model: partial match");
   expect(rows.join("\n")).toContain("○  Not proved");
@@ -173,7 +173,7 @@ const unmeasured = (name: string): Receipt["contracts"][number] =>
   ({ ...contract, name, mutation: { rejected: 0, survived: [], equivalent: 0, inconclusive: 0 } });
 const assumed: Receipt = { ...clean, contracts: [contract, unmeasured("lower"), unmeasured("upper"), unmeasured("clampOf")],
   weakened: [extern("lower"), extern("upper"), extern("clampOf")],
-  exercises: [...clean.exercises, { path: "tests/clamp.test.ts", finding: "exercises", reason: "fails on the base, passes with the change" }] };
+  exercises: [...clean.exercises, { path: "tests/clamp.test.ts", provenance: "added", sensitivity: "fails_then_passes", reason: "fails on the base, passes with the change" }] };
 
 it("never sums up a proof that rests on assumptions the change added, or one strong contract of several, as plainly proved or strong", () => {
   const rows = shown("tesota-receipt", assumed, 140);
@@ -182,7 +182,7 @@ it("never sums up a proof that rests on assumptions the change added, or one str
   expect(rows.filter((row) => /May weaken the evidence +src\/range\.ts — trusts (lower|upper|clampOf) without proving it$/u.test(row)))
     .toHaveLength(3);
   expect(rows.filter((row) => row.includes("Contract not measured"))).toHaveLength(3);
-  expect(rows.at(-4)).toMatch(/^ ✓ {2}Proved, trusting 3 unproved parts · Tests pass · Contract strong \(1 of 4\) · Test catches the change \(2\)$/u);
+  expect(rows.at(-4)).toMatch(/^ ✓ {2}Proved, trusting 3 unproved parts · Tests pass · Contract strong \(1 of 4\) · Test notices the change \(2\)$/u);
   const expanded = shown("tesota-receipt", assumed, 140, true).join("\n");
   expect(expanded).toMatch(/Proved, trusting 3 unproved parts +src\/range\.ts — its contracts hold only if what the change trusts is right/u);
   expect(expanded).toContain("//@ extern");
