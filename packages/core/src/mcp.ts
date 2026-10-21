@@ -329,10 +329,9 @@ export function startMcp(configs: readonly McpServerConfig[], options: McpOption
     signOut: async (name) => {
       const server = find(name);
       if (server.config.transport !== "http") throw new Error(`"${name}" is a local server: it has no sign-in.`);
-      // A connection or refresh under way finishes first, so nothing it saves outlives the sign-out.
+      // A connection under way finishes first; signing out waits for any refresh, here or in another shell.
       await disconnect(server);
-      await server.auth?.settled();
-      signOut(name, server.config.url, options.home);
+      await signOut(name, server.config.url, options.home);
       server.tools = [];
       server.state = "needs sign-in";
       delete server.error;
