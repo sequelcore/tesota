@@ -1,5 +1,6 @@
 import { type Focusable, Input, matchesKey, ScrollView, Text } from "@earendil-works/pi-tui";
 import { terminalText } from "../../../../src/terminal-text.ts";
+import { BAR_WIDTH, barLines, frameTitle } from "./frame.ts";
 import type { ClarificationAnswer, ClarificationQuestion } from "../../../../src/clarification.ts";
 import type { QuestionSubmit } from "../questions.ts";
 import type { ShellTheme } from "../../../../src/theme.ts";
@@ -119,32 +120,36 @@ export class QuestionForm extends ScrollView implements Focusable {
     const question = this.currentQuestion();
     const selected = this.draft.selected[this.draft.question];
     if (selected === undefined) return [];
-    // The question leads, at the transcript's column: a count only when there are several, then the question as the
-    // form's title, a blank row, and the choices with the text and submit action that complete them; `footerLines` follows.
+    // Framed as everything in the input's place (#531): a count only when there are several, then the question as the
+    // title, a blank row, and the choices with the text and submit action that complete them; `footerLines` follows.
+    const inner = Math.max(1, width - BAR_WIDTH);
     const several = this.questions.length > 1;
     const lines = [
-      ...several ? new Text(this.theme.fg("dim", `Question ${this.draft.question + 1}/${this.questions.length}`), 1, 0).render(width) : [],
-      ...new Text(this.theme.bold(this.theme.fg("accent", terminalText(question.question))), 1, 0).render(width),
+      ...several ? new Text(this.theme.fg("dim", `Question ${this.draft.question + 1}/${this.questions.length}`), 0, 0).render(inner) : [],
+      ...new Text(frameTitle(this.theme, terminalText(question.question)), 0, 0).render(inner),
       "",
     ];
     for (const [index, option] of question.options.entries()) {
-      if (this.draft.field === "choices" && index === this.draft.option) this.#focusRow = lines.length;
-      const cursor = this.draft.field === "choices" && index === this.draft.option ? "› " : "  ";
+      const focus = this.draft.field === "choices" && index === this.draft.option;
+      if (focus) this.#focusRow = lines.length;
       const checked = selected.has(index) ? "[x]" : "[ ]";
       const recommended = question.recommended === index ? " (recommended)" : "";
-      const label = `${cursor}${index + 1}. ${checked} ${terminalText(option.label)}${recommended}`;
-      lines.push(...new Text(this.draft.field === "choices" && index === this.draft.option ? this.theme.fg("accent", label) : label, 1, 0).render(width));
-      lines.push(...new Text(this.theme.fg("dim", terminalText(option.description)), 6, 0).render(width));
+      lines.push(...new Text(this.marked(focus, `${index + 1}. ${checked} ${terminalText(option.label)}${recommended}`), 0, 0).render(inner));
+      lines.push(...new Text(this.theme.fg("dim", terminalText(option.description)), 5, 0).render(inner));
     }
     const text = this.currentText();
     if (this.draft.field === "text") this.#focusRow = lines.length;
     text.focused = this.focused && this.draft.field === "text";
-    // In the choices' column, past the gutter where `›` marks the focus, so the answer's parts line up.
-    lines.push(...text.render(Math.max(1, width - 3)).map((line) => `   ${line}`));
-    const submit = this.draft.field === "submit" ? this.theme.fg("accent", "› [Submit answers]") : "  [Submit answers]";
+    // In the choices' column, past the gutter where `→` marks the focus, so the answer's parts line up.
+    lines.push(...text.render(Math.max(1, inner - 2)).map((line) => `  ${line}`));
     if (this.draft.field === "submit") this.#focusRow = lines.length;
-    lines.push(...new Text(submit, 1, 0).render(width));
-    return lines;
+    lines.push(...new Text(this.marked(this.draft.field === "submit", "[Submit answers]"), 0, 0).render(inner));
+    return barLines(this.theme, "answer", lines);
+  }
+
+  /** `text` behind the focus marker when it has the focus, as pi-tui's lists draw it. */
+  private marked(focus: boolean, text: string): string {
+    return focus ? `${this.theme.selectList.selectedPrefix("→ ")}${this.theme.selectList.selectedText(text)}` : `  ${text}`;
   }
 
   /**
@@ -153,8 +158,9 @@ export class QuestionForm extends ScrollView implements Focusable {
    * taller than the terminal never hides how to answer it.
    */
   footerLines(width: number): string[] {
-    return ["", ...new Text(this.theme.fg("dim", this.hint()), 1, 0).render(width),
-      ...this.#error === undefined ? [] : new Text(this.theme.fg("error", this.#error), 1, 0).render(width)];
+    const inner = Math.max(1, width - BAR_WIDTH);
+    return barLines(this.theme, "answer", ["", ...new Text(this.theme.fg("dim", this.hint()), 0, 0).render(inner),
+      ...this.#error === undefined ? [] : new Text(this.theme.fg("error", this.#error), 0, 0).render(inner)]);
   }
 
   /** The way on from where the focus is, so the submit action is found without knowing the keys. */

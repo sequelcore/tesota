@@ -352,15 +352,48 @@ describe("the shell", () => {
     const screen = await terminal.until("Submit answers");
     expect(screen).not.toContain("Working…");
     expect(screen).not.toContain("Question 1/1");
-    expect(screen).toContain("\n Which path should the agent take?");
-    expect(screen).toContain("\n › 1. [ ] conservative (recommended)");
+    expect(screen).toContain("\n▌ Which path should the agent take?");
+    expect(screen).toContain("\n▌ → 1. [ ] conservative (recommended)");
     release();
     await terminal.until("Working…");
     const several = shell.askUser(session, [...choices, { question: "And the tests?", options: [
       { label: "keep", description: "keep the tests as they are" }, { label: "extend", description: "add tests for the change" },
     ] }], () => undefined, () => undefined);
-    expect(await terminal.until("Submit answers")).toMatch(/\n Question 1\/2 +┃?\n Which path should the agent take\?/u);
+    expect(await terminal.until("Submit answers")).toMatch(/\n▌ Question 1\/2 +┃?\n▌ Which path should the agent take\?/u);
     several();
+  });
+
+  test("everything in the input's place has one frame: a bar whose color says what it asks, one title style, one marker", async () => {
+    const theme = shellTheme("dark", "truecolor");
+    const approve = theme.fg("warning", "▌");
+    const answer = theme.fg("accent", "▌");
+    const title = (text: string): string => theme.bold(theme.fg("accent", text));
+    const framedRows = (screen: string, from: string, to: string): string[] => {
+      const lines = screen.split("\n");
+      const start = lines.findIndex((line) => line.includes(from));
+      const end = lines.findIndex((line, index) => index >= start && line.includes(to));
+      return lines.slice(start, end + 1);
+    };
+    const each = async (open: (shell: Shell, session: EngineSession) => Promise<unknown> | (() => void), from: string, to: string,
+      bar: string, marker?: string): Promise<void> => {
+      const { terminal, shell, session } = shellOn([]);
+      const settled = open(shell, session);
+      const screen = await terminal.until(to);
+      const rows = framedRows(screen, from, to);
+      expect(rows.length).toBeGreaterThan(0);
+      for (const row of rows) expect(row).toStartWith("▌");
+      expect(terminal.written).toContain(bar);
+      expect(terminal.written).toContain(title(from));
+      if (marker !== undefined) expect(screen).toContain(marker);
+      if (typeof settled === "function") settled(); else { terminal.type("\x1b"); await settled; }
+    };
+    await each((shell) => shell.confirm({ title: "Write a.txt?", body: "hello", note: "Asked in ask mode.", items: [
+      { value: "once", label: "Yes" }, { value: "deny", label: "No" }] }), "Write a.txt?", "2. No", approve, "→ 1. Yes");
+    await each((shell) => shell.pick("Choose a model", [{ value: "a", label: "first" }, { value: "b", label: "second" }]),
+      "Choose a model", "second", answer, "→ first");
+    await each((shell) => shell.ask("Name the branch"), "Name the branch", "Name the branch", answer);
+    await each((shell, session) => shell.askUser(session, choices, () => undefined, () => undefined),
+      "Which path should the agent take?", "Esc cancels", answer, "→ 1. [ ] conservative");
   });
 
   test("the hint says how to reach and use the submit action, and selection keys there do not change the answer", async () => {
@@ -406,7 +439,7 @@ describe("the shell", () => {
       { label, description: "Description\x07\u009b" }, { label: "Ordinary", description: "Normal choice." },
     ] }], (answers) => { submitted.push(answers); return undefined; }, () => undefined);
     const screen = await terminal.until("Forged");
-    expect(screen).toContain(`› 1. [ ] ${"�".repeat(12)}Forged��`);
+    expect(screen).toContain(`→ 1. [ ] ${"�".repeat(12)}Forged��`);
     expect(terminal.written).not.toContain(label);
     terminal.type("2"); terminal.type("\t"); terminal.type("\t"); terminal.type(enter);
     expect(submitted).toEqual([[{ selected: [1] }]]);
@@ -441,7 +474,7 @@ describe("the shell", () => {
     for (let q = 0; q < 3; q++) {
       await terminal.until(`Question ${q + 1}/3`);
       for (let o = 0; o < 4; o++) {
-        await terminal.until(`› ${o + 1}. [ ] Choice ${q}-${o}`);
+        await terminal.until(`→ ${o + 1}. [ ] Choice ${q}-${o}`);
         let visible = false;
         for (let page = 0; page < 5 && !visible; page++) {
           terminal.type("\x1b[6~");
@@ -455,7 +488,7 @@ describe("the shell", () => {
       if (q < 2) terminal.type("\x1b[C");
     }
     terminal.type("\t"); await terminal.until("Text:");
-    terminal.type("\t"); await terminal.until("› [Submit answers]");
+    terminal.type("\t"); await terminal.until("→ [Submit answers]");
     terminal.type(enter);
     expect(submitted).toEqual([[{ selected: [3] }, { selected: [3] }, { selected: [3] }]]);
     release();

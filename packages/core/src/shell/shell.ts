@@ -15,6 +15,7 @@ import type { ClarificationQuestion } from "../../../../src/clarification.ts";
 import { Transcript } from "./transcript.ts";
 import type { QuestionOutcome, QuestionSubmit } from "../questions.ts";
 import { createQuestionDraft, type QuestionDraft, QuestionForm } from "./question.ts";
+import { framed, frameTitle, type FrameTone } from "./frame.ts";
 
 /** The fullscreen renderer that draws every cell on every frame, for terminals that leave stale fragments otherwise. */
 class RepaintingAltScreen extends TuiAltScreen {
@@ -89,13 +90,6 @@ class NumberedList extends SelectList implements Focusable {
   }
 }
 
-/** `inner` with a bar in `bar`'s color down its left edge, so a question stands apart from the conversation and the footer. */
-function barred(inner: Component, bar: (text: string) => string): Component {
-  return {
-    invalidate: () => { inner.invalidate(); },
-    render: (width) => inner.render(Math.max(1, width - 2)).map((line) => `${bar("▌")} ${line}`),
-  };
-}
 
 /** A running shell: what it draws, and how it ends. */
 export interface Shell {
@@ -446,22 +440,23 @@ export function startShell(options: ShellOptions): Shell {
   });
   tui.start();
 
-  /** A picker's or a prompt's title, in the accent. */
-  const heading = (title: string): Component => new Text(theme.bold(theme.fg("accent", title)), 1, 0);
+  /** A picker's, a prompt's or a permission's title, in the frame's style. */
+  const heading = (title: string): Component => new Text(frameTitle(theme, title), 0, 0);
 
   /**
    * Shows `body` under `heading` in the input's place until `settle` is called,
    * as Pi and Claude Code ask: nothing is drawn over the conversation, and a
    * long command wraps in full above the choices. The editor, or the question
-   * before it, comes back with the focus.
+   * before it, comes back with the focus. It is framed (#531): `tone` says
+   * whether it asks to approve something or to answer or choose.
    */
   function dialog<T>(heading: Component, body: Component & Focusable, wire: (settle: (value: T | undefined) => void) => void,
-    bar?: (text: string) => string): Promise<T | undefined> {
+    tone: FrameTone = "answer"): Promise<T | undefined> {
     return new Promise((resolve) => {
       const inner = new Container();
       inner.addChild(heading);
       inner.addChild(body);
-      const box = bar === undefined ? inner : barred(inner, bar);
+      const box = framed(theme, tone, inner);
       const question = { box, body };
       questions.push(question);
       showSlot();
@@ -492,7 +487,7 @@ export function startShell(options: ShellOptions): Shell {
       const list = new NumberedList(items.map((item, index) => ({ ...item, label: `${index + 1}. ${item.label}` })), items.length,
         theme.selectList);
       const top = new Container();
-      top.addChild(new Text(theme.bold(title), 0, 0));
+      top.addChild(heading(title));
       if (body !== undefined && body !== "") {
         top.addChild(new Spacer(1));
         top.addChild(new Text(theme.fg("dim", body), 2, 0));
@@ -502,7 +497,7 @@ export function startShell(options: ShellOptions): Shell {
       return dialog<string>(top, list, (settle) => {
         list.onSelect = (item) => { settle(item.value); };
         list.onCancel = () => { settle(undefined); };
-      }, (text) => theme.fg("warning", text));
+      }, "approve");
     },
     ask: (message, askOptions = {}) => {
       const input = askOptions.secret === true ? new SecretInput()
