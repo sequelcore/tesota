@@ -29,6 +29,7 @@
 | `/compact` | Summarize the older conversation |
 | `/mcp` | MCP servers: state, reconnect, sign in and out; also `/mcp login\|logout\|reconnect <server>` |
 | `/quit` | End the shell |
+| `/<skill> [arguments]` | Run a skill on the arguments ([Starting a skill by name](../guides/instructions-and-skills.md#starting-a-skill-by-name)) |
 
 ## Keys
 

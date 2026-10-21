@@ -362,6 +362,7 @@ by `bun run formal:check` on every pull request.
 | `edit-rule.ts` | When a list of edits may apply to a file, all at once |
 | `truncate-rule.ts` | How much of a tool's output the model gets |
 | `catalog-rule.ts` | How much of the prompt the skill list and instruction files may take |
+| `invocation-rule.ts` | Who may start a skill: the model unless `disable-model-invocation: true`, the operator by name unless `user-invocable: false` |
 | `budget-rule.ts` | Whether a performance measurement keeps to its limit, in one of two attempts |
 
 ## Credits

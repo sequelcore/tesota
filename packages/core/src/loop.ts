@@ -17,7 +17,9 @@ import { afterExtensions, afterVerifier, continuationLimit } from "./settle-rule
 import { cutPoint, shouldCompact } from "./compact-rule.ts";
 import { type FilesTouched, filesTouched, summarize, summaryMessage } from "./compaction.ts";
 import { type Hooks, runHooks } from "./hooks.ts";
-import { contextFiles, instructionsText, skillCatalog, skills } from "./instructions.ts";
+import {
+  contextFiles, instructionsText, type Skill, skillCatalog, skills, startable, type StartedSkill, startedSkill,
+} from "./instructions.ts";
 import { judge, type Mode, type Rules } from "./permissions.ts";
 import type { EngineTool, ToolOutput } from "./tool.ts";
 import { codingTools } from "./tools/index.ts";
@@ -137,6 +139,8 @@ export interface LoopSession extends Session {
   subscribe(listener: (event: SessionEvent) => void): () => void;
   /** Compacts the conversation between runs (#451); rejects, saying why, while a run goes or when it cannot. */
   compact(): Promise<void>;
+  /** The skills the operator may start by name, `/name` at the start of a request (#540), read as the session started. */
+  skills(): readonly Skill[];
 }
 
 /** Where a session stands: its conversation, its last run and amendment, its usage and how its last run ended. */
@@ -154,11 +158,21 @@ export interface LoopState {
   readonly compacted?: { readonly summary: string; readonly files: FilesTouched; readonly counted: number };
 }
 
+const skillType = "tesota.skill";
+
 /**
- * What a compacted conversation starts with (#451): the run's request, its
- * amendments and the operator's answers exactly as given, which no summary
- * replaces, then the summary. It is context the model reads as the
- * operator's; the shell does not show it.
+ * The instructions of a skill the operator started by name (#540): the model
+ * reads them after the request, as the operator's; the shell does not show
+ * them, and neither the ledger's request nor verification reads them.
+ */
+export const skillMessage = (skill: StartedSkill, timestamp: number): CustomMessage =>
+  ({ role: "custom", customType: skillType, content: skill.instructions, display: false, timestamp });
+
+/**
+ * What a compacted conversation starts with (#451): the run's request, the
+ * skill it started (#540), its amendments and the operator's answers exactly
+ * as given, which no summary replaces, then the summary. It is context the
+ * model reads as the operator's; the shell does not show it.
  */
 export function compactedHead(ledger: readonly HistoryMessage[], summary: string, files: FilesTouched,
   tail: readonly HistoryMessage[]): CustomMessage {
@@ -166,7 +180,8 @@ export function compactedHead(ledger: readonly HistoryMessage[], summary: string
   // come after an amendment given before it, so the ledger is not in the conversation's order: each is looked for.
   const given = ledger.flatMap((message, index) => tail.includes(message) ? [] : [(index === 0
     ? ["The operator's request, exactly as given:"] : message.role === "toolResult" ? ["The operator answered your question:"]
-      : ["Added while you worked:"]).concat(conversationMessage(message).text ?? "")]);
+      : message.role === "custom" && message.customType === skillType ? ["The skill the operator started:"]
+        : ["Added while you worked:"]).concat(conversationMessage(message).text ?? "")]);
   const content = [...given.flat(), summaryMessage(summary, files)].join("\n\n");
   return { role: "custom", customType: "tesota.compaction", content, display: false, timestamp: Date.now() };
 }
@@ -189,9 +204,9 @@ export function defaultPrompt(cwd: string, active: readonly EngineTool[]): strin
     ...rules.length > 0 ? [`Guidelines:\n${rules.join("\n")}`] : []].join("\n\n");
 }
 
-/** The instructions given, or the operator's and the project's and their skills (#457), read once as the session starts, from its own folder. */
-const instructionsOf = (options: LoopOptions): string => options.instructions
-  ?? instructionsText(contextFiles(options.cwd), skillCatalog(skills(options.cwd), options.model.contextWindow));
+/** The instructions given, or the operator's and the project's and the catalog of `available` skills (#457). */
+const instructionsOf = (options: LoopOptions, available: readonly Skill[]): string => options.instructions
+  ?? instructionsText(contextFiles(options.cwd), skillCatalog(available, options.model.contextWindow));
 
 /** A call's result as the model sees it, with an extension tool's details. */
 export const toolResult = (call: Pick<ToolCall, "id" | "name">, output: ToolOutput, timestamp: number = Date.now()): ToolResultMessage => ({
@@ -403,6 +418,8 @@ interface Queued {
   readonly behavior: Behavior;
   readonly text: string;
   readonly order: number;
+  /** The skill it starts by name (#540), whose instructions enter the conversation after it. */
+  readonly skill?: StartedSkill;
 }
 
 /** How the model's turns of a run ended, and why when they failed. */
@@ -474,7 +491,9 @@ export function createLoop(options: LoopOptions): LoopSession {
   const tools = toolbox([...options.tools?.(spool) ?? codingTools(options.cwd, spool, undefined, questionHost)], writer);
   const thinkingLevel = thinkingOf(options.model, options.thinkingLevel);
   const base = options.captureBase ?? captureBase;
-  const instructions = options.systemPrompt === undefined ? instructionsOf(options) : "";
+  /** The operator's and the project's skills, read once as the session starts, from its own folder (#457). */
+  const available = skills(options.cwd);
+  const instructions = options.systemPrompt === undefined ? instructionsOf(options, available) : "";
   const promptFor = (): string => options.systemPrompt
     ?? [defaultPrompt(options.cwd, tools.activeTools()), instructions].filter((part) => part !== "").join("\n\n");
   const resumedCompaction = compactionAtStart(options);
@@ -568,11 +587,15 @@ export function createLoop(options: LoopOptions): LoopSession {
   function deliver(run: number, behaviors: readonly Behavior[]): boolean {
     const due = queue.filter((amendment) => behaviors.includes(amendment.behavior));
     queue = queue.filter((amendment) => !behaviors.includes(amendment.behavior));
-    for (const { id, text, order } of due) {
+    for (const { id, text, order, skill } of due) {
       writer.append({ type: "delivered", run, amendment: id });
       const delivered: HistoryMessage = { role: "user", content: text, timestamp: Date.now() };
       toLedger(delivered, order);
       add(delivered);
+      if (skill === undefined) continue;
+      const instructed = skillMessage(skill, delivered.timestamp);
+      toLedger(instructed, order);
+      add(instructed);
     }
     return due.length > 0;
   }
@@ -923,21 +946,22 @@ export function createLoop(options: LoopOptions): LoopSession {
   }
 
   /** A run: its request and base are synced into the ledger before the model hears of it, and its end before it reports. */
-  async function start(run: number, text: string, origin: Origin, signal: AbortSignal): Promise<void> {
+  async function start(run: number, text: string, origin: Origin, signal: AbortSignal, skill: StartedSkill | undefined): Promise<void> {
     const at = new Date().toISOString();
     const asked: HistoryMessage = { role: "user", content: text, timestamp: Date.parse(at) };
+    const instructed = skill === undefined ? undefined : skillMessage(skill, Date.parse(at));
     // A run exists once its request is in the file: one whose base could not be captured is no run, so its
     // number is given again and the input that waited for it is refused, as the file reader requires.
     const written = (async () => {
       let captured: Base;
       try { captured = await base(options.cwd, signal); } catch (error) { closed = true; throw error; }
-      writer.append({ type: "request", run, text, origin, at, base: captured });
+      writer.append({ type: "request", run, text, origin, at, base: captured, ...skill === undefined ? {} : { skill } });
       runs = run;
-      // The run's input is counted from its request on, before input that came while it starts takes its place.
-      ledger = [asked];
+      // The run's input is counted from its request and its skill on, before input that came while it starts takes its place.
+      ledger = instructed === undefined ? [asked] : [asked, instructed];
       inputOrder.clear();
-      inputOrder.set(asked, 0);
-      nextInputOrder = 1;
+      ledger.forEach((message, index) => inputOrder.set(message, index));
+      nextInputOrder = ledger.length;
       answered.clear();
       writer.sync();
     })();
@@ -947,6 +971,7 @@ export function createLoop(options: LoopOptions): LoopSession {
     // The MCP servers starting with the session get a while to connect before the model hears of the request (#459).
     await options.mcp?.()?.ready(signal);
     add(asked);
+    if (instructed !== undefined) add(instructed);
     let generation = 0;
     let continuations = 0;
     for (;;) {
@@ -971,14 +996,15 @@ export function createLoop(options: LoopOptions): LoopSession {
    * request and queued; its input handlers run at once, or after the
    * settlement in progress, so no verification sees half of it.
    */
-  async function amend(text: string, behavior: Behavior, origin: Origin, signal: AbortSignal | undefined): Promise<void> {
+  async function amend(text: string, behavior: Behavior, origin: Origin, signal: AbortSignal | undefined,
+    skill: StartedSkill | undefined): Promise<void> {
     await recorded;
     if (closed) throw new Error("The run ended before this input arrived; send it as a new prompt.");
     const run = runs;
     const id = ++amendments;
-    writer.append({ type: "amendment", run, id, behavior, origin, text, at: new Date().toISOString() });
+    writer.append({ type: "amendment", run, id, behavior, origin, text, at: new Date().toISOString(), ...skill === undefined ? {} : { skill } });
     writer.sync();
-    queue.push({ id, behavior, text, order: nextInputOrder++ });
+    queue.push({ id, behavior, text, order: nextInputOrder++, ...skill === undefined ? {} : { skill } });
     const handlers = () => host.input({ type: "input", text, source: origin, streamingBehavior: behavior }, signal);
     if (settling) { waiting.push(handlers); return; }
     const running = handlers();
@@ -1009,9 +1035,12 @@ export function createLoop(options: LoopOptions): LoopSession {
           refused();
         }
       } finally { admitting.delete(admission); }
+      // Only the operator starts a skill by name; an extension's text is never their request.
+      const skill = source === "extension" ? undefined : startedSkill(text, available);
       if (running !== undefined) {
         if (streamingBehavior === undefined) throw new Error("A prompt is already running; steer it, queue a follow-up, abort it or wait.");
-        await amend(text, streamingBehavior, source, controller?.signal);
+        // A skill started during a run waits for the run's turns to end, as a follow-up; it never steers them.
+        await amend(text, skill === undefined ? streamingBehavior : "followUp", source, controller?.signal, skill);
         return;
       }
       controller = admission;
@@ -1020,7 +1049,7 @@ export function createLoop(options: LoopOptions): LoopSession {
       closed = false;
       emit({ type: "state", state: "working" });
       const run = runs + 1;
-      const current = start(run, text, source, controller.signal);
+      const current = start(run, text, source, controller.signal, skill);
       running = current;
       try {
         await current;
@@ -1065,6 +1094,7 @@ export function createLoop(options: LoopOptions): LoopSession {
       compacting = { done, controller: stopper };
       try { await done; } finally { compacting = undefined; }
     },
+    skills: () => available.filter((skill) => startable(skill, "operator")),
     messages: () => history.map(conversationMessage),
     history: () => history,
     subscribe: (listener) => { listeners.add(listener); return () => { listeners.delete(listener); }; },

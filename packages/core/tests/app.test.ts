@@ -50,7 +50,8 @@ function scripted(replies: readonly ScriptStep[]): { models: MutableModels; cred
 }
 
 /** The app in a temporary folder, its settings and sessions there too, once it has drawn its first frame. */
-async function app(replies: readonly ScriptStep[] = [], { repository = false, mcp, projectMcp }: { repository?: boolean; mcp?: object; projectMcp?: object } = {}) {
+async function app(replies: readonly ScriptStep[] = [], { repository = false, mcp, projectMcp, skills = {} }:
+  { repository?: boolean; mcp?: object; projectMcp?: object; skills?: Record<string, string> } = {}) {
   const terminal = new VirtualTerminal(100, 30);
   const { models, credentials } = scripted(replies);
   const settingsPath = join(folder("tesota-core-app-settings-"), "settings.json");
@@ -68,6 +69,11 @@ async function app(replies: readonly ScriptStep[] = [], { repository = false, mc
   if (projectMcp !== undefined) {
     mkdirSync(join(cwd, ".tesota"));
     writeFileSync(join(cwd, ".tesota", "mcp.json"), JSON.stringify(projectMcp));
+  }
+  // The project's skills, by folder, each its SKILL.md (#540).
+  for (const [name, content] of Object.entries(skills)) {
+    mkdirSync(join(cwd, ".agents", "skills", name), { recursive: true });
+    writeFileSync(join(cwd, ".agents", "skills", name, "SKILL.md"), content);
   }
   const running = runApp({ cwd, terminal, models, credentials, settingsPath, sessions });
   await terminal.until("tesota-core");
@@ -445,6 +451,23 @@ describe("tesota-core", () => {
     await terminal.until("No MCP server is configured");
     send(terminal, "/quit");
     await running;
+  });
+
+  test("/name runs a project's skill on the rest of the line, and a command wins over a skill of its name (#540)", async () => {
+    const { terminal } = await app(["Checked the ledger."], { skills: {
+      "verify-ledger": "---\nname: verify-ledger\ndescription: Verify the ledger formally.\ndisable-model-invocation: true\n---\nHidden playbook.\n",
+      model: "---\nname: model\ndescription: A skill the model command shadows.\n---\nShadowed.\n",
+    } });
+    terminal.type("/verify");
+    expect(await terminal.until("Verify the ledger formally.")).toContain("verify-ledger");
+    terminal.type("\x03");
+    terminal.type("/mod");
+    expect(await terminal.until("Choose the model")).not.toContain("A skill the model command shadows.");
+    terminal.type("\x03");
+    send(terminal, "/verify-ledger the session file");
+    const screen = await terminal.until("Checked the ledger.");
+    expect(screen).toContain("/verify-ledger the session file");
+    expect(screen).not.toContain("Hidden playbook.");
   });
 
   test("an unknown command is named, and /quit ends the shell", async () => {

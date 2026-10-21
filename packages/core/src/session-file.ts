@@ -3,6 +3,7 @@ import { closeSync, fsyncSync, ftruncateSync, openSync, readFileSync, renameSync
 import { dirname } from "node:path";
 import type { Base } from "./base.ts";
 import type { Clarification } from "../../../src/clarification.ts";
+import type { StartedSkill } from "./instructions.ts";
 import { validateAnswers, validateQuestions } from "./questions-schema.ts";
 import type { PromptOptions, RunOutcome, SessionOutcome } from "../../../src/contract.ts";
 
@@ -47,12 +48,17 @@ export type Repair = "outcome_unknown" | "not_run" | "no_effect";
 export type SettlePhase = "extensions" | "verifier";
 
 export type SessionEntry =
-  /** The operator's request, which starts run `run`, and the base it is measured against. */
+  /**
+   * The operator's request, which starts run `run`, and the base it is
+   * measured against. A request that starts a skill by name (#540) keeps the
+   * line the operator typed as `text` and the skill's instructions apart, so
+   * only the model reads them.
+   */
   | { readonly type: "request"; readonly run: number; readonly text: string; readonly origin: Origin; readonly at: string;
-    readonly base: Base }
-  /** Input accepted while run `run` was going. */
+    readonly base: Base; readonly skill?: StartedSkill }
+  /** Input accepted while run `run` was going; one that starts a skill by name keeps it apart, as a request does (#540). */
   | { readonly type: "amendment"; readonly run: number; readonly id: number; readonly behavior: Behavior;
-    readonly origin: Origin; readonly text: string; readonly at: string }
+    readonly origin: Origin; readonly text: string; readonly at: string; readonly skill?: StartedSkill }
   /** A submitted native answer. Its batch is immutable and belongs to one assistant reply and call. */
   | { readonly type: "clarification"; readonly run: number; readonly clarification: Clarification }
   /** An amendment entered the conversation. */
@@ -118,15 +124,18 @@ const isObject = (value: unknown): value is Record<string, unknown> => typeof va
 const isText = (value: unknown): boolean => typeof value === "string";
 const isCount = (value: unknown): boolean => Number.isInteger(value) && (value as number) >= 1;
 const isFlag = (value: unknown): boolean => typeof value === "boolean";
+/** A started skill, when the entry has one (#540). */
+const isSkill = (value: unknown): boolean => value === undefined
+  || (isObject(value) && isText(value["name"]) && isText(value["path"]) && isText(value["instructions"]));
 const origins = new Set(["interactive", "rpc", "extension"]);
 const phases = new Set(["extensions", "verifier"]);
 
 /** What each entry must hold besides its run, as far as reading it back depends on. */
 const shapes: Record<SessionEntry["type"], (entry: Record<string, unknown>) => boolean> = {
   request: (entry) => isText(entry["text"]) && origins.has(entry["origin"] as string) && isText(entry["at"])
-    && isObject(entry["base"]) && Array.isArray(entry["base"]["units"]),
+    && isObject(entry["base"]) && Array.isArray(entry["base"]["units"]) && isSkill(entry["skill"]),
   amendment: (entry) => isCount(entry["id"]) && (entry["behavior"] === "steer" || entry["behavior"] === "followUp")
-    && origins.has(entry["origin"] as string) && isText(entry["text"]) && isText(entry["at"]),
+    && origins.has(entry["origin"] as string) && isText(entry["text"]) && isText(entry["at"]) && isSkill(entry["skill"]),
   clarification: (entry) => isObject(entry["clarification"]) && Number.isInteger(entry["clarification"]["reply"])
     && isText(entry["clarification"]["callId"]) && isText(entry["clarification"]["at"])
     && Array.isArray(entry["clarification"]["questions"]) && Array.isArray(entry["clarification"]["answers"]),
