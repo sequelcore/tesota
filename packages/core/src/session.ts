@@ -1,18 +1,20 @@
 import type { ToolCall } from "@earendil-works/pi-ai";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdirSync } from "node:fs";
+import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readSync, statSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
 import type { Base } from "./base.ts";
 import type { ExtensionAPI } from "../../../src/contract.ts";
 import { branchOf } from "./branch.ts";
 import { compactedHead, createLoop, type HistoryMessage, type LoopOptions, type LoopSession, type LoopState, toolResult } from "./loop.ts";
-import { notRun, outcomeUnknown, repairs } from "./reconcile-rule.ts";
+import { noEffect, notRun, outcomeUnknown, repairs } from "./reconcile-rule.ts";
 import {
   type Behavior, createSessionFile, type Origin, readSessionFile, type Repair, type SessionEntry, sessionFormat, sessionVersion,
   sessionWriter, type SessionWriter,
 } from "./session-file.ts";
 import { lockSession } from "./session-lock.ts";
+import { outputPrefix } from "./tools/shell.ts";
+import { keepTail, maxBytes } from "./truncate.ts";
 import { bindWorkspace, reopenWorkspace, type Workspace } from "./workspace.ts";
 import { clarificationText, type Clarification, type RequestInput } from "../../../src/clarification.ts";
 
@@ -57,7 +59,7 @@ export interface EngineSession extends LoopSession {
  */
 export type Verifier = (pi: ExtensionAPI, request: () => LedgerRequest | undefined) => void;
 
-export type SessionOptions = Omit<LoopOptions, "writer" | "resumed" | "verifier" | "branch"> & {
+export type SessionOptions = Omit<LoopOptions, "writer" | "resumed" | "verifier" | "branch" | "outputFolder"> & {
   readonly verifier: Verifier;
   /** Where the session's file goes; `~/.tesota/sessions/<project>` when not given. */
   readonly folder?: string;
@@ -74,20 +76,62 @@ export function sessionsFolder(cwd: string): string {
 }
 
 const lockOf = (file: string): string => file.replace(/\.jsonl$/u, ".lock");
+const outputOf = (file: string): string => file.replace(/\.jsonl$/u, ".output");
 
 /** What recovery tells the model about a call it repaired. */
 export const repairText: Record<Repair, string> = {
   outcome_unknown: "Outcome unknown: the session ended while this call was running. It may or may not have finished, "
     + "and anything it started may still be running. It was not run again.",
   not_run: "Not run: the session ended before this call started.",
+  no_effect: "Interrupted: the session ended while this call was running. It only reads, so it changed nothing. "
+    + "It was not run again; run it again if you need its result.",
 };
+
+/** The repair's text in both the conversation and the extension's branch. */
+export function reconciliationText(entry: Extract<SessionEntry, { readonly type: "reconciliation" }>): string {
+  const text = repairText[entry.repair];
+  if (entry.output === undefined || entry.path === undefined) return text;
+  const kept = keepTail(entry.output === "" ? [] : entry.output.split("\n"));
+  return `${text}\n\nWhat it printed before the session ended (the last ${kept.lines} lines; full output: ${entry.path}):\n${kept.text}`;
+}
+
+/** Reads only the end of a call's file, dropping the first partial line when cut. */
+function interruptedOutput(folder: string, callId: string): { output: string; path: string } | undefined {
+  if (!existsSync(folder)) return undefined;
+  const prefix = outputPrefix(callId);
+  const latest = readdirSync(folder, { withFileTypes: true }).filter((entry) => entry.isFile() && entry.name.startsWith(prefix))
+    .map((entry) => {
+      const path = join(folder, entry.name);
+      return { path, modified: statSync(path).mtimeMs };
+    }).sort((a, b) => b.modified - a.modified)[0];
+  if (latest === undefined) return undefined;
+  const { path } = latest;
+  const file = openSync(path, "r");
+  try {
+    const size = fstatSync(file).size;
+    if (size === 0) return undefined;
+    const start = Math.max(0, size - 2 * maxBytes);
+    const bytes = Buffer.alloc(size - start);
+    let read = 0;
+    while (read < bytes.length) {
+      const count = readSync(file, bytes, read, bytes.length - read, start + read);
+      if (count === 0) break;
+      read += count;
+    }
+    const lines = bytes.subarray(0, read).toString("utf8").split(/\r?\n/);
+    if (lines.at(-1) === "") lines.pop();
+    return { output: keepTail(start > 0 && lines.length > 1 ? lines.slice(1) : lines).text, path };
+  } finally {
+    closeSync(file);
+  }
+}
 
 /** One reply of a run, with what was recorded about each of its calls. */
 interface Reply {
   readonly run: number;
   readonly index: number;
   readonly calls: readonly ToolCall[];
-  readonly intended: Set<string>;
+  readonly intended: Map<string, "read" | "write" | "run">;
   readonly seen: Set<string>;
   readonly repaired: Set<string>;
   readonly clarifications: Map<string, Clarification>;
@@ -103,12 +147,12 @@ function repliesOf(entries: readonly SessionEntry[]): Reply[] {
     if (entry.type === "assistant") {
       const index = counts.get(entry.run) ?? 0;
       counts.set(entry.run, index + 1);
-      const reply: Reply = { run: entry.run, index, intended: new Set(), seen: new Set(), repaired: new Set(), clarifications: new Map(),
+      const reply: Reply = { run: entry.run, index, intended: new Map(), seen: new Set(), repaired: new Set(), clarifications: new Map(),
         calls: entry.message.content.filter((part): part is ToolCall => part.type === "toolCall") };
       replies.push(reply);
       latest.set(entry.run, reply);
       byIndex.set(`${entry.run}:${index}`, reply);
-    } else if (entry.type === "call_intent") latest.get(entry.run)?.intended.add(entry.callId);
+    } else if (entry.type === "call_intent") latest.get(entry.run)?.intended.set(entry.callId, entry.access);
     else if (entry.type === "tool_result") latest.get(entry.run)?.seen.add(entry.message.toolCallId);
     else if (entry.type === "clarification") byIndex.get(`${entry.run}:${entry.clarification.reply}`)?.clarifications.set(entry.clarification.callId,
       entry.clarification);
@@ -124,7 +168,7 @@ function repliesOf(entries: readonly SessionEntry[]): Reply[] {
  * already ended or a call already answered gets nothing, so recovering
  * twice adds nothing the second time.
  */
-export function recovery(entries: readonly SessionEntry[]): SessionEntry[] {
+export function recovery(entries: readonly SessionEntry[], output: (callId: string) => { output: string; path: string } | undefined): SessionEntry[] {
   const added: SessionEntry[] = [];
   for (const reply of repliesOf(entries)) {
     for (const call of reply.calls) {
@@ -135,12 +179,13 @@ export function recovery(entries: readonly SessionEntry[]): SessionEntry[] {
       reply.seen.add(call.id);
     }
     const kinds = repairs(reply.calls.map((call) => reply.seen.has(call.id)), reply.calls.map((call) => reply.intended.has(call.id)),
-      reply.calls.map((call) => reply.repaired.has(call.id)));
+      reply.calls.map((call) => reply.repaired.has(call.id)), reply.calls.map((call) => reply.intended.get(call.id) === "read"));
     reply.calls.forEach((call, at) => {
       const kind = kinds[at];
-      if (kind !== outcomeUnknown && kind !== notRun) return;
+      if (kind !== outcomeUnknown && kind !== notRun && kind !== noEffect) return;
       added.push({ type: "reconciliation", run: reply.run, reply: reply.index, callId: call.id, toolName: call.name,
-        repair: kind === outcomeUnknown ? "outcome_unknown" : "not_run" });
+        repair: kind === noEffect ? "no_effect" : kind === outcomeUnknown ? "outcome_unknown" : "not_run",
+        ...kind === outcomeUnknown ? output(call.id) : {} });
     });
   }
   const runs = entries.filter((entry) => entry.type === "request").length;
@@ -207,7 +252,7 @@ function conversation(entries: readonly SessionEntry[]): Pick<LoopState, "histor
       let after = at + 1;
       while (history[after]?.role === "toolResult") after += 1;
       history.splice(after, 0,
-        toolResult({ id: entry.callId, name: entry.toolName }, { text: repairText[entry.repair], isError: true }, 0));
+        toolResult({ id: entry.callId, name: entry.toolName }, { text: reconciliationText(entry), isError: true }, 0));
     } else if (entry.type === "compaction") {
       const files = { read: entry.read, changed: entry.changed };
       const cut = Math.max(0, history.length - entry.kept);
@@ -295,7 +340,7 @@ function engineSession(file: string, release: () => void, entries: SessionEntry[
   let loop: LoopSession;
   try {
     loop = createLoop({ ...options, cwd: workspace.cwd, sessionId: basename(file, ".jsonl"), verifier: (pi) => { options.verifier(pi, request); }, branch: () => branchOf(entries),
-      writer: options.writer?.(recording) ?? recording, ...opened ? { resumed: stateOf(entries) } : {} });
+      writer: options.writer?.(recording) ?? recording, outputFolder: outputOf(file), ...opened ? { resumed: stateOf(entries) } : {} });
   } catch (error) {
     // An extension or the verifier that throws as it registers leaves nothing open.
     written.close();
@@ -364,7 +409,7 @@ export function openSession(file: string, options: OpenOptions): EngineSession {
     workspace = reopenWorkspace({ cwd: header.cwd, checkout: header.checkout ?? header.cwd,
       ...header.worktree === undefined ? {} : { worktree: header.worktree }, ...header.branch === undefined ? {} : { branch: header.branch },
       ...header.base === undefined ? {} : { base: header.base } });
-    const added = recovery(entries);
+    const added = recovery(entries, (callId) => interruptedOutput(outputOf(file), callId));
     if (added.length > 0) {
       const writer = sessionWriter(file);
       try {

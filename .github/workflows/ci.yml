@@ -40,7 +40,7 @@ jobs:
         run: |
           bun_version=$(node -p "require('./package.json').packageManager.split('@')[1]")
           docker run --rm -v "$PWD:/tesota" -w /tesota "oven/bun:${bun_version}-alpine" sh -euc '
-            apk add --no-cache git
+            apk add --no-cache git bash
             bun install --frozen-lockfile --ignore-scripts
             bun run vendor
             cd packages/core

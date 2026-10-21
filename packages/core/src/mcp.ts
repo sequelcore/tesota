@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -119,6 +120,8 @@ export function startMcp(configs: readonly McpServerConfig[], options: McpOption
       ? { auth: storedAuth(config.name, config.url, config.oauth ?? {}, options.home) } : {} }));
   const started = Date.now();
   const waitMs = options.waitMs ?? 10_000;
+  // The spool outlives the process (#541): a resumed session's names must not reuse an earlier one's.
+  const outputPrefix = `mcp-${randomUUID().slice(0, 8)}`;
   let outputs = 0;
   let closing = false;
 
@@ -200,7 +203,7 @@ export function startMcp(configs: readonly McpServerConfig[], options: McpOption
       }
     } catch (error) {
       const said = error instanceof McpTimeoutError ? `The MCP server "${server.config.name}" did not answer within ${server.config.timeout} s.` : message(error);
-      throw new Error(resultText(said, spool, `mcp-${++outputs}.txt`), { cause: error });
+      throw new Error(resultText(said, spool, `${outputPrefix}-${++outputs}.txt`), { cause: error });
     }
   }
 
@@ -220,7 +223,7 @@ export function startMcp(configs: readonly McpServerConfig[], options: McpOption
       execute: async (args, signal): Promise<ToolOutput> => {
         const result = await request(server, (client) => client.callTool(tool.name, args as Record<string, unknown>,
           { signal, timeoutMs: server.config.timeout * 1000, onProgress: () => undefined }), spool);
-        return { text: resultText(callText(result), spool, `mcp-${++outputs}.txt`), isError: result.isError === true };
+        return { text: resultText(callText(result), spool, `${outputPrefix}-${++outputs}.txt`), isError: result.isError === true };
       },
     }));
   }
@@ -255,7 +258,7 @@ export function startMcp(configs: readonly McpServerConfig[], options: McpOption
           if (server !== undefined) next = page.nextCursor;
         }
         return { text: resultText(JSON.stringify({ ...server === undefined ? {} : { server }, [what]: listed,
-          ...next === undefined ? {} : { nextCursor: next } }, null, 2), spool, `mcp-${++outputs}.txt`), isError: false };
+          ...next === undefined ? {} : { nextCursor: next } }, null, 2), spool, `${outputPrefix}-${++outputs}.txt`), isError: false };
       };
     return [
       { name: "list_mcp_resources", access: "read", parameters: listing,
@@ -271,7 +274,7 @@ export function startMcp(configs: readonly McpServerConfig[], options: McpOption
           const [named] = withResources(server);
           if (named === undefined) throw new Error(`No MCP server is named "${server}".`);
           const read = await request(named, (client) => client.readResource(uri, { signal }), spool);
-          return { text: resultText(resourceText(read, spool, `mcp-${++outputs}`), spool, `mcp-${++outputs}.txt`), isError: false };
+          return { text: resultText(resourceText(read, spool, `${outputPrefix}-${++outputs}`), spool, `${outputPrefix}-${++outputs}.txt`), isError: false };
         } },
     ] as EngineTool[];
   }

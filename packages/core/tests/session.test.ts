@@ -1,7 +1,7 @@
 import { createModels, fauxProvider } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { Type } from "typebox";
@@ -14,6 +14,8 @@ import type { EngineTool } from "../src/tool.ts";
 import { tesotaEngine } from "./adapters/tesota.ts";
 import type { ScriptStep } from "./engine.ts";
 import { accepts, scriptedReply } from "./scripted.ts";
+import { outputPrefix, platformShell } from "../src/tools/shell.ts";
+import { maxBytes } from "../src/truncate.ts";
 
 /**
  * Sessions and the request ledger (#437): resuming, on both engines; then
@@ -81,6 +83,7 @@ describe("the request ledger", () => {
     const lines = seen.trimEnd().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
     expect(lines.map((line) => line["type"])).toEqual(["session", "request", "active_tools", "assistant", "permission", "call_intent"]);
     expect(lines[1]).toMatchObject({ text: "the exact request", origin: "rpc", run: 1 });
+    expect(lines.at(-1)).toMatchObject({ type: "call_intent", access: "run" });
     expect(created.ledger()).toMatchObject([{ run: 1, text: "the exact request", origin: "rpc", amendments: [] }]);
   });
 
@@ -170,30 +173,149 @@ async function child(args: readonly string[], line: string): Promise<Bun.Subproc
 
 const scriptless = () => scripted([]);
 
+test("long shell output stays beside the session after close and resume", async () => {
+  const shell = platformShell();
+  const command = shell.tool === "powershell" ? "1..20000 | ForEach-Object { 'row-{0:D5}-padding-padding' -f $_ }"
+    : "for i in $(seq 1 20000); do printf 'row-%05d-padding-padding\\n' $i; done";
+  const created = session([{ calls: [{ tool: shell.tool, args: { command }, id: "call|with:unsafe/id" }] }, "done"]);
+  await created.prompt("go");
+  const result = created.messages().find((message) => message.role === "toolResult");
+  const path = /Full output: (.+)\]/u.exec(result?.text ?? "")?.[1] ?? "";
+  expect(path.startsWith(created.file.replace(/\.jsonl$/u, ".output"))).toBe(true);
+  await created.dispose();
+  const newline = shell.tool === "powershell" ? "\r\n" : "\n";
+  expect(readFileSync(path, "utf8")).toBe(Array.from({ length: 20000 }, (_, index) => `row-${String(index + 1).padStart(5, "0")}-padding-padding${newline}`).join(""));
+  const resumed = openSession(created.file, scriptless());
+  open.push(resumed);
+  expect(resumed.messages().find((message) => message.role === "toolResult")?.text).toContain(path);
+});
+
+for (const [name, printed, expected] of [
+  ["a partial first line", `${"x".repeat(4 * maxBytes)}\r\nkept\r\n`, "kept"],
+  ["a single line without a newline", `${"x".repeat(3 * maxBytes)}end`, `${"x".repeat(maxBytes - 3)}end`],
+  ["the line limit", `${"row\n".repeat(3000)}last\n`, `${"row\n".repeat(1999)}last`],
+  ["the byte limit without splitting UTF-8", `${"ñ".repeat(3 * maxBytes / 4)}\n`, "ñ".repeat(maxBytes / 2)],
+  ["empty output", "", ""],
+]) {
+  test(`recovered shell output handles ${name}`, async () => {
+    const shell = platformShell();
+    const command = shell.tool === "powershell" ? "Write-Output 'small'" : "echo small";
+    const created = session([{ calls: [{ tool: shell.tool, args: { command }, id: "saved|call" }] }, "done"]);
+    await created.prompt("go");
+    await created.dispose();
+    const lines = readFileSync(created.file, "utf8").trimEnd().split("\n");
+    const intent = lines.findIndex((line) => line.includes('"type":"call_intent"'));
+    writeFileSync(created.file, `${lines.slice(0, intent + 1).join("\n")}\n`);
+    const output = created.file.replace(/\.jsonl$/u, ".output");
+    const older = join(output, `${outputPrefix("saved|call")}ffffffff.txt`);
+    writeFileSync(older, "stale output from an earlier call");
+    utimesSync(older, 1, 1);
+    const path = join(output, `${outputPrefix("saved|call")}12345678.txt`);
+    writeFileSync(path, printed ?? "");
+    utimesSync(path, 2, 2);
+    writeFileSync(join(output, `${outputPrefix("saved|call").slice(0, -1)}.txt`), "not a matching prefix");
+    const resumed = openSession(created.file, scriptless());
+    open.push(resumed);
+    const repair = readSessionFile(created.file).entries.find((entry) => entry.type === "reconciliation");
+    if (printed === "") {
+      expect(repair).not.toHaveProperty("output");
+      expect(repair).not.toHaveProperty("path");
+    } else expect(repair).toMatchObject({ output: expected, path });
+    expect(Buffer.byteLength(repair?.type === "reconciliation" ? repair.output ?? "" : "", "utf8")).toBeLessThanOrEqual(maxBytes);
+    expect(resumed.messages().find((message) => message.role === "toolResult")?.text).toContain(expected ?? "");
+  });
+}
+
+test("an empty interrupted call does not recover an earlier long output with the same ID", async () => {
+  const shell = platformShell();
+  const command = shell.tool === "powershell" ? `[Console]::Write(('x' * ${3 * maxBytes}) + 'end')`
+    : `printf '%${3 * maxBytes}s' '' | tr ' ' x; printf end`;
+  const created = session([
+    { calls: [{ tool: shell.tool, args: { command }, id: "repeated|call" }] },
+    { calls: [{ tool: shell.tool, args: { command: "" }, id: "repeated|call" }] }, "done",
+  ]);
+  await created.prompt("go");
+  const result = created.messages().find((message) => message.role === "toolResult");
+  const first = /Full output: (.+)\]/u.exec(result?.text ?? "")?.[1] ?? "";
+  expect(readFileSync(first, "utf8")).toBe(`${"x".repeat(3 * maxBytes)}end`);
+  await created.dispose();
+  const lines = readFileSync(created.file, "utf8").trimEnd().split("\n");
+  const intent = lines.findLastIndex((line) => line.includes('"type":"call_intent"'));
+  writeFileSync(created.file, `${lines.slice(0, intent + 1).join("\n")}\n`);
+  utimesSync(first, 1, 1);
+  const latest = join(created.file.replace(/\.jsonl$/u, ".output"), `${outputPrefix("repeated|call")}00000000.txt`);
+  writeFileSync(latest, "");
+  utimesSync(latest, 2, 2);
+  const resumed = openSession(created.file, scriptless());
+  open.push(resumed);
+  const repairs = readSessionFile(created.file).entries.filter((entry) => entry.type === "reconciliation");
+  expect(repairs).toHaveLength(1);
+  expect(repairs[0]).toMatchObject({ reply: 1, callId: "repeated|call", repair: "outcome_unknown" });
+  expect(repairs[0]).not.toHaveProperty("output");
+  expect(repairs[0]).not.toHaveProperty("path");
+  expect(resumed.messages().filter((message) => message.role === "toolResult")[1]?.text).toContain("Outcome unknown");
+  expect(readFileSync(first, "utf8")).toBe(`${"x".repeat(3 * maxBytes)}end`);
+});
+
 describe("recovery after the process was killed", () => {
-  test("a call that may have run is marked outcome unknown, the next never started, and recovering twice adds nothing", async () => {
+  test("a shell repair keeps what it printed and its file, and recovering twice adds nothing", async () => {
     const cwd = folder();
     const sessions = folder("tesota-core-sessions-");
-    const running = await child(["tool", cwd, sessions], "waiting");
-    running.kill("SIGKILL");
-    await running.exited;
-    const file = readFileSync(join(sessions, "file.txt"), "utf8");
-    const resumed = openSession(file, scriptless());
-    open.push(resumed);
-    expect(resumed.outcome()).toBe("interrupted");
-    const results = resumed.messages().filter((message) => message.role === "toolResult");
-    expect(results.map((result) => [result.toolName, result.isError])).toEqual([["wait", true], ["write", true]]);
-    expect(results[0]?.text).toContain("Outcome unknown");
-    expect(results[1]?.text).toContain("Not run");
-    expect(existsSync(join(cwd, "never.txt"))).toBe(false);
-    expect(resumed.ledger()).toMatchObject([{ run: 1, text: "go" }]);
-    const once = entriesOf(file);
-    expect(once.slice(-3).map((entry) => entry.type)).toEqual(["reconciliation", "reconciliation", "run_end"]);
-    await resumed.dispose();
-    const again = openSession(file, scriptless());
-    open.push(again);
-    expect(entriesOf(file)).toEqual(once);
+    const running = await child(["shell", cwd, sessions], "printed");
+    try {
+      running.kill("SIGKILL");
+      await running.exited;
+      const file = readFileSync(join(sessions, "file.txt"), "utf8");
+      const resumed = openSession(file, scriptless());
+      open.push(resumed);
+      const repair = readSessionFile(file).entries.find((entry) => entry.type === "reconciliation");
+      expect(repair).toMatchObject({ repair: "outcome_unknown", output: "printed before interruption" });
+      if (repair?.type !== "reconciliation") throw new Error("No repair was recorded");
+      expect(existsSync(repair.path ?? "")).toBe(true);
+      const results = resumed.messages().filter((message) => message.role === "toolResult");
+      expect(results[0]?.text).toContain("Outcome unknown");
+      expect(results[0]?.text).toContain("printed before interruption");
+      expect(results[0]?.text).toContain(`the last 1 lines; full output: ${repair.path}`);
+      expect(results[1]?.text).toContain("Not run");
+      const once = readFileSync(file, "utf8");
+      await resumed.dispose();
+      const again = openSession(file, scriptless());
+      open.push(again);
+      expect(readFileSync(file, "utf8")).toBe(once);
+      expect(again.messages()).toEqual(resumed.messages());
+      expect(existsSync(repair.path ?? "")).toBe(true);
+    } finally {
+      running.kill("SIGKILL");
+      writeFileSync(join(cwd, "release.txt"), "");
+    }
   });
+
+  for (const mode of ["tool", "read"]) {
+    test(`an interrupted ${mode} call is repaired, the next never started, and recovering twice adds nothing`, async () => {
+      const cwd = folder();
+      const sessions = folder("tesota-core-sessions-");
+      const running = await child([mode, cwd, sessions], "waiting");
+      running.kill("SIGKILL");
+      await running.exited;
+      const file = readFileSync(join(sessions, "file.txt"), "utf8");
+      const resumed = openSession(file, scriptless());
+      open.push(resumed);
+      expect(resumed.outcome()).toBe("interrupted");
+      const results = resumed.messages().filter((message) => message.role === "toolResult");
+      expect(results.map((result) => [result.toolName, result.isError])).toEqual([["wait", true], ["write", true]]);
+      expect(results[0]?.text).toContain(mode === "read" ? "Interrupted" : "Outcome unknown");
+      if (mode === "read") expect(results[0]?.text).toContain("It only reads, so it changed nothing");
+      expect(results[1]?.text).toContain("Not run");
+      expect(existsSync(join(cwd, "never.txt"))).toBe(false);
+      expect(resumed.ledger()).toMatchObject([{ run: 1, text: "go" }]);
+      const once = entriesOf(file);
+      expect(once.slice(-3).map((entry) => entry.type)).toEqual(["reconciliation", "reconciliation", "run_end"]);
+      await resumed.dispose();
+      const again = openSession(file, scriptless());
+      open.push(again);
+      expect(entriesOf(file)).toEqual(once);
+    });
+  }
 
   test("a reply cut off mid-stream leaves the request in the ledger and the run interrupted", async () => {
     const cwd = folder();
@@ -314,7 +436,7 @@ describe("the session file", () => {
 
   test("an entry out of place refuses to open", async () => {
     const file = await finished();
-    appendFileSync(file, `${JSON.stringify({ type: "call_intent", run: 7, callId: "x" })}\n`);
+    appendFileSync(file, `${JSON.stringify({ type: "call_intent", run: 7, callId: "x", access: "run" })}\n`);
     expect(() => openSession(file, scriptless())).toThrow(SessionFileError);
   });
 
@@ -343,19 +465,21 @@ describe("the session file", () => {
   });
 
   // Older formats are refused, not reinterpreted or migrated.
-  for (const version of [1, 2]) {
+  for (const version of [1, 2, 3]) {
     test(`a session of version ${version} refuses to open, naming it`, async () => {
       const file = await finished();
       const lines = readFileSync(file, "utf8").split("\n");
-      lines[0] = (lines[0] ?? "").replace("\"version\":3", `"version":${version}`);
-      writeFileSync(file, lines.join("\n"));
+      lines[0] = (lines[0] ?? "").replace("\"version\":4", `"version":${version}`);
+      const before = lines.join("\n");
+      writeFileSync(file, before);
       expect(() => openSession(file, scriptless())).toThrow(`version ${version}`);
+      expect(readFileSync(file, "utf8")).toBe(before);
     });
   }
 
-  test("version 3 reads, with the verifier's message in the conversation and its data outside it", () => {
-    const fixture = join(import.meta.dir, "fixtures", "session-v3.jsonl");
-    const copy = join(folder(), "session-v3.jsonl");
+  test("version 4 reads, with the verifier's message in the conversation and its data outside it", () => {
+    const fixture = join(import.meta.dir, "fixtures", "session-v4.jsonl");
+    const copy = join(folder(), "session-v4.jsonl");
     writeFileSync(copy, readFileSync(fixture));
     const resumed = openSession(copy, scriptless());
     open.push(resumed);
@@ -364,6 +488,23 @@ describe("the session file", () => {
     expect(resumed.outcome()).toBe("completed");
     expect(resumed.ledger()).toMatchObject([{ run: 1, text: "write a", origin: "interactive", amendments: [] }]);
   });
+
+  test("a call intent without declared access is refused without changing the file", async () => {
+    const file = await finished();
+    appendFileSync(file, `${JSON.stringify({ type: "call_intent", run: 1, callId: "x" })}\n`);
+    const before = readFileSync(file, "utf8");
+    expect(() => openSession(file, scriptless())).toThrow(SessionFileError);
+    expect(readFileSync(file, "utf8")).toBe(before);
+  });
+
+  for (const field of ["output", "path"]) {
+    test(`a reconciliation with invalid ${field} is refused`, async () => {
+      const file = await finished();
+      appendFileSync(file, `${JSON.stringify({ type: "reconciliation", run: 1, reply: 0, callId: "x", toolName: "bash",
+        repair: "outcome_unknown", [field]: 7 })}\n`);
+      expect(() => openSession(file, scriptless())).toThrow(SessionFileError);
+    });
+  }
 
   test("a run that ends completed without its verifier's settlement refuses to open", async () => {
     const file = await finished();

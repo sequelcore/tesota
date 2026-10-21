@@ -1,6 +1,6 @@
 import type { BranchEntry } from "../../../src/contract.ts";
 import { toolResult } from "./loop.ts";
-import { repairText } from "./session.ts";
+import { reconciliationText } from "./session.ts";
 import type { SessionEntry } from "./session-file.ts";
 
 /** The session's entries in file order, as Tesota reads Pi's branch (#441). */
@@ -20,7 +20,7 @@ export function branchOf(entries: readonly SessionEntry[]): BranchEntry[] {
     } else if (entry.type === "assistant" || entry.type === "tool_result") branch.push({ type: "message", message: entry.message });
     else if (entry.type === "reconciliation") {
       branch.push({ type: "message",
-        message: toolResult({ id: entry.callId, name: entry.toolName }, { text: repairText[entry.repair], isError: true }, 0) });
+        message: toolResult({ id: entry.callId, name: entry.toolName }, { text: reconciliationText(entry), isError: true }, 0) });
     } else if (entry.type === "custom_message") {
       const { customType, content, display, details } = entry;
       const projected = { type: "custom_message", customType, content, display, ...details === undefined ? {} : { details } };

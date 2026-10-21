@@ -14,9 +14,10 @@ import type { PromptOptions, RunOutcome, SessionOutcome } from "../../../src/con
  * hears of them, and never rewritten. Version 2 (#439) records each run's
  * settlement, and a run ends `completed` only after its verifier's. Version 3
  * (#520) records submitted native questions as attributed request input.
+ * Version 4 (#541) records each call's declared access and keeps an interrupted call's output.
  */
 export const sessionFormat = "tesota-session";
-export const sessionVersion = 3;
+export const sessionVersion = 4;
 
 export interface SessionHeader {
   readonly type: "session";
@@ -39,8 +40,8 @@ export type Origin = NonNullable<PromptOptions["source"]>;
 /** Input that arrives while a run is going: a steer enters after the current calls, a follow-up when the run would end. */
 export type Behavior = NonNullable<PromptOptions["streamingBehavior"]>;
 
-/** How recovery repaired a call that has no result: it may have run, or it never started. */
-export type Repair = "outcome_unknown" | "not_run";
+/** How recovery repaired a call that has no result: its outcome is unknown, it never started, or it only reads. */
+export type Repair = "outcome_unknown" | "not_run" | "no_effect";
 
 /** Who settles in a phase: the ordinary extensions, then the verifier. */
 export type SettlePhase = "extensions" | "verifier";
@@ -58,12 +59,12 @@ export type SessionEntry =
   | { readonly type: "delivered"; readonly run: number; readonly amendment: number }
   | { readonly type: "assistant"; readonly run: number; readonly message: AssistantMessage }
   /** A call is about to run; recorded, and synced, first. */
-  | { readonly type: "call_intent"; readonly run: number; readonly callId: string }
+  | { readonly type: "call_intent"; readonly run: number; readonly callId: string; readonly access: "read" | "write" | "run" }
   /** A call's result: the one the model saw, of a call that ran or was refused. */
   | { readonly type: "tool_result"; readonly run: number; readonly message: ToolResultMessage }
   /** Recovery's repair of call `callId` of reply `reply` (counted from 0 in its run), which has no result. */
   | { readonly type: "reconciliation"; readonly run: number; readonly reply: number; readonly callId: string;
-    readonly toolName: string; readonly repair: Repair }
+    readonly toolName: string; readonly repair: Repair; readonly output?: string; readonly path?: string }
   /**
    * A settlement phase of run `run` starts, in its `generation`: how many
    * times settlement sent the run back to the model before. `outcome` is
@@ -131,10 +132,11 @@ const shapes: Record<SessionEntry["type"], (entry: Record<string, unknown>) => b
     && Array.isArray(entry["clarification"]["questions"]) && Array.isArray(entry["clarification"]["answers"]),
   delivered: (entry) => isCount(entry["amendment"]),
   assistant: (entry) => isObject(entry["message"]) && entry["message"]["role"] === "assistant" && Array.isArray(entry["message"]["content"]),
-  call_intent: (entry) => isText(entry["callId"]),
+  call_intent: (entry) => isText(entry["callId"]) && ["read", "write", "run"].includes(entry["access"] as string),
   tool_result: (entry) => isObject(entry["message"]) && entry["message"]["role"] === "toolResult",
   reconciliation: (entry) => Number.isInteger(entry["reply"]) && isText(entry["callId"]) && isText(entry["toolName"])
-    && (entry["repair"] === "outcome_unknown" || entry["repair"] === "not_run"),
+    && ["outcome_unknown", "not_run", "no_effect"].includes(entry["repair"] as string)
+    && (entry["output"] === undefined || isText(entry["output"])) && (entry["path"] === undefined || isText(entry["path"])),
   settle: (entry) => Number.isInteger(entry["generation"]) && phases.has(entry["phase"] as string) && isText(entry["outcome"]),
   custom_message: (entry) => isText(entry["customType"]) && isText(entry["content"]) && isFlag(entry["display"]),
   custom: (entry) => isText(entry["customType"]),
