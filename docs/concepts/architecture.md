@@ -50,8 +50,11 @@ ever appended to. One writer holds it, through a lock the operating system
 releases when its holder ends, so a crash never leaves it locked.
 
 Opening a session checks every line, and repairs only an interrupted last
-one. A tool call the session was running when it ended is marked "outcome
-unknown"; one it hadn't started, "not run". Neither runs again.
+one. A tool call the session was running when it ended is marked "no effect"
+if its recorded access only reads, otherwise "outcome unknown". One it
+hadn't started is marked "not run". None runs again. An interrupted shell
+call's repair includes the saved end of its output and the full output's
+path beside the session file.
 
 **The request ledger.** The request, amendments and submitted answers to
 the agent's questions are kept as given, in their recorded order.
@@ -97,9 +100,7 @@ be built on top of a host:
 
 Pi's durable runtime, `pi-durable`, has the first limit too: a run ends
 when the model stops unless an `onYield` hook continues it, and only the
-first hook that asks is heard. Its crash recovery does more than the
-engine's; what Tesota takes from it is tracked in
-[#541](https://github.com/sequelcore/tesota/issues/541).
+first hook that asks is heard.
 
 So verification is a mandatory step of the engine's lifecycle, not an
 extension. The engine's scope is what Tesota uses and nothing more:

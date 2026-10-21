@@ -6,9 +6,7 @@ import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { mkdirSync } from "node:fs";
 import { type Base, captureBase } from "./base.ts";
 import type { BranchEntry, EntryDraft, ExtensionFactory, RunOutcome, Session, SessionOutcome, ToolDefinition } from "../../../src/contract.ts";
 import { contextUsage, estimateTokens } from "./context-usage.ts";
@@ -40,6 +38,8 @@ export interface LoopOptions {
   readonly tools?: (spool: () => string) => readonly EngineTool[];
   /** Where the session's entries go. */
   readonly writer: SessionWriter;
+  /** The durable output folder beside the session's file, created on first use. */
+  readonly outputFolder: string;
   /** What a resumed session already holds; a new session starts empty. */
   readonly resumed?: LoopState;
   /** The base of a request; the gate's units (`captureBase`) when not given. */
@@ -441,8 +441,7 @@ export function createLoop(options: LoopOptions): LoopSession {
   let outcome = options.resumed?.outcome;
   /** Set when an answer could not be saved or its form released: the operator may think it was given, so nothing runs after. */
   let questionFailure: Error | undefined;
-  let spoolFolder: string | undefined;
-  const spool = (): string => (spoolFolder ??= mkdtempSync(join(tmpdir(), "tesota-core-output-")));
+  const spool = (): string => { mkdirSync(options.outputFolder, { recursive: true }); return options.outputFolder; };
   let activeQuestion: { readonly run: number; readonly reply: number; readonly callId: string } | undefined;
   /** How many times the run asked the operator: a request decides with what it has after three. */
   let asked = { run: 0, times: 0 };
@@ -621,10 +620,10 @@ export function createLoop(options: LoopOptions): LoopSession {
   async function runCall(run: number, call: ToolCall, signal: AbortSignal, left: AbortSignal, offered: readonly EngineTool[],
     reply: number): Promise<ToolOutput> {
     if (signal.aborted) return stoppedCall;
-    writer.append({ type: "call_intent", run, callId: call.id });
+    const selected = offered.find((tool) => tool.name === call.name);
+    writer.append({ type: "call_intent", run, callId: call.id, access: selected?.access ?? "run" });
     writer.sync();
     emit({ type: "call", call });
-    const selected = offered.find((tool) => tool.name === call.name);
     const nativeQuestion = selected !== undefined && isNativeAskTool(selected);
     await host.toolStart({ type: "tool_execution_start", toolCallId: call.id, toolName: call.name, args: call.arguments, nativeQuestion },
       signal, left);
@@ -1085,7 +1084,6 @@ export function createLoop(options: LoopOptions): LoopSession {
       await running?.catch(() => undefined);
       await compacting?.done.catch(() => undefined);
       writer.close();
-      if (spoolFolder !== undefined) rmSync(spoolFolder, { recursive: true, force: true, maxRetries: 3 });
     })(),
   };
 }

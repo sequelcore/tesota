@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import * as fs from "node:fs";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -82,14 +83,18 @@ function shells(): Shell[] {
 for (const shell of shells()) {
   describe(shell.label, () => {
     const say = (text: string) => shell.tool === "powershell" ? `Write-Output '${text}'` : `echo '${text}'`;
+    const longLine = shell.tool === "powershell" ? `[Console]::Write(('x' * ${3 * maxBytes}) + 'end')`
+      : `printf '%${3 * maxBytes}s' '' | tr ' ' x; printf end`;
 
     test("output is UTF-8 and the tool says which shell it is", async () => {
       const cwd = folder();
-      const tool = shellTool(cwd, shell, () => cwd);
+      const spool = folder();
+      const tool = shellTool(cwd, shell, () => spool);
       expect(tool.description).toContain(shell.label);
       const output = await run(tool, { command: say("ñandú ✓ 日本") });
       expect(output).toMatchObject({ isError: false });
       expect(output.text).toContain("ñandú ✓ 日本");
+      expect(readdirSync(spool)).toEqual([]);
     });
 
     test("output past the limit goes to a file the model is told about, and the end stays in the reply", async () => {
@@ -97,12 +102,84 @@ for (const shell of shells()) {
       const spool = folder();
       const print = shell.tool === "powershell" ? "1..20000 | ForEach-Object { 'row-{0:D5}-padding-padding' -f $_ }"
         : "for i in $(seq 1 20000); do printf 'row-%05d-padding-padding\\n' $i; done";
-      const output = await run(shellTool(cwd, shell, () => spool), { command: print });
+      const tool = shellTool(cwd, shell, () => spool);
+      const newline = shell.tool === "powershell" ? "\r\n" : "\n";
+      const expected = Array.from({ length: 20000 }, (_, index) => `row-${String(index + 1).padStart(5, "0")}-padding-padding${newline}`).join("");
+      const output = await tool.execute({ command: print }, new AbortController().signal, "call|first:1");
       expect(output.text).toContain("row-20000");
       const saved = readdirSync(spool);
       expect(saved).toHaveLength(1);
       expect(output.text).toContain(join(spool, saved[0] ?? ""));
-      expect(readFileSync(join(spool, saved[0] ?? ""), "utf8")).toContain("row-00001");
+      const firstPath = join(spool, saved[0] ?? "");
+      expect(readFileSync(firstPath, "utf8")).toBe(expected);
+      const second = await tool.execute({ command: print.replaceAll("padding-padding", "second-output") }, new AbortController().signal, "call|first:1");
+      expect(readdirSync(spool)).toHaveLength(2);
+      const secondPath = /Full output: (.+)\]/u.exec(second.text)?.[1] ?? "";
+      expect(secondPath).not.toBe(firstPath);
+      expect(readFileSync(secondPath, "utf8")).toBe(expected.replaceAll("padding-padding", "second-output"));
+      expect(readFileSync(firstPath, "utf8")).toBe(expected);
+      await tool.execute({ command: say("small") }, new AbortController().signal, "call|first:1");
+      expect(readdirSync(spool)).toHaveLength(2);
+      expect(readFileSync(firstPath, "utf8")).toBe(expected);
+    });
+
+    test("a single line past the capture window keeps its end without a newline", async () => {
+      const spool = folder();
+      const output = await run(shellTool(folder(), shell, () => spool), { command: longLine });
+      expect(output.isError).toBe(false);
+      expect(output.text.split("\n\n")[0]).toBe(`${"x".repeat(maxBytes - 3)}end`);
+      const path = /Full output: (.+)\]/u.exec(output.text)?.[1] ?? "";
+      expect(readFileSync(path, "utf8")).toBe(`${"x".repeat(3 * maxBytes)}end`);
+    });
+
+    test("an empty output file exists before the process starts and is removed when its output fits", async () => {
+      const spool = folder();
+      let path = "";
+      const inspected: Shell = { ...shell, args: (command) => {
+        const saved = readdirSync(spool);
+        expect(saved).toHaveLength(1);
+        path = join(spool, saved[0] ?? "");
+        expect(readFileSync(path, "utf8")).toBe("");
+        return shell.args(command);
+      } };
+      expect((await run(shellTool(folder(), inspected, () => spool), { command: say("small") })).isError).toBe(false);
+      expect(existsSync(path)).toBe(false);
+    });
+
+    test("a spool write failure closes the file and keeps collecting the tail", async () => {
+      const spool = folder();
+      const tool = shellTool(folder(), shell, () => spool);
+      let descriptor = -1;
+      const write = spyOn(fs, "writeSync").mockImplementation((file) => { descriptor = file; throw new Error("disk full"); });
+      try {
+        const output = await run(tool, { command: longLine });
+        expect(output.isError).toBe(false);
+        expect(output.text.split("\n\n")[0]).toBe(`${"x".repeat(maxBytes - 3)}end`);
+        expect(output.text).toContain("The full output could not be saved: disk full]");
+        expect(output.text).not.toContain("Full output:");
+        expect(() => fs.fstatSync(descriptor)).toThrow();
+        expect(readdirSync(spool)).toEqual([]);
+        expect(await run(tool, { command: say("small") })).toEqual({ text: "small", isError: false });
+        expect(write).toHaveBeenCalledTimes(2);
+        expect(readdirSync(spool)).toEqual([]);
+      } finally {
+        write.mockRestore();
+      }
+    });
+
+    test("a spool file that cannot be created keeps the tail and reports the failure only for long output", async () => {
+      const cwd = folder();
+      const spool = join(cwd, "file.txt");
+      writeFileSync(spool, "not a folder");
+      const tool = shellTool(cwd, shell, () => spool);
+      const output = await run(tool, { command: longLine });
+      expect(output.isError).toBe(false);
+      expect(output.text).toContain(`${"x".repeat(maxBytes - 3)}end`);
+      expect(output.text).toContain("The full output could not be saved:");
+      expect(output.text).not.toContain("Full output:");
+      expect(readFileSync(spool, "utf8")).toBe("not a folder");
+      const small = await run(tool, { command: say("small") });
+      expect(small).toEqual({ text: "small", isError: false });
     });
   });
 }

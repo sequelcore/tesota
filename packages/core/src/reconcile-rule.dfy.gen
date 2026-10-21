@@ -6,13 +6,17 @@ const outcomeUnknown: int := 1
 
 const notRun: int := 2
 
-method repairs(seen: seq<bool>, intended: seq<bool>, repaired: seq<bool>) returns (res: seq<int>)
+const noEffect: int := 3
+
+method repairs(seen: seq<bool>, intended: seq<bool>, repaired: seq<bool>, readOnly: seq<bool>) returns (res: seq<int>)
   requires (|seen| == |intended|)
   requires (|intended| == |repaired|)
+  requires (|repaired| == |readOnly|)
   ensures (|res| == |seen|)
   ensures forall i: nat :: ((i < |seen|) ==> (seen[i] || repaired[i]) ==> (res[i] == 0))
-  ensures forall i: nat :: ((i < |seen|) ==> !(seen[i]) ==> !(repaired[i]) ==> intended[i] ==> (res[i] == 1))
+  ensures forall i: nat :: ((i < |seen|) ==> !(seen[i]) ==> !(repaired[i]) ==> intended[i] ==> !(readOnly[i]) ==> (res[i] == 1))
   ensures forall i: nat :: ((i < |seen|) ==> !(seen[i]) ==> !(repaired[i]) ==> !(intended[i]) ==> (res[i] == 2))
+  ensures forall i: nat :: ((i < |seen|) ==> !(seen[i]) ==> !(repaired[i]) ==> intended[i] ==> readOnly[i] ==> (res[i] == 3))
 {
   var found: seq<int> := [];
   var i := 0;
@@ -21,13 +25,14 @@ method repairs(seen: seq<bool>, intended: seq<bool>, repaired: seq<bool>) return
     invariant (i <= |seen|)
     invariant (|found| == i)
     invariant forall k: nat :: ((k < i) ==> (seen[k] || repaired[k]) ==> (found[k] == 0))
-    invariant forall k: nat :: ((k < i) ==> !(seen[k]) ==> !(repaired[k]) ==> intended[k] ==> (found[k] == 1))
+    invariant forall k: nat :: ((k < i) ==> !(seen[k]) ==> !(repaired[k]) ==> intended[k] ==> !(readOnly[k]) ==> (found[k] == 1))
     invariant forall k: nat :: ((k < i) ==> !(seen[k]) ==> !(repaired[k]) ==> !(intended[k]) ==> (found[k] == 2))
+    invariant forall k: nat :: ((k < i) ==> !(seen[k]) ==> !(repaired[k]) ==> intended[k] ==> readOnly[k] ==> (found[k] == 3))
   {
     if (seen[i] || repaired[i]) {
       found := (found + [0]);
     } else if intended[i] {
-      found := (found + [1]);
+      found := (found + [(if readOnly[i] then 3 else 1)]);
     } else {
       found := (found + [2]);
     }
