@@ -49,13 +49,15 @@ it("counts the change's lines by category as git diff --numstat does, untracked 
     "icon.bin": "\u0000b",
   });
   rmSync(join(root, "old.md"));
+  // New, then ignored during the request: Git lists it nowhere, yet it is the request's and counts whole.
+  write(root, { "src/hidden.ts": "export const h = 1;\n", ".gitignore": "src/hidden.ts\n" });
   git(root, "add", "src/price.ts", "src/client.ts");
   // restored.ts was changed during the request and put back as the base has it, so it counts nothing.
   const changed = ["src/price.ts", "src/client.ts", "tests/price.test.ts", "tests/gen.test.ts", "vite.config.ts", "README.md",
-    "migrations/001.sql", "logo.png", "icon.bin", "old.md", "src/restored.ts"];
+    "migrations/001.sql", "logo.png", "icon.bin", "old.md", "src/restored.ts", "src/hidden.ts"];
   expect(await changeLines(root, base, changed)).toEqual({
-    // price.ts: one line changed and one added; the generated client, the configuration and the SQL count as other.
-    implementation: { added: 2, removed: 1 },
+    // price.ts: one line changed and one added, hidden.ts one; the generated client, the configuration and the SQL count as other.
+    implementation: { added: 3, removed: 1 },
     tests: { added: 3, removed: 0 },
     // client.ts +1 -1, vite.config.ts 1, README.md 3 lines without a final newline, the migration 1, old.md removed 1.
     other: { added: 6, removed: 2 },

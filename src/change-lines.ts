@@ -100,8 +100,9 @@ export async function changeLines(root: string, base: string | null, changed: re
   for (const path of wanted) {
     let count = counted.get(path);
     if (count === undefined) {
-      // Before the first commit every file is new; after it, one Git lists in neither is as the base has it.
-      if (base !== null && !fresh.has(path)) continue;
+      // Before the first commit every file is new; after it, one Git lists in neither is as the base has it, when the
+      // base has it: a new file the request then ignored is in neither, and still counts whole.
+      if (base !== null && !fresh.has(path) && (await gitOutput(root, ["cat-file", "-t", `${base}:./${path}`]))?.trim() === "blob") continue;
       const read = await untrackedLines(join(root, path));
       if (read === "unreadable") return "unreadable";
       if (read === "gone") continue;
