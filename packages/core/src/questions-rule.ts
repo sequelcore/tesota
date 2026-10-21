@@ -10,6 +10,13 @@ export function optionCountAccepted(count: number): boolean {
   return count >= 2 && count <= 4;
 }
 
+/** Whether a request that already asked the operator `asked` times may ask once more. */
+//@ requires asked >= 0
+//@ ensures \result <==> asked < 3
+export function askAccepted(asked: number): boolean {
+  return asked < 3;
+}
+
 /** Whether one answer has enough input and obeys a single-choice question. */
 //@ requires selected >= 0
 //@ ensures \result <==> (multiple || selected <= 1) && (selected >= 1 || hasText)

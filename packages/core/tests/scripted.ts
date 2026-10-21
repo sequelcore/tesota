@@ -12,7 +12,7 @@ export function scriptedReply(step: ScriptStep): FauxResponseStep {
   if ("seen" in step) return (context, options) => { step.seen(context as unknown as Context, options); return fauxAssistantMessage(step.reply); };
   if ("error" in step) return fauxAssistantMessage([], { stopReason: "error", errorMessage: step.error });
   if ("calls" in step) {
-    return fauxAssistantMessage(step.calls.map((call) => fauxToolCall(call.tool, call.args)),
+    return fauxAssistantMessage(step.calls.map((call) => fauxToolCall(call.tool, call.args, call.id === undefined ? {} : { id: call.id })),
       { stopReason: step.cutOff === true ? "length" : "toolUse" });
   }
   return fauxAssistantMessage([fauxToolCall(step.tool, step.args)], { stopReason: "toolUse" });

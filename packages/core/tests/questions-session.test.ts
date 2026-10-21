@@ -65,6 +65,22 @@ test("an invalid question batch is a failed call the model can correct, without 
   expect(session.ledger()[0]?.inputs).toEqual([]);
 });
 
+test("a request asks the operator at most three times, and the next request may ask again", async () => {
+  const ask = { tool: "ask_user", args: { questions } };
+  let opened = 0;
+  const session = start([ask, ask, ask, ask, "decided", ask, "asked again"], {
+    questions: (_batch, submit) => { opened++; submit([{ selected: [0] }]); return () => undefined; },
+  });
+  await session.prompt("Ask me.");
+  expect(opened).toBe(3);
+  const results = session.messages().filter((message) => message.role === "toolResult");
+  expect(results.map((result) => result.isError)).toEqual([false, false, false, true]);
+  expect(results[3]?.text).toContain("three times");
+  expect(session.ledger()[0]?.inputs).toHaveLength(3);
+  await session.prompt("Another request.");
+  expect(opened).toBe(4);
+});
+
 test("only the exact native bridge is identified as a question for verification", async () => {
   for (const native of [false, true]) {
     let identified: boolean | undefined;
@@ -80,6 +96,26 @@ test("only the exact native bridge is identified as a question for verification"
     await session.prompt("Run the tool.");
     expect(identified).toBe(native);
   }
+});
+
+test("a reply that repeats a call id runs only the first, keeps its one result, and leaves the session usable", async () => {
+  let opened = 0;
+  const session = start([{ calls: [
+    { tool: "write", args: { path: "first.txt", content: "one" }, id: "same" },
+    { tool: "ask_user", args: { questions }, id: "same" },
+  ] }, "done", "again"], { questions: () => { opened++; return () => undefined; } });
+  await session.prompt("Write, then ask.");
+  expect(session.outcome()).toBe("completed");
+  expect(existsSync(join(session.workspace.cwd, "first.txt"))).toBe(true);
+  expect(opened).toBe(0);
+  expect(session.messages().filter((message) => message.role === "toolResult")).toMatchObject([{ toolName: "write", isError: false }]);
+  await session.prompt("Go on.");
+  expect(session.outcome()).toBe("completed");
+  const messages = session.messages();
+  await session.dispose();
+  const reopened = openSession(session.file, models([]));
+  sessions.push(reopened);
+  expect(reopened.messages()).toEqual(messages);
 });
 
 test("reopening refuses an answer outside its recorded question instead of trusting malformed input", async () => {

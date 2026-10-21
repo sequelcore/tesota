@@ -25,6 +25,7 @@ import type { EngineTool, ToolOutput } from "./tool.ts";
 import { codingTools } from "./tools/index.ts";
 import { isNativeAskTool } from "./tools/ask.ts";
 import { askQuestions, type QuestionResponder } from "./questions.ts";
+import { askAccepted } from "./questions-rule.ts";
 import type { Clarification, ClarificationAnswer, ClarificationQuestion } from "../../../src/clarification.ts";
 import { clarificationText } from "../../../src/clarification.ts";
 
@@ -433,24 +434,40 @@ export function createLoop(options: LoopOptions): LoopSession {
   let runs = options.resumed?.runs ?? 0;
   let amendments = options.resumed?.amendments ?? 0;
   let outcome = options.resumed?.outcome;
-  let hostFailure: Error | undefined;
+  /** Set when an answer could not be saved or its form released: the operator may think it was given, so nothing runs after. */
+  let questionFailure: Error | undefined;
   let spoolFolder: string | undefined;
   const spool = (): string => (spoolFolder ??= mkdtempSync(join(tmpdir(), "tesota-core-output-")));
   let activeQuestion: { readonly run: number; readonly reply: number; readonly callId: string } | undefined;
+  /** How many times the run asked the operator: a request decides with what it has after three. */
+  let asked = { run: 0, times: 0 };
   const questionHost = {
     ask: async (questions: readonly ClarificationQuestion[], signal: AbortSignal, callId: string) => {
       const active = activeQuestion;
       if (active === undefined || active.callId !== callId) throw new Error("The question call is no longer active.");
-      return await askQuestions(questions, options.questions, signal, (answers: readonly ClarificationAnswer[]) => {
-        if (signal.aborted) throw new Error("The run was stopped before this answer could be saved.");
-        const clarification: Clarification = { reply: active.reply, callId, at: new Date().toISOString(), questions, answers };
-        writer.append({ type: "clarification", run: active.run, clarification });
-        writer.sync();
-        const message: HistoryMessage = { role: "user", content: clarificationText(clarification), timestamp: Date.now() };
-        ledger.push(message);
-        inputOrder.set(message, nextInputOrder++);
-        pendingClarifications.push(message);
-      });
+      if (options.questions !== undefined) {
+        const times = asked.run === active.run ? asked.times : 0;
+        if (!askAccepted(times)) {
+          return { status: "unavailable" as const, reason: "Not asked: this request already asked the operator three times. "
+            + "Decide with what you have, say which choice you made and why, or end the turn with the question." };
+        }
+        asked = { run: active.run, times: times + 1 };
+      }
+      try {
+        return await askQuestions(questions, options.questions, signal, (answers: readonly ClarificationAnswer[]) => {
+          if (signal.aborted) throw new Error("The run was stopped before this answer could be saved.");
+          const clarification: Clarification = { reply: active.reply, callId, at: new Date().toISOString(), questions, answers };
+          writer.append({ type: "clarification", run: active.run, clarification });
+          writer.sync();
+          const message: HistoryMessage = { role: "user", content: clarificationText(clarification), timestamp: Date.now() };
+          ledger.push(message);
+          inputOrder.set(message, nextInputOrder++);
+          pendingClarifications.push(message);
+        });
+      } catch (error) {
+        questionFailure = error instanceof Error ? error : new Error(String(error));
+        throw questionFailure;
+      }
     },
   };
   const tools = toolbox([...options.tools?.(spool) ?? codingTools(options.cwd, spool, undefined, questionHost)], writer);
@@ -663,27 +680,34 @@ export function createLoop(options: LoopOptions): LoopSession {
   function runCalls(run: number, reply: number, message: AssistantMessage, calls: readonly ToolCall[], signal: AbortSignal,
     offered: readonly EngineTool[]): Effect.Effect<void> {
     return Effect.suspend(() => {
-      if (new Set(calls.map((call) => call.id)).size !== calls.length) throw new Error("An assistant reply used a tool call id more than once.");
       let next = 0;
       let questionBoundary = false;
+      // A call whose id an earlier one in the reply took neither runs nor has a result: an answer, a result,
+      // the transcript and recovery all name a call by its id, so the id keeps its first call's one outcome.
+      const answeredIds = new Set<string>();
       const answer = (output: ToolOutput): void => {
         const call = calls[next] as ToolCall;
         const result = toolResult(call, output);
         writer.append({ type: "tool_result", run, message: result });
         add(result);
+        answeredIds.add(call.id);
         next += 1;
         const native = offered.find((tool) => tool.name === call.name);
         if (native !== undefined && isNativeAskTool(native)) questionBoundary = true;
       };
+      const repeated = (): boolean => answeredIds.has((calls[next] as ToolCall).id);
       const each = Effect.gen(function* () {
         while (next < calls.length) {
           const call = calls[next] as ToolCall;
-          if (message.stopReason === "length") answer(truncatedCall(call));
+          if (repeated()) next += 1;
+          else if (message.stopReason === "length") answer(truncatedCall(call));
           else if (questionBoundary) answer({ isError: true, text: "Not run: reconsider this call after reading the question's outcome." });
           else yield* step((left) => outcomeOf(run, call, signal, left, offered, reply), (given, ms) => { answer(Option.isSome(given) ? given.value : stoppedAfter(ms)); });
         }
       });
-      return each.pipe(Effect.onInterrupt(() => Effect.sync(() => { while (next < calls.length) answer(stoppedCall); })));
+      return each.pipe(Effect.onInterrupt(() => Effect.sync(() => {
+        while (next < calls.length) { if (repeated()) next += 1; else answer(stoppedCall); }
+      })));
     });
   }
 
@@ -948,12 +972,12 @@ export function createLoop(options: LoopOptions): LoopSession {
 
   return {
     async prompt(text, { streamingBehavior, source = "interactive" } = {}) {
-      if (hostFailure !== undefined) throw hostFailure;
+      if (questionFailure !== undefined) throw questionFailure;
       if (disposed !== undefined) throw new Error(disposedReason);
       const admission = new AbortController();
       admitting.add(admission);
       const refused = () => {
-        if (hostFailure !== undefined) throw hostFailure;
+        if (questionFailure !== undefined) throw questionFailure;
         if (disposed !== undefined) throw new Error(disposedReason);
         if (admission.signal.aborted) throw new Error(stoppedReason);
       };
@@ -984,7 +1008,6 @@ export function createLoop(options: LoopOptions): LoopSession {
       try {
         await current;
       } catch (error) {
-        hostFailure = error instanceof Error ? error : new Error(String(error));
         outcome = "error";
         // A failed run never settles, so its input handlers still running are stopped and finish here, as settlement's would.
         admission.abort();
@@ -1004,10 +1027,10 @@ export function createLoop(options: LoopOptions): LoopSession {
       await compacting?.done.catch(() => undefined);
     },
     async compact() {
-      if (hostFailure !== undefined) throw hostFailure;
+      if (questionFailure !== undefined) throw questionFailure;
       if (disposed !== undefined) throw new Error(disposedReason);
       await started;
-      if (hostFailure !== undefined) throw hostFailure;
+      if (questionFailure !== undefined) throw questionFailure;
       if (disposed !== undefined) throw new Error(disposedReason);
       if (running !== undefined) throw new Error("A run is going; wait for it to end, or stop it, then compact.");
       if (compacting !== undefined) throw new Error("The conversation is already being compacted.");

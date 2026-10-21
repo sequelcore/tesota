@@ -82,6 +82,8 @@ export class QuestionForm extends ScrollView implements Focusable {
       else this.toggle(this.draft.option);
       return;
     }
+    // Selection keys act on the choices only: on the submit action they would change an answer the operator cannot see.
+    if (this.draft.field !== "choices") return;
     if (matchesKey(data, "space")) { this.toggle(this.draft.option); return; }
     if (/^[1-4]$/u.test(data)) {
       const index = Number(data) - 1;

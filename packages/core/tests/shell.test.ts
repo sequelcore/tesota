@@ -325,6 +325,21 @@ describe("the shell", () => {
     await terminal.untilGone("Answer the agent");
   });
 
+  test("selection keys pressed on the submit action do not change the answer it submits", async () => {
+    const { terminal, shell, session } = shellOn([]);
+    const submitted: unknown[] = [];
+    const release = shell.askUser(session, choices, (answers) => { submitted.push(answers); return undefined; }, () => undefined);
+    await terminal.until("recommended");
+    terminal.type("2");
+    terminal.type("\t");
+    terminal.type("\t");
+    terminal.type(" ");
+    terminal.type("1");
+    terminal.type(enter);
+    expect(submitted).toEqual([[{ selected: [1] }]]);
+    release();
+  });
+
   test("a multiple-choice answer keeps its selected options and supplemental text", async () => {
     const { terminal, shell, session } = shellOn([], "fullscreen", [36, 24]);
     const submitted: unknown[] = [];

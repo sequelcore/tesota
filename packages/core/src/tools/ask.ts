@@ -14,7 +14,7 @@ export const isNativeAskTool = (tool: EngineTool): boolean => nativeTools.has(to
 export function askTool(host: AskHost): EngineTool {
   const tool: EngineTool<typeof parameters> = {
     name: "ask_user", access: "read", parameters,
-    description: "Ask the operator one to three focused questions when the answer materially changes the next action. Offer two to four choices each; the operator may add text. A choice is not permission to execute consequential actions.",
+    description: "Ask the operator one to three focused questions when the answer materially changes the next action. Offer two to four choices each; the operator may add text. A request may ask at most three times. A choice is not permission to execute consequential actions.",
     async execute({ questions }, signal, callId) {
       const invalid = validateQuestions(questions);
       if (invalid !== undefined) return { isError: true, text: invalid };

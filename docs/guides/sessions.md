@@ -22,8 +22,9 @@ changing their files.
 
 ## Answer the agent
 
-The agent can ask up to three questions with two to four choices each.
-Select one or several choices as the question allows, add your own text,
+The agent can ask up to three questions with two to four choices each,
+and ask you at most three times in one request; after that it decides
+with what it has and says which choice it made. Select one or several choices as the question allows, add your own text,
 then submit the answers. A recommendation is a suggestion; nothing is
 selected or submitted for you. Questions wait until you answer, dismiss
 them or stop the run.

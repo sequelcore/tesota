@@ -20,6 +20,18 @@ lemma optionCountAccepted_ensures(count: int)
 {
 }
 
+function askAccepted(asked: int): bool
+  requires (asked >= 0)
+{
+  (asked < 3)
+}
+
+lemma askAccepted_ensures(asked: int)
+  requires (asked >= 0)
+  ensures (askAccepted(asked) <==> (asked < 3))
+{
+}
+
 function answerAccepted(multiple: bool, selected: int, hasText: bool): bool
   requires (selected >= 0)
 {
