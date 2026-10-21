@@ -916,8 +916,13 @@ export function createLoop(options: LoopOptions): LoopSession {
   /** A run: its request and base are synced into the ledger before the model hears of it, and its end before it reports. */
   async function start(run: number, text: string, origin: Origin, signal: AbortSignal): Promise<void> {
     const at = new Date().toISOString();
+    // A run exists once its request is in the file: one whose base could not be captured is no run, so its
+    // number is given again and the input that waited for it is refused, as the file reader requires.
     const written = (async () => {
-      writer.append({ type: "request", run, text, origin, at, base: await base(options.cwd, signal) });
+      let captured: Base;
+      try { captured = await base(options.cwd, signal); } catch (error) { closed = true; throw error; }
+      writer.append({ type: "request", run, text, origin, at, base: captured });
+      runs = run;
       writer.sync();
     })();
     recorded = written.catch(() => undefined);
@@ -956,9 +961,10 @@ export function createLoop(options: LoopOptions): LoopSession {
    * request and queued; its input handlers run at once, or after the
    * settlement in progress, so no verification sees half of it.
    */
-  async function amend(run: number, text: string, behavior: Behavior, origin: Origin, signal: AbortSignal | undefined): Promise<void> {
+  async function amend(text: string, behavior: Behavior, origin: Origin, signal: AbortSignal | undefined): Promise<void> {
     await recorded;
     if (closed) throw new Error("The run ended before this input arrived; send it as a new prompt.");
+    const run = runs;
     const id = ++amendments;
     writer.append({ type: "amendment", run, id, behavior, origin, text, at: new Date().toISOString() });
     writer.sync();
@@ -995,7 +1001,7 @@ export function createLoop(options: LoopOptions): LoopSession {
       } finally { admitting.delete(admission); }
       if (running !== undefined) {
         if (streamingBehavior === undefined) throw new Error("A prompt is already running; steer it, queue a follow-up, abort it or wait.");
-        await amend(runs, text, streamingBehavior, source, controller?.signal);
+        await amend(text, streamingBehavior, source, controller?.signal);
         return;
       }
       controller = admission;
@@ -1003,12 +1009,14 @@ export function createLoop(options: LoopOptions): LoopSession {
       waiting = [];
       closed = false;
       emit({ type: "state", state: "working" });
-      const current = start(++runs, text, source, controller.signal);
+      const run = runs + 1;
+      const current = start(run, text, source, controller.signal);
       running = current;
       try {
         await current;
       } catch (error) {
-        outcome = "error";
+        // Only a request in the file failed as a run; one that never became a run leaves the session's outcome as it was.
+        if (runs === run) outcome = "error";
         // A failed run never settles, so its input handlers still running are stopped and finish here, as settlement's would.
         admission.abort();
         await Promise.all(handling);
