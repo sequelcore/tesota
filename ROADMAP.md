@@ -66,11 +66,6 @@ the work and kept apart from it, you approve the check through concrete
 cases rather than its description, and Tesota shows the check can fail
 before trusting it. A pilot on one real task comes first.
 
-### Measurement on the engine
-
-The evaluation that measures Tesota's defaults moves from Pi to the engine
-([#464](https://github.com/sequelcore/tesota/issues/464)).
-
 ### Working from a phone
 
 Sending requests and reading receipts from a phone, through Happier or

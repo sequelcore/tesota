@@ -93,7 +93,8 @@ function skillMetadata(content: string): { readonly name: string; readonly descr
   return description === "" ? undefined : { name, description };
 }
 
-function skillsIn(folder: string): Skill[] {
+/** The skills in `folder`: each subfolder with a SKILL.md that has a description. */
+export function skillsIn(folder: string): Skill[] {
   const found: Skill[] = [];
   let entries;
   try { entries = readdirSync(folder, { withFileTypes: true }); } catch { return found; }
