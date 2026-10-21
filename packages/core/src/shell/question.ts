@@ -120,7 +120,7 @@ export class QuestionForm extends ScrollView implements Focusable {
     const selected = this.draft.selected[this.draft.question];
     if (selected === undefined) return [];
     // The question leads, at the transcript's column: a count only when there are several, then the question as the
-    // form's title, a blank row, the choices with the text and submit action that complete them, a blank row, the hint.
+    // form's title, a blank row, and the choices with the text and submit action that complete them; `footerLines` follows.
     const several = this.questions.length > 1;
     const lines = [
       ...several ? new Text(this.theme.fg("dim", `Question ${this.draft.question + 1}/${this.questions.length}`), 1, 0).render(width) : [],
@@ -143,15 +143,23 @@ export class QuestionForm extends ScrollView implements Focusable {
     lines.push(...text.render(Math.max(1, width - 3)).map((line) => `   ${line}`));
     const submit = this.draft.field === "submit" ? this.theme.fg("accent", "› [Submit answers]") : "  [Submit answers]";
     if (this.draft.field === "submit") this.#focusRow = lines.length;
-    lines.push(...new Text(submit, 1, 0).render(width), "");
-    lines.push(...new Text(this.theme.fg("dim", this.hint(several)), 1, 0).render(width));
-    if (this.#error !== undefined) lines.push(...new Text(this.theme.fg("error", this.#error), 1, 0).render(width));
+    lines.push(...new Text(submit, 1, 0).render(width));
     return lines;
   }
 
+  /**
+   * What stays under the choices however far they scroll: a blank row, the
+   * way on from the focus, and why a submission was refused, so a question
+   * taller than the terminal never hides how to answer it.
+   */
+  footerLines(width: number): string[] {
+    return ["", ...new Text(this.theme.fg("dim", this.hint()), 1, 0).render(width),
+      ...this.#error === undefined ? [] : new Text(this.theme.fg("error", this.#error), 1, 0).render(width)];
+  }
+
   /** The way on from where the focus is, so the submit action is found without knowing the keys. */
-  private hint(several: boolean): string {
-    if (this.draft.field === "choices") return `${several ? "←/→ questions · " : ""}Space selects · Tab adds text · Esc cancels`;
+  private hint(): string {
+    if (this.draft.field === "choices") return `${this.questions.length > 1 ? "←/→ questions · " : ""}Space selects · Tab adds text · Esc cancels`;
     return this.draft.field === "text" ? "Tab or Enter goes to Submit · Esc cancels" : "Enter submits · Tab goes back to the choices · Esc cancels";
   }
 

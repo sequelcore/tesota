@@ -189,7 +189,8 @@ export function startShell(options: ShellOptions): Shell {
   if (tui instanceof TuiAltScreen) {
     tui.setLayoutRoot(new VStack([
       { component: new ScrollView(document, { follow: "end", primary: true, overscroll: "chain" }), basis: 0, grow: 1, shrink: 1, minSize: 1 },
-      { component: new VStack(dock.map((component) => ({ component, shrink: 1, minSize: 0 }))), basis: "auto", grow: 0, shrink: 1,
+      // The footer never gives up its row: what waits for the operator, and the mode, show however tall a question is.
+      { component: new VStack(dock.map((component) => ({ component, shrink: component === footerSlot ? 0 : 1, minSize: 0 }))), basis: "auto", grow: 0, shrink: 1,
         minSize: 1 },
     ]));
   } else {
@@ -250,14 +251,16 @@ export function startShell(options: ShellOptions): Shell {
     const active = (): boolean => visibleClarification === registration && registration.mount?.generation === generation && !registration.released;
     // No heading of its own: the question is the form's title, and the call above it says who asks.
     const inlineViewport = tui instanceof TuiMainScreen ? {
-      height: (width: number): number => Math.max(1, terminal.rows
+      height: (width: number): number => Math.max(1, terminal.rows - form.footerLines(width).length
         - dock.filter((component) => component !== editorSlot).reduce((rows, component) => rows + component.render(width).length, 0)),
       redraw: (): void => { tui.requestRender(); },
     } : undefined;
     const form = new QuestionForm(registration.questions, (answers) => active() ? registration.submit(answers) : "This question is no longer active.",
       () => { if (active()) registration.finish({ status: "cancelled", reason: "The operator dismissed the question." }); }, theme, registration.draft, active, inlineViewport);
     const question = { box: new VStack(), body: form };
+    // The choices scroll; the hint and a refusal stay under them.
     question.box.addChild(form, { shrink: 1, minSize: 1 });
+    question.box.addChild({ render: (width) => form.footerLines(width), invalidate: () => undefined }, { shrink: 0 });
     const mount = { question, generation };
     registration.generation = generation;
     registration.mount = mount;

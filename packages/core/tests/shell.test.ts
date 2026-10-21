@@ -325,6 +325,25 @@ describe("the shell", () => {
     await terminal.untilGone("Submit answers");
   });
 
+  test.each(["fullscreen", "inline"] as const)("a question taller than the %s terminal scrolls, keeping its hint and the footer in view", async (mode) => {
+    const { terminal, shell, session } = shellOn([], mode, [60, 14]);
+    const long = "This choice changes every total the receipts show, with coupons, shipping and taxes.";
+    const release = shell.askUser(session, [{ question: `Which orders get the discount? ${long}`, options: [
+      { label: "over", description: `Only orders above 100. ${long}` }, { label: "from", description: `Orders of 100 too. ${long}` },
+      { label: "before", description: `The total before coupons. ${long}` }, { label: "after", description: `The total after coupons. ${long}` },
+    ] }], () => "Select an option or add text for every question.", () => undefined);
+    const top = await terminal.until("Tab adds text");
+    expect(top).toContain("scripted model");
+    terminal.type("\t"); terminal.type("\t");
+    const end = await terminal.until("Enter submits");
+    expect(end).toContain("[Submit answers]");
+    expect(end).toContain("scripted model");
+    terminal.type(enter);
+    const refused = await terminal.until("Select an option or add text");
+    expect(refused).toContain("scripted model");
+    release();
+  });
+
   test("a question leads its form at the transcript's column, with no spinner while it waits and a count only for several", async () => {
     const { terminal, shell, session } = shellOn([]);
     shell.busy("working");
