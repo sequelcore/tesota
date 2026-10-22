@@ -15,6 +15,9 @@ import { build } from "./build.ts";
  * the largest number of syncs, the median settlement, the median resume and the largest session
  * file are compared with the limits in `budgets.json` for this platform; a measurement without a limit there is reported only.
  * An exceeded budget is retried once; a measurement fails only when both attempts exceed its limit (#462).
+ * The first frame divided by the same attempt's median startup is a measurement of its own, which Windows limits
+ * closely, since a slow runner there slows both; its first frame keeps a looser limit, for a regression that
+ * slows startup and the first frame together (#556).
  * `--report` prints them all without failing, to set or revise a limit.
  */
 
@@ -29,6 +32,7 @@ export interface Measurements {
   readonly settleMs: number;
   readonly resumeMs: number;
   readonly firstFrameMs: number;
+  readonly firstFrameRatio: number;
   readonly shellRssBytes: number;
   readonly sessionBytes: number;
 }
@@ -83,8 +87,10 @@ function measure(): Measurements {
       JSON.parse(started(binary, "--measure-resume")) as { resumeMs: number; sessionBytes: number });
     const shells = Array.from({ length: loopRuns }, () =>
       JSON.parse(started(binary, "--measure-shell")) as { firstFrameMs: number; shellRssBytes: number });
+    const startupMs = Math.round(median(times) * 10) / 10;
+    const firstFrameMs = median(shells.map((shell) => shell.firstFrameMs));
     return {
-      startupMs: Math.round(median(times) * 10) / 10,
+      startupMs,
       binaryBytes: statSync(binary).size,
       loopMs: median(loops.map((loop) => loop.loopMs)),
       loopRssBytes: Math.max(...loops.map((loop) => loop.loopRssBytes)),
@@ -94,7 +100,8 @@ function measure(): Measurements {
       settleMs: median(loops.map((loop) => loop.settleMs)),
       resumeMs: median(resumes.map((resume) => resume.resumeMs)),
       sessionBytes: Math.max(...resumes.map((resume) => resume.sessionBytes)),
-      firstFrameMs: median(shells.map((shell) => shell.firstFrameMs)),
+      firstFrameMs,
+      firstFrameRatio: Math.round(firstFrameMs / startupMs * 100) / 100,
       // The median, not the largest: one run's memory varies by about 13 MB, and a regression moves every run (#462).
       shellRssBytes: median(shells.map((shell) => shell.shellRssBytes)),
     };
@@ -108,7 +115,7 @@ function printReport(measured: Measurements): void {
     + `loop ${measured.loopMs} ms (median of ${loopRuns}), loop memory ${measured.loopRssBytes} bytes, `
     + `base ${measured.baseMs} ms (median of ${loopRuns}), sync ${measured.syncMs} ms (median), syncs ${measured.syncCount}, settle ${measured.settleMs} ms (median of ${loopRuns}), `
     + `resume ${measured.resumeMs} ms (median of ${loopRuns}), session ${measured.sessionBytes} bytes, `
-    + `first frame ${measured.firstFrameMs} ms (median of ${loopRuns}), shell memory ${measured.shellRssBytes} bytes (median of ${loopRuns})`);
+    + `first frame ${measured.firstFrameMs} ms (median of ${loopRuns}, ${measured.firstFrameRatio} times startup), shell memory ${measured.shellRssBytes} bytes (median of ${loopRuns})`);
 }
 
 if (import.meta.main) {

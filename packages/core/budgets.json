@@ -4,5 +4,5 @@
     "firstFrameMs": 150, "shellRssBytes": 135000000 },
   "win32": { "startupMs": 40, "binaryBytes": 106000000, "loopMs": 300, "loopRssBytes": 74000000,
     "baseMs": 600, "syncCount": 106, "settleMs": 1.5, "resumeMs": 35, "sessionBytes": 745000,
-    "firstFrameMs": 180, "shellRssBytes": 115000000 }
+    "firstFrameMs": 250, "firstFrameRatio": 12, "shellRssBytes": 115000000 }
 }
