@@ -60,9 +60,23 @@ try {
 Remove-Item -Force "$program.old" -ErrorAction SilentlyContinue
 Write-Host "Installed tesota $(& $program --version) in $installDir"
 
-$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-if (-not (@($userPath -split ';') -contains $installDir)) {
-  [Environment]::SetEnvironmentVariable('Path', (@($installDir) + @($userPath -split ';' | Where-Object { $_ })) -join ';', 'User')
-  Write-Host "Added $installDir to your user PATH; open a new terminal to use tesota."
+# The user PATH as the registry holds it, unexpanded, so entries such as %USERPROFILE%\bin are written back as they were,
+# and in the kind it has (REG_EXPAND_SZ when there is none yet).
+$environment = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')
+try {
+  $userPath = [string]$environment.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+  if (-not (@($userPath -split ';') -contains $installDir)) {
+    $kind = if ($environment.GetValueNames() -contains 'Path') { $environment.GetValueKind('Path') } else { [Microsoft.Win32.RegistryValueKind]::ExpandString }
+    $environment.SetValue('Path', (@($installDir) + @($userPath -split ';' | Where-Object { $_ })) -join ';', $kind)
+    # Tells Explorer, and the terminals it starts, that the environment changed.
+    if (-not ('Tesota.Environment' -as [type])) {
+      Add-Type -Namespace Tesota -Name Environment -MemberDefinition '[DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr SendMessageTimeout(IntPtr window, uint message, UIntPtr wParam, string lParam, uint flags, uint timeout, out UIntPtr result);'
+    }
+    $result = [UIntPtr]::Zero
+    [void][Tesota.Environment]::SendMessageTimeout([IntPtr]0xffff, 0x1a, [UIntPtr]::Zero, 'Environment', 2, 5000, [ref]$result)
+    Write-Host "Added $installDir to your user PATH; open a new terminal to use tesota."
+  }
+} finally {
+  $environment.Dispose()
 }
 if (-not (@($env:Path -split ';') -contains $installDir)) { $env:Path = "$installDir;$env:Path" }

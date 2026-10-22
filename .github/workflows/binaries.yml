@@ -120,10 +120,17 @@ jobs:
           TESOTA_DOWNLOAD: http://127.0.0.1:8137
           TESOTA_INSTALL_DIR: ${{ runner.temp }}\tesota-bin
         run: |
+          # A user PATH entry naming a variable must stay as it is, in a value that still expands it.
+          $environment = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')
+          $unexpanded = [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames
+          $environment.SetValue('Path', "$($environment.GetValue('Path', '', $unexpanded));%USERPROFILE%\kept", 'ExpandString')
           .\install.ps1
           .\install.ps1
           & "$env:TESOTA_INSTALL_DIR\tesota.exe" --version
           if ($LASTEXITCODE -ne 0) { exit 1 }
+          $entries = @($environment.GetValue('Path', '', $unexpanded) -split ';')
+          if (-not ($entries -contains '%USERPROFILE%\kept') -or $environment.GetValueKind('Path') -ne 'ExpandString' -or
+            @($entries | Where-Object { $_ -eq $env:TESOTA_INSTALL_DIR }).Count -ne 1) { Write-Error "The user PATH was not kept: $entries"; exit 1 }
   # The whole check, on the tagged commit itself: a release is never published from a commit that fails it.
   check:
     if: startsWith(github.ref, 'refs/tags/v')
