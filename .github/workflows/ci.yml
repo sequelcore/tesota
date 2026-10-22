@@ -26,3 +26,6 @@ jobs:
       - run: bun run vendor
       - run: bun scripts/isolated.ts bun scripts/budget.ts --report
         working-directory: packages/core
+      # Again on the same runner, as the budget's retry measures everything a second time.
+      - run: bun scripts/isolated.ts bun scripts/budget.ts --report
+        working-directory: packages/core
