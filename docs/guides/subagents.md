@@ -63,9 +63,10 @@ nothing runs again by itself.
 
 The shell shows each subagent under the call that started it, with its
 type, model, depth and state, and one line when a background one ends;
-Ctrl+O shows its report. Each subagent is a session of its own, in the same
-sessions folder, with the session that started it in its header. Once it
-ends, `/resume` opens it like any other.
+Ctrl+O shows its report. `/agents` lists each one under the sessions, and
+peeks at what it has done so far. Each subagent is a session of its own, in
+the same sessions folder, with the session that started it in its header.
+Once it ends, `/resume` opens it like any other.
 
 ## Agent types
 

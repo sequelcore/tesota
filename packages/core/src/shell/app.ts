@@ -15,6 +15,7 @@ import { readMcpConfig } from "../mcp-config.ts";
 import { loadRules } from "../permissions.ts";
 import { createSession, type EngineSession, openSession, sessionsFolder, type Verifier } from "../session.ts";
 import { anyHooks, type Hooks, joinHooks } from "../hooks.ts";
+import { peekSessionFile } from "../session-file.ts";
 import { readStandards } from "../standards.ts";
 import { trust } from "../trust.ts";
 import { readSettings, type Settings, updateSettings } from "../settings.ts";
@@ -218,12 +219,25 @@ export async function runApp(options: AppOptions): Promise<void> {
         made.state = "ended";
         made.outcome = event.outcome;
         if (made !== attached) shell.note(`“${firstLine(made.request)}” ended ${event.outcome}${made.verification === undefined ? "" : `, ${made.verification}`}.`);
-      } else if (event.type === "message") {
+      } else if (event.type === "job") follows(made, event.details);
+      else if (event.type === "message") {
         made.request ??= made.session.ledger()[0]?.text;
         const receipt = event.message.role === "custom" && event.message.customType === "tesota-receipt" ? event.message.details : undefined;
         if (isReceipt(receipt)) made.verification = receiptStanding(receipt as Receipt);
       }
     });
+  };
+  /** The subagents the shell's sessions started (#525), by their session's file, as their jobs last said, for the dashboard. */
+  const children = new Map<string, { readonly parent: Live; readonly row: SessionRow }>();
+  const follows = (parent: Live, details: unknown): void => {
+    const { session, description, outcome, verification, branch, writes } = (details ?? {}) as Record<string, unknown>;
+    if (typeof session !== "string") return;
+    const ended = outcome !== "running";
+    children.set(session, { parent, row: { id: session, request: `↳ ${String(description ?? "")}`, state: ended ? "ended" : "working",
+      ...ended ? { outcome: String(outcome) } : {},
+      ...verification === "verified" || verification === "incomplete" || verification === "failed" ? { verification } : {},
+      workspace: typeof branch === "string" ? branch : writes === true ? "its worktree" : "reads", attached: false,
+      startedAt: children.get(session)?.row.startedAt ?? Date.now() } });
   };
   /** Shows `next`, then puts the questions it held to the operator, in the order they came. */
   const attach = async (next: Live): Promise<void> => {
@@ -272,18 +286,24 @@ export async function runApp(options: AppOptions): Promise<void> {
     await attach(shown);
   };
   /** The sessions as the dashboard lists them. */
-  const rows = (): SessionRow[] => lives.map((each) => ({
+  const rows = (): SessionRow[] => [...lives.map((each) => ({
     id: each.session.file, request: each.request ?? "", state: each.state, ...each.outcome === undefined ? {} : { outcome: each.outcome },
     ...each.verification === undefined ? {} : { verification: each.verification },
     workspace: each.session.workspace.branch ?? "checkout", startedAt: each.startedAt, attached: each === attached,
-  }));
+  })), ...[...children.values()].filter(({ parent }) => lives.includes(parent)).map(({ row }) => row)];
   /** Opens the dashboard over the shell (#455), until a session is attached or the operator goes back. */
   const agents = (): void => {
     const byId = (id: string): Live | undefined => lives.find((each) => each.session.file === id);
     let hide = (): void => undefined;
     const dashboard = new Dashboard(theme, rows, {
-      attach: (id) => { hide(); const next = byId(id); if (next !== undefined) void attach(next); },
-      peek: (id) => peekLines(byId(id)?.session.history() ?? []),
+      attach: (id) => {
+        hide();
+        const next = byId(id);
+        if (next !== undefined) void attach(next);
+        // A subagent's session is its parent's job until it ends; then it opens like any other (#525).
+        else if (children.has(id)) shell.note(`That is a subagent's session: once it ends, /resume opens it (${basename(id)}).`);
+      },
+      peek: (id) => peekLines(byId(id)?.session.history() ?? childHistory(id)),
       create: () => { hide(); void commands["/new"]?.run(""); },
       close: (id) => { const gone = byId(id); if (gone !== undefined) void close(gone).then(() => { shell.redraw(); }); },
       back: () => { hide(); },
@@ -543,6 +563,14 @@ interface Live {
 }
 
 const firstLine = (text: string | undefined): string => (text ?? "").split("\n")[0]?.trim() || "new session";
+
+/** What a subagent's session file holds so far (#525): its request and replies, for the dashboard to peek at. */
+function childHistory(file: string): HistoryMessage[] {
+  try {
+    return peekSessionFile(file).entries.flatMap((entry): HistoryMessage[] => entry.type === "request"
+      ? [{ role: "user", content: entry.text, timestamp: 0 }] : entry.type === "assistant" ? [entry.message] : []);
+  } catch { return []; }
+}
 
 /** A session's last lines as the dashboard peeks at them: what was asked and answered, in plain text. */
 function peekLines(history: readonly HistoryMessage[]): string[] {
