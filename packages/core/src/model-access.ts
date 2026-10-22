@@ -1,4 +1,5 @@
 import { type Api, type CredentialStore, createModels, type LoginOptions, type Model, type Models, type MutableModels } from "@earendil-works/pi-ai";
+import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth";
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
 import { fileCredentialStore } from "./credentials.ts";
 import { claudeCodeProvider } from "./providers/claude-code.ts";
@@ -13,6 +14,8 @@ import { deviceId, type Settings } from "./settings.ts";
  * catalog refresh is left out until something needs it.
  */
 export function engineModels(credentials: CredentialStore = fileCredentialStore()): MutableModels {
+  // pi-ai imports each sign-in flow by a path a compiled `tesota` does not have, so they are embedded instead (#372).
+  registerBunOAuthFlows();
   const models = createModels({ credentials });
   for (const provider of builtinProviders()) models.setProvider(provider);
   models.setProvider(claudeCodeProvider(models.getModels("anthropic")));
