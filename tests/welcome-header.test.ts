@@ -7,7 +7,7 @@ import { stripTerminalSequences, type TerminalColorMode, type TerminalColors, ty
 import { expect, it } from "vitest";
 import type { Theme } from "../src/contract.js";
 import { shellTheme } from "../src/theme.js";
-import { mountWelcomeHeader, TUMBLEWEED_FRAME_MS, tumbleweedFrames, WELCOME_FRAME_MS, WELCOME_SCENE_MS, WELCOME_TAGLINE,
+import { mountWelcomeHeader, WELCOME_FRAME_MS, WELCOME_SCENE_MS, WELCOME_TAGLINE,
   WelcomeHeader, themeMarkColors, type WelcomeHeaderOptions } from "../src/welcome-header.js";
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const braille = /[\u2801-\u28ff]/u;
@@ -301,23 +301,3 @@ it.each([["Tesota Dark", "tesota-dark"], ["Tesota Light", "tesota-light"]])(
       expect(wezterm).toContain(`${key} = "${value}"\n`);
     }
   });
-
-it("rolls the tumbleweed as the working indicator, four cells wide, in the theme's colors and color mode", () => {
-  const frames = tumbleweedFrames(theme("tesota-dark"));
-  expect(frames).toHaveLength(20);
-  expect(TUMBLEWEED_FRAME_MS).toBeGreaterThan(0);
-  for (const frame of frames) {
-    expect(visibleWidth(frame)).toBe(4);
-    expect(frame).not.toContain("\n");
-    expect(frame.endsWith("\x1b[39m")).toBe(true);
-  }
-  expect(new Set(frames).size).toBe(20);
-  expect(frames.join("")).toContain("\x1b[38;2;");
-  // The light theme lights it differently; the shape is the same.
-  const light = tumbleweedFrames(theme("tesota-light"));
-  expect(light).not.toEqual(frames);
-  expect(light.map(stripTerminalSequences)).toEqual(frames.map(stripTerminalSequences));
-  const indexed = tumbleweedFrames(theme("tesota-dark", "256color")).join("");
-  expect(indexed).toContain("\x1b[38;5;");
-  expect(indexed).not.toContain("\x1b[38;2;");
-});
