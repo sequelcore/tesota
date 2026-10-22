@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { noEvidence, type Receipt, receiptEntry } from "../../../src/receipt.ts";
-import { agentTypes, agentTypesIn } from "../src/agents.ts";
+import { agentTypes, agentTypesIn, unusedModels } from "../src/agents.ts";
 import { childLimits } from "../src/children.ts";
 import { createSession, type EngineSession, openSession, type SessionOptions } from "../src/session.ts";
 import { readSessionFile, type SessionEntry } from "../src/session-file.ts";
@@ -389,8 +389,29 @@ describe("agent types", () => {
     writeFileSync(join(project, ".agents", "agents", "notes.txt"), "not a type");
     const [helper] = agentTypes(project, { user: home, tesota: folder("tesota-agents-tesota-") });
     expect(helper).toEqual({ name: "helper", description: "The project's helper", path: join(project, ".agents", "agents", "helper.md"),
-      instructions: "Project body", writes: true, background: false });
+      instructions: "Project body", unusedModel: "model: sonnet", writes: true, background: false });
     expect(agentTypesIn(join(home, "missing"))).toEqual([]);
+  });
+
+  test("a type whose model Tesota does not run still loads, and the operator is told the model it runs on (#568)", () => {
+    const types = folder("tesota-agents-models-");
+    const type = (name: string, fields: string): void => {
+      writeFileSync(join(types, `${name}.md`), `---\nname: ${name}\ndescription: ${name}\n${fields}---\nBody\n`);
+    };
+    type("routed", "model: openai/gpt-6.1-sol\nclaude.model: opus\n");
+    type("inherits", "model: inherit\n");
+    type("aliased", "model: sonnet\n");
+    type("others", "claude.model: opus\ncodex.model: gpt-6-astra\ncodex.sandbox_mode: read-only\n");
+    type("plain", "");
+    const found = agentTypesIn(types).sort((a, b) => a.name.localeCompare(b.name));
+    expect(found.map(({ name, model, unusedModel }) => [name, model, unusedModel])).toEqual([
+      ["aliased", undefined, "model: sonnet"], ["inherits", undefined, undefined], ["others", undefined, "claude.model, codex.model"],
+      ["plain", undefined, undefined], ["routed", "openai/gpt-6.1-sol", undefined],
+    ]);
+    expect(unusedModels(found, "openai/gpt-6.1-sol")).toBe("Agent types aliased (model: sonnet), others (claude.model, codex.model) "
+      + "run on the session's model, openai/gpt-6.1-sol, unless the call names one: Tesota takes a type's model only as provider/id.");
+    expect(unusedModels(found.filter(({ name }) => name === "others"), "openai/x")).toStartWith("Agent type others (claude.model, codex.model) runs");
+    expect(unusedModels(found.filter(({ name }) => name !== "aliased" && name !== "others"), "openai/x")).toBeUndefined();
   });
 
   test("a child started with a type reads its body, and the parent's tool lists the types", async () => {

@@ -8,6 +8,7 @@ import { branchOf } from "./branch.ts";
 import { anyHooks, type Hooks, joinHooks } from "./hooks.ts";
 import type { McpServers } from "./mcp.ts";
 import { type McpServerConfig, readMcpConfig } from "./mcp-config.ts";
+import { unusedModels } from "./agents.ts";
 import { engineModels, runnableModel } from "./model-access.ts";
 import { loadRules } from "./permissions.ts";
 import { createSession, type EngineSession } from "./session.ts";
@@ -106,6 +107,8 @@ export async function runPrint(args: readonly string[], cwd: string, write: Prin
     permissions: { mode: () => settings.permissionMode ?? "ask", rules },
     ...settings.thinkingLevel === undefined ? {} : { thinkingLevel: settings.thinkingLevel },
     ...settings.agentLimit === undefined ? {} : { agentLimit: settings.agentLimit } });
+  const unused = unusedModels(session.types, `${model.provider}/${model.id}`);
+  if (unused !== undefined) write.error(`${unused}\n`);
   let stopped = false;
   const stop = (): void => { stopped = true; void session.abort(); };
   process.once("SIGINT", stop);
