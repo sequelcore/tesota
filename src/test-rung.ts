@@ -6,7 +6,7 @@ import { dirname, join, posix } from "node:path";
 import { promisify } from "node:util";
 import { type Evidence, contentHash } from "./evidence.js";
 import { gitEnvironment } from "./git.js";
-import { type ProjectChecks, findProjects, owningProjects } from "./projects.js";
+import { type ProjectChecks, findProjects, owningProjects, packageCheckScripts } from "./projects.js";
 import { runProcess } from "./process.js";
 import { introducedTests, readTestResults, type TestResults } from "./test-report.js";
 import { type CheckOutcome, checkOrigin } from "./verification/check-origin-rule.js";
@@ -212,13 +212,30 @@ function exercise(path: string, provenance: TestExercise["provenance"], withTest
 }
 
 /**
+ * The project's own test command run so that a suite with no tests passes,
+ * when its `test` script is Bun's runner with plain arguments, which the
+ * flag then reaches (#575): a base with no tests fails that command with a
+ * test file or without it, which says nothing about the file.
+ */
+function emptySuiteTest(project: string, { folder, commands }: ProjectChecks): string | undefined {
+  const script = packageCheckScripts(read(project, posix.join(folder, "package.json"))).get("test");
+  const command = commands.find((each) => each.endsWith(" run test"));
+  if (script === undefined || command === undefined || !/^bun test(?:\s+[\w./=-]+)*$/u.test(script.trim())) return undefined;
+  return `${command} -- --pass-with-no-tests`;
+}
+
+/**
  * Each test file's run over the base with its project's commands, then that
  * project's own run on the base, once, when some of its tests fail there.
+ * When the base fails without the file too, its test command runs again,
+ * letting a suite with no tests pass (`emptySuiteTest`): with the file and
+ * without it on the base, and with it on the change, which must pass.
  */
 async function againstBase(project: string, root: string, tests: readonly string[], provenance: ReadonlyMap<string, TestExercise["provenance"]>,
   projects: readonly ProjectChecks[], signal: AbortSignal): Promise<TestExercise[]> {
   const found: TestExercise[] = [];
   const without = new Map<string, BaseRun>();
+  const emptyWithout = new Map<string, CommandOutcome>();
   for (const path of tests) {
     const owning = owningProjects(projects, [path])[0];
     const origin = provenance.get(path) ?? "added";
@@ -226,15 +243,28 @@ async function againstBase(project: string, root: string, tests: readonly string
       found.push({ path, provenance: origin, sensitivity: "unknown", reason: "no project's commands run it" });
       continue;
     }
-    mkdirSync(dirname(join(project, path)), { recursive: true });
-    writeFileSync(join(project, path), read(root, path) ?? "");
-    const withTest = await baseRun(owning.commands, project, owning.folder, signal);
-    await git(project, ["reset", "--quiet", "--hard"]);
-    await git(project, ["clean", "-qfdx", "-e", "node_modules"]);
+    const holding = async (commands: readonly string[]): Promise<BaseRun> => {
+      mkdirSync(dirname(join(project, path)), { recursive: true });
+      writeFileSync(join(project, path), read(root, path) ?? "");
+      const run = await baseRun(commands, project, owning.folder, signal);
+      await git(project, ["reset", "--quiet", "--hard"]);
+      await git(project, ["clean", "-qfdx", "-e", "node_modules"]);
+      return run;
+    };
+    const withTest = await holding(owning.commands);
     if (withTest.outcome !== "passed" && !without.has(owning.folder)) {
       without.set(owning.folder, await baseRun(owning.commands, project, owning.folder, signal));
     }
-    found.push(exercise(path, origin, withTest, without.get(owning.folder)));
+    const verdict = exercise(path, origin, withTest, without.get(owning.folder));
+    const probe = withTest.outcome !== "passed" && without.get(owning.folder)?.outcome !== "passed" &&
+      verdict.sensitivity === "unknown" ? emptySuiteTest(project, owning) : undefined;
+    if (probe === undefined) { found.push(verdict); continue; }
+    const emptyWith = (await holding([probe])).outcome;
+    if (!emptyWithout.has(owning.folder)) emptyWithout.set(owning.folder, await runAll([probe], project, signal));
+    const credited = checkOrigin(emptyWith, emptyWithout.get(owning.folder) ?? "not_started", 0, true) === "introduced" &&
+      await runAll([probe], root, signal) === "passed";
+    found.push(credited ? { path, provenance: origin, sensitivity: "fails_then_passes",
+      reason: `fails on the base, passes with the change, by \`${probe}\`, since the base fails without it too` } : verdict);
   }
   return found;
 }
