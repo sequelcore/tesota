@@ -1,9 +1,11 @@
 name: Tesota binaries
-# Every target a release would ship (#472), built and kept for a week; nothing is published. Each runner starts the
-# binaries it can run, and Linux runs the musl ones in Alpine.
+# Every target a release ships (#472), built once with their checksums and kept for a week. Each runner starts the
+# binaries it can run and installs one with the install script; Linux runs the musl ones in Alpine. A tag `v<version>`
+# publishes those same files as a GitHub Release, with a provenance attestation for each binary (#372).
 on:
   push:
     branches: [main, dev]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 permissions:
@@ -14,13 +16,28 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: The tag is the version, not yet released
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          for manifest in package.json packages/core/package.json; do
+            version=$(jq -r .version "$manifest")
+            if [ "$TAG" != "v$version" ]; then echo "::error::$TAG is not the version in $manifest, $version"; exit 1; fi
+          done
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::$TAG is already released; a fix gets a new version"; exit 1
+          fi
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile --ignore-scripts
       - run: bun run vendor
       - run: bun packages/core/scripts/build.ts dist
-      - run: ls -l dist
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum tesota-* > SHA256SUMS && cat SHA256SUMS
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: tesota-binaries
@@ -39,6 +56,12 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: |
+            install.sh
+            install.ps1
+          sparse-checkout-cone-mode: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: tesota-binaries
@@ -57,3 +80,88 @@ jobs:
             chmod +x "dist/tesota-$binary"
             docker run --rm -v "$PWD/dist:/dist" alpine:3.22 sh -euc "apk add --no-cache libstdc++ libgcc >/dev/null; echo tesota-$binary: \$(/dist/tesota-$binary --version)"
           done
+      # The install scripts download from a local server holding the built files, as they would from the release.
+      - name: Serve the built files
+        shell: bash
+        run: |
+          python=$(command -v python3 || command -v python)
+          (cd dist && "$python" -m http.server 8137 >/dev/null 2>&1 &)
+          for _ in $(seq 20); do curl -fsS -o /dev/null http://127.0.0.1:8137/SHA256SUMS && exit 0; sleep 0.5; done
+          exit 1
+      - name: The install script installs and updates tesota
+        if: runner.os != 'Windows'
+        env:
+          TESOTA_DOWNLOAD: http://127.0.0.1:8137
+          TESOTA_INSTALL_DIR: ${{ runner.temp }}/tesota-bin
+        run: |
+          sh install.sh
+          sh install.sh
+          "$TESOTA_INSTALL_DIR/tesota" --version
+      - name: The install script refuses a binary whose checksum differs
+        if: runner.os == 'Linux'
+        env:
+          TESOTA_DOWNLOAD: http://127.0.0.1:8137
+          TESOTA_INSTALL_DIR: ${{ runner.temp }}/tesota-tampered
+        run: |
+          cp dist/SHA256SUMS "$RUNNER_TEMP/SHA256SUMS"
+          sed -i 's/^[0-9a-f]\{8\}/00000000/' dist/SHA256SUMS
+          if sh install.sh; then echo "::error::installed a binary whose checksum differs"; exit 1; fi
+          test ! -e "$TESOTA_INSTALL_DIR/tesota"
+          cp "$RUNNER_TEMP/SHA256SUMS" dist/SHA256SUMS
+      - name: The install script installs the musl binary in Alpine
+        if: matrix.musl != ''
+        run: |
+          docker run --rm --network host -v "$PWD/install.sh:/install.sh:ro" alpine:3.22 sh -euc \
+            "apk add --no-cache curl libstdc++ libgcc >/dev/null; TESOTA_DOWNLOAD=http://127.0.0.1:8137 sh /install.sh; ~/.tesota/bin/tesota --version"
+      - name: The install script installs and updates tesota
+        if: runner.os == 'Windows'
+        shell: powershell
+        env:
+          TESOTA_DOWNLOAD: http://127.0.0.1:8137
+          TESOTA_INSTALL_DIR: ${{ runner.temp }}\tesota-bin
+        run: |
+          # A user PATH entry naming a variable must stay as it is, in a value that still expands it.
+          $environment = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')
+          $unexpanded = [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames
+          $environment.SetValue('Path', "$($environment.GetValue('Path', '', $unexpanded));%USERPROFILE%\kept", 'ExpandString')
+          .\install.ps1
+          .\install.ps1
+          & "$env:TESOTA_INSTALL_DIR\tesota.exe" --version
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $entries = @($environment.GetValue('Path', '', $unexpanded) -split ';')
+          if (-not ($entries -contains '%USERPROFILE%\kept') -or $environment.GetValueKind('Path') -ne 'ExpandString' -or
+            @($entries | Where-Object { $_ -eq $env:TESOTA_INSTALL_DIR }).Count -ne 1) { Write-Error "The user PATH was not kept: $entries"; exit 1 }
+  # The whole check, on the tagged commit itself: a release is never published from a commit that fails it.
+  check:
+    if: startsWith(github.ref, 'refs/tags/v')
+    uses: ./.github/workflows/ci.yml
+  publish:
+    # Only a tag publishes, and only this job may write: the files the jobs above built and started, unchanged.
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build, start, check]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      attestations: write
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tesota-binaries
+          path: dist
+      - name: The files are the ones built
+        working-directory: dist
+        run: sha256sum --check --strict SHA256SUMS
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/tesota-*
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # A version with a suffix, such as 0.1.0-alpha.1, is a prerelease and never becomes the latest release.
+          case "$TAG" in *-*) channel=--prerelease ;; *) channel=--latest ;; esac
+          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --verify-tag $channel --title "Tesota ${TAG#v}" --notes \
+            "Install with the scripts in docs/get-started/install.md. Check a binary's provenance with gh attestation verify <file> --repo $GITHUB_REPOSITORY."

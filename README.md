@@ -37,15 +37,17 @@ request. A receipt is check evidence: accepting the change is still yours.
 
 ## Get started
 
-Tesota is in alpha and not published yet. You need [Bun](https://bun.sh)
-and Git; [Dafny 4](https://dafny.org) to prove contracts.
+Tesota is in alpha, released as prerelease binaries. You need Git;
+[Dafny 4](https://dafny.org) to prove contracts.
 
 ```sh
-git clone https://github.com/sequelcore/tesota
-cd tesota
-bun install --frozen-lockfile --ignore-scripts
-bun run vendor
-cd packages/core && bun link
+curl -fsSL https://raw.githubusercontent.com/sequelcore/tesota/dev/install.sh | sh
+```
+
+On Windows, in PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/sequelcore/tesota/dev/install.ps1 | iex
 ```
 
 Then, in your project:

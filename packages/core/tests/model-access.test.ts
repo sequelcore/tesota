@@ -59,6 +59,38 @@ describe("the engine's models", () => {
     expect(await models.checkAuth("anthropic")).toMatchObject({ type: "api_key" });
   });
 
+  test("no provider offers a Claude sign-in: Anthropic takes an API key alone (claude-code-route-terms.md)", () => {
+    const models = engineModels(new InMemoryCredentialStore());
+    expect(models.getProvider("anthropic")?.auth.oauth).toBeUndefined();
+    const signIns = models.getProviders().flatMap(({ id, auth }) => auth.oauth === undefined ? [] : [`${id}: ${auth.oauth.name}`]);
+    expect(signIns.filter((name) => /anthropic|claude/iu.test(name))).toEqual([]);
+    // The operator's other sign-ins stay.
+    expect(signIns.some((name) => name.startsWith("openai:"))).toBe(true);
+  });
+
+  test("a Claude plan's token reaches no request, from the environment, a stored key or a key entered at login", async () => {
+    const saved = process.env["ANTHROPIC_OAUTH_TOKEN"];
+    try {
+      delete process.env["ANTHROPIC_API_KEY"];
+      process.env["ANTHROPIC_OAUTH_TOKEN"] = "sk-ant-oat01-test";
+      expect(await engineModels(new InMemoryCredentialStore()).checkAuth("anthropic")).toBeUndefined();
+      delete process.env["ANTHROPIC_OAUTH_TOKEN"];
+      process.env["ANTHROPIC_API_KEY"] = "sk-ant-oat01-test";
+      expect(await engineModels(new InMemoryCredentialStore()).checkAuth("anthropic")).toBeUndefined();
+      delete process.env["ANTHROPIC_API_KEY"];
+      const stored = new InMemoryCredentialStore();
+      await stored.modify("anthropic", () => Promise.resolve({ type: "api_key", key: "sk-ant-oat01-test" }));
+      expect(await engineModels(stored).checkAuth("anthropic")).toBeUndefined();
+      const models = engineModels(new InMemoryCredentialStore());
+      await expect(models.login("anthropic", "api_key", { prompt: () => Promise.resolve("sk-ant-oat01-test"), notify: () => undefined }))
+        .rejects.toThrow("Tesota takes no Claude plan token");
+      expect(await models.checkAuth("anthropic")).toBeUndefined();
+    } finally {
+      if (saved === undefined) delete process.env["ANTHROPIC_OAUTH_TOKEN"];
+      else process.env["ANTHROPIC_OAUTH_TOKEN"] = saved;
+    }
+  });
+
   test("the model is the one the operator chose, never one picked for them from what a credential reaches (#425)", async () => {
     process.env["ANTHROPIC_API_KEY"] = "sk-ant-test";
     const models = engineModels(new InMemoryCredentialStore());

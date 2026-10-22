@@ -65,11 +65,18 @@ export interface ClaudeCodeOptions {
 export const claudeCodeSignIn = "Claude through your own Claude Code: sign in there (run `claude`, then `/login`), then /model again.";
 
 /**
- * The Claude Code program the SDK bundles for this platform, chosen as the
- * SDK chooses it (musl first on a Linux without glibc), or none when it is
- * not installed, as in a compiled `tesota` binary.
+ * The Claude Code program to run: the one the SDK installs for this
+ * platform, when Tesota runs from source, or else the operator's own
+ * `claude` on the `PATH`, since a compiled `tesota` has no SDK install to
+ * find it in (#570). None when neither is there.
  */
-export function claudeCodeExecutable(): string | undefined {
+export function claudeCodeExecutable(installed: () => string | undefined = sdkClaudeCode): string | undefined {
+  // The PATH as it is now: Bun's default lookup keeps the one the process started with.
+  return installed() ?? Bun.which("claude", { PATH: process.env["PATH"] ?? "" }) ?? undefined;
+}
+
+/** The program the SDK installs for this platform, chosen as the SDK chooses it (musl first on a Linux without glibc). */
+function sdkClaudeCode(): string | undefined {
   const report = process.platform === "linux" && typeof process.report?.getReport === "function"
     ? process.report.getReport() as { header?: { glibcVersionRuntime?: string } } : undefined;
   const musl = report !== undefined && report.header?.glibcVersionRuntime === undefined;

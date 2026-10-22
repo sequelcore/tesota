@@ -22,9 +22,12 @@ An API key in the environment works without `/login`, such as
 
 ### Claude through Claude Code
 
-On a Claude plan, Tesota runs Claude through your own Claude Code, the
-unmodified program the Claude Agent SDK installs with Tesota. Sign in there,
-not in Tesota: run `claude`, then `/login`. Tesota never sees your Claude
+On a Claude plan, Tesota runs Claude through your own Claude Code,
+unmodified. A release binary runs the `claude` on your `PATH`, so
+[install Claude Code](https://code.claude.com/docs/en/setup) first; from
+source, Tesota runs the program the Claude Agent SDK installs with it, and
+`claude` on your `PATH` only when that one is missing. Sign in there, not in
+Tesota: run `claude`, then `/login`. Tesota never sees your Claude
 sign-in. Once you are signed in, `/model` lists Anthropic's models as
 `claude-code/<id>`, such as `claude-code/claude-sonnet-5-5`. Until then it
 says how to sign in.

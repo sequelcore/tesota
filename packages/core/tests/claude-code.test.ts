@@ -3,7 +3,7 @@ import { type AssistantMessage, createModels, InMemoryCredentialStore, type Mess
 import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
 import { getSessionPath, openSession as openClaudeSession } from "cc-session-io";
 import { afterEach, describe, expect, test } from "bun:test";
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Type } from "typebox";
@@ -262,6 +262,20 @@ describe("the claude-code provider", () => {
 
   test("the Claude Code program installed with the SDK for this platform is found, to ask whether it is signed in", () => {
     expect(claudeCodeExecutable()).toMatch(/claude-agent-sdk-[a-z0-9-]+[\\/]claude(\.exe)?$/u);
+  });
+
+  test("without the SDK's program, as in a compiled tesota, the operator's own claude on the PATH is run (#570)", () => {
+    const bin = mkdtempSync(join(tmpdir(), "tesota-claude-"));
+    const program = join(bin, process.platform === "win32" ? "claude.exe" : "claude");
+    writeFileSync(program, "");
+    chmodSync(program, 0o755);
+    const path = process.env["PATH"];
+    process.env["PATH"] = bin;
+    try {
+      expect(claudeCodeExecutable(() => undefined)).toBe(program);
+      process.env["PATH"] = mkdtempSync(join(tmpdir(), "tesota-no-claude-"));
+      expect(claudeCodeExecutable(() => undefined)).toBeUndefined();
+    } finally { process.env["PATH"] = path; }
   });
 
   test("the models are pi-ai's Anthropic catalog, offered only once Claude Code is signed in", async () => {

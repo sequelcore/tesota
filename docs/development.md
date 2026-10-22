@@ -132,9 +132,32 @@ searches without the checkout. Ripgrep is extracted once under
 `~/.tesota/ripgrep/<version>-<sha256>/`, verified before an atomic rename;
 there is no runtime download or PATH lookup. Inside a binary, the verifier runs
 LemmaScript as the binary's own `__lsc` command. The binaries workflow
-builds every target on each pull request and starts each one a runner can
-run; `binary.test.ts` proves and reads source from a binary run outside the
-checkout, including a search with the embedded ripgrep.
+builds every target on each pull request, with their `SHA256SUMS`, starts
+each one a runner can run, and installs one with
+[install.sh](../install.sh) or [install.ps1](../install.ps1) from a local
+server; `binary.test.ts` proves and reads source from a binary run outside
+the checkout, including a search with the embedded ripgrep.
+
+## Releases
+
+A release is a GitHub Release of the binaries, published by the binaries
+workflow from a tag; no one publishes from their own machine.
+
+1. Set the version in [package.json](../package.json) and
+   [packages/core/package.json](../packages/core/package.json), such as
+   `0.1.0-alpha.2`, and merge it to `dev`.
+2. Tag that commit `v<version>` and push the tag.
+3. The workflow refuses a tag that isn't both versions, or a version
+   already released. It builds and starts every target and runs the whole
+   check (`ci.yml`) on the tagged commit. Only once all of them pass, the
+   publish job, the only one that may write, checks the files against their
+   `SHA256SUMS`, attests each binary's provenance, and publishes them
+   unchanged. A version with a suffix, such as `-alpha.1`, is a prerelease
+   and never becomes the latest release.
+4. Check it: `gh attestation verify <binary> --repo sequelcore/tesota`,
+   then install with the script and run a request through to a receipt.
+
+A published version is never reused: a fix gets a new version.
 
 ## Effect
 

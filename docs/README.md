@@ -6,8 +6,8 @@ verify, in a receipt.
 
 ## Get started
 
-- [Install](get-started/install.md): requirements, installing from source,
-  signing in to a model.
+- [Install](get-started/install.md): installing a release, what it
+  doesn't include, signing in to a model, installing from source.
 - [Your first session](get-started/first-session.md): ask for a change,
   watch Tesota verify it, and read the receipt.
 
