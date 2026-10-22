@@ -67,8 +67,8 @@ route, with an API key, stays the route for shared or heavy use.
 ## Consequences
 
 - The section on running Claude Code in a product requires the Commercial
-  Terms. Whether Sequel has agreed to them is the owner's to settle before
-  Tesota is published with this route.
+  Terms. Sequel accepted them through its Anthropic Console account
+  (confirmed 2026-10-22).
 - The legal page says developers building on the Agent SDK "should use API
   key authentication", and the SDK overview's sentence on "rate limits for
   their products" remains open to a reading under which Tesota needs
