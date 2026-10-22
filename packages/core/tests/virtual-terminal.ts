@@ -15,6 +15,15 @@ export class VirtualTerminal implements Terminal {
   private height: number;
   /** Everything the shell wrote, for checking what it sent and how much. */
   written = "";
+  /**
+   * When set, each start queries the terminal as pi-tui's `ProcessTerminal` does,
+   * and the terminal answers this many milliseconds later. An answer that comes
+   * while the terminal is read is consumed; one that comes after it stopped
+   * reaching the shell's prompt as typed text, and lands in `atPrompt` (#574).
+   */
+  answersQueriesAfterMs: number | undefined;
+  /** What reached the prompt after the terminal stopped being read. */
+  atPrompt = "";
 
   constructor(columns = 80, rows = 24) {
     this.width = columns;
@@ -25,6 +34,9 @@ export class VirtualTerminal implements Terminal {
   start(onInput: (data: string) => void, onResize: () => void): void {
     this.onInput = onInput;
     this.onResize = onResize;
+    if (this.answersQueriesAfterMs !== undefined) {
+      setTimeout(() => { if (this.onInput === undefined) this.atPrompt += "\x1b[?61;4;6;7;14;21;22c"; }, this.answersQueriesAfterMs);
+    }
   }
   stop(): void {
     this.onInput = undefined;

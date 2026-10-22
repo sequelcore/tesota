@@ -31,14 +31,15 @@ const enter = "\r";
 
 function shellOn(script: readonly ScriptStep[], mode: TuiMode = "fullscreen", size: [number, number] = [80, 24],
   extra: { tokensPerSecond?: number; copy?: (text: string) => Promise<boolean>; commands?: readonly SlashCommand[]; surface?: Surface;
-    cwd?: string; command?: (text: string) => Promise<boolean> } = {}) {
+    cwd?: string; command?: (text: string) => Promise<boolean>; answersQueriesAfterMs?: number } = {}) {
   const faux = fauxProvider({ tokensPerSecond: extra.tokensPerSecond ?? 400 });
   faux.setResponses(script.map(scriptedReply));
   const models = createModels();
   models.setProvider(faux.provider);
-  const { cwd = folder("tesota-core-shell-"), ...options } = extra;
+  const { cwd = folder("tesota-core-shell-"), answersQueriesAfterMs, ...options } = extra;
   const session = createSession({ cwd, folder: folder("tesota-core-sessions-"), models, model: faux.getModel(), verifier: accepts });
   const terminal = new VirtualTerminal(...size);
+  terminal.answersQueriesAfterMs = answersQueriesAfterMs;
   const shell = startShell({ terminal, mode, fullRepaint: false, theme: shellTheme("dark", "truecolor"), session,
     status: () => "scripted model", ...options });
   open.push({ session, shell });
@@ -231,6 +232,22 @@ describe("the shell", () => {
     expect(kept).toContain("keep this");
     expect(kept).toContain("An answer worth keeping.");
   });
+
+  for (const mode of ["fullscreen", "inline"] as const) {
+    for (const [ending, keys] of [["Ctrl+D", ["\x04"]], ["Ctrl+C twice", ["\x03", "\x03"]]] as const) {
+      test(`ending the shell with ${ending} leaves no terminal reply at the prompt (${mode}, #574)`, async () => {
+        const { terminal, session, shell } = shellOn(["Answered."], mode, [80, 24], { answersQueriesAfterMs: 20 });
+        terminal.type("ask");
+        terminal.type(enter);
+        await settled(session);
+        for (const key of keys) terminal.type(key);
+        await shell.stopped;
+        await new Promise((resolve) => setTimeout(resolve, 60));
+        expect(terminal.atPrompt).toBe("");
+        expect(shown(await terminal.scrollback())).toContain("Answered.");
+      });
+    }
+  }
 
   test("inline, the conversation prints into the scrollback as it goes", async () => {
     const { terminal, session } = shellOn(["Printed inline."], "inline");
