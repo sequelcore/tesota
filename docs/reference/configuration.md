@@ -8,6 +8,7 @@ optional.
 
 | Path | Holds |
 | --- | --- |
+| `bin/` | The `tesota` binary the [install scripts](../get-started/install.md) put there |
 | `settings.json` | Your settings, below, and your [hooks](../guides/hooks.md) |
 | `permissions.json` | Your [permission rules](../guides/permissions.md#rules): `allow`, `ask`, `deny` |
 | `mcp.json` | Your [MCP servers](../guides/mcp.md) |
