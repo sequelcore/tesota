@@ -4,7 +4,7 @@ import { type Api, type AssistantMessage, type AssistantMessageEventStream, calc
   type TextContent, type Tool, type ToolCall, type ToolResultMessage } from "@earendil-works/pi-ai";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, rmdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { goesOn } from "../handback-rule.ts";
@@ -533,6 +533,16 @@ class Conversation {
     try { this.query?.close(); } catch { /* already ended */ }
   }
 
+  /** Removes only this query's transcripts, then its project bucket if nothing else uses it. */
+  async removeTranscripts(): Promise<void> {
+    const id = this.sessions.values().next().value;
+    if (id === undefined) return;
+    const { deleteSession, getSessionPath } = await import("cc-session-io");
+    for (const session of this.sessions) try { deleteSession(session, this.cwd); } catch { /* already gone */ }
+    // The project bucket is shared with the operator's Claude Code: remove it only if empty.
+    try { rmdirSync(dirname(getSessionPath(id, this.cwd))); } catch { /* absent, not empty, or not removable */ }
+  }
+
   /** Whether `messages` go on from where the last step stopped: its reply, then every one of its calls' results, then maybe a steer. */
   answers(model: Model<Api>, system: string, tools: string, messages: readonly Message[]): boolean {
     const reply = messages[this.answeredAt - 1];
@@ -655,10 +665,7 @@ export function claudeCodeProvider(anthropic: readonly Model<Api>[], options: Cl
       if (!conversation.closed) conversation.settle(error);
       conversation.close();
       if (conversation.key !== undefined && live.get(conversation.key) === conversation) live.delete(conversation.key);
-      if (conversation.sessions.size > 0) {
-        const { deleteSession } = await import("cc-session-io");
-        for (const id of conversation.sessions) try { deleteSession(id, conversation.cwd); } catch { /* already gone */ }
-      }
+      await conversation.removeTranscripts();
     }
   }
 
@@ -667,16 +674,18 @@ export function claudeCodeProvider(anthropic: readonly Model<Api>[], options: Cl
     const messages = context.messages.filter((message) => message.role !== "system") as Message[];
     const tools = getCurrentTools(context.messages);
     const system = getCurrentSystemPrompt(context.messages);
+    const cwd = options?.metadata?.["cwd"];
+    if (typeof cwd !== "string" || cwd === "") throw new Error("Claude Code requires the session's working folder in metadata.cwd.");
     const key = options?.sessionId;
     const parked = key === undefined ? undefined : live.get(key);
     let conversation: Conversation;
-    if (parked !== undefined && parked.answers(model, system, toolNames(tools), messages)) {
+    if (parked !== undefined && parked.cwd === cwd && parked.answers(model, system, toolNames(tools), messages)) {
       conversation = parked;
       conversation.begin(stream);
       void conversation.deliver(messages.slice(conversation.answeredAt));
     } else {
       parked?.close();
-      conversation = new Conversation(key, process.cwd(), model, system, tools);
+      conversation = new Conversation(key, cwd, model, system, tools);
       if (key !== undefined) live.set(key, conversation);
       conversation.begin(stream);
       open(conversation, model, messages, tools, options).catch((error: unknown) => {

@@ -33,7 +33,7 @@ function scripted(responses: FauxResponseStep[], overrides: Partial<SummaryReque
   const models = createModels();
   models.setProvider(faux.provider);
   const request: SummaryRequest = {
-    models, model: faux.getModel(), previous: undefined, messages: [],
+    cwd: process.cwd(), models, model: faux.getModel(), previous: undefined, messages: [],
     files: { read: [], changed: [] }, signal: new AbortController().signal, ...overrides,
   };
   return { faux, request };
@@ -43,6 +43,7 @@ test("the model receives the fixed contract and a single text transcript with bo
   const signal = new AbortController().signal;
   const { faux, request } = scripted([(context, options) => {
     expect(options?.signal).toBe(signal);
+    expect(options?.metadata).toEqual({ cwd: "session-worktree" });
     expect(context.messages).toHaveLength(2);
     const [system, user] = context.messages;
     if (system?.role !== "system" || typeof system.content !== "string" || user?.role !== "user") throw new Error("Expected system and user messages");
@@ -62,7 +63,7 @@ test("the model receives the fixed contract and a single text transcript with bo
     ].join("\n\n"));
     return fauxAssistantMessage([{ type: "thinking", thinking: "private reasoning" },
       { type: "text", text: "  compact summary  " }]);
-  }], { signal, messages: [
+  }], { cwd: "session-worktree", signal, messages: [
     { role: "system", content: "Earlier instructions", timestamp: 0 },
     { role: "user", content: [{ type: "text", text: "Keep the wording" }], timestamp: 0 },
     fauxAssistantMessage([{ type: "text", text: "Working on it" }, fauxToolCall("read", { path: "input.txt" }, { id: "call-1" })]),

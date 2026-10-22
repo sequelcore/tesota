@@ -4,6 +4,7 @@ import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
 import { getSessionPath, openSession as openClaudeSession } from "cc-session-io";
 import { afterEach, describe, expect, test } from "bun:test";
 import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Type } from "typebox";
@@ -123,7 +124,7 @@ function provider(start: StartQuery) {
   const model = (id: string): Model<"anthropic-messages"> => models.getModel("claude-code", id) as Model<"anthropic-messages">;
   const step = async (messages: Message[], options: { sessionId?: string; signal?: AbortSignal; model?: string } = {}): Promise<AssistantMessage> =>
     await models.streamSimple(model(options.model ?? "claude-haiku-4-5"), { systemPrompt, messages, tools: [echo] },
-      { sessionId: options.sessionId ?? "session-1", ...options.signal === undefined ? {} : { signal: options.signal } }).result();
+      { metadata: { cwd: process.cwd() }, sessionId: options.sessionId ?? "session-1", ...options.signal === undefined ? {} : { signal: options.signal } }).result();
   return { models, step };
 }
 
@@ -295,6 +296,66 @@ describe("the claude-code provider", () => {
 describe("a session on claude-code", () => {
   const open: EngineSession[] = [];
   afterEach(async () => { await Promise.all(open.splice(0).map((session) => session.dispose())); });
+
+  test("Claude Code gets the session's worktree rather than the shell's folder (#577)", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "tesota-claude-worktree-"));
+    for (const args of [["init", "-q"], ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-qm", "base"]]) {
+      const run = spawnSync("git", args, { cwd, encoding: "utf8" });
+      if (run.status !== 0) throw new Error(run.stderr);
+    }
+    const { start, runs } = replaying(answerReply);
+    const models = createModels();
+    models.setProvider(claudeCodeProvider(anthropic, { query: start, signedIn: async () => true }));
+    const options = { cwd, folder: mkdtempSync(join(tmpdir(), "tesota-claude-sessions-")), verifier: accepts,
+      models, model: models.getModel("claude-code", "claude-haiku-4-5") as Model<"anthropic-messages"> };
+    open.push(createSession(options));
+    const session = createSession(options);
+    open.push(session);
+    expect(session.workspace.worktree).toBeDefined();
+    expect(session.workspace.cwd).not.toBe(process.cwd());
+    await session.prompt("say done");
+    expect(session.lastAssistantText()).toBe("done");
+    expect(runs[0]?.options.cwd).toBe(session.workspace.cwd);
+  });
+
+  test("deleting Tesota's transcript leaves no empty Claude Code project folder (#577)", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "tesota-claude-cleanup-"));
+    const { start, runs } = replaying(answerReply, answerReply);
+    const models = createModels();
+    models.setProvider(claudeCodeProvider(anthropic, { query: start, signedIn: async () => true }));
+    const session = createSession({ cwd, folder: mkdtempSync(join(tmpdir(), "tesota-claude-sessions-")), verifier: accepts,
+      models, model: models.getModel("claude-code", "claude-haiku-4-5") as Model<"anthropic-messages"> });
+    open.push(session);
+    await session.prompt("say done");
+    // A second request imports the engine's history into a transcript before starting Claude Code.
+    await session.prompt("say done again");
+    expect(runs[1]?.options.resume).toBeDefined();
+    const transcript = getSessionPath(runs[1]?.options.resume ?? "none", session.workspace.cwd);
+    for (let tries = 0; existsSync(dirname(transcript)) && tries < 100; tries += 1) await Bun.sleep(10);
+    expect(existsSync(transcript)).toBe(false);
+    expect(existsSync(dirname(transcript))).toBe(false);
+  });
+
+  test("transcript cleanup preserves another Claude Code session in the same project folder", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "tesota-claude-shared-"));
+    const { start, runs } = replaying(answerReply);
+    const models = createModels();
+    let otherTranscript = "";
+    models.setProvider(claudeCodeProvider(anthropic, { signedIn: async () => true, query: (input) => {
+      const query = start(input);
+      otherTranscript = getSessionPath("operator-session", cwd);
+      writeFileSync(otherTranscript, "operator's history\n");
+      return query;
+    } }));
+    const session = createSession({ cwd, folder: mkdtempSync(join(tmpdir(), "tesota-claude-sessions-")), verifier: accepts,
+      models, model: models.getModel("claude-code", "claude-haiku-4-5") as Model<"anthropic-messages"> });
+    open.push(session);
+    await session.prompt("say done");
+    const transcript = getSessionPath(runs[0]?.options.sessionId ?? "none", session.workspace.cwd);
+    for (let tries = 0; existsSync(transcript) && tries < 100; tries += 1) await Bun.sleep(10);
+    expect(existsSync(transcript)).toBe(false);
+    expect(readFileSync(otherTranscript, "utf8")).toBe("operator's history\n");
+  });
 
   test("runs Tesota's tool through the engine's permissions, and Claude Code reads the tool's real result", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "tesota-claude-code-"));
