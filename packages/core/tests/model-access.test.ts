@@ -1,6 +1,6 @@
 import { type AuthPrompt, fauxAssistantMessage, fauxProvider, InMemoryCredentialStore, type OAuthCredential } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { fileCredentialStore } from "../src/credentials.ts";
@@ -105,6 +105,23 @@ describe("the engine's models", () => {
         // It ran: offline, the request itself fails.
         expect(errors).toContain("Ended error");
       }
+    } finally {
+      signOut();
+    }
+  });
+
+  test("-p names an agent type whose model it does not run, with the model it runs on instead (#568)", async () => {
+    const credentials = new InMemoryCredentialStore();
+    const models = engineModels(credentials);
+    const signOut = await signInWithChatGPT(models, credentials, "offline");
+    try {
+      const cwd = folder("tesota-core-print-cwd-");
+      mkdirSync(join(cwd, ".agents", "agents"), { recursive: true });
+      writeFileSync(join(cwd, ".agents", "agents", "advisor.md"), "---\nname: advisor\ndescription: Advises\nclaude.model: opus\n---\nAdvise.\n");
+      let errors = "";
+      await runPrint(["hi", "--model", "openai/gpt-6.1-sol"], cwd, { out: () => undefined, error: (text) => { errors += text; } },
+        {}, join(folder("tesota-core-print-"), "settings.json"), models);
+      expect(errors).toContain("Agent type advisor (claude.model) runs on the session's model, openai/gpt-6.1-sol, unless the call names one");
     } finally {
       signOut();
     }

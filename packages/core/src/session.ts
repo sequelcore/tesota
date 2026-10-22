@@ -69,6 +69,8 @@ export interface EngineSession extends LoopSession {
   readonly workspace: Pick<Workspace, "cwd" | "checkout" | "worktree" | "branch">;
   /** Once disposed, where its kept work is, when its worktree changed and so stays. */
   kept(): string | undefined;
+  /** The agent types its subagents start with (#525). */
+  readonly types: readonly AgentType[];
 }
 
 /**
@@ -426,6 +428,7 @@ function engineSession(file: string, release: () => void, entries: SessionEntry[
     ledger: () => ledgerOf(entries),
     workspace: { cwd, checkout, ...worktree === undefined ? {} : { worktree }, ...branch === undefined ? {} : { branch } },
     kept: () => kept,
+    types,
     prompt: async (text, prompt) => {
       if (poisoned !== undefined) throw poisoned;
       return await loop.prompt(text, prompt);

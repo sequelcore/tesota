@@ -7,6 +7,7 @@ import { provideHost } from "../../../../src/host.ts";
 import { isReceipt, type Receipt, receiptStanding } from "../../../../src/receipt.ts";
 import tesota from "../../../../src/tesota.ts";
 import { fileCredentialStore } from "../credentials.ts";
+import { unusedModels } from "../agents.ts";
 import { chosenModel, engineModels, loginOptions, runnableModel, runnableModels } from "../model-access.ts";
 import { claudeCodeProviderId, claudeCodeSignIn } from "../providers/claude-code.ts";
 import type { Mode } from "../permission-rule.ts";
@@ -44,6 +45,12 @@ export interface AppOptions {
 
 const levels: readonly ModelThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 const label = (model: Model<Api>): string => `${model.provider}/${model.id}`;
+
+/** Names once the agent types whose model Tesota does not run, with the model they run on instead (#568). */
+function noteUnusedModels(shell: Shell, session: EngineSession, model: Model<Api> | undefined): void {
+  const unused = model === undefined ? undefined : unusedModels(session.types, label(model));
+  if (unused !== undefined) shell.note(unused, "warning");
+}
 
 /** How many lines of a command or change a permission question shows before it says how many more there are. */
 const shownLines = 12;
@@ -548,6 +555,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     shell.note(`The saved model is not used: ${saved} Choose one with /model.`, "warning");
   } else if (saved?.unchecked !== undefined) shell.note(saved.unchecked, "warning");
   else if (model === undefined) shell.note("No provider is logged in: /login, or set a provider's API key, then /model.", "warning");
+  noteUnusedModels(shell, attached.session, model);
   await shell.stopped;
   for (const each of lives) {
     each.unsubscribe();

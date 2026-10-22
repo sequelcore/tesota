@@ -7,9 +7,16 @@ Gemini CLI and Pi, so a project set up for one works here.
 
 Every session's instructions are, in order:
 
-1. `~/.tesota/AGENTS.md`, your own, for every project;
-2. each folder's `AGENTS.md` from the Git repository's root down to the
+1. `~/.agents/AGENTS.md`, yours, shared with other agents;
+2. `~/.tesota/AGENTS.md`, yours, for Tesota alone;
+3. each folder's `AGENTS.md` from the Git repository's root down to the
    session's folder, or its `CLAUDE.md` where it has no `AGENTS.md`.
+
+`~/.agents/AGENTS.md` is Tesota's convention, kept beside `~/.agents/skills`;
+AGENTS.md itself names no place for your own file, and Tesota reads no other
+tool's folder. A file reached again through a link, such as a
+`~/.tesota/AGENTS.md` that links to `~/.agents/AGENTS.md`, is read once,
+where it first comes. Each file is named by its path in the instructions.
 
 Outside Git, only the session's own folder counts. Nothing above the
 repository's root is read.

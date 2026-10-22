@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createModels, fauxProvider } from "@earendil-works/pi-ai";
@@ -30,11 +30,32 @@ test("context starts with Tesota's global file, then walks from the Git root dow
     put(join(root, "CLAUDE.md"), "ignored");
     put(join(middle, "CLAUDE.md"), "middle");
     put(join(cwd, "AGENTS.md"), "local");
-    expect(contextFiles(cwd, home)).toEqual([
+    expect(contextFiles(cwd, { user: join(temp, "user"), tesota: home })).toEqual([
       { path: join(home, "AGENTS.md"), content: "global" },
       { path: join(root, "AGENTS.md"), content: "root" },
       { path: join(middle, "CLAUDE.md"), content: "middle" },
       { path: join(cwd, "AGENTS.md"), content: "local" },
+    ]);
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test("the shared ~/.agents/AGENTS.md comes before Tesota's, and a file reached through a link is read once (#568)", () => {
+  const temp = mkdtempSync(join(tmpdir(), "tesota-instructions-"));
+  try {
+    const user = join(temp, "user");
+    const cwd = join(temp, "project");
+    mkdirSync(join(cwd, ".git"), { recursive: true });
+    put(join(user, ".agents", "AGENTS.md"), "shared");
+    put(join(temp, "tesota", "AGENTS.md"), "tesota");
+    put(join(cwd, "AGENTS.md"), "project");
+    expect(contextFiles(cwd, { user, tesota: join(temp, "tesota") }).map(({ path, content }) => [path, content])).toEqual([
+      [join(user, ".agents", "AGENTS.md"), "shared"], [join(temp, "tesota", "AGENTS.md"), "tesota"], [join(cwd, "AGENTS.md"), "project"],
+    ]);
+    symlinkSync(join(user, ".agents"), join(temp, "linked"), process.platform === "win32" ? "junction" : "dir");
+    expect(contextFiles(cwd, { user, tesota: join(temp, "linked") })).toEqual([
+      { path: join(user, ".agents", "AGENTS.md"), content: "shared" }, { path: join(cwd, "AGENTS.md"), content: "project" },
     ]);
   } finally {
     rmSync(temp, { recursive: true, force: true });
@@ -47,7 +68,7 @@ test("outside Git only cwd contributes project instructions", () => {
     const cwd = join(temp, "nested");
     put(join(temp, "AGENTS.md"), "parent");
     put(join(cwd, "CLAUDE.md"), "local");
-    expect(contextFiles(cwd, join(temp, "home"))).toEqual([
+    expect(contextFiles(cwd, { user: join(temp, "user"), tesota: join(temp, "home") })).toEqual([
       { path: join(cwd, "CLAUDE.md"), content: "local" },
     ]);
   } finally {
@@ -64,7 +85,7 @@ test("a worktree's .git file stops discovery before its parent", () => {
     put(join(root, ".git"), "gitdir: elsewhere");
     put(join(root, "AGENTS.md"), "root");
     put(join(cwd, "AGENTS.md"), "local");
-    expect(contextFiles(cwd, join(temp, "home"))).toEqual([
+    expect(contextFiles(cwd, { user: join(temp, "user"), tesota: join(temp, "home") })).toEqual([
       { path: join(root, "AGENTS.md"), content: "root" },
       { path: join(cwd, "AGENTS.md"), content: "local" },
     ]);
@@ -87,10 +108,10 @@ test("empty and unreadable files are skipped without falling back from an existi
     put(join(root, "CLAUDE.md"), "ignored for empty AGENTS");
     put(join(middle, "CLAUDE.md"), "ignored for unreadable AGENTS");
     put(join(cwd, "CLAUDE.md"), " \n local content \n ");
-    expect(contextFiles(cwd, home)).toEqual([
+    expect(contextFiles(cwd, { user: join(temp, "user"), tesota: home })).toEqual([
       { path: join(cwd, "CLAUDE.md"), content: " \n local content \n " },
     ]);
-    expect(contextFiles(join(temp, "missing"), home)).toEqual([]);
+    expect(contextFiles(join(temp, "missing"), { user: join(temp, "user"), tesota: home })).toEqual([]);
   } finally {
     rmSync(temp, { recursive: true, force: true });
   }

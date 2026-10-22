@@ -71,8 +71,9 @@ Once it ends, `/resume` opens it like any other.
 
 ## Agent types
 
-An agent type is a Markdown file with frontmatter, in Claude Code's format,
-so a definition copies across unchanged:
+An agent type is a Markdown file with frontmatter, in Claude Code's format.
+A Claude Code definition's name, description, body and `background` carry
+over; its `model` only when it's `provider/id`:
 
 ```markdown
 ---
@@ -89,11 +90,19 @@ You review a change. Read the diff, then report each defect with its file and li
 | --- | --- |
 | `name` | Its name, for `type`; the file's name when not given |
 | `description` | When to use it. A file without one is left out |
-| `model` | `provider/id`. A Claude Code alias such as `sonnet` or `inherit` is left out, so the call or the session decides |
+| `model` | `provider/id`. Anything else, such as Claude Code's `sonnet` or `inherit`, leaves it to the call or the session |
 | `writes` | `true` for a subagent that writes |
 | `background` | `false` to wait for it; pstack's `is_background` says the same |
 
 Other fields are ignored. The body is added to the subagent's instructions.
+
+A type whose `model` isn't `provider/id` (other than `inherit`), or that
+sets only other tools' keys such as `claude.model` or `codex.model`, still
+loads. The shell, or `tesota -p` on standard error, says once at the start
+which types those are and the session's model they run on instead. Tesota
+doesn't translate other tools' model names: to give a shared type a model
+of its own, render a copy with a `provider/id` `model` into
+`~/.tesota/agents`, which wins by name over `~/.agents/agents`.
 Tesota reads `~/.agents/agents`, then `~/.tesota/agents`, then each
 project folder's `.agents/agents` from the repository's root down; the
 nearer wins by name, as with [skills](instructions-and-skills.md#skills).

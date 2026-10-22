@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
@@ -34,17 +34,29 @@ export function readText(path: string): string | undefined {
   }
 }
 
-/** Global instructions first, then each project's instructions from its Git root to cwd. */
-export function contextFiles(cwd: string, home: string = tesotaHome()): ContextFile[] {
-  const paths = [join(resolve(home), "AGENTS.md")];
+/**
+ * The operator's shared `~/.agents/AGENTS.md` and Tesota's own (#568), then
+ * each project's instructions from its Git root to cwd; a file reached again
+ * through a link to it is read once, where it first comes.
+ */
+export function contextFiles(cwd: string, homes: { readonly user: string; readonly tesota: string } = {
+  user: homedir(), tesota: tesotaHome(),
+}): ContextFile[] {
+  const paths = [join(resolve(homes.user), ".agents", "AGENTS.md"), join(resolve(homes.tesota), "AGENTS.md")];
   for (const folder of projectFolders(cwd).reverse()) {
     const agents = join(folder, "AGENTS.md");
     paths.push(existsSync(agents) ? agents : join(folder, "CLAUDE.md"));
   }
   const files: ContextFile[] = [];
+  const read = new Set<string>();
   for (const path of paths) {
     const content = readText(path);
-    if (content !== undefined) files.push({ path, content });
+    if (content === undefined) continue;
+    let real = path;
+    try { real = realpathSync.native(path); } catch { /* read as named */ }
+    if (read.has(real)) continue;
+    read.add(real);
+    files.push({ path, content });
   }
   return files;
 }
@@ -73,7 +85,7 @@ function unquote(value: string): string {
 const delimiter = (line: string): boolean => line.trimEnd() === "---";
 
 /** The lines of a SKILL.md and where its frontmatter closes; none when it has no frontmatter. */
-function frontmatter(content: string): { readonly lines: string[]; readonly end: number } | undefined {
+export function frontmatter(content: string): { readonly lines: string[]; readonly end: number } | undefined {
   const lines = content.replace(/^\uFEFF/u, "").split(/\r?\n/);
   if (!delimiter(lines[0] ?? "")) return undefined;
   const end = lines.findIndex((line, index) => index > 0 && delimiter(line));
