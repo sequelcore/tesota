@@ -487,12 +487,12 @@ export function counterexampleSteps({ steps }: Counterexample): string[] {
   return steps.map(({ action, changes }, k) => `${k + 1}. ${action}${changes.length === 0 ? ", changing nothing" : `: ${changes.join(", ")}`}`);
 }
 
-const linkWords: Readonly<Record<ModelLink, string>> = {
+export const linkWords: Readonly<Record<ModelLink, string>> = {
   linked: "linked to the code by its trace replay", no_replay: "not linked to the code", replay_failed: "not linked to the code: its replay fails",
 };
 
 /** What a model passing establishes, in one phrase: its invariants in every reachable state, and its faults caught. */
-function modelHolds({ header, states, faults }: ModelCheck): string {
+export function modelHolds({ header, states, faults }: ModelCheck): string {
   const caught = faults.filter(({ verdict }) => verdict === "caught").length;
   return `${header.invariants.join(", ")} ${header.invariants.length === 1 ? "holds" : "hold"} in all ` +
     `${plural(states, "reachable state", "reachable states")}; caught ${caught} of ${plural(faults.length, "planted fault", "planted faults")}`;
@@ -505,7 +505,7 @@ function abstractionWords({ header }: ModelCheck): string[] {
 }
 
 /** Why a model's check did not finish or could not run, from how it ended. */
-function modelWhy({ run, problems, evidence }: ModelCheck): string {
+export function modelWhy({ run, problems, evidence }: ModelCheck): string {
   if (run === "timed_out") return "TLC ran past its time limit";
   if (run === "cancelled") return "the check was stopped";
   const lines = evidence.output.trim().split(/\r?\n/u);

@@ -61,7 +61,9 @@ A proof covers one function for every input; it can't see two calls
 interleaving. A model of the design can: TLC explores every order of its
 steps. Tesota checks a TLA+ or Quint model with TLC when a request changes
 the model or a file it covers, once before the run settles, unless the
-session already checked that exact content.
+session already checked that exact content. Where Tesota finds TLC, the
+agent also gets a `check_model` tool, told that TLC is installed and how
+a model declares itself, and works until its model passes.
 
 A model declares itself in a comment at its top. In TLA+, before the
 `MODULE` line:

@@ -4,6 +4,7 @@ import { BarEditor } from "./editor.js";
 import { EvidenceFooter } from "./footer.js";
 import { type RecordedRequest, registerGate } from "./gate.js";
 import { registerMessages } from "./messages.js";
+import { hasTlc, modelTool } from "./model-tool.js";
 import { suggestChecks } from "./projects.js";
 import { annotated, hasContracts, proveTool } from "./prove-tool.js";
 import { readiness } from "./verification/footer-rule.js";
@@ -14,12 +15,14 @@ import { mountWelcomeHeader, TUMBLEWEED_FRAME_MS, tumbleweedFrames, WelcomeHeade
  * (`WelcomeHeader`) and its tumbleweed in Pi's working indicator
  * (`tumbleweedFrames`), draws the input with a bar down its edge (`BarEditor`) over
  * a footer that shows the gate's evidence (`EvidenceFooter`), offers `prove`
- * where there are contracts or once the agent writes one, holds a run open
+ * where there are contracts or once the agent writes one, and `check_model`
+ * where TLC is installed, holds a run open
  * while a changed file's contracts do not prove (`registerGate`), and styles
  * the gate's messages and receipt (`registerMessages`).
  */
 export default function tesota(pi: ExtensionAPI, recorded?: () => RecordedRequest | undefined): void {
   pi.registerTool(proveTool);
+  pi.registerTool(modelTool);
   const progress = registerGate(pi, recorded);
   registerMessages(pi);
   pi.on("session_start", (_event, ctx) => {
@@ -41,15 +44,16 @@ export default function tesota(pi: ExtensionAPI, recorded?: () => RecordedReques
       model: () => ctx.model === undefined ? "no model"
         : ctx.model.reasoning ? `${ctx.model.id} ${pi.getThinkingLevel()}` : ctx.model.id,
       context: () => ctx.getContextUsage() }, () => tui.requestRender()));
-    if (contracts) offerProve();
+    if (contracts) offer(proveTool.name);
+    if (hasTlc()) offer(modelTool.name);
   });
   // A contract the agent writes where there was none turns on `prove` for the rest of the session, so it can prove it while it works.
   pi.on("tool_result", (event, ctx) => {
     const path = event.input["path"];
     if ((event.toolName === "write" || event.toolName === "edit") && !event.isError && typeof path === "string" &&
-      annotated(resolve(ctx.cwd, path))) offerProve();
+      annotated(resolve(ctx.cwd, path))) offer(proveTool.name);
   });
-  function offerProve(): void {
-    if (!pi.getActiveTools().includes(proveTool.name)) pi.setActiveTools([...pi.getActiveTools(), proveTool.name]);
+  function offer(name: string): void {
+    if (!pi.getActiveTools().includes(name)) pi.setActiveTools([...pi.getActiveTools(), name]);
   }
 }

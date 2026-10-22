@@ -1,14 +1,15 @@
 # Permissions
 
 Every tool call passes one boundary before it runs: built-in tools, `prove`,
-and tools from [MCP servers](mcp.md) alike. Three things decide it, in
-order: a floor no setting crosses, the session's mode, and your rules.
+`check_model` and tools from [MCP servers](mcp.md) alike. Three things
+decide it, in order: a floor no setting crosses, the session's mode, and
+your rules.
 
 ## Modes
 
 Shift+Tab switches the mode, and the footer shows it. Your choice is saved.
 
-| Mode | Reads | Writes and edits | Commands, `prove`, MCP tools |
+| Mode | Reads | Writes and edits | Commands, `prove`, `check_model`, MCP tools |
 | --- | --- | --- | --- |
 | **read only** | Allowed | Refused | Refused |
 | **ask** (default) | Allowed | Asks you | Asks you |
@@ -54,7 +55,7 @@ Rules are JSON, as `tool(pattern)` or a tool's name alone:
 | `~/.tesota/permissions.json` | Yours: `allow`, `ask` and `deny` |
 | `<project>/.tesota/permissions.json` | The project's: only `ask` and `deny`, so a repository can tighten what you allow but never grant itself more |
 
-- **Tools:** `read`, `ls`, `find`, `grep`, `write`, `edit`, `prove`, `shell` (whichever shell the
+- **Tools:** `read`, `ls`, `find`, `grep`, `write`, `edit`, `prove`, `check_model`, `shell` (whichever shell the
   platform runs: PowerShell on Windows, bash elsewhere), and MCP tools by
   their name, `mcp__<server>__<tool>`.
 - **Questions:** `ask_user` has read access in every mode, subject to your
