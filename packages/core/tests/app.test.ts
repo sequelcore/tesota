@@ -52,8 +52,8 @@ function scripted(replies: readonly ScriptStep[]): { models: MutableModels; cred
 /** The app in a temporary folder, its settings and sessions there too, once it has drawn its first frame. */
 async function app(replies: readonly ScriptStep[] = [], { repository = false, mcp, projectMcp, skills = {}, served, model }:
   { repository?: boolean; mcp?: object; projectMcp?: object; skills?: Record<string, string>;
-    /** Signed in to OpenAI with ChatGPT, which serves these models (#566). */
-    served?: readonly string[]; model?: string } = {}) {
+    /** Signed in to OpenAI with ChatGPT, which serves these models (#566), or whose list cannot be fetched. */
+    served?: readonly string[] | "offline"; model?: string } = {}) {
   const terminal = new VirtualTerminal(100, 30);
   const { models, credentials } = scripted(replies);
   const signOut = served === undefined ? () => undefined : await signInWithChatGPT(models, credentials, served);
@@ -231,6 +231,15 @@ describe("tesota-core", () => {
     const screen = await terminal.until("no model openai/gpt-5.5");
     expect(screen).toContain("openai/gpt-6.1-sol");
     expect(screen).toContain("Choose one with /model.");
+    send(terminal, "/quit");
+    await running;
+  });
+
+  test("with ChatGPT sign-in, a saved model it could not check is kept at start, saying why (#567)", async () => {
+    const { terminal, running } = await app([], { served: "offline", model: "openai/gpt-6.1-sol" });
+    const screen = await terminal.until("was not checked");
+    expect(screen).not.toContain("The saved model is not used");
+    expect(screen.split("\n").at(-1)).toContain("gpt-6.1-sol");
     send(terminal, "/quit");
     await running;
   });

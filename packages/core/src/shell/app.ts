@@ -423,7 +423,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     "/model": { description: "Choose the model", run: async () => {
       let available: readonly Model<Api>[];
       try { available = await runnableModels(models); } catch (error) {
-        shell.note(error instanceof Error ? error.message : String(error), "warning");
+        shell.note(`No models to choose from: ${error instanceof Error ? error.message : String(error)}.`, "warning");
         return;
       }
       if (available.length === 0) { shell.note("No provider is logged in: /login first, or set its API key.", "warning"); return; }
@@ -536,12 +536,13 @@ export async function runApp(options: AppOptions): Promise<void> {
   serversStarted = startServers();
   await serversStarted;
   // A saved model the sign-in does not serve is refused before the first request (#566).
-  const refused = model === undefined ? undefined : await runnableModel(models, label(model));
-  if (typeof refused === "string") {
+  const saved = model === undefined ? undefined : await runnableModel(models, label(model));
+  if (typeof saved === "string") {
     model = undefined;
     await reopen();
-    shell.note(`The saved model is not used: ${refused} Choose one with /model.`, "warning");
-  } else if (model === undefined) shell.note("No provider is logged in: /login, or set a provider's API key, then /model.", "warning");
+    shell.note(`The saved model is not used: ${saved} Choose one with /model.`, "warning");
+  } else if (saved?.unchecked !== undefined) shell.note(saved.unchecked, "warning");
+  else if (model === undefined) shell.note("No provider is logged in: /login, or set a provider's API key, then /model.", "warning");
   await shell.stopped;
   for (const each of lives) {
     each.unsubscribe();

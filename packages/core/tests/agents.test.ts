@@ -245,6 +245,28 @@ describe("the agent tool", () => {
     }
   });
 
+  test("with ChatGPT sign-in, a child's model the sign-in's list could not check is kept, saying why (#567)", async () => {
+    const scripted = routed({
+      pick: [{ calls: [{ tool: "agent", args: { prompt: "x", description: "x", model: "openai/gpt-6.1-sol", wait: true } }] }, "done"],
+    });
+    const credentials = new InMemoryCredentialStore();
+    const models = createModels({ credentials });
+    for (const provider of scripted.models.getProviders()) models.setProvider(provider);
+    const signOut = await signInWithChatGPT(models, credentials, "offline");
+    try {
+      const parent = session({}, { models, model: scripted.model });
+      await parent.prompt("pick");
+      const result = parent.history().find((message) => message.role === "toolResult");
+      const text = result?.role === "toolResult" ? textOf(result.content) : "";
+      expect(text).not.toContain("Not started");
+      expect(text).toContain("openai/gpt-6.1-sol was not checked against the models the ChatGPT sign-in serves");
+      // It started: offline, its request itself fails.
+      expect(text).toContain("ended error");
+    } finally {
+      signOut();
+    }
+  });
+
   test("a child whose model request fails gives the parent the reason its run ended (#564)", async () => {
     const failed = "OpenAI API error (400): The 'gpt-5.5' model is not supported when using Codex with a ChatGPT account.";
     const parent = session({

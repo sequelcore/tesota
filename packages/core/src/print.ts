@@ -93,8 +93,10 @@ export async function runPrint(args: readonly string[], cwd: string, write: Prin
   const named = asked.model ?? settings.model;
   if (named === undefined) { write.error("No model: run tesota, then /login and /model.\n"); return 1; }
   // A model the sign-in does not serve is refused here rather than at the first request (#566).
-  const model = await runnableModel(models, named);
-  if (typeof model === "string") { write.error(`Not run: ${model}\n`); return 1; }
+  const runnable = await runnableModel(models, named);
+  if (typeof runnable === "string") { write.error(`Not run: ${runnable}\n`); return 1; }
+  const { model, unchecked } = runnable;
+  if (unchecked !== undefined) write.error(`${unchecked}\n`);
   provideHost(shellHost());
   const { hooks, mcp } = trustedStandards(cwd, settingsPath, write);
   const rules = loadRules(cwd);

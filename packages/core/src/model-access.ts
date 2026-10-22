@@ -33,27 +33,53 @@ export function chosenModel(models: MutableModels, settings: Settings): Model<Ap
 const label = (model: Model<Api>): string => `${model.provider}/${model.id}`;
 
 /**
- * The models Tesota can run (#563, #566): those of the providers it is
- * signed in to, but with ChatGPT sign-in only the OpenAI models it serves,
- * as `GET /models` on its token lists them; OpenAI refuses the rest of its
- * catalog at the first request. `/model`, `-p` and the `agent` tool read it.
+ * The OpenAI models a ChatGPT sign-in serves, as `GET /models` on its token
+ * lists them (#563, #566), or none when OpenAI is not signed in with
+ * ChatGPT. Throws when the list cannot be fetched.
  */
-export async function runnableModels(models: Models): Promise<readonly Model<Api>[]> {
-  const available = await models.getAvailable();
-  if ((await models.checkAuth("openai"))?.type !== "oauth") return available;
+async function servedByChatGPT(models: Models): Promise<ReadonlySet<unknown> | undefined> {
+  if ((await models.checkAuth("openai"))?.type !== "oauth") return undefined;
   const token = (await models.getAuth("openai"))?.auth.apiKey;
-  const response = await fetch(`${models.getProvider("openai")?.baseUrl}/models`,
-    { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(30_000) });
-  if (!response.ok) throw new Error(`OpenAI did not list the models the ChatGPT sign-in serves (${response.status}).`);
-  const listed = (await response.json() as { models?: readonly { slug?: unknown }[] }).models ?? [];
-  const served = new Set(listed.map(({ slug }) => slug));
-  return available.filter((model) => model.provider !== "openai" || served.has(model.id));
+  let listed: readonly { slug?: unknown }[];
+  try {
+    const response = await fetch(`${models.getProvider("openai")?.baseUrl}/models`,
+      { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(5_000) });
+    if (!response.ok) throw new Error(`OpenAI answered ${response.status}`);
+    listed = (await response.json() as { models?: readonly { slug?: unknown }[] }).models ?? [];
+  } catch (error) {
+    throw new Error(`the list of the models the ChatGPT sign-in serves could not be fetched (${error instanceof Error ? error.message : String(error)})`);
+  }
+  return new Set(listed.map(({ slug }) => slug));
 }
 
-/** The model `named`, as `provider/id`, among those Tesota can run, or why it is not one. */
-export async function runnableModel(models: Models, named: string): Promise<Model<Api> | string> {
-  let available: readonly Model<Api>[];
-  try { available = await runnableModels(models); } catch (error) { return error instanceof Error ? error.message : String(error); }
-  return available.find((model) => label(model) === named)
-    ?? `no model ${named} among those Tesota can run: ${available.map(label).join(", ") || "none"}.`;
+const narrowed = (available: readonly Model<Api>[], served: ReadonlySet<unknown> | undefined): readonly Model<Api>[] =>
+  served === undefined ? available : available.filter((model) => model.provider !== "openai" || served.has(model.id));
+
+/**
+ * The models Tesota can run (#563, #566): those of the providers it is
+ * signed in to, but with ChatGPT sign-in only the OpenAI models it serves;
+ * OpenAI refuses the rest of its catalog at the first request. `/model`
+ * lists them. Throws when the ChatGPT sign-in's list cannot be fetched.
+ */
+export async function runnableModels(models: Models): Promise<readonly Model<Api>[]> {
+  return narrowed(await models.getAvailable(), await servedByChatGPT(models));
+}
+
+/**
+ * The model `named`, as `provider/id`, among those Tesota can run, or why it
+ * is not one; `-p`, the shell's saved model and the `agent` tool read it. It
+ * is refused only when the ChatGPT sign-in's list arrived without it: when
+ * the list cannot be fetched, it is kept with `unchecked` saying why, since
+ * OpenAI still refuses one it does not serve at the first request (#567).
+ */
+export async function runnableModel(models: Models, named: string): Promise<{ readonly model: Model<Api>; readonly unchecked?: string } | string> {
+  const available = await models.getAvailable();
+  let served: ReadonlySet<unknown> | undefined;
+  let failed: string | undefined;
+  try { served = await servedByChatGPT(models); } catch (error) { failed = error instanceof Error ? error.message : String(error); }
+  const runnable = narrowed(available, served);
+  const model = runnable.find((candidate) => label(candidate) === named);
+  if (model === undefined) return `no model ${named} among those Tesota can run: ${runnable.map(label).join(", ") || "none"}.`;
+  return failed === undefined || model.provider !== "openai" ? { model }
+    : { model, unchecked: `${named} was not checked against the models the ChatGPT sign-in serves: ${failed}.` };
 }
