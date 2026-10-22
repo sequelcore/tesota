@@ -1,4 +1,4 @@
-import { type Api, type CredentialStore, createModels, type LoginOptions, type Model, type MutableModels } from "@earendil-works/pi-ai";
+import { type Api, type CredentialStore, createModels, type LoginOptions, type Model, type Models, type MutableModels } from "@earendil-works/pi-ai";
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
 import { fileCredentialStore } from "./credentials.ts";
 import { deviceId, type Settings } from "./settings.ts";
@@ -28,4 +28,32 @@ export const loginOptions = (settingsPath?: string): LoginOptions => ({ agentNam
 export function chosenModel(models: MutableModels, settings: Settings): Model<Api> | undefined {
   const [provider, ...id] = settings.model?.split("/") ?? [];
   return provider === undefined ? undefined : models.getModel(provider, id.join("/"));
+}
+
+const label = (model: Model<Api>): string => `${model.provider}/${model.id}`;
+
+/**
+ * The models Tesota can run (#563, #566): those of the providers it is
+ * signed in to, but with ChatGPT sign-in only the OpenAI models it serves,
+ * as `GET /models` on its token lists them; OpenAI refuses the rest of its
+ * catalog at the first request. `/model`, `-p` and the `agent` tool read it.
+ */
+export async function runnableModels(models: Models): Promise<readonly Model<Api>[]> {
+  const available = await models.getAvailable();
+  if ((await models.checkAuth("openai"))?.type !== "oauth") return available;
+  const token = (await models.getAuth("openai"))?.auth.apiKey;
+  const response = await fetch(`${models.getProvider("openai")?.baseUrl}/models`,
+    { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(30_000) });
+  if (!response.ok) throw new Error(`OpenAI did not list the models the ChatGPT sign-in serves (${response.status}).`);
+  const listed = (await response.json() as { models?: readonly { slug?: unknown }[] }).models ?? [];
+  const served = new Set(listed.map(({ slug }) => slug));
+  return available.filter((model) => model.provider !== "openai" || served.has(model.id));
+}
+
+/** The model `named`, as `provider/id`, among those Tesota can run, or why it is not one. */
+export async function runnableModel(models: Models, named: string): Promise<Model<Api> | string> {
+  let available: readonly Model<Api>[];
+  try { available = await runnableModels(models); } catch (error) { return error instanceof Error ? error.message : String(error); }
+  return available.find((model) => label(model) === named)
+    ?? `no model ${named} among those Tesota can run: ${available.map(label).join(", ") || "none"}.`;
 }

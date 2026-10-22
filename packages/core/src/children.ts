@@ -71,32 +71,13 @@ function childInstructions(writes: boolean, branch: string | undefined): string 
     + "before you finish, so the agent that started you can bring it in." : "You only read: change nothing."].join("\n\n");
 }
 
-/**
- * The models a child can run on (#563): those of the providers Tesota is
- * signed in to, but with ChatGPT sign-in only the OpenAI models it serves, as
- * `GET /models` on its token lists them; OpenAI refuses the rest of its
- * catalog at the first request.
- */
-async function runnable(models: SessionOptions["models"]): Promise<readonly Model<Api>[]> {
-  const available = await models.getAvailable();
-  if ((await models.checkAuth("openai"))?.type !== "oauth") return available;
-  const token = (await models.getAuth("openai"))?.auth.apiKey;
-  const response = await fetch(`${models.getProvider("openai")?.baseUrl}/models`,
-    { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(30_000) });
-  if (!response.ok) throw new Error(`OpenAI did not list the models the ChatGPT sign-in serves (${response.status}).`);
-  const listed = (await response.json() as { models?: readonly { slug?: unknown }[] }).models ?? [];
-  const served = new Set(listed.map(({ slug }) => slug));
-  return available.filter((model) => model.provider !== "openai" || served.has(model.id));
-}
-
-/** The model a child runs on: the call's, then its type's, then its parent's, among those it can run on. */
+/** The model a child runs on: the call's, then its type's, then its parent's, among those Tesota can run. */
 async function modelFor(parent: Parent, request: AgentRequest, type: AgentType | undefined): Promise<Model<Api> | string> {
   const named = request.model ?? type?.model;
   if (named === undefined) return parent.options.model;
-  let available: readonly Model<Api>[];
-  try { available = await runnable(parent.options.models); } catch (error) { return error instanceof Error ? error.message : String(error); }
-  const found = available.find((model) => label(model) === named);
-  return found ?? `no model ${named} among those Tesota can run: ${available.map(label).join(", ") || "none"}.`;
+  // Loaded only when a call names a model, since it brings pi-ai's every provider into the session's memory.
+  const { runnableModel } = await import("./model-access.ts");
+  return await runnableModel(parent.options.models, named);
 }
 
 /** What the model reads of a child's end: its report, labeled as the child's words, then its receipt and where its work is. */

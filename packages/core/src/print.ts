@@ -1,3 +1,4 @@
+import type { MutableModels } from "@earendil-works/pi-ai";
 import { join, resolve } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
 import { provideHost } from "../../../src/host.ts";
@@ -7,7 +8,7 @@ import { branchOf } from "./branch.ts";
 import { anyHooks, type Hooks, joinHooks } from "./hooks.ts";
 import type { McpServers } from "./mcp.ts";
 import { type McpServerConfig, readMcpConfig } from "./mcp-config.ts";
-import { chosenModel, engineModels } from "./model-access.ts";
+import { engineModels, runnableModel } from "./model-access.ts";
 import { loadRules } from "./permissions.ts";
 import { createSession, type EngineSession } from "./session.ts";
 import { peekSessionFile } from "./session-file.ts";
@@ -84,17 +85,16 @@ async function serversFor(session: EngineSession, mcp: { own: string; project?: 
  * or was stopped, 2 for arguments it does not take.
  */
 export async function runPrint(args: readonly string[], cwd: string, write: PrintOutput,
-  flags: Readonly<Record<string, string>> = {}, settingsPath: string = join(tesotaHome(), "settings.json")): Promise<number> {
+  flags: Readonly<Record<string, string>> = {}, settingsPath: string = join(tesotaHome(), "settings.json"),
+  models: MutableModels = engineModels()): Promise<number> {
   const asked = parse(args);
   if (typeof asked === "string") { write.error(`${asked}\n`); return 2; }
   const { settings } = readSettings(settingsPath);
-  const models = engineModels();
-  const [provider, ...id] = asked.model?.split("/") ?? [];
-  const model = provider === undefined ? chosenModel(models, settings) : models.getModel(provider, id.join("/"));
-  if (model === undefined) {
-    write.error(asked.model === undefined ? "No model: run tesota, then /login and /model.\n" : `No model ${asked.model}.\n`);
-    return 1;
-  }
+  const named = asked.model ?? settings.model;
+  if (named === undefined) { write.error("No model: run tesota, then /login and /model.\n"); return 1; }
+  // A model the sign-in does not serve is refused here rather than at the first request (#566).
+  const model = await runnableModel(models, named);
+  if (typeof model === "string") { write.error(`Not run: ${model}\n`); return 1; }
   provideHost(shellHost());
   const { hooks, mcp } = trustedStandards(cwd, settingsPath, write);
   const rules = loadRules(cwd);
