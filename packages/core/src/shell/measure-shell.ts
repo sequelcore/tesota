@@ -52,6 +52,8 @@ export async function measureShell(): Promise<void> {
     // Tesota as an extension draws its interface; the measured run settles at once, so the gate's checks are not timed here.
     const session = createSession({ cwd, folder: sessions, ...scripted(loopRounds), extensions: [(pi) => { tesota(pi); }], surface,
       mode: "tui" });
+    // Planted for #556, not to merge: 30 ms before the first frame.
+    Bun.sleepSync(30);
     const shell = startShell({ terminal, mode: "fullscreen", fullRepaint: false, theme, session, status: () => "measure", surface });
     while (terminal.firstFrameMs === undefined) await new Promise((resolve) => setTimeout(resolve, 1));
     await session.prompt("measure");
