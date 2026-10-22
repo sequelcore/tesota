@@ -85,6 +85,20 @@ it("sums up the receipt, leading with whether anything in it needs the operator"
     .toBe("! receipt · 1 proved · tests pass · contracts strong · weakening not checked");
 });
 
+it("names the model being checked, then sums up the models: checked, still failing, and possibly stale", () => {
+  expect(words({ step: "checking", path: "models/Stock.tla", startedAt: 0, tally: { proved: 0, notProved: 0, tests: "pass" } }))
+    .toBe("◐ checking models… · 0s · tests pass");
+  const model: NonNullable<Receipt["models"]>[number] = { path: "models/Stock.tla", language: "tla", problems: [], run: "passed", states: 13,
+    header: { covers: [{ path: "src/stock.mjs", names: [] }], invariants: ["NeverOversold"], atomic: ["each await"], omits: ["failures"], faults: [] },
+    evidence: { ...evidence("passed"), verifier: "tlc" }, faults: [], staleness: "possibly_stale", stale: ["src/stock.mjs"],
+    writtenWithCode: false, link: "no_replay", verdict: "proved" };
+  expect(words({ step: "settled", receipt: { ...emptyReceipt, models: [model] } })).toBe("○ receipt · 1 model checked · 1 model possibly stale");
+  expect(words({ step: "settled", receipt: { ...emptyReceipt, models: [{ ...model, verdict: "no_progress", staleness: "current" }] } }))
+    .toBe("! receipt · 1 model fails");
+  expect(words({ step: "settled", receipt: { ...emptyReceipt, models: [{ ...model, verdict: "operator", staleness: "current" }] } }))
+    .toBe("○ receipt · 1 not checked");
+});
+
 it("never counts a stopped run as verified, even in a repository", () => {
   const receipt: Receipt = { ...emptyReceipt, stopped: "quota exhausted" };
   expect(words({ step: "settled", receipt })).toBe("! receipt · not verified, run ended before verification");

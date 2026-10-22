@@ -4,6 +4,7 @@ import type { OpenCases } from "./open-cases.js";
 import { inFolder } from "./projects.js";
 import type { UncoveredLines } from "./proof-coverage.js";
 import type { ClaimCheckRun, ContractStrength } from "./proof-guarantees.js";
+import type { Counterexample, ModelCheck, ModelLink } from "./model-check.js";
 import type { ChangeLines, LineCount } from "./change-lines.js";
 import type { CommandRun, TestExercise } from "./test-rung.js";
 import type { Weakening } from "./verification-changes.js";
@@ -53,6 +54,15 @@ export interface Receipt {
   readonly claimcheck?: ClaimCheckRun;
   readonly tests: readonly (CommandRun & { readonly verdict: GateVerdict })[];
   readonly exercises: readonly TestExercise[];
+  /**
+   * Each model whose code or own files the request changed (#551), checked
+   * with TLC or kept from a passing check of the same content: model-checked
+   * evidence, about the model and never a proof of the code. Absent when the
+   * request touched no model.
+   */
+  readonly models?: readonly ModelResult[];
+  /** TLA+ and Quint files the request changed that declare no model header, so nothing checked them. */
+  readonly unheaded?: readonly string[];
   /**
    * The changes that may weaken the evidence, or why they could not be
    * checked: the change from the base is larger than the gate reads
@@ -120,10 +130,13 @@ export interface ReceiptChild {
   readonly branch?: string;
 }
 
+/** A model's check and the gate's verdict on it (`gateVerdict`). */
+export type ModelResult = ModelCheck & { readonly verdict: GateVerdict };
+
 /** What a receipt records for one repository or folder; the receipt itself is one, for the folder Pi runs in. */
 export type UnitEvidence = Pick<Receipt, "repository" | "snapshot" | "tooLarge" | "reason" | "base" | "proofs" | "contracts" |
-  "claimcheck" | "tests" | "exercises" | "weakened" | "unverified" | "commentsOnly" | "uncovered" | "changed" | "lines" |
-  "inherited" | "unmeasured" | "startState" | "endState">;
+  "claimcheck" | "tests" | "exercises" | "models" | "unheaded" | "weakened" | "unverified" | "commentsOnly" | "uncovered" | "changed" |
+  "lines" | "inherited" | "unmeasured" | "startState" | "endState">;
 
 /** Whether anything verified a unit: it is a Git repository, or Tesota snapshotted it. */
 export function verified(unit: Pick<UnitEvidence, "repository" | "snapshot">): boolean {
@@ -185,6 +198,8 @@ export function fromFolder(unit: ReceiptUnit): UnitEvidence {
     contracts: unit.contracts.map((contract) => ({ ...contract, path: at(contract.path) })),
     tests: unit.tests.map((run) => ({ ...run, command: inFolder(folder, run.command), evidence: checked(run.evidence) })),
     exercises: unit.exercises.map((exercise) => ({ ...exercise, path: at(exercise.path) })),
+    ...unit.models === undefined ? {} : { models: unit.models.map((model) => ({ ...model, path: at(model.path), evidence: checked(model.evidence) })) },
+    ...unit.unheaded === undefined ? {} : { unheaded: unit.unheaded.map(at) },
     weakened: typeof unit.weakened === "string" ? unit.weakened : unit.weakened.map((change) => ({ ...change, path: at(change.path) })),
     unverified: unit.unverified.map(at),
     inherited: unit.inherited.map(at),
@@ -211,9 +226,12 @@ export function allEvidence(receipt: Receipt): UnitEvidence {
   const unread = units.find(({ weakened }) => typeof weakened === "string")?.weakened;
   const changed = units.some((unit) => typeof unit.changed === "string") ? "unreadable" as const
     : units.flatMap((unit) => typeof unit.changed === "string" ? [] : unit.changed);
+  const models = units.flatMap((unit) => unit.models ?? []);
+  const unheaded = units.flatMap((unit) => unit.unheaded ?? []);
   return { repository: units.length > 0, base: null,
     proofs: units.flatMap(({ proofs }) => proofs), contracts: units.flatMap(({ contracts }) => contracts),
     tests: units.flatMap(({ tests }) => tests), exercises: units.flatMap(({ exercises }) => exercises),
+    ...models.length === 0 ? {} : { models }, ...unheaded.length === 0 ? {} : { unheaded },
     weakened: typeof unread === "string" ? unread : units.flatMap(({ weakened }) => typeof weakened === "string" ? [] : weakened),
     unverified: units.flatMap(({ unverified }) => unverified), uncovered: units.flatMap(({ uncovered }) => uncovered), changed,
     lines: linesTogether(units.map(({ lines }) => lines)),
@@ -404,7 +422,7 @@ export function receiptEntry(mode: string | undefined, receipt: Receipt):
 }
 
 /** Which check a finding comes from. */
-export type Check = "proof" | "tests" | "weakening" | "contract" | "exercise" | "request" | "coverage";
+export type Check = "proof" | "tests" | "model" | "weakening" | "contract" | "exercise" | "request" | "coverage";
 
 /**
  * One fact of the receipt for people, in plain words: what it asks of the
@@ -462,6 +480,110 @@ export function commandFinding({ command, verdict, evidence, failingTests }: Pic
   return { standing: "decide", check: "tests", failed: true, label: "Tests fail", subject: command,
     detail: failingTests === undefined || failingTests.length === 0 ? "the command fails"
       : `${plural(failingTests.length, "test fails", "tests fail")}: ${failingTests.join("; ")}`, more };
+}
+
+/** A counterexample as numbered steps in words, in the model's names, for the agent and the receipt. */
+export function counterexampleSteps({ steps }: Counterexample): string[] {
+  return steps.map(({ action, changes }, k) => `${k + 1}. ${action}${changes.length === 0 ? ", changing nothing" : `: ${changes.join(", ")}`}`);
+}
+
+const linkWords: Readonly<Record<ModelLink, string>> = {
+  linked: "linked to the code by its trace replay", no_replay: "not linked to the code", replay_failed: "not linked to the code: its replay fails",
+};
+
+/** What a model passing establishes, in one phrase: its invariants in every reachable state, and its faults caught. */
+function modelHolds({ header, states, faults }: ModelCheck): string {
+  const caught = faults.filter(({ verdict }) => verdict === "caught").length;
+  return `${header.invariants.join(", ")} ${header.invariants.length === 1 ? "holds" : "hold"} in all ` +
+    `${plural(states, "reachable state", "reachable states")}; caught ${caught} of ${plural(faults.length, "planted fault", "planted faults")}`;
+}
+
+/** What a model declares it covers and abstracts, which fixes what it can find (#539). */
+function abstractionWords({ header }: ModelCheck): string[] {
+  return [`Covers ${header.covers.map(({ path, names }) => names.length === 0 ? path : `${path} (${names.join(", ")})`).join("; ")}`,
+    ...header.atomic.map((step) => `Atomic: ${step}`), ...header.omits.map((left) => `Leaves out: ${left}`)];
+}
+
+/** Why a model's check did not finish or could not run, from how it ended. */
+function modelWhy({ run, problems, evidence }: ModelCheck): string {
+  if (run === "timed_out") return "TLC ran past its time limit";
+  if (run === "cancelled") return "the check was stopped";
+  const lines = evidence.output.trim().split(/\r?\n/u);
+  // A run that did not start says why first; TLC reports an error before its closing lines.
+  return problems[0] ?? (run === "not_started" ? lines[0] : lines.find((line) => /^Error: |error:/iu.test(line)) ?? lines.at(-1)) ?? "";
+}
+
+/** The planted faults that pass or could not be checked, which make a passing model too weak to trust. */
+function failingFaults({ faults }: ModelCheck): string {
+  const failing = faults.filter(({ verdict }) => verdict === "passes" || verdict === "broken");
+  return failing.length === 0 ? "no planted fault shows it can fail"
+    : `${failing.map(({ path, verdict }) => `${path} ${verdict === "passes" ? "passes" : "could not be checked"}`).join(", ")}`;
+}
+
+/** Whether a model may no longer describe its code, as a gap; nothing when it is current. */
+function stalenessFindings({ path, staleness, stale, header }: ModelCheck): Finding[] {
+  if (staleness === "current") return [];
+  if (staleness === "possibly_stale") {
+    return [{ standing: "gap", check: "model", label: "Model possibly stale", subject: path,
+      detail: `${stale.join(", ")} changed since ${header.confirmed?.slice(0, 12) ?? ""}, the commit it was confirmed against`, more: [] }];
+  }
+  return [{ standing: "gap", check: "model", label: "Model staleness unknown", subject: path,
+    detail: header.confirmed === undefined ? "its header names no confirmed commit" : `commit ${header.confirmed} is not in the repository`, more: [] }];
+}
+
+/** A model's check as its main finding: model-checked, not checked, failing, too weak, or unreadable to TLC. */
+export function modelFinding(model: ModelResult): Finding {
+  const { path, verdict, counterexample, faults, writtenWithCode } = model;
+  const more = [...abstractionWords(model), ...faults.map((fault) => `Fault ${fault.path} (${fault.description}): ${fault.verdict}`),
+    checked(model.evidence)];
+  if (verdict === "proved") {
+    return { standing: "holds", check: "model", label: writtenWithCode ? "Model-checked, written with the code" : "Model-checked", subject: path,
+      detail: `${modelHolds(model)}; ${linkWords[model.link]}`, more };
+  }
+  if (verdict === "operator") return { standing: "gap", check: "model", label: "Model not checked", subject: path, detail: modelWhy(model), more };
+  if (counterexample !== undefined) {
+    return { standing: "decide", check: "model", failed: true, label: "Model fails", subject: path, detail: counterexample.violation,
+      more: [...counterexampleSteps(counterexample), ...more] };
+  }
+  if (model.run === "passed") {
+    return { standing: "decide", check: "model", failed: true, label: "Model too weak", subject: path, detail: failingFaults(model), more };
+  }
+  return { standing: "decide", check: "model", failed: true, label: "Model not checkable", subject: path, detail: modelWhy(model), more };
+}
+
+/**
+ * Each model as findings (#551): model-checked when it and every planted
+ * fault behaved, marked weaker when the request wrote it with its code; a
+ * decision when it still fails or its faults pass after going back; a gap
+ * when it could not be checked, a fault did not finish, it may be stale, or a
+ * changed file declares no header. Model-checked is about the model: the
+ * receipt says whether a replay links it to the code.
+ */
+function modelFindings(models: readonly ModelResult[], unheaded: readonly string[]): Finding[] {
+  return [...models.flatMap((model) => [modelFinding(model),
+    ...model.verdict !== "proved" ? [] : model.faults.filter(({ verdict }) => verdict === "unrun").map((fault): Finding => ({ standing: "gap",
+      check: "model", label: "Planted fault not checked", subject: fault.path, detail: fault.output.trim().split(/\r?\n/u).at(-1) ?? "", more: [] })),
+    ...stalenessFindings(model)]),
+  ...unheaded.map((path): Finding => ({ standing: "gap", check: "model", label: "Model not checked", subject: path,
+    detail: "it declares no tesota-model header", more: [] }))];
+}
+
+/** A model's lines of the receipt. */
+function modelLines(model: ModelResult): string[] {
+  const { path, verdict, counterexample } = model;
+  const abstraction = abstractionWords(model).map((words) => `                ${words}`);
+  const stale = stalenessFindings(model).map(({ detail }) => `  ${model.staleness === "unknown" ? "staleness?    " : "may be stale  "}${path}: ${detail}`);
+  if (verdict === "proved") {
+    return [`  model-checked ${path}: ${modelHolds(model)}; ${linkWords[model.link]}${model.writtenWithCode ? "; written with the code, so weaker" : ""}`,
+      ...abstraction, `                content sha256 ${model.evidence.contentHash}`, ...stale];
+  }
+  if (verdict === "operator") return [`  not checked   ${path}: ${modelWhy(model)}`, ...stale];
+  if (counterexample !== undefined) {
+    return [`  model fails   ${path}: ${counterexample.violation}, repeating a counterexample already sent back`,
+      ...counterexampleSteps(counterexample).map((step) => `                ${step}`), ...abstraction, ...stale];
+  }
+  return [model.run === "passed" ? `  weak model    ${path}: ${failingFaults(model)}, after they went back`
+    : `  NOT checked   ${path}: ${modelWhy(model)}, repeating a failure already sent back`, ...stale];
 }
 
 /**
@@ -565,6 +687,7 @@ function unitFindings(receipt: UnitEvidence): Finding[] {
     ...fingerprintFindings(receipt),
     ...receipt.proofs.map((proof) => proofFinding(proof, addedAssumptions(proof.evidence.files, receipt.weakened))),
     ...receipt.tests.map(commandFinding),
+    ...modelFindings(receipt.models ?? [], receipt.unheaded ?? []),
     ...typeof receipt.weakened === "string"
       ? [{ standing: "decide" as const, check: "weakening" as const, label: "Weakening not checked", subject: "the change",
         detail: receipt.weakened === "too_large" ? "it is too large to check for weakening" : "Git could not show it", more: [] }]
@@ -649,8 +772,9 @@ export function receiptTone(findings: readonly Finding[]): ReturnType<typeof ver
 export function receiptStanding(receipt: Receipt): "verified" | "incomplete" | "failed" {
   if (receipt.stopped === undefined && receiptDecisions(receipt) === 0) return "verified";
   // A folder of repositories keeps its checks in its units, as the footer reads them too.
-  const { proofs, tests } = allEvidence(receipt);
-  return [...proofs, ...tests].some(({ verdict }) => verdict !== "proved") ? "failed" : "incomplete";
+  const { proofs, tests, models = [] } = allEvidence(receipt);
+  return [...proofs, ...tests].some(({ verdict }) => verdict !== "proved") || models.some(({ verdict }) => verdict === "no_progress")
+    ? "failed" : "incomplete";
 }
 
 /** The receipt as the operator reads it; `details` of its session entry carries the receipt itself. */
@@ -723,6 +847,8 @@ function unitLines(receipt: UnitEvidence): string[] {
     ...receipt.contracts.flatMap(mutationLines),
     ...claimcheckLines(receipt.claimcheck, receipt.contracts),
     ...receipt.tests.map(testLine),
+    ...(receipt.models ?? []).flatMap(modelLines),
+    ...(receipt.unheaded ?? []).map((path) => `  not checked   ${path}: it declares no tesota-model header, so no model check ran`),
     ...receipt.exercises.map((exercise) => `  ${sensitivityText[exercise.sensitivity]}${exercise.path}: ${exerciseDetail(exercise)}`),
     ...receipt.weakened === "too_large"
       ? ["  not checked   weakened evidence: the change is too large to check for weakening"]

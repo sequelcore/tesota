@@ -7,8 +7,8 @@ import type { ProofOutcome } from "./verification/proof-outcome-rule.js";
  * content still has `contentHash`.
  */
 export interface Evidence {
-  /** `command` for a project command, such as its tests, run on the changed files. */
-  readonly verifier: "lemmascript" | "command";
+  /** `command` for a project command, such as its tests, run on the changed files; `tlc` for a model's check (`checkModel`). */
+  readonly verifier: "lemmascript" | "command" | "tlc";
   /** What a pass establishes, in words a reviewer can confirm. */
   readonly claim: string;
   /** What a pass does not establish. */

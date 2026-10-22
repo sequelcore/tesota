@@ -7,11 +7,13 @@ import { type ChangeStatus, type ChangedFile, changedLines } from "./diff-lines.
 import type { Evidence } from "./evidence.js";
 import { git, gitOutput, headCommit } from "./git.js";
 import { host } from "./host.js";
+import type { ModelCheck } from "./model-check.js";
 import { OPEN_CASES_MODEL, openCases } from "./open-cases.js";
 import type { ContractStrength } from "./proof-guarantees.js";
 import { inFolder, owningProjects, suggestChecks } from "./projects.js";
 import { proofReport } from "./prove-tool.js";
-import { entryReceipt, inUnit, isReceipt, noEvidence, type Receipt, type ReceiptChild, receiptEntry, type UnitEvidence } from "./receipt.js";
+import { entryReceipt, inUnit, isReceipt, type ModelResult, noEvidence, type Receipt, type ReceiptChild, receiptEntry,
+  type UnitEvidence } from "./receipt.js";
 import { captureFingerprint, compareFingerprints, type Fingerprint, pathBlobs } from "./request-fingerprint.js";
 import { takeSnapshot } from "./snapshot.js";
 import type { CommandRun } from "./test-rung.js";
@@ -19,6 +21,7 @@ import type { FileChange } from "./verification-changes.js";
 import type { Readiness } from "./verification/footer-rule.js";
 import { gateVerdict, keepsWorking, toolMayChangeFiles } from "./verification/gate-rule.js";
 import { annotations, proofSources, proveFile } from "./verification/lemmascript-verifier.js";
+import { checksModel } from "./verification/model-rule.js";
 import { type Unit, workspaceUnits } from "./workspace.js";
 
 /**
@@ -299,7 +302,8 @@ function sendBackWeak(strength: readonly ContractStrength[], sentBack: Map<strin
 export type SentBack =
   | { readonly round: "proofs"; readonly proofs: readonly { readonly path: string; readonly evidence: Evidence }[] }
   | { readonly round: "tests"; readonly commands: readonly CommandRun[] }
-  | { readonly round: "contracts"; readonly contracts: readonly ContractStrength[] };
+  | { readonly round: "contracts"; readonly contracts: readonly ContractStrength[] }
+  | { readonly round: "models"; readonly models: readonly ModelCheck[]; readonly unheaded: readonly string[] };
 
 /** The session's model as the receipt records it, when one is set. */
 function sessionModel(ctx: Pick<ExtensionContext, "model">): Pick<Receipt, "model"> {
@@ -326,6 +330,7 @@ export type GateStatus =
   | { readonly step: "waiting"; readonly readiness: Readiness }
   | { readonly step: "proving"; readonly path: string; readonly startedAt: number; readonly tally: Tally }
   | { readonly step: "testing" | "measuring"; readonly startedAt: number; readonly tally: Tally }
+  | { readonly step: "checking"; readonly path: string; readonly startedAt: number; readonly tally: Tally }
   | { readonly step: "sent_back"; readonly tally: Tally }
   | { readonly step: "settled"; readonly receipt: Receipt };
 
@@ -390,7 +395,9 @@ export class GateProgress {
  * (`testRung`), and once it passes, the strength of the contracts the
  * request added or changed (`contractStrength`) and the changed lines no
  * proof covers (`uncovered`) are measured for the receipt, and a weak
- * contract goes back first (`sendBackWeak`). What went back lasts for the operator's request: it resets on their input, not
+ * contract goes back first (`sendBackWeak`). Then each model the request
+ * touched is checked with TLC (`checkModels`), and one that fails, or a model
+ * file without a header, goes back. What went back lasts for the operator's request: it resets on their input, not
  * on `agent_start`, which every continuation fires too. When nothing goes back, the run settles with
  * a receipt for the operator. The first non-reader tool fingerprints each
  * repository; paths changed since then and commits since admission are the
@@ -419,6 +426,15 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
   let sentBack = new Map<string, string[]>();
   let commandsSentBack = new Map<string, Map<string, string[]>>();
   let weakSentBack = new Map<string, string[]>();
+  let modelsSentBack = new Map<string, string[]>();
+  let unheadedSentBack = new Set<string>();
+  /**
+   * Each model's last check in the request and last passing check in the
+   * session, by its path from the folder Pi runs in: the same content is never
+   * checked again, and a repeated failure is judged without running TLC.
+   */
+  let modelsChecked = new Map<string, ModelCheck>();
+  const modelsPassed = new Map<string, ModelCheck>();
   let mayHaveChanged = false;
   let fingerprints: Promise<ReadonlyMap<string, Fingerprint>> | undefined;
   /** What the operator asked during the request, for ClaimCheck to compare the contracts with. */
@@ -437,6 +453,9 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     sentBack = new Map();
     commandsSentBack = new Map();
     weakSentBack = new Map();
+    modelsSentBack = new Map();
+    unheadedSentBack = new Set();
+    modelsChecked = new Map();
     mayHaveChanged = false;
     fingerprints = undefined;
     clarifications = [];
@@ -576,6 +595,50 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     }
     return measured;
   });
+  /**
+   * Each repository's models the request touched, checked once per content
+   * (`checksModel`): a model whose last check in the request, or last passing
+   * check in the session, read exactly this content keeps that check, judged
+   * again against what went back. With them, the TLA+ and Quint files the
+   * request changed that declare no header.
+   */
+  const checkModels = (units: readonly ChangedUnit[], tallied: Tally): Effect.Effect<Map<string, ModelRung>> => effect().gen(function* () {
+    const rungs = new Map<string, ModelRung>();
+    for (const unit of units) {
+      const planned = yield* step(() => checks().plannedModels(unit.root, unit.changed));
+      const models: ModelResult[] = [];
+      for (const plan of planned.models) {
+        const key = inUnit(unit.folder, plan.path);
+        const earlier = [modelsChecked.get(key), modelsPassed.get(key)].find((check) => check?.evidence.contentHash === plan.contentHash);
+        const judged = (check: ModelCheck): ModelResult =>
+          ({ ...check, verdict: gateVerdict(check.evidence.outcome, checks().modelFailure(check), modelsSentBack.get(key) ?? []) });
+        if (!checksModel(plan.touched, earlier !== undefined)) {
+          if (plan.touched && earlier !== undefined) models.push(judged(earlier));
+          continue;
+        }
+        progress.publish({ step: "checking", path: key, startedAt: performance.now(), tally: tallied });
+        const check = yield* step((signal) => checks().checkModel(unit.root, plan.path, unit.changed, signal));
+        modelsChecked.set(key, check);
+        if (check.evidence.outcome === "passed") modelsPassed.set(key, check);
+        models.push(judged(check));
+      }
+      rungs.set(unit.folder, { models, unheaded: planned.unheaded });
+    }
+    return rungs;
+  });
+  /** The models that go back, and the files without a header not yet sent back in this request, named from the folder Pi runs in. */
+  const modelsBack = (rungs: ReadonlyMap<string, ModelRung>, tallied: Tally): SettleResult | undefined => {
+    const back = [...rungs].flatMap(([folder, { models }]) => models.filter(({ verdict }) => verdict === "send_back")
+      .map((model) => ({ ...model, path: inUnit(folder, model.path) })));
+    const unheaded = [...rungs].flatMap(([folder, rung]) => rung.unheaded.map((path) => inUnit(folder, path)))
+      .filter((path) => !unheadedSentBack.has(path));
+    if (back.length === 0 && unheaded.length === 0) return undefined;
+    progress.publish({ step: "sent_back", tally: tallied });
+    for (const model of back) modelsSentBack.set(model.path, [...modelsSentBack.get(model.path) ?? [], checks().modelFailure(model)]);
+    for (const path of unheaded) unheadedSentBack.add(path);
+    return sendBack([...back.map(checks().modelReport), ...unheaded.length === 0 ? [] : [checks().unheadedReport(unheaded)]].join("\n\n"),
+      { round: "models", models: back, unheaded });
+  };
   /** Verification once the run completed: each step is where the operator's stop takes effect. */
   const settle = (ctx: ExtensionContext): Effect.Effect<SettleResult | undefined> => effect().gen(function* () {
     const { units, bases, tooLarge, refused } = yield* step(() => start ??= begin(ctx.cwd));
@@ -615,9 +678,12 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
       progress.publish({ step: "sent_back", tally: tally(allProofs, allTests, contracts) });
       return sendBack(weak.map(weakContractReport).join("\n\n"), { round: "contracts", contracts: weak });
     }
+    const modelRungs = yield* checkModels(changed, tally(allProofs, allTests, contracts));
+    const modelsSent = modelsBack(modelRungs, tally(allProofs, allTests, contracts));
+    if (modelsSent !== undefined) return modelsSent;
     const [evidence, open] = yield* effect().all([step(() => Promise.all(changed.map((unit) =>
-      unitEvidence(unit, proofs.get(unit.folder) ?? [], rungs.get(unit.folder), measured.get(unit.folder))))), listOpen(ctx)],
-      { concurrency: "unbounded" });
+      unitEvidence(unit, proofs.get(unit.folder) ?? [], rungs.get(unit.folder), measured.get(unit.folder), modelRungs.get(unit.folder))))),
+    listOpen(ctx)], { concurrency: "unbounded" });
     const settledAt = new Date().toISOString();
     const only = workspace ? undefined : evidence[0];
     const receipt: Receipt = only !== undefined ? { version: 2, ...run, ...only, ...open, settledAt }
@@ -770,11 +836,23 @@ interface Measured {
   readonly strength: Pick<Receipt, "contracts" | "claimcheck">;
 }
 
+/** What the model rung found in one repository: each model it checked or kept, and the changed files with no header. */
+interface ModelRung {
+  readonly models: readonly ModelResult[];
+  readonly unheaded: readonly string[];
+}
+
+/** A repository's models for the receipt, when the rung found any. */
+function modelEvidence(rung: ModelRung | undefined): Pick<UnitEvidence, "models" | "unheaded"> {
+  return { ...rung === undefined || rung.models.length === 0 ? {} : { models: rung.models },
+    ...rung === undefined || rung.unheaded.length === 0 ? {} : { unheaded: rung.unheaded } };
+}
+
 /** One repository's evidence for the receipt, in its own terms. */
 async function unitEvidence(unit: ChangedUnit, proofs: Receipt["proofs"], rung: Pick<Receipt, "tests" | "exercises"> | undefined,
-  measured: Measured | undefined): Promise<UnitEvidence> {
+  measured: Measured | undefined, models: ModelRung | undefined): Promise<UnitEvidence> {
   const sources = measured?.sources ?? [];
-  return { repository: unit.snapshot === undefined,
+  return { repository: unit.snapshot === undefined, ...modelEvidence(models),
     ...unit.snapshot === undefined ? {} : { snapshot: true, ...unit.snapshot.tooLarge.length === 0 ? {} : { tooLarge: unit.snapshot.tooLarge } },
     base: unit.base, proofs, ...measured?.strength ?? { contracts: [] },
     inherited: unit.inherited, unmeasured: unit.unmeasured,

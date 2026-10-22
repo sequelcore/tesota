@@ -10,7 +10,10 @@ the receipt keeps their answers apart:
 3. **Exercised.** A changed or added test fails without the change.
 4. **Strong enough.** Small changes to a proved function's body break its
    proof, unless Dafny proves they behave the same.
-5. **Judged.** A model compares each new contract with the request. This is
+5. **Model-checked.** A model of the design the change touches holds its
+   invariants in every reachable state, and each planted fault breaks one
+   (TLC). This is evidence about the model, not a proof of the code.
+6. **Judged.** A model compares each new contract with the request. This is
    a model's judgment and never counts as a proof.
 
 Alongside the rungs, the receipt lists what may weaken the evidence and what
@@ -27,6 +30,7 @@ job.
 | Weakened evidence | `src/verification-changes.ts` |
 | Tests and exercise | `src/projects.ts`, `src/test-rung.ts`, `src/test-report.ts` |
 | Contract strength | `src/proof-guarantees.ts`, `src/proof-mutation.ts`, `src/pi-claimcheck.ts` |
+| Models | `src/model-check.ts` |
 | Open cases | `src/open-cases.ts` |
 | Coverage | `src/proof-coverage.ts` |
 | The receipt and `tesota receipt` | `src/receipt.ts`, `src/pull-request-receipt.ts` |
@@ -35,7 +39,7 @@ job.
 ## Evidence
 
 Each check produces an **evidence** record: which verifier ran
-(`lemmascript` or `command`), the claim a pass establishes, what it
+(`lemmascript`, `command` or `tlc`), the claim a pass establishes, what it
 doesn't, how it ended, the end of its output, its duration, the files it
 checked and a SHA-256 of their paths and content. Evidence describes those
 files only while their content still has that hash.
@@ -111,7 +115,9 @@ Eligible units climb:
 2. Once no proof goes back, run the project's commands.
 3. Once no command goes back, measure each new or changed contract's
    strength, and send back the weak ones.
-4. When nothing goes back, settle with the receipt.
+4. Once no contract goes back, check each model whose own files or covered
+   files the request changed, and send back those that fail.
+5. When nothing goes back, settle with the receipt.
 
 Stopping the run while it climbs ends the step under way and every process
 it started, and starts no other: the receipt says you stopped it and claims
@@ -129,6 +135,8 @@ goes back. What counts as a repeat:
   command wrote. A command that writes none goes back once, since its
   output varies between runs.
 - **Weak contracts:** the surviving mutants.
+- **Models:** the counterexample's steps, the planted faults' verdicts, or
+  what TLC printed. A file without a header goes back once.
 
 ## Proofs
 
@@ -262,6 +270,72 @@ registered bug in 15 of 15 runs, against 2 of 15 with the receipt alone
 ([#351](https://github.com/sequelcore/tesota/pull/351),
 [#353](https://github.com/sequelcore/tesota/pull/353)).
 
+## Models
+
+A proof covers a function for every input it admits; a race between
+concurrent steps is out of its reach. A model of the design is checked
+instead, with TLC, which explores every order of the model's steps.
+Experiment [#539](https://github.com/sequelcore/tesota/issues/539) chose
+TLC: it found every race in 12 to 16 seconds, where Apalache reached none
+within its budget.
+
+**Which files are models.** A `.tla` or `.qnt` file in the project whose
+comment holds the `tesota-model` header: the files and functions it covers,
+the commit it was last confirmed against, its invariants, the steps it
+treats as atomic, what it leaves out, its planted faults, and optionally a
+replay command. One format for both languages, read from comments, so no
+reader per tool. [Verification](../guides/verification.md#model-check-it-tla-and-quint)
+shows it.
+
+**When a model runs.** When the request changed the model, its
+configuration, one of its faults or a covered file, once before the run
+settles, unless the session already passed the same content
+(`checksModel`, proved): the evidence binds the SHA-256 of all of them.
+
+**How it runs.** A TLA+ model runs TLC 2.19 from `tla2tools.jar` on its
+`.cfg`, with the header's invariants added, from the specification's
+folder, with a 2 GB heap and a temporary folder for TLC's state. A Quint
+model runs `quint typecheck`, then `quint verify --backend=tlc` with the
+header's invariants. Each run has 5 minutes, the proof timeout; a model
+with F planted faults takes at most (F + 1) × 5 minutes. A missing Java,
+TLC or Quint, and Quint failing to start Apalache, as on Windows under
+Node 24, are runs that didn't start: the receipt says the model wasn't
+checked, and the run never fails for it.
+
+**How it ends** (`tlcRun`, proved): TLC's exit 0 with a reachable state
+passes; 10 to 14 is a violation (assumption, deadlock, invariant,
+liveness, assertion); 150, 151 and 75 mean TLC couldn't read or evaluate
+the model; anything else means TLC didn't run.
+
+**Planted faults** (`faultVerdict`, `modelOutcome`, proved). Once the
+model passes, each fault runs with the same invariants. A fault is caught
+only by a violation. A model with no fault, or a fault that passes or that
+TLC can't read, goes back: nothing shows the model can tell a fault from
+the code. Tesota runs the faults a model declares; it doesn't mutate
+models itself.
+
+**A counterexample** goes back as numbered steps, each the action TLC
+names, which a model true to its code takes from the code, with the
+variables it changed. The agent is told to replay it against the code:
+every step possible means a bug in the code; one impossible means a wrong
+model; and never to weaken an invariant.
+
+**What the receipt adds** to a pass:
+
+- the abstraction: the covered files, the atomic steps and what's left
+  out, since what a model can find is fixed by them; #539's one miss lay
+  exactly in what its model left out;
+- "not linked to the code", unless the header's `replay` command passes;
+- "possibly stale" when a covered file differs from the `confirmed` commit
+  (`staleness`, proved), or "staleness unknown" when that commit isn't in
+  the repository: a hint, never a guarantee, since a change outside the
+  covered files can break what the model assumes;
+- "written with the code", which counts as weaker, when the request changed
+  both the model and the code it covers (`writtenWithCode`, proved).
+
+A model checks the properties it's given. Open cases still apply after a
+pass.
+
 ## Open cases
 
 A proof settles code against its contract, not the contract against what
@@ -354,6 +428,7 @@ by `bun run formal:check` on every pull request.
 | `comment-line-rule.ts` | Whether a line holds only a comment |
 | `range-rule.ts` | How the receipt groups line numbers |
 | `footer-rule.ts` | What Tesota can verify before a request, and what the footer's one row drops as the terminal narrows, never the permission mode |
+| `model-rule.ts` | How a TLC run ended, what a planted fault shows, how a model's check ends, when a model runs, whether it may be stale, and whether it was written with its code |
 | `verdict-rule.ts` | How many findings need you, never a model's opinion, when a summary must say how many hold, and the receipt's color |
 | `settle-rule.ts` | Whether a run goes on or how it ends, after its extensions and its verifier |
 | `permission-rule.ts` | Whether a call may run: the floor, the mode and the strongest rule |
@@ -368,7 +443,10 @@ by `bun run formal:check` on every pull request.
 ## Credits
 
 Proofs run on [LemmaScript](https://github.com/midspiral/LemmaScript) by
-Midspiral (MIT) with [Dafny](https://github.com/dafny-lang/dafny). The
+Midspiral (MIT) with [Dafny](https://github.com/dafny-lang/dafny). Models
+run on [TLC](https://github.com/tlaplus/tlaplus), from the TLA+ tools (MIT),
+and [Quint](https://github.com/informalsystems/quint) by Informal Systems
+(Apache 2.0); Tesota runs both as the operator installs them. The
 contract comparison adapts the method and prompt wording of
 [ClaimCheck](https://github.com/metareflection/claimcheck) by metareflection
 (MIT); [NOTICE](../../NOTICE) keeps its license.
