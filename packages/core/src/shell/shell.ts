@@ -407,12 +407,12 @@ export function startShell(options: ShellOptions): Shell {
     loader.stop();
     tui.stop({ preserveScreen: false });
     if (tui instanceof TuiAltScreen) {
-      // The conversation stays in the terminal's scrollback, as the inline shell leaves it.
+      // The conversation stays in the terminal's scrollback, as the inline shell leaves it. Drawn without
+      // starting the terminal again: a start queries it, and the reply would reach the prompt (#574).
       const scrollback = new TuiMainScreen(terminal);
       scrollback.addChild(document);
-      scrollback.start();
       scrollback.renderNow();
-      scrollback.stop({ preserveScreen: true });
+      terminal.showCursor();
     }
     resolveStopped();
   };
