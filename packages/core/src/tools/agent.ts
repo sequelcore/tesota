@@ -6,7 +6,7 @@ const parameters = Type.Object({
   prompt: Type.String({ description: "The brief: the task, what to report, and the files or facts it needs; it sees nothing of this conversation" }),
   description: Type.String({ description: "A few words for the operator, such as \"find the failing test\"" }),
   type: Type.Optional(Type.String({ description: "An agent type's name; a general agent when not given" })),
-  model: Type.Optional(Type.String({ description: "provider/id of a model Tesota is signed in to; the type's, then yours, when not given" })),
+  model: Type.Optional(Type.String({ description: "provider/id of a model its sign-in serves; the type's, then yours, when not given" })),
   writes: Type.Optional(Type.Boolean({ description: "true to let it change files, in a worktree and branch of its own; it only reads when not given" })),
   wait: Type.Optional(Type.Boolean({ description: "true to wait for its report; it runs in the background when not given" })),
 });

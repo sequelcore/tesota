@@ -14,7 +14,7 @@ The `agent` tool takes:
 | `prompt` | The brief. The subagent sees nothing of the conversation, only this |
 | `description` | A few words the shell shows |
 | `type` | An [agent type](#agent-types); a general agent when not given |
-| `model` | `provider/id` of a model Tesota is signed in to; the type's, then the session's, when not given |
+| `model` | `provider/id` of a model its sign-in serves (with Sign in with ChatGPT, those your plan lists); the type's, then the session's, when not given |
 | `writes` | `true` to let it change files, in a worktree of its own; it only reads when not given |
 | `wait` | `true` to wait for its report; it runs in the background when not given |
 
@@ -40,7 +40,8 @@ ends in a receipt about that branch, like any run. The agent gets its report,
 its receipt and its branch, and what it changed counts toward your request
 only once the agent brings it into its own workspace, with `git merge` or
 `git cherry-pick`. There your verification checks it like any change of the
-agent's own. The report alone is never evidence.
+agent's own. The report alone is never evidence. A subagent whose run ends
+in an error, such as a provider's refusal, tells the agent why.
 
 The receipt lists each subagent the run started, with how it ended and
 where its own receipt stands. See [Receipt v2](../receipt-v2.md#child).

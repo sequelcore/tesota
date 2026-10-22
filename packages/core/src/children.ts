@@ -6,7 +6,7 @@ import { branchOf } from "./branch.ts";
 import { contextFiles, instructionsText, skillCatalog, skills } from "./instructions.ts";
 import type { JobEnd } from "./loop.ts";
 import type { EngineSession, SessionOptions } from "./session.ts";
-import { peekSessionFile, type SessionHeader } from "./session-file.ts";
+import { peekSessionFile, type SessionEntry, type SessionHeader } from "./session-file.ts";
 import type { EngineTool, ToolOutput } from "./tool.ts";
 import type { AgentHost, AgentRequest } from "./tools/agent.ts";
 import { codingTools } from "./tools/index.ts";
@@ -71,13 +71,32 @@ function childInstructions(writes: boolean, branch: string | undefined): string 
     + "before you finish, so the agent that started you can bring it in." : "You only read: change nothing."].join("\n\n");
 }
 
-/** The model a child runs on: the call's, then its type's, then its parent's, among those Tesota is signed in to. */
+/**
+ * The models a child can run on (#563): those of the providers Tesota is
+ * signed in to, but with ChatGPT sign-in only the OpenAI models it serves, as
+ * `GET /models` on its token lists them; OpenAI refuses the rest of its
+ * catalog at the first request.
+ */
+async function runnable(models: SessionOptions["models"]): Promise<readonly Model<Api>[]> {
+  const available = await models.getAvailable();
+  if ((await models.checkAuth("openai"))?.type !== "oauth") return available;
+  const token = (await models.getAuth("openai"))?.auth.apiKey;
+  const response = await fetch(`${models.getProvider("openai")?.baseUrl}/models`,
+    { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(30_000) });
+  if (!response.ok) throw new Error(`OpenAI did not list the models the ChatGPT sign-in serves (${response.status}).`);
+  const listed = (await response.json() as { models?: readonly { slug?: unknown }[] }).models ?? [];
+  const served = new Set(listed.map(({ slug }) => slug));
+  return available.filter((model) => model.provider !== "openai" || served.has(model.id));
+}
+
+/** The model a child runs on: the call's, then its type's, then its parent's, among those it can run on. */
 async function modelFor(parent: Parent, request: AgentRequest, type: AgentType | undefined): Promise<Model<Api> | string> {
   const named = request.model ?? type?.model;
   if (named === undefined) return parent.options.model;
-  const available = await parent.options.models.getAvailable();
+  let available: readonly Model<Api>[];
+  try { available = await runnable(parent.options.models); } catch (error) { return error instanceof Error ? error.message : String(error); }
   const found = available.find((model) => label(model) === named);
-  return found ?? `no model ${named} among those Tesota is signed in to: ${available.map(label).join(", ") || "none"}.`;
+  return found ?? `no model ${named} among those Tesota can run: ${available.map(label).join(", ") || "none"}.`;
 }
 
 /** What the model reads of a child's end: its report, labeled as the child's words, then its receipt and where its work is. */
@@ -93,9 +112,9 @@ function endText(report: ChildReport, said: string | undefined, receipt: Receipt
     `Its session: ${report.session}`].join("\n\n");
 }
 
-/** The last receipt the session in `file` settled with, as `tesota -p` reads it, since a child records it as data. */
-function lastReceipt(file: string): Receipt | undefined {
-  const found = branchOf(peekSessionFile(file).entries).map(entryReceipt).findLast((receipt) => receipt !== undefined);
+/** The last receipt a child's session settled with, as `tesota -p` reads it, since a child records it as data. */
+function lastReceipt(entries: readonly SessionEntry[]): Receipt | undefined {
+  const found = branchOf(entries).map(entryReceipt).findLast((receipt) => receipt !== undefined);
   return isReceipt(found) ? found : undefined;
 }
 
@@ -127,8 +146,11 @@ async function runChild(child: EngineSession, brief: string, report: ChildReport
   }
   const said = child.lastAssistantText();
   await child.dispose();
-  const receipt = lastReceipt(child.file);
+  const written = peekSessionFile(child.file).entries;
+  const receipt = lastReceipt(written);
   const outcome = child.outcome() ?? (signal.aborted ? "aborted" : "error");
+  // A run that ends in error, such as on a provider's refusal, says why in its end (#564).
+  if (outcome === "error") failure ??= written.flatMap((entry) => entry.type === "run_end" ? [entry.reason] : []).at(-1);
   const verification = receipt === undefined ? undefined : receiptStanding(receipt);
   const kept = child.kept() !== undefined && child.workspace.branch !== undefined;
   const ended: ChildReport = { ...report, outcome, ...verification === undefined ? {} : { verification },

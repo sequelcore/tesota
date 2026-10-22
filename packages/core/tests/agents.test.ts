@@ -1,5 +1,7 @@
-import { type AssistantMessage, type Context, createModels, type JsonObject, fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
-import { afterEach, describe, expect, test } from "bun:test";
+import { type AssistantMessage, type Context, createModels, InMemoryCredentialStore, type JsonObject, fauxAssistantMessage, fauxProvider,
+  fauxToolCall } from "@earendil-works/pi-ai";
+import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -221,6 +223,44 @@ describe("the agent tool", () => {
     const results = parent.history().flatMap((message) => message.role === "toolResult" ? [textOf(message.content)] : []);
     expect(results[0]).toContain("no agent type nobody");
     expect(results[1]).toContain("no model nowhere/none");
+  });
+
+  test("with ChatGPT sign-in, a model OpenAI has but the sign-in does not serve is refused, naming only those it serves (#563)", async () => {
+    const scripted = routed({
+      pick: [{ calls: [{ tool: "agent", args: { prompt: "x", description: "x", model: "openai/gpt-5.5" } }] }, "done"],
+    });
+    const credentials = new InMemoryCredentialStore();
+    await credentials.modify("openai", async () => ({ type: "oauth", access: "token", refresh: "refresh", expires: Date.now() + 3_600_000 }));
+    const models = createModels({ credentials });
+    for (const provider of scripted.models.getProviders()) models.setProvider(provider);
+    models.setProvider(openaiProvider());
+    // The sign-in's own list, as `GET /models` on its token answers.
+    const listed = spyOn(globalThis, "fetch").mockImplementation((async () => Response.json({ models: [{ slug: "gpt-6.1-sol" }] })) as never);
+    try {
+      const parent = session({}, { models, model: scripted.model });
+      await parent.prompt("pick");
+      const result = parent.history().find((message) => message.role === "toolResult");
+      const text = result?.role === "toolResult" ? textOf(result.content) : "";
+      expect(text).toContain("Not started: no model openai/gpt-5.5");
+      expect(text).toContain("openai/gpt-6.1-sol");
+      expect(text).not.toContain("openai/gpt-5.6-sol");
+      expect(String(listed.mock.calls[0]?.[0])).toBe("https://api.openai.com/v1/models");
+    } finally {
+      listed.mockRestore();
+    }
+  });
+
+  test("a child whose model request fails gives the parent the reason its run ended (#564)", async () => {
+    const failed = "OpenAI API error (400): The 'gpt-5.5' model is not supported when using Codex with a ChatGPT account.";
+    const parent = session({
+      delegate: [{ calls: [{ tool: "agent", args: { prompt: "fail", description: "fails", wait: true } }] }, "done"],
+      fail: [() => fauxAssistantMessage("", { stopReason: "error", errorMessage: failed })],
+    });
+    await parent.prompt("delegate");
+    const result = parent.history().find((message) => message.role === "toolResult");
+    const text = result?.role === "toolResult" ? textOf(result.content) : "";
+    expect(text).toContain("ended error");
+    expect(text).toContain(`It failed: ${failed}`);
   });
 
   test("stopping the run stops its children, and their ends are recorded before it ends", async () => {
