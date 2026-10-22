@@ -2,7 +2,7 @@ import { type Color, colorToRgb, foregroundAnsi, MouseRegion, type TerminalColor
   truncateToWidth, type TUI, type TuiMouseEvent, type TuiMouseEventResult, visibleWidth, type Component }
   from "@earendil-works/pi-tui";
 import { MARK_MAX_COLUMNS, MARK_MAX_ROWS, MARK_STAGE_ROWS_PER_60_COLUMNS, markLighting, renderMark,
-  renderTumbleweed, type MarkCell, type MarkColors, type Rgb } from "./welcome-mark.js";
+  type MarkCell, type MarkColors, type Rgb } from "./welcome-mark.js";
 import type { Theme } from "./contract.js";
 import { homeRelative } from "./footer.js";
 import { host } from "./host.js";
@@ -195,20 +195,101 @@ function brailleText(cells: readonly MarkCell[], mode: TerminalColorMode): strin
   }).join("");
 }
 
-/** The tumbleweed indicator's stage in cells, and its frames for one pass across it. */
-const TUMBLEWEED_COLUMNS = 4;
-const TUMBLEWEED_FRAMES = 20;
-export const TUMBLEWEED_FRAME_MS = 80;
+export const ORB_FRAME_MS = 80;
+const FRAME_COUNT = 30;
+const TAU = Math.PI * 2;
+const BITS = [1, 8, 2, 16, 4, 32, 64, 128] as const;
+interface Dot { readonly x: number; readonly y: number; readonly depth: number }
+const cache = new WeakMap<Theme, { readonly key: string; readonly frames: string[] }>();
 
-/**
- * Pi's working indicator in a Tesota session: the scene's tumbleweed rolling right to left across a few cells, one
- * row tall, lit in the active theme's colors against its appearance's usual background. Pi plays the frames in a loop.
- */
-export function tumbleweedFrames(theme: Theme): string[] {
-  const light = markLighting(fallbackBackground[theme.appearance], theme.appearance === "light", themeMarkColors(theme));
+const mix = (a: Rgb, b: Rgb, t: number): Rgb => [
+  Math.round(a[0] + (b[0] - a[0]) * t), Math.round(a[1] + (b[1] - a[1]) * t),
+  Math.round(a[2] + (b[2] - a[2]) * t),
+];
+
+/** Eight wood material levels; the near side is brighter on charcoal, darker on paper. */
+function material(theme: Theme): readonly Rgb[] {
+  const { wood, foreground, rim } = themeMarkColors(theme);
+  const light = theme.appearance === "light";
+  const background = colorToRgb(theme.colors["pageBg"] ?? { kind: "rgb", r: 128, g: 128, b: 128 });
+  const far = mix(wood, [background.r, background.g, background.b], light ? 0.32 : 0.40);
+  const near = mix(mix(wood, foreground, light ? 0.35 : 0.28), rim, 0.08);
+  return Array.from({ length: 8 }, (_, level) => mix(far, near, level / 7));
+}
+
+/** Z-buffer collisions; each cell takes the depth-weighted average of its visible dots. */
+function raster(dots: readonly Dot[], colors: readonly Rgb[], mode: TerminalColorMode): string {
+  const grid = new Float64Array(24).fill(-1);
+  for (const dot of dots) {
+    const x = Math.round(dot.x);
+    const y = Math.round(dot.y);
+    if (x < 0 || x >= 6 || y < 0 || y >= 4) continue;
+    const i = y * 6 + x;
+    grid[i] = Math.max(grid[i] ?? -1, dot.depth);
+  }
+  let line = "";
+  for (let col = 0; col < 3; col++) {
+    let mask = 0;
+    let sum = 0;
+    let weights = 0;
+    for (let y = 0; y < 4; y++) for (let dx = 0; dx < 2; dx++) {
+      const depth = grid[y * 6 + col * 2 + dx] ?? -1;
+      if (depth < 0) continue;
+      mask |= BITS[y * 2 + dx] ?? 0;
+      const weight = 1 + depth * 2;
+      sum += depth * weight;
+      weights += weight;
+    }
+    if (mask === 0) { line += " "; continue; }
+    const [r, g, b] = colors[Math.round(Math.max(0, Math.min(1, sum / weights)) * 7)] ?? [0, 0, 0];
+    line += foregroundAnsi({ kind: "rgb", r, g, b }, mode) + String.fromCodePoint(0x2800 + mask);
+  }
+  return line + "\x1b[39m";
+}
+
+/** Fixed rim and two longitude ribs turning around a fixed 16° axis, on a 6×4 dot grid.
+ * Inspired by Jakub Antalik's MIT thinking-orbs; no code from that engine is used. */
+function pose(index: number): readonly Dot[] {
+  const phase = ((index % FRAME_COUNT + FRAME_COUNT) % FRAME_COUNT) / FRAME_COUNT * TAU;
+  const dots: Dot[] = [];
+  for (let y = 0; y < 4; y++) {
+    const ny = (y - 1.5) / 2.1;
+    const extent = Math.sqrt(1 - ny * ny);
+    dots.push({ x: 2.5 - 2.5 * extent, y, depth: 0.22 }, { x: 2.5 + 2.5 * extent, y, depth: 0.22 });
+  }
+  for (const offset of [0, TAU / 3]) {
+    const angle = phase + offset;
+    const z = Math.cos(angle);
+    for (let y = 0; y < 4; y++) {
+      // Row-specific thresholds thin rear ribs gradually, without random sparkle.
+      const rearCut = y % 4 === 1 ? 0.15 : -0.15;
+      if (y % 2 === 1 && z < rearCut) continue;
+      const ny = (y - 1.5) / 2.1;
+      const radius = Math.sqrt(1 - ny * ny);
+      const nx = radius * Math.sin(angle);
+      dots.push({ x: 2.5 + 2.5 * (nx * Math.cos(0.28) - ny * Math.sin(0.28)),
+        y: 1.5 + 1.5 * (nx * Math.sin(0.28) + ny * Math.cos(0.28)),
+        depth: z < 0 ? 0.08 : 0.40 + 0.60 * z * radius });
+    }
+  }
+  return dots;
+}
+
+/** A pose at any integer phase; phase 30 is exactly phase zero. No timers or I/O. */
+export function orbFrame(theme: Theme, index: number): string {
+  return raster(pose(index), material(theme), theme.getColorMode());
+}
+
+/** Precompute once per active palette and color mode; the shell only replays these strings. */
+export function orbFrames(theme: Theme): string[] {
+  const colors = material(theme);
   const mode = theme.getColorMode();
-  return Array.from({ length: TUMBLEWEED_FRAMES }, (_, frame) =>
-    `${brailleText(renderTumbleweed(TUMBLEWEED_COLUMNS, 1, frame / TUMBLEWEED_FRAMES, light), mode)}\x1b[39m`);
+  const key = JSON.stringify([colors, mode]);
+  const previous = cache.get(theme);
+  if (previous?.key === key) return previous.frames;
+  const frames = Array.from({ length: FRAME_COUNT }, (_, index) => raster(pose(index), colors, mode));
+  cache.set(theme, { key, frames });
+  return frames;
 }
 
 /** How long the header waits for the terminal's colors before a late reply is applied as it arrives. */

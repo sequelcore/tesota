@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { tumbleweedFrames } from "../../../src/welcome-header.ts";
+import { orbFrames } from "../../../src/welcome-header.ts";
 import { runApp } from "../src/shell/app.ts";
 import { shellTheme } from "../../../src/theme.ts";
 import type { ScriptStep } from "./engine.ts";
@@ -94,11 +94,11 @@ describe("Tesota's interface on the engine", () => {
     await quit(terminal, running);
   });
 
-  test("while the agent works the tumbleweed rolls where the working indicator is", async () => {
-    const { terminal, running } = await app(["an answer that streams slowly enough to watch the tumbleweed roll by"], 8);
+  test("while the agent works the orb turns in place beside its label", async () => {
+    const { terminal, running } = await app(["an answer that streams slowly enough to watch the orb turn"], 8);
     terminal.type("go");
     terminal.type(enter);
-    const frames = tumbleweedFrames(shellTheme("dark", "truecolor") as never).map((frame) => stripTerminalSequences(frame).trim());
+    const frames = orbFrames(shellTheme("dark", "truecolor")).map((frame) => stripTerminalSequences(frame).trim());
     const working = (await terminal.until("Working")).split("\n").find((line) => line.includes("Working")) ?? "";
     expect(frames.some((frame) => frame !== "" && working.includes(frame))).toBe(true);
     await terminal.untilGone("Working", 20_000);

@@ -152,3 +152,10 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+Working orb
+
+The turning orb in src/welcome-header.ts is inspired by thinking-orbs by
+Jakub Antalik (https://github.com/Jakubantalik/Libraries.dev/tree/main/packages/thinking-orbs),
+an MIT-licensed project. No code from thinking-orbs is used; the geometry
+and braille rasterization are authored for Tesota's terminal grid.
