@@ -93,10 +93,22 @@ export function modelHeader(source: string): ModelHeader | undefined {
   return { ...rest, ...confirmed === undefined ? {} : { confirmed }, ...replay === undefined ? {} : { replay } };
 }
 
-/** What a header must declare before its model's result means anything, and a fault that is the model itself; each, in words. */
+/** Whether a header's path stays in the project: relative, and never above its root once normalized. */
+export function inProject(path: string): boolean {
+  const normal = posix.normalize(path.replaceAll("\\", "/"));
+  return !posix.isAbsolute(normal) && !/^[A-Za-z]:/u.test(normal) && normal !== ".." && !normal.startsWith("../");
+}
+
+/**
+ * What a header must declare before its model's result means anything, a
+ * path that leaves the project, which is neither read nor run, and a fault
+ * that is the model itself; each, in words.
+ */
 export function headerProblems(path: string, header: ModelHeader, source: string, language: ModelLanguage): string[] {
   const itself = new Set([path, configOf(path)]);
+  const outside = [...header.covers, ...header.faults].map((entry) => entry.path).filter((file) => !inProject(file));
   return [
+    ...outside.map((file) => `${file} is outside the project: covered files and faults are paths from the project root, inside it`),
     ...header.covers.length === 0 ? ["the header names no covered file (`covers: <path> [functions]`)"] : [],
     ...header.invariants.length === 0 ? ["the header names no invariant (`invariant: <name>`)"] : [],
     ...header.invariants.filter((name) => !/^[A-Za-z_]\w*$/u.test(name)).map((name) => `\`${name}\` is not the name of a definition: ` +
@@ -375,7 +387,8 @@ async function changedSince(root: string, confirmed: string | undefined, covered
 /** The files of a model's check, own and covered, with their content now, in the order `contentHash` covers them. */
 export async function modelContent(root: string, path: string, header: ModelHeader): Promise<{ path: string; content: string | undefined }[]> {
   const files = [...new Set([...modelOwnFiles(path, header), ...header.covers.map((cover) => cover.path)])];
-  return Promise.all(files.map(async (file) => ({ path: file, content: await readIfPresent(join(root, file)) })));
+  // A path outside the project is never read: it is a header problem (`headerProblems`).
+  return Promise.all(files.map(async (file) => ({ path: file, content: inProject(file) ? await readIfPresent(join(root, file)) : undefined })));
 }
 
 /**
@@ -393,7 +406,7 @@ export async function checkModel(root: string, path: string, changed: readonly s
   const header = modelHeader(source) ?? { covers: [], invariants: [], atomic: [], omits: [], faults: [] };
   const content = await modelContent(root, path, header);
   const covered = header.covers.map((cover) => cover.path);
-  const since = await changedSince(root, header.confirmed, covered);
+  const since = await changedSince(root, header.confirmed, covered.filter(inProject));
   const own = modelOwnFiles(path, header);
   const facts = { path, language: language(path), header, staleness: staleness(since !== undefined, covered.map((file) => since?.includes(file) ?? true)),
     stale: since ?? [], writtenWithCode: writtenWithCode(own.some((file) => changed.includes(file)), covered.some((file) => changed.includes(file))) };

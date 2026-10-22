@@ -91,7 +91,8 @@ A model declares itself in a comment at its top. In TLA+, before the
 
 Quint takes the same keys in a `/* … */` or `//` comment. A TLA+ model
 uses its `.cfg` beside it; Tesota adds the header's invariants to it. Every
-key but `confirmed` and `replay` is required.
+key but `confirmed` and `replay` is required, and a path that leaves the
+project goes back unread.
 
 What the receipt says:
 

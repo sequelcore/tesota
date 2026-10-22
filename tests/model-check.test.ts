@@ -2,8 +2,8 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, expect, it } from "vitest";
-import { checkModel, modelHeader, modelReport, plannedModels, tlcCounterexample, unheadedReport } from "../src/model-check.js";
+import { afterEach, expect, it, onTestFinished } from "vitest";
+import { checkModel, inProject, modelContent, modelHeader, modelReport, plannedModels, tlcCounterexample, unheadedReport } from "../src/model-check.js";
 import { counterexampleSteps } from "../src/receipt.js";
 
 /** The operator's TLC, where Tesota looks for it in their home; the runs that need it are skipped without it, as proofs are without Dafny. */
@@ -145,6 +145,23 @@ it("sends back a planted fault that is the model's own configuration", async () 
   const check = await checkModel(root, "models/Counter.tla", ["models/Counter.tla"], new AbortController().signal, jar);
   expect(check.problems).toEqual([expect.stringMatching(/^the fault models\/Counter\.cfg is the model itself/u)]);
   expect(check.evidence.outcome).toBe("failed");
+});
+
+it("sends back header paths that leave the project, without reading them or running TLC", async () => {
+  const { root } = repository((base) => ({ "models/Counter.tla": spec("Counter", header(base, "../outside.cfg a fault outside")
+    .replace("covers: src/counter.ts increment", "covers: ../secret.ts\n   covers: src/counter.ts")), "models/Counter.cfg": config(true) }));
+  write(join(root, ".."), { "secret.ts": "not the project's\n" });
+  onTestFinished(() => { rmSync(join(root, "..", "secret.ts"), { force: true }); });
+  const check = await checkModel(root, "models/Counter.tla", ["models/Counter.tla"], new AbortController().signal, jar);
+  expect(check.problems.filter((problem) => problem.includes("outside the project"))).toEqual([
+    "../secret.ts is outside the project: covered files and faults are paths from the project root, inside it",
+    "../outside.cfg is outside the project: covered files and faults are paths from the project root, inside it"]);
+  expect(check.run).toBe("malformed");
+  const read = await modelContent(root, "models/Counter.tla", check.header);
+  expect(read.find(({ path }) => path === "../secret.ts")?.content).toBeUndefined();
+  expect(inProject("src/../../x")).toBe(false);
+  expect(inProject("C:/x")).toBe(false);
+  expect(inProject("models/./a.cfg")).toBe(true);
 });
 
 it("says TLC is missing rather than failing the run", async () => {

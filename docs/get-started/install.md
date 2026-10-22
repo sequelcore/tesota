@@ -24,7 +24,7 @@ release, whose `tla2tools.jar` has SHA-256
 ```sh
 mkdir -p ~/.tesota/tools
 curl -fsSL -o ~/.tesota/tools/tla2tools.jar https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar
-shasum -a 256 ~/.tesota/tools/tla2tools.jar
+sha256sum ~/.tesota/tools/tla2tools.jar  # shasum -a 256 on macOS
 ```
 
 ## Install from source
