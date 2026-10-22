@@ -8,6 +8,7 @@ import { isReceipt, type Receipt, receiptStanding } from "../../../../src/receip
 import tesota from "../../../../src/tesota.ts";
 import { fileCredentialStore } from "../credentials.ts";
 import { chosenModel, engineModels, loginOptions, runnableModel, runnableModels } from "../model-access.ts";
+import { claudeCodeProviderId, claudeCodeSignIn } from "../providers/claude-code.ts";
 import type { Mode } from "../permission-rule.ts";
 import type { HistoryMessage } from "../loop.ts";
 import type { McpServers, startMcp } from "../mcp.ts";
@@ -425,6 +426,10 @@ export async function runApp(options: AppOptions): Promise<void> {
       try { available = await runnableModels(models); } catch (error) {
         shell.note(`No models to choose from: ${error instanceof Error ? error.message : String(error)}.`, "warning");
         return;
+      }
+      // Claude Code signs in by itself, never through Tesota's /login (#546).
+      if (models.getProvider(claudeCodeProviderId) !== undefined && !available.some(({ provider }) => provider === claudeCodeProviderId)) {
+        shell.note(claudeCodeSignIn);
       }
       if (available.length === 0) { shell.note("No provider is logged in: /login first, or set its API key.", "warning"); return; }
       const picked = await shell.pick("Model", available.map((candidate) => ({ value: label(candidate), label: label(candidate) })));

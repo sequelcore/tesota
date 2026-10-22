@@ -1,18 +1,21 @@
 import { type Api, type CredentialStore, createModels, type LoginOptions, type Model, type Models, type MutableModels } from "@earendil-works/pi-ai";
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
 import { fileCredentialStore } from "./credentials.ts";
+import { claudeCodeProvider } from "./providers/claude-code.ts";
 import { deviceId, type Settings } from "./settings.ts";
 
 /**
  * The models a Tesota session runs on (#443): pi-ai's built-in providers,
  * authorized by the engine's own credentials and, as pi-ai resolves them,
- * API keys in the environment. Logging in and out is `Models.login` and
- * `Models.logout` with `loginOptions`. Pi's remote catalog refresh and
- * custom providers are left out until something needs them.
+ * API keys in the environment, and Claude through the operator's own Claude
+ * Code (`claude-code`, #546), on pi-ai's Anthropic catalog. Logging in and
+ * out is `Models.login` and `Models.logout` with `loginOptions`. Pi's remote
+ * catalog refresh is left out until something needs it.
  */
 export function engineModels(credentials: CredentialStore = fileCredentialStore()): MutableModels {
   const models = createModels({ credentials });
   for (const provider of builtinProviders()) models.setProvider(provider);
+  models.setProvider(claudeCodeProvider(models.getModels("anthropic")));
   return models;
 }
 
