@@ -103,9 +103,23 @@ tesota
 [pi-ai](https://github.com/earendil-works/pi): some sign in with your
 account, others take an API key. An API key in the environment, such as
 `OPENAI_API_KEY`, works without `/login`. Then `/model` picks the model.
-Claude on a Claude plan runs through your own Claude Code, which you
-install and sign in to yourself. [Models](../guides/models.md) covers all
-three.
+[Models](../guides/models.md) covers both.
+
+### Claude through your own Claude Code
+
+`/login` has no Claude sign-in, and Anthropic takes an API key only. On a
+Claude plan, the binary runs the
+[Claude Code](https://code.claude.com/docs/en/setup) you installed, the
+`claude` on your `PATH`, unmodified. It doesn't include one. Install it,
+then sign in there: run `claude`, then `/login`. Once you're signed in,
+`/model` lists `claude-code/<id>`.
+
+Tesota talks to Claude Code through the Claude Agent SDK, which is built
+for one Claude Code version, and yours may be another. Tesota doesn't
+compare the two: it runs your version as it is. If yours refuses what the
+SDK asks, the run ends with Claude Code's own error, prefixed
+`Claude Code:`. Update Claude Code
+(`claude update`) and run the request again.
 
 ## Install from source
 
