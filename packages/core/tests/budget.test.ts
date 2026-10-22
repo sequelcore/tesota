@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { type Measurements, median, overBudget } from "../scripts/budget.ts";
 
-const measured = (values: Partial<Measurements>): Measurements => ({ startupMs: 0, binaryBytes: 0, loopMs: 0, loopRssBytes: 0, baseMs: 0, syncMs: 0, syncCount: 0, settleMs: 0, resumeMs: 0, sessionBytes: 0, firstFrameMs: 0, shellRssBytes: 0, ...values });
+const measured = (values: Partial<Measurements>): Measurements => ({ startupMs: 0, binaryBytes: 0, loopMs: 0, loopRssBytes: 0, baseMs: 0, syncMs: 0, syncCount: 0, settleMs: 0, resumeMs: 0, sessionBytes: 0, firstFrameMs: 0, firstFrameRatio: 0, shellRssBytes: 0, ...values });
 
 test("the median is the middle sample, whatever order the samples came in", () => {
   expect(median([30, 10, 20])).toBe(20);
@@ -48,4 +48,10 @@ test("a retry cannot pass a measurement with no limit set", () => {
 test("each measurement can pass in a different attempt", () => {
   expect(overBudget(measured({ firstFrameMs: 197.4, startupMs: 50 }), { firstFrameMs: 180, startupMs: 50 },
     measured({ firstFrameMs: 180, startupMs: 50.1 }))).toEqual([]);
+});
+
+test("a first frame slowed with the startup keeps to a limit on their ratio, and one slowed alone does not", () => {
+  expect(overBudget(measured({ startupMs: 17.5, firstFrameMs: 200.1, firstFrameRatio: 11.43 }), { firstFrameRatio: 12 })).toEqual([]);
+  expect(overBudget(measured({ startupMs: 10, firstFrameMs: 130, firstFrameRatio: 13 }), { firstFrameRatio: 12 }))
+    .toEqual(["firstFrameRatio: 13 is over its limit of 12"]);
 });
