@@ -1,6 +1,6 @@
 {
   "name": "tesota",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "private": true,
   "description": "Makes your coding agent show evidence that its change does what you asked",
   "license": "Apache-2.0",
