@@ -30,7 +30,7 @@ Under `hooks` in a settings file:
 - **Events:** `PreToolUse`, before a call runs, and `PostToolUse`, after.
 - **`matcher`:** the tool names the group runs for: a name, names joined
   by `|`, or a pattern of the whole name. Empty, `*` or absent matches every
-  tool. Tools are `read`, `write`, `edit`, `prove`, the platform's shell
+  tool. Tools are `read`, `write`, `edit`, `prove`, `check_model`, the platform's shell
   (`powershell` on Windows, `bash` elsewhere) and `mcp__<server>__<tool>`.
 - **`timeout`:** seconds before the hook is stopped, with every process it
   started; 600 when not given.

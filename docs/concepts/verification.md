@@ -30,11 +30,11 @@ job.
 | Weakened evidence | `src/verification-changes.ts` |
 | Tests and exercise | `src/projects.ts`, `src/test-rung.ts`, `src/test-report.ts` |
 | Contract strength | `src/proof-guarantees.ts`, `src/proof-mutation.ts`, `src/pi-claimcheck.ts` |
-| Models | `src/model-check.ts` |
+| Models and `check_model` | `src/model-check.ts`, `src/model-tool.ts` |
 | Open cases | `src/open-cases.ts` |
 | Coverage | `src/proof-coverage.ts` |
 | The receipt and `tesota receipt` | `src/receipt.ts`, `src/pull-request-receipt.ts` |
-| What you see of it | `src/footer.ts`, `src/messages.ts`, `src/editor.ts`, `src/prove-tool.ts` |
+| What you see of it | `src/footer.ts`, `src/messages.ts`, `src/editor.ts`, `src/prove-tool.ts`, `src/model-tool.ts` |
 
 ## Evidence
 
@@ -319,6 +319,14 @@ names, which a model true to its code takes from the code, with the
 variables it changed. The agent is told to replay it against the code:
 every step possible means a bug in the code; one impossible means a wrong
 model; and never to weaken an invariant.
+
+**`check_model`** gives the agent the same check on one model while it
+works, through the gate's own code (`checkModel`), faults and replay
+included. It's on once Tesota finds `tla2tools.jar`, so its guidance,
+which says TLC is installed and gives the header, never claims a TLC that
+isn't there. It runs alone, as `prove` does. Without that, pstack's skill
+judged TLC unavailable and wrote an interleaving test instead of a model
+(#554). The gate still checks the model before the run settles.
 
 **What the receipt adds** to a pass:
 
