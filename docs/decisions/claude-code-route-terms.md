@@ -45,8 +45,11 @@ What Anthropic published, read on 2026-10-22:
 
 What Tesota does:
 
-- It runs the Claude Code program the SDK bundles for the platform,
-  unmodified, and names itself to it with `CLAUDE_AGENT_SDK_CLIENT_APP=tesota`.
+- It runs Claude Code unmodified: from source, the program the SDK
+  installs for the platform; from a release binary, which bundles no
+  Claude Code, the operator's own installed `claude`
+  ([#570](https://github.com/sequelcore/tesota/issues/570)). It names
+  itself to it with `CLAUDE_AGENT_SDK_CLIENT_APP=tesota`.
   It turns off Claude Code's built-in tools, settings, auto-compaction and
   nonessential traffic, and no authentication method.
 - Sign-in completes in Claude Code's own flow (`claude`, then `/login`).
