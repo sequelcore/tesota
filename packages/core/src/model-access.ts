@@ -1,4 +1,5 @@
-import { type Api, type CredentialStore, createModels, type LoginOptions, type Model, type Models, type MutableModels } from "@earendil-works/pi-ai";
+import { type Api, type CredentialStore, createModels, type LoginOptions, type Model, type Models, type MutableModels,
+  type Provider } from "@earendil-works/pi-ai";
 import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth";
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
 import { fileCredentialStore } from "./credentials.ts";
@@ -15,11 +16,45 @@ import { deviceId, type Settings } from "./settings.ts";
  */
 export function engineModels(credentials: CredentialStore = fileCredentialStore()): MutableModels {
   // pi-ai imports each sign-in flow by a path a compiled `tesota` does not have, so they are embedded instead (#372).
+  // pi-ai registers its flows only all at once; Anthropic's is never reached, since no provider here offers it.
   registerBunOAuthFlows();
   const models = createModels({ credentials });
-  for (const provider of builtinProviders()) models.setProvider(provider);
+  for (const provider of builtinProviders()) models.setProvider(provider.id === "anthropic" ? anthropicKeyOnly(provider) : provider);
   models.setProvider(claudeCodeProvider(models.getModels("anthropic")));
   return models;
+}
+
+/** A Claude plan's OAuth token, which pi-ai's Anthropic API would send as Claude Code does. */
+const planToken = (value: string | undefined): boolean => value?.includes("sk-ant-oat") === true;
+const noPlanToken = "Tesota takes no Claude plan token: use an Anthropic API key, or Claude through your own Claude Code (claude-code).";
+
+/**
+ * pi-ai's Anthropic provider with its API key alone: no Claude sign-in, and
+ * no Claude plan's token, from the environment (`ANTHROPIC_OAUTH_TOKEN`) or
+ * entered as a key, since Tesota offers no Claude login
+ * (`docs/decisions/claude-code-route-terms.md`). Claude on a plan is the
+ * `claude-code` provider.
+ */
+export function anthropicKeyOnly(provider: Provider): Provider {
+  const key = provider.auth.apiKey;
+  if (key === undefined) throw new Error("pi-ai's Anthropic provider has no API key auth");
+  const login = key.login;
+  return { ...provider, auth: { apiKey: {
+    name: key.name,
+    ...login === undefined ? {} : { login: async (interaction) => {
+      const credential = await login(interaction);
+      if (planToken(credential.key)) throw new Error(noPlanToken);
+      return credential;
+    } },
+    resolve: async (input) => {
+      if (planToken(input.credential?.key)) return undefined;
+      const ctx = { env: (name: string) => name === "ANTHROPIC_OAUTH_TOKEN" ? Promise.resolve(undefined) : input.ctx.env(name),
+        fileExists: (path: string) => input.ctx.fileExists(path) };
+      const resolved = await key.resolve({ ...input, ctx });
+      const headers = Object.values(resolved?.auth.headers ?? {}).map(String);
+      return [resolved?.auth.apiKey, ...headers].some(planToken) ? undefined : resolved;
+    },
+  } } };
 }
 
 /** How Tesota introduces itself to a provider's login, with this installation's id. */
