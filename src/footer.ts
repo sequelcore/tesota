@@ -35,6 +35,7 @@ const readinessWords = {
 const workingHeads = {
   testing: part("◐ testing…", "◐ testing…", "◐ testing", "accent"),
   measuring: part("◐ measuring contracts…", "◐ measuring…", "◐ measuring", "accent"),
+  checking: part("◐ checking models…", "◐ checking…", "◐ checking", "accent"),
   sent_back: part("↺ sent back", "↺ sent back", "↺", "warning"),
 } as const;
 
@@ -53,6 +54,16 @@ function tallyParts({ proved, notProved, tests, weak }: Tally, assumed = 0): Evi
 
 function lineCount(uncovered: Receipt["uncovered"]): number {
   return uncovered.reduce((sum, { lines }) => sum + lines.reduce((n, [start, end]) => n + end - start + 1, 0), 0);
+}
+
+/** The models' parts of the receipt's row: how many were model-checked, how many still fail, and how many may be stale. */
+function modelParts(models: NonNullable<Receipt["models"]>): EvidencePart[] {
+  const checked = models.filter(({ verdict }) => verdict === "proved").length;
+  const fails = models.filter(({ verdict }) => verdict === "no_progress").length;
+  const stale = models.filter(({ staleness }) => staleness !== "current").length;
+  return [...checked > 0 ? [part(plural(checked, "model checked", "models checked"), `${checked} modeled`, `model ${checked}`, "success")] : [],
+    ...fails > 0 ? [part(plural(fails, "model fails", "models fail"), `${fails} model ✗`, `model ✗${fails}`, "error")] : [],
+    ...stale > 0 ? [part(`${plural(stale, "model", "models")} possibly stale`, `${stale} stale`, `stale ${stale}`, "warning")] : []];
 }
 
 /** The receipt in a row: what proved and passed, then what is weak, unproved or may weaken the evidence. */
@@ -88,6 +99,7 @@ function receiptParts(settled: Receipt): EvidencePart[] {
     // Strength needs a change the proof caught, as the receipt in the conversation says.
     ...receipt.contracts.length > 0 && receipt.contracts.every(({ mutation }) => mutation.survived.length === 0 && mutation.rejected > 0)
       ? [part("contracts strong", "", "", "success")] : [],
+    ...modelParts(receipt.models ?? []),
     ...lines > 0 ? [part(`${plural(lines, "line", "lines")} ${unproved}`, `${plural(lines, "line", "lines")} unproved`, `○${lines}`,
       "warning")] : [],
     ...files > 0 ? [part(`${plural(files, "file", "files")} ${unproved}`, `${plural(files, "file", "files")} unproved`, `○${files}f`,
@@ -120,13 +132,14 @@ function receiptHead(settled: Receipt, findings: readonly Finding[]): EvidencePa
 /**
  * The gaps the row's other parts do not name, such as a contract not
  * measured or a test not checked, so amber always says why: every gap but
- * the uncovered lines and unverified files counted on their own, and the
- * coverage left unchecked because Git could not show the change, named with
- * its weakening.
+ * the uncovered lines, unverified files and models possibly stale counted
+ * on their own, and the coverage left unchecked because Git could not show
+ * the change, named with its weakening.
  */
 function uncheckedGaps(findings: readonly Finding[], receipt: UnitEvidence): number {
   return findings.filter(({ standing }) => standing === "gap").length
     - receipt.uncovered.filter(({ lines }) => lines.length > 0).length - receipt.unverified.length
+    - (receipt.models ?? []).filter(({ staleness }) => staleness !== "current").length
     - (typeof receipt.weakened === "string" && receipt.proofs.length > 0 ? 1 : 0);
 }
 

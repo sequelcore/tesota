@@ -13,6 +13,7 @@ to give it more to check.
 | **Tests** | The project has check or test commands |
 | **Test exercise** | A test was added or changed: does it fail without the change? |
 | **Contract strength** | A contract was added or changed: do small changes to the code break its proof? |
+| **Models** | The request changed a TLA+ or Quint model, or the code one covers: do its invariants hold in every reachable state, and does each planted fault break one? |
 | **Weakened evidence** | Always: loosened contracts, deleted or skipped tests, changed check scripts |
 | **Coverage** | Always: changed lines no proof or test covers |
 
@@ -53,6 +54,67 @@ teach an agent LemmaScript's grammar and workflow; put them in
 ([Instructions and skills](instructions-and-skills.md)). Their `lemmascript`
 skill asks for a `//@ backend dafny` line and a `.verify.ts` name; Tesota
 needs neither.
+
+## Model-check it: TLA+ and Quint
+
+A proof covers one function for every input; it can't see two calls
+interleaving. A model of the design can: TLC explores every order of its
+steps. Tesota checks a TLA+ or Quint model with TLC when a request changes
+the model or a file it covers, once before the run settles, unless the
+session already checked that exact content.
+
+A model declares itself in a comment at its top. In TLA+, before the
+`MODULE` line:
+
+```tla
+(* tesota-model
+   covers: src/snapshot.ts takeSnapshot prune
+   covers: packages/core/src/session-lock.ts
+   confirmed: 3b7e7bc9
+   invariant: OneWriter, BaseHoldsStaged
+   atomic: each Git command's visible effect is one step
+   omits: Git's own initialization internals; crashes
+   fault: models/SnapshotNoLock.cfg the store lock removed
+*)
+---- MODULE Snapshot ----
+```
+
+| Key | |
+| --- | --- |
+| `covers` | A file the model describes, from the project root, and the functions in it. Repeat for each file, including injected dependencies such as a lock |
+| `confirmed` | The commit at which someone last confirmed the model describes the code. Move it forward only after confirming that again |
+| `invariant` | The names of the definitions TLC checks as invariants, separated by commas; or one per line |
+| `atomic` | What the model treats as one indivisible step |
+| `omits` | What the model leaves out |
+| `fault` | A variant that must break an invariant, and what it plants: another `.cfg` of the same specification, a `.tla` with its own `.cfg`, or a `.qnt` |
+| `replay` | Optional: a command that replays the model's traces against the code |
+
+Quint takes the same keys in a `/* … */` or `//` comment. A TLA+ model
+uses its `.cfg` beside it; Tesota adds the header's invariants to it. Every
+key but `confirmed` and `replay` is required, and a path that leaves the
+project goes back unread.
+
+What the receipt says:
+
+- **Model-checked**, with the invariants, the reachable states, the planted
+  faults caught, and the abstraction. It's about the model, never a proof
+  of the code: it reads "not linked to the code" unless a `replay` passes.
+- **Written with the code** when the request changed both the model and
+  the code it covers: a model that mirrors the code passes for the same
+  reason the code does, so it counts as weaker.
+- **Possibly stale** when a covered file differs from the `confirmed`
+  commit, which a request that changes the code always makes it.
+
+A counterexample goes back to the agent as numbered steps in the model's
+names; a model whose planted fault passes goes back as too weak. A TLA+ or
+Quint file the request wrote without a header goes back once, with the
+format. Without Java or TLC the receipt says the model wasn't checked;
+the run never fails for it. [Install](../get-started/install.md) says where
+Tesota finds TLC.
+
+pstack's `/create-formal-verification-skill` writes a TLA+ model by
+default and records the files it covers and the commit it was confirmed
+at; with this header, Tesota checks it on every request that touches them.
 
 ## Test it: your commands
 

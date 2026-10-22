@@ -21,6 +21,7 @@ optional.
 | `worktrees/` | The Git worktrees of [sessions](../guides/sessions.md) that run beside another |
 | `snapshots/` | Tesota's snapshots of folders in no repository |
 | `workspaces/` | Which session holds which checkout |
+| `tools/tla2tools.jar` | TLC, which [model checks](../guides/verification.md#model-check-it-tla-and-quint) run; you put it there |
 
 No tool call may read or change `auth.json` or `mcp-auth.json`.
 

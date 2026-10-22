@@ -114,6 +114,8 @@ unit as a receipt of its own, with the run's `version`, `startedAt`,
 | `claimcheck` | ClaimCheckRun, optional | Which models ClaimCheck asked, or why it judged nothing. Absent when `contracts` is empty |
 | `tests` | CommandRun[] | Each project command the gate ran |
 | `exercises` | TestExercise[] | Each changed or added test file run over the base |
+| `models` | ModelResult[], optional | Each model whose own files or covered files the request changed, checked with TLC, or kept from the session's passing check of the same content. Evidence about the model, never a proof of the code. Absent when the request touched no model |
+| `unheaded` | string[], optional | TLA+ (with a `.cfg` beside it) and Quint files the request changed that declare no `tesota-model` header and no model names as a fault, so nothing checked them |
 | `weakened` | Weakening[], or `"too_large"`, or `"unreadable"` | The changes that may weaken the evidence. `too_large` when Git's diff from the base passed 16 MiB; `unreadable` when Git could not show it |
 | `unverified` | string[] | Changed files no proof's evidence covers, other than test files and files whose changed lines are all blank or comment-only |
 | `commentsOnly` | `true`, optional | Present when every line the request added or removed is blank or comment-only, a `//@` line not counting as a comment. When nothing else is listed, the receipt says there was nothing to verify |
@@ -214,7 +216,7 @@ their per-request snapshots and have empty `inherited` and `unmeasured` lists.
 
 | Value | Meaning |
 | --- | --- |
-| `proved` | The proof or command passed |
+| `proved` | The proof, command or model passed |
 | `send_back` | It failed or was vacuous, and went back to the agent. A settled receipt holds none, since the run continues while one goes back |
 | `no_progress` | It failed or was vacuous, repeating a failure the gate already sent back during the request |
 | `operator` | It could not run, ran past its limit or was stopped; the operator's to resolve |
@@ -223,25 +225,54 @@ their per-request snapshots and have empty `inherited` and `unmeasured` lists.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `verifier` | `"lemmascript"` or `"command"` | LemmaScript with Dafny, or a project command |
+| `verifier` | `"lemmascript"`, `"command"` or `"tlc"` | LemmaScript with Dafny, a project command, or TLC on a model |
 | `claim` | string | What a pass establishes, in words a reviewer can confirm |
 | `limits` | string | What a pass does not establish |
 | `outcome` | Outcome | How the run ended |
 | `output` | string | The end of what the verifier printed: at most the last 8,192 characters of a process's output, with a note after a vacuous proof. Or why it did not run |
 | `durationMs` | number | How long the run took, in milliseconds |
-| `files` | string[] | The files the run checked, in the order `contentHash` covers them: for a proof, the TypeScript file and then its `.dfy`; for a command, the changed files |
+| `files` | string[] | The files the run checked, in the order `contentHash` covers them: for a proof, the TypeScript file and then its `.dfy`; for a command, the changed files; for a model, the model, a TLA+ model's `.cfg`, each fault (with a TLA+ fault's `.cfg`), then each covered file |
 | `contentHash` | string | Lowercase hex SHA-256 of the UTF-8 JSON array `[[path, content], …]` for `files` in order, `content` being the file's text or `null` when unreadable, as `JSON.stringify` writes it |
 
 The `outcome` values are:
 
 | Value | Meaning |
 | --- | --- |
-| `passed` | A proof that regenerated, checked cleanly and verified at least one obligation, or a command that exited 0 |
-| `failed` | A proof whose regeneration or check failed, or a command that exited non-zero |
-| `vacuous` | A proof that checked cleanly but verified nothing (proofs only) |
-| `timed_out` | It ran past its limit: 5 minutes for each proof process, 15 minutes for a command |
+| `passed` | A proof that regenerated, checked cleanly and verified at least one obligation, a command that exited 0, or a model that passed with every planted fault caught or unfinished |
+| `failed` | A proof whose regeneration or check failed, a command that exited non-zero, or a model that broke an invariant, that TLC could not read, or whose planted fault passed or could not be read |
+| `vacuous` | A proof that checked cleanly but verified nothing, or a model with no reachable state or no planted fault |
+| `timed_out` | It ran past its limit: 5 minutes for each proof process and each TLC run, 15 minutes for a command |
 | `cancelled` | It was stopped |
 | `not_started` | It could not start, for example when Dafny is not installed |
+
+### ModelResult
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `path` | string | The model file |
+| `language` | `"tla"` or `"quint"` | Its language, by extension |
+| `header` | ModelHeader | What its header declares |
+| `problems` | string[] | What the header misses; the model went back without running TLC while any was listed |
+| `evidence` | Evidence | The check's evidence, with `verifier` `tlc` and the outcome the gate judged: the model's run and its planted faults together |
+| `run` | `"passed"`, `"vacuous"`, `"violated"`, `"malformed"`, `"timed_out"`, `"cancelled"` or `"not_started"` | How TLC ended on the model itself |
+| `states` | number | The distinct states TLC reported; 0 when it reported none |
+| `faults` | FaultCheck[] | Each planted fault TLC ran, once the model passed |
+| `counterexample` | Counterexample, optional | The steps to the broken property, when `run` is `violated` |
+| `staleness` | `"current"`, `"possibly_stale"` or `"unknown"` | Whether a covered file differs from the `confirmed` commit; `unknown` without one or when it isn't in the repository |
+| `stale` | string[] | The covered files that differ from it |
+| `writtenWithCode` | boolean | The request changed both the model's own files and a covered file, so the evidence counts as weaker |
+| `link` | `"no_replay"`, `"linked"` or `"replay_failed"` | Whether the header's `replay` command passed after the model did. Only `linked` ties the model to the code |
+| `verdict` | GateVerdict | The gate's last verdict on the model |
+
+A ModelHeader has `covers` ({ path, names }[], the files from the project
+root and the functions named), `invariants`, `atomic` and `omits`
+(string[]), `faults` ({ path, description }[]), and optional `confirmed`
+and `replay` (string). A FaultCheck has a fault's `path` and `description`,
+its `verdict` (`"caught"`, `"passes"`, `"broken"` or `"unrun"`), the end of
+TLC's `output` and `durationMs`. A Counterexample has the `violation` TLC
+reported and `steps`, each `{ action, changes }`: the action TLC names and
+the variables it changed, as `name = value`, all of them for the initial
+state.
 
 ### ContractStrength
 

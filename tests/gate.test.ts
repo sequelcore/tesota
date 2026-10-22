@@ -3,13 +3,14 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { Evidence } from "../src/evidence.js";
+import { contentHash, type Evidence } from "../src/evidence.js";
+import type { ModelCheck } from "../src/model-check.js";
 import type { Clarification, RequestInput } from "../src/clarification.js";
 import { evidenceParts, evidenceText } from "../src/footer.js";
 import { changedFiles, GateProgress, type GateStatus, type RecordedRequest, registerGate, type SentBack } from "../src/gate.js";
 import { headCommit } from "../src/git.js";
 import { openCasesSystemPrompt } from "../src/open-cases.js";
-import { receiptFindings, type Receipt } from "../src/receipt.js";
+import { receiptDecisions, receiptFindings, type Receipt } from "../src/receipt.js";
 import { gateVerdict, keepsWorking, toolMayChangeFiles } from "../src/verification/gate-rule.js";
 import type { ProofOutcome } from "../src/verification/proof-outcome-rule.js";
 import { emptyReceipt } from "./receipts.js";
@@ -30,6 +31,27 @@ vi.mock("../src/verification/lemmascript-verifier.js", async (original) => ({
   proveSource: (_name: string, source: string) => Promise.resolve(/Mutant\d*\(/u.test(source) ? "failed" : mutantOutcome),
 }));
 
+/** Model checks scripted per model, each call counted: the gate's decisions, not TLC, are under test here. */
+const scriptedModels = new Map<string, (calls: number) => Pick<ModelCheck, "run" | "faults"> & { outcome: ProofOutcome }>();
+const modelCalls = new Map<string, number>();
+vi.mock("../src/model-check.js", async (original) => {
+  const real = await original<typeof import("../src/model-check.js")>();
+  return { ...real, checkModel: async (root: string, path: string, changed: readonly string[]): Promise<ModelCheck> => {
+    const calls = (modelCalls.get(path) ?? 0) + 1;
+    modelCalls.set(path, calls);
+    const { outcome, run, faults } = scriptedModels.get(path)?.(calls)
+      ?? { outcome: "passed", run: "passed", faults: [{ path: "models/Fault.cfg", description: "lock removed", verdict: "caught", output: "", durationMs: 1 }] };
+    const header = { covers: [{ path: "src/counter.ts", names: [] }], invariants: ["Safe"], atomic: ["each step"], omits: ["crashes"],
+      faults: [{ path: "models/Fault.cfg", description: "lock removed" }] };
+    // Bound to the content as the real check binds it, so the gate can tell a check of the same content.
+    const content = await real.modelContent(root, path, header);
+    return { path, language: "tla", header, problems: [], evidence: { verifier: "tlc", claim: `claim of ${path}`, limits: "", outcome,
+      output: "", durationMs: 1, files: content.map((file) => file.path), contentHash: contentHash(content) }, run, states: 9, faults,
+    staleness: "possibly_stale", stale: ["src/counter.ts"], writtenWithCode: changed.includes(path) && changed.includes("src/counter.ts"),
+    link: "no_replay" };
+  } };
+});
+
 const roots: string[] = [];
 
 it("asking a question alone cannot change project files, while unknown tools remain eligible", () => {
@@ -37,7 +59,7 @@ it("asking a question alone cannot change project files, while unknown tools rem
   expect(toolMayChangeFiles("ask_user", false)).toBe(true);
   expect(toolMayChangeFiles("unknown_tool", false)).toBe(true);
 });
-beforeEach(() => { scripted.clear(); mutantOutcome = "failed"; });
+beforeEach(() => { scripted.clear(); scriptedModels.clear(); modelCalls.clear(); mutantOutcome = "failed"; });
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
 function git(root: string, ...args: string[]): void {
@@ -1267,4 +1289,81 @@ it("keeps one repository's repeated failure from stopping another's from going b
   const back = entry(await run.settle());
   expect(back.content).not.toContain("a/src/rule.ts");
   expect(back.content).toContain("Tesota: b/src/rule.ts does not prove yet.");
+});
+
+/** A model of `src/counter.ts`, with its configuration and one planted fault, as a header declares them. */
+const counterModel = (name = "Counter"): Record<string, string> => ({
+  [`models/${name}.tla`]: `(* tesota-model\n   covers: src/counter.ts\n   invariant: Safe\n   atomic: each step\n   omits: crashes\n` +
+    `   fault: models/Fault.cfg lock removed\n*)\n---- MODULE ${name} ----\n====\n`,
+  [`models/${name}.cfg`]: "SPECIFICATION Spec\n", "models/Fault.cfg": "SPECIFICATION Spec\n" });
+
+it("model-checks a model when the request changes the code it covers, and leaves it alone otherwise", async () => {
+  const root = repository({ "src/counter.ts": "export const n = 0;\n", "notes.md": "# Notes\n", ...counterModel() });
+  const run = gate(root);
+  await run.input();
+  await run.tool("write");
+  writeFileSync(join(root, "notes.md"), "# Notes, edited\n");
+  const untouched = entry(await run.settle()).details as Receipt;
+  expect(untouched.models).toBeUndefined();
+  expect(modelCalls.size).toBe(0);
+  await run.input();
+  await run.tool("write");
+  writeFileSync(join(root, "src", "counter.ts"), "export const n = 1;\n");
+  const settled = entry(await run.settle());
+  const receipt = settled.details as Receipt;
+  expect(receipt.models?.map(({ path, verdict, evidence }) => [path, verdict, evidence.verifier])).toEqual([["models/Counter.tla", "proved", "tlc"]]);
+  expect(run.steps.some((status) => status.step === "checking" && status.path === "models/Counter.tla")).toBe(true);
+  expect(receiptFindings(receipt).filter(({ check }) => check === "model").map(({ standing, label }) => [standing, label]))
+    .toEqual([["holds", "Model-checked"], ["gap", "Model possibly stale"]]);
+  expect(settled.content).toContain("**model-checked** — models/Counter.tla: Safe holds in all 9 reachable states; caught 1 of 1 planted fault; " +
+    "not linked to the code");
+  expect(settled.content).toContain("Leaves out: crashes");
+});
+
+it("sends back a model whose planted fault passes, keeps each check of unchanged content, and reports the repeat as too weak", async () => {
+  const root = repository({ "src/counter.ts": "export const n = 0;\n", ...counterModel(), ...counterModel("Other") });
+  scriptedModels.set("models/Counter.tla", () => ({ outcome: "failed", run: "passed",
+    faults: [{ path: "models/Fault.cfg", description: "lock removed", verdict: "passes", output: "", durationMs: 1 }] }));
+  const run = gate(root);
+  await run.input();
+  await run.tool("write");
+  writeFileSync(join(root, "src", "counter.ts"), "export const n = 1;\n");
+  const sent = await run.settle();
+  expect(sent?.continue).toBe(true);
+  expect(entry(sent).content).toMatch(/^Tesota: the model models\/Counter\.tla passes, but these planted faults pass too, so the model cannot tell them from the code:\n {2}models\/Fault\.cfg: lock removed/u);
+  expect(entry(sent).details).toMatchObject({ round: "models", models: [{ path: "models/Counter.tla" }], unheaded: [] });
+  const receipt = entry(await run.settle()).details as Receipt;
+  expect(receipt.models?.map(({ path, verdict }) => [path, verdict])).toEqual([["models/Counter.tla", "no_progress"], ["models/Other.tla", "proved"]]);
+  expect(modelCalls.get("models/Other.tla")).toBe(1);
+  expect(modelCalls.get("models/Counter.tla")).toBe(1);
+  expect(receiptFindings(receipt).find(({ label }) => label === "Model too weak")).toMatchObject({ standing: "decide",
+    detail: "models/Fault.cfg passes" });
+});
+
+it("never fails a run when TLC cannot check a model, and says why", async () => {
+  const root = repository({ "src/counter.ts": "export const n = 0;\n", ...counterModel() });
+  scriptedModels.set("models/Counter.tla", () => ({ outcome: "not_started", run: "not_started", faults: [] }));
+  const run = gate(root);
+  await run.input();
+  await run.tool("write");
+  writeFileSync(join(root, "src", "counter.ts"), "export const n = 1;\n");
+  const receipt = entry(await run.settle()).details as Receipt;
+  expect(receipt.models?.[0]?.verdict).toBe("operator");
+  expect(receiptFindings(receipt).find(({ check }) => check === "model")).toMatchObject({ standing: "gap", label: "Model not checked" });
+  expect(receiptDecisions(receipt)).toBe(0);
+});
+
+it("asks once for a header on a TLA+ model the request wrote without one, then lists it as not checked", async () => {
+  const root = repository({ "src/counter.ts": "export const n = 0;\n" });
+  const run = gate(root);
+  await run.input();
+  await run.tool("write");
+  write(root, { "spec/Race.tla": "---- MODULE Race ----\n====\n", "spec/Race.cfg": "INIT Init\n", "spec/Helper.tla": "---- MODULE Helper ----\n====\n" });
+  const sent = await run.settle();
+  expect(sent?.continue).toBe(true);
+  expect(entry(sent).content).toMatch(/^Tesota: spec\/Race\.tla looks like a model with no tesota-model header/u);
+  expect(entry(sent).details).toMatchObject({ round: "models", models: [], unheaded: ["spec/Race.tla"] });
+  const receipt = entry(await run.settle()).details as Receipt;
+  expect(receipt.unheaded).toEqual(["spec/Race.tla"]);
+  expect(receiptFindings(receipt).find(({ check }) => check === "model")).toMatchObject({ standing: "gap", subject: "spec/Race.tla" });
 });

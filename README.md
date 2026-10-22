@@ -23,6 +23,9 @@ The run doesn't end until that's done.
   change, and Tesota tells you whether a new test actually catches it.
 - **Contract strength.** A contract that still proves when the code is
   changed is too weak to trust, and goes back to the agent.
+- **Models.** A TLA+ or Quint model of the design is checked with TLC
+  whenever the change touches the code it covers, and each planted fault
+  must break it. The receipt shows it as model-checked, apart from proofs.
 - **Weakened evidence.** A loosened contract, a deleted test or an added
   `.skip` is listed for you to decide.
 - **What nothing verified.** Changed lines and files outside any check are
@@ -70,7 +73,8 @@ Type `/login` to sign in to a model provider, and ask for a change.
 ## Credits
 
 Tesota proves contracts with [LemmaScript](https://github.com/midspiral/LemmaScript)
-by Midspiral and [Dafny](https://github.com/dafny-lang/dafny). Its contract
+by Midspiral and [Dafny](https://github.com/dafny-lang/dafny), and checks
+models with [TLC](https://github.com/tlaplus/tlaplus). Its contract
 comparison adapts the round-trip method of
 [ClaimCheck](https://github.com/metareflection/claimcheck) by metareflection.
 It runs on [pi-ai](https://github.com/earendil-works/pi) for model access and

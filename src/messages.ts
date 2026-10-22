@@ -3,7 +3,7 @@ import { host } from "./host.js";
 import { Box, type Component, sliceByColumn, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { terminalText } from "./terminal-text.js";
 import type { SentBack } from "./gate.js";
-import { allEvidence, commandFinding, contractFinding, type Finding, holdsWords, isNote, isReceipt, plainName, proofFinding, type Receipt,
+import { allEvidence, commandFinding, contractFinding, type Finding, holdsWords, modelFinding, isNote, isReceipt, plainName, proofFinding, type Receipt,
   receiptChildLines, receiptClarificationLines, receiptFindings, receiptTone, type UnitEvidence, verified } from "./receipt.js";
 import { decisions } from "./verification/verdict-rule.js";
 
@@ -207,6 +207,11 @@ function receiptCard(theme: Theme, receipt: Receipt, options: RenderOptions): Co
 function sentBackFindings(sent: SentBack): Finding[] {
   if (sent.round === "proofs") return sent.proofs.map(({ path, evidence }) => proofFinding({ path, verdict: "send_back", evidence }));
   if (sent.round === "tests") return sent.commands.map((run) => commandFinding({ ...run, verdict: "send_back" }));
+  if (sent.round === "models") {
+    return [...sent.models.map((model) => modelFinding({ ...model, verdict: "send_back" })),
+      ...sent.unheaded.map((path): Finding => ({ standing: "decide", check: "model", label: "Model without a header", subject: path,
+        detail: "Tesota checks a model once it declares a tesota-model header", more: [] }))];
+  }
   return sent.contracts.map((contract) => ({ ...contractFinding(contract),
     detail: contract.mutation.survived.map(({ line, before, after }) => `line ${line}: ${before} → ${after} still proves`).join("; ") }));
 }
@@ -214,6 +219,7 @@ function sentBackFindings(sent: SentBack): Finding[] {
 function headline(sent: SentBack): string {
   if (sent.round === "proofs") return sent.proofs.length === 1 ? "a proof fails" : `${sent.proofs.length} proofs fail`;
   if (sent.round === "tests") return "the tests fail";
+  if (sent.round === "models") return sent.models.length === 0 ? "a model declares no header" : sent.models.length === 1 ? "a model fails" : `${sent.models.length} models fail`;
   return sent.contracts.length === 1 ? "a contract is too weak" : `${sent.contracts.length} contracts are too weak`;
 }
 
