@@ -4,7 +4,7 @@ name: Tesota binaries
 on:
   push:
     branches: [main, dev]
-  pull_request:
+  # pull_request: off in the #556 spike
   workflow_dispatch:
 permissions:
   contents: read

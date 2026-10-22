@@ -1,16 +1,16 @@
 name: Tesota checks
+# Spike for #556, not to merge: only the budget, on eight Windows and eight Linux runners, printing every sample.
 on:
-  push:
-    branches: [main, dev]
   pull_request:
 permissions:
   contents: read
 jobs:
-  check:
+  samples:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
+        os: [windows-latest, ubuntu-latest]
+        runner: [1, 2, 3, 4, 5, 6, 7, 8]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
@@ -22,40 +22,7 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: package.json
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
-      - run: dafny --version
-      # TLC for the model-checking tests, where Tesota looks for it (docs/get-started/install.md).
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
-        with:
-          distribution: temurin
-          java-version: "25"
-      - name: TLC
-        shell: bash
-        run: |
-          mkdir -p ~/.tesota/tools
-          curl -fsSL -o ~/.tesota/tools/tla2tools.jar https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar
-          # sha256sum on Linux and Git's bash on Windows; shasum on macOS, which has no sha256sum.
-          if command -v sha256sum >/dev/null; then sum="sha256sum"; else sum="shasum -a 256"; fi
-          echo "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88  $HOME/.tesota/tools/tla2tools.jar" | $sum -c -
       - run: bun install --frozen-lockfile --ignore-scripts
       - run: bun run vendor
-      - run: bun --no-env-file run check
-      - run: bun --no-env-file run formal:check
-      - run: bun packages/core/src/main.ts --version
-  # Linux with musl, as Alpine has it (#472): the engine's sessions and their lock, and the command starting. JavaScript
-  # actions do not run in an Alpine container, so the checkout runs on the runner and the checks in Bun's Alpine image.
-  musl:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Sessions and the command on Alpine
-        run: |
-          bun_version=$(node -p "require('./package.json').packageManager.split('@')[1]")
-          docker run --rm -v "$PWD:/tesota" -w /tesota "oven/bun:${bun_version}-alpine" sh -euc '
-            apk add --no-cache git bash
-            bun install --frozen-lockfile --ignore-scripts
-            bun run vendor
-            cd packages/core
-            bun run test tests/session.test.ts
-            bun src/main.ts --version'
+      - run: bun scripts/isolated.ts bun scripts/budget.ts --report
+        working-directory: packages/core

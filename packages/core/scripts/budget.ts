@@ -37,6 +37,8 @@ export type Limits = { readonly [Name in keyof Measurements]?: number | null };
 const warmups = 3;
 const samples = 21;
 const loopRuns = 5;
+// Spike for #556, not to merge: 11 shell and resume runs, every sample printed.
+const sampleRuns = 11;
 
 /** The middle value, the statistic least moved by a slow outlier on a shared CI runner. */
 export function median(values: readonly number[]): number {
@@ -79,10 +81,12 @@ function measure(): Measurements {
     }
     const loops = Array.from({ length: loopRuns }, () =>
       JSON.parse(started(binary, "--measure-loop")) as { loopMs: number; baseMs: number; syncMs: number; syncCount: number; settleMs: number; loopRssBytes: number });
-    const resumes = Array.from({ length: loopRuns }, () =>
+    const resumes = Array.from({ length: sampleRuns }, () =>
       JSON.parse(started(binary, "--measure-resume")) as { resumeMs: number; sessionBytes: number });
-    const shells = Array.from({ length: loopRuns }, () =>
+    const shells = Array.from({ length: sampleRuns }, () =>
       JSON.parse(started(binary, "--measure-shell")) as { firstFrameMs: number; shellRssBytes: number });
+    console.log(`Samples on ${process.platform}: ${JSON.stringify({ startupMs: times, resumeMs: resumes.map((resume) => resume.resumeMs),
+      firstFrameMs: shells.map((shell) => shell.firstFrameMs) })}`);
     return {
       startupMs: Math.round(median(times) * 10) / 10,
       binaryBytes: statSync(binary).size,
