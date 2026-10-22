@@ -135,11 +135,20 @@ export function bindWorkspace(checkout: string, id: string): Workspace {
   const at = canonical(checkout);
   const leased = leaseOn(at);
   if (leased !== undefined) return { cwd: at, checkout: at, release: () => { leased(); return undefined; } };
+  return newWorktree(at, id, `Another session is working in ${at}, which is not a Git repository with a commit, so a second one `
+    + "could not work apart from it; close that session first.");
+}
+
+/**
+ * A worktree of its own for session `id` opened in `checkout`, whoever holds
+ * the checkout: on branch `tesota/<id>` from the current commit, in
+ * `~/.tesota/worktrees`, as a second session gets (#453) and a writing child
+ * always does (#525). Outside Git it is refused, saying `outsideGit`.
+ */
+export function newWorktree(checkout: string, id: string, outsideGit: string): Workspace {
+  const at = canonical(checkout);
   const repository = repositoryOf(at);
-  if (repository === undefined) {
-    throw new Error(`Another session is working in ${at}, which is not a Git repository with a commit, so a second one `
-      + "could not work apart from it; close that session first.");
-  }
+  if (repository === undefined) throw new Error(outsideGit);
   const worktree = join(tesotaHome(), "worktrees", `${basename(repository.top) || "root"}-${hashOf(repository.top)}`, id);
   const branch = `tesota/${id}`;
   const added = gitIn(repository.top, ["worktree", "add", "-b", branch, worktree, repository.head]);

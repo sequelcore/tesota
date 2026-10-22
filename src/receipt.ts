@@ -99,6 +99,25 @@ export interface Receipt {
   readonly openCases?: OpenCases;
   /** Submitted operator input that qualified the request; neither check evidence nor acceptance. */
   readonly clarifications?: readonly Clarification[];
+  /** The subagents the run started (#525), who did what: each one's own receipt is evidence about its own branch only. */
+  readonly children?: readonly ReceiptChild[];
+}
+
+/**
+ * A subagent a run started (#525), as its end reported it: what it was
+ * asked in a few words, its type and model, whether it wrote, how its run
+ * ended, where its own receipt stands, its session, and the branch its work
+ * stays on. What it changed counts only once the run brought it in.
+ */
+export interface ReceiptChild {
+  readonly description: string;
+  readonly type?: string;
+  readonly model?: string;
+  readonly writes: boolean;
+  readonly outcome: string;
+  readonly verification?: "verified" | "incomplete" | "failed";
+  readonly session: string;
+  readonly branch?: string;
 }
 
 /** What a receipt records for one repository or folder; the receipt itself is one, for the folder Pi runs in. */
@@ -636,7 +655,23 @@ export function receiptStanding(receipt: Receipt): "verified" | "incomplete" | "
 
 /** The receipt as the operator reads it; `details` of its session entry carries the receipt itself. */
 export function renderReceipt(receipt: Receipt): string {
-  return ["Tesota receipt", ...receiptLines(receipt), ...receiptClarificationLines(receipt)].join("\n");
+  return ["Tesota receipt", ...receiptLines(receipt), ...receiptClarificationLines(receipt), ...receiptChildLines(receipt)].join("\n");
+}
+
+/** Each subagent the run started (#525), in one line; their ends are neither this receipt's evidence nor acceptance. */
+function childLines(receipt: Pick<Receipt, "children">): string[] {
+  return (receipt.children ?? []).map((child) =>
+    `${child.description}: ${child.outcome}${child.verification === undefined ? "" : `, ${child.verification}`}`
+    + `${!child.writes ? ", read only" : child.branch === undefined ? ", left no change" : `, on branch ${child.branch}`}`
+    + `${child.model === undefined ? "" : ` · ${child.model}`}`);
+}
+
+const childrenHeading = "Subagents (each one's receipt covers its own branch, not this change)";
+
+/** The subagents as the receipt lists them, apart from its findings. */
+export function receiptChildLines(receipt: Pick<Receipt, "children">): string[] {
+  const lines = childLines(receipt);
+  return lines.length === 0 ? [] : ["", childrenHeading, ...lines.map((line) => `- ${line}`)];
 }
 
 /** Request context is separate from findings, so it cannot affect evidence counts or verdicts. */
@@ -655,8 +690,10 @@ export function renderReceiptMessage(receipt: Receipt): string {
     return label === "" ? `  - ${text}` : `- **${label}** — ${text}`;
   });
   const clarifications = receiptClarificationLines(receipt);
+  const children = childLines(receipt);
   return ["## Tesota receipt", rows.join("\n"),
     ...clarifications.length === 0 ? [] : [clarifications.map((line) => `> ${markdownText(line)}`).join("\n")],
+    ...children.length === 0 ? [] : [[markdownText(childrenHeading), ...children.map((line) => `- ${markdownText(line)}`)].join("\n")],
     "This is check evidence, not your acceptance."].join("\n\n");
 }
 

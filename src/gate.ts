@@ -11,7 +11,7 @@ import { OPEN_CASES_MODEL, openCases } from "./open-cases.js";
 import type { ContractStrength } from "./proof-guarantees.js";
 import { inFolder, owningProjects, suggestChecks } from "./projects.js";
 import { proofReport } from "./prove-tool.js";
-import { entryReceipt, inUnit, isReceipt, noEvidence, type Receipt, receiptEntry, type UnitEvidence } from "./receipt.js";
+import { entryReceipt, inUnit, isReceipt, noEvidence, type Receipt, type ReceiptChild, receiptEntry, type UnitEvidence } from "./receipt.js";
 import { captureFingerprint, compareFingerprints, type Fingerprint, pathBlobs } from "./request-fingerprint.js";
 import { takeSnapshot } from "./snapshot.js";
 import type { CommandRun } from "./test-rung.js";
@@ -424,6 +424,8 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
   /** What the operator asked during the request, for ClaimCheck to compare the contracts with. */
   let requests: string[] = [];
   let clarifications: readonly Clarification[] = [];
+  /** The subagents the request started (#525), as the ledger recorded their ends. */
+  let children: readonly ReceiptChild[] = [];
   /** The request's units and bases, recorded before the agent can run anything; a run no operator input started takes them as it settles. */
   let start: Promise<Start> | undefined;
   let startedAt: string | undefined;
@@ -438,6 +440,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     mayHaveChanged = false;
     fingerprints = undefined;
     clarifications = [];
+    children = [];
     start = undefined;
     progress.waiting();
     // On the engine the ledger holds the request and its start; the gate reads them as it settles.
@@ -469,6 +472,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
       requests = [request.text, ...request.inputs.flatMap((input) => input.kind === "clarification"
         ? [clarificationText(input.clarification)] : input.origin === "extension" ? [] : [input.text])];
       clarifications = request.inputs.flatMap((input) => input.kind === "clarification" ? [input.clarification] : []);
+      children = request.children ?? [];
       startedAt = request.at;
       start = Promise.resolve(recordedStart(request.base));
     }
@@ -498,12 +502,12 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
       repository: begun?.units.some(({ folder, repository }) => repository && begun.bases.has(folder)) ?? false,
       base: workspace ? null : begun?.bases.get("") ?? null, startedAt: startedAt ?? new Date().toISOString(),
       settledAt: new Date().toISOString(), engine: host().version, ...sessionModel(ctx), ...noEvidence, stopped: reason,
-      ...clarifications.length === 0 ? {} : { clarifications } };
+      ...clarifications.length === 0 ? {} : { clarifications }, ...children.length === 0 ? {} : { children } };
     progress.publish({ step: "settled", receipt });
     return { entries: [receiptEntry(ctx.mode, receipt)] };
   };
   /** Outside Git nothing tells which files changed: a request that may have changed some settles saying none was verified. */
-  const outsideGit = (ctx: ExtensionContext, run: Pick<Receipt, "base" | "startedAt" | "engine" | "model" | "clarifications">,
+  const outsideGit = (ctx: ExtensionContext, run: Pick<Receipt, "base" | "startedAt" | "engine" | "model" | "clarifications" | "children">,
     reason: string | undefined): SettleResult | undefined => {
     if (!mayHaveChanged) return undefined;
     const receipt: Receipt = { version: 2, repository: false, ...run, settledAt: new Date().toISOString(), ...noEvidence,
@@ -578,7 +582,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     startedAt ??= new Date().toISOString();
     const workspace = units.some(({ folder }) => folder !== "");
     const run = { base: workspace ? null : bases.get("") ?? null, startedAt, engine: host().version, ...sessionModel(ctx),
-      ...clarifications.length === 0 ? {} : { clarifications } };
+      ...clarifications.length === 0 ? {} : { clarifications }, ...children.length === 0 ? {} : { children } };
     // Each repository and each folder Tesota snapshotted, measured from its base.
     const measurable = units.filter(({ folder }) => bases.has(folder));
     const initial = yield* step(async () => fingerprints);
@@ -650,6 +654,8 @@ export interface RecordedRequest {
   readonly text: string;
   readonly at: string;
   readonly inputs: readonly RequestInput[];
+  /** The subagents the run started and how each ended (#525). */
+  readonly children?: readonly ReceiptChild[];
   readonly base: { readonly units: readonly RecordedUnit[] };
 }
 

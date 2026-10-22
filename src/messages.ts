@@ -4,7 +4,7 @@ import { Box, type Component, sliceByColumn, truncateToWidth, visibleWidth, wrap
 import { terminalText } from "./terminal-text.js";
 import type { SentBack } from "./gate.js";
 import { allEvidence, commandFinding, contractFinding, type Finding, holdsWords, isNote, isReceipt, plainName, proofFinding, type Receipt,
-  receiptClarificationLines, receiptFindings, receiptTone, type UnitEvidence, verified } from "./receipt.js";
+  receiptChildLines, receiptClarificationLines, receiptFindings, receiptTone, type UnitEvidence, verified } from "./receipt.js";
 import { decisions } from "./verification/verdict-rule.js";
 
 /** How the shell asks a message to be drawn: expanded or not, and how far in. */
@@ -151,6 +151,13 @@ function receiptCard(theme: Theme, receipt: Receipt, options: RenderOptions): Co
       .flatMap((line) => wrapUnder(theme.fg("dim", terminalText(line)), width, 0))
       : wrapUnder(theme.fg("dim", `◦ ${plural(count, "request clarification", "request clarifications")} · operator input`), width, 2);
   };
+  // The subagents it started (#525): who did what, never this receipt's evidence.
+  const childRows = (width: number): string[] => {
+    const count = receipt.children?.length ?? 0;
+    if (count === 0) return [];
+    return options.expanded ? receiptChildLines(receipt).flatMap((line) => wrapUnder(theme.fg("dim", terminalText(line)), width, 0))
+      : wrapUnder(theme.fg("dim", `◦ ${plural(count, "subagent", "subagents")} · each with its own receipt`), width, 2);
+  };
   const inherited = allEvidence(receipt).inherited;
   const inheritedRows = (width: number): string[] => inherited.length === 0 ? []
     : [...wrapUnder(theme.fg("muted", `○ ${plural(inherited.length, "file", "files")} already uncommitted, not this request's`), width, 2),
@@ -177,13 +184,14 @@ function receiptCard(theme: Theme, receipt: Receipt, options: RenderOptions): Co
   return card(theme, options, (width) => {
     const title = spread(verdict + noted, theme.fg("customMessageLabel", bold("Tesota receipt")), width);
     if (!options.expanded && decide.length === 0 && gaps.length === 0 && opinions.every(isQuiet)) {
-      return [title, ...inheritedRows(width), ...clarificationRows(width),
+      return [title, ...inheritedRows(width), ...clarificationRows(width), ...childRows(width),
         spread(holdsRow(theme, findings, matches), expandHint(theme, "for details"), width)];
     }
     const shown = options.expanded ? opinions : opinions.filter((finding) => !isQuiet(finding));
     return [title,
       ...inheritedRows(width),
       ...clarificationRows(width),
+      ...childRows(width),
       ...section(theme, "NEEDS YOU", decide, label, width, options.expanded),
       ...section(theme, "MODEL'S OPINION, NOT A PROOF", shown, label, width, options.expanded),
       ...section(theme, `UNVERIFIED (${gaps.length})`, gaps, label, width, options.expanded),

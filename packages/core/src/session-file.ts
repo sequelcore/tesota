@@ -16,9 +16,11 @@ import type { PromptOptions, RunOutcome, SessionOutcome } from "../../../src/con
  * settlement, and a run ends `completed` only after its verifier's. Version 3
  * (#520) records submitted native questions as attributed request input.
  * Version 4 (#541) records each call's declared access and keeps an interrupted call's output.
+ * Version 5 (#525) records the jobs a run starts and how each ended, and a
+ * child session names its parent in its header.
  */
 export const sessionFormat = "tesota-session";
-export const sessionVersion = 4;
+export const sessionVersion = 5;
 
 export interface SessionHeader {
   readonly type: "session";
@@ -33,6 +35,8 @@ export interface SessionHeader {
   readonly worktree?: string;
   readonly branch?: string;
   readonly base?: string;
+  /** A child session's parent (#525): its session's id, the job that started this one, and how far below the top session it is. */
+  readonly parent?: { readonly session: string; readonly job: string; readonly depth: number };
 }
 
 /** Where input came from, as Pi's input event says; an extension's text is never the operator's request. */
@@ -109,6 +113,20 @@ export type SessionEntry =
     readonly by: "floor" | "mode" | "rule" | "operator" | "session" | "hook"; readonly reason: string }
   /** The tools the model may call from now on, as extensions set them (#441); a resumed session restores the last. */
   | { readonly type: "active_tools"; readonly names: readonly string[] }
+  /**
+   * Job `job` of run `run` starts (#525), recorded and synced before it
+   * runs: an agent job's child session, in `session`, from call `callId`. A
+   * background job's end comes as input; the call waits for one that is not.
+   */
+  | { readonly type: "job_start"; readonly run: number; readonly job: string; readonly callId: string; readonly kind: "agent";
+    readonly description: string; readonly background: boolean; readonly session: string; readonly details?: unknown }
+  /**
+   * How job `job` ended: what the model reads of it (`text`, which enters the
+   * conversation for a background job, when the run took it in) and its
+   * report (`details`); `unknown` when the process ended while it ran.
+   */
+  | { readonly type: "job_end"; readonly run: number; readonly job: string; readonly outcome: string; readonly text: string;
+    readonly details?: unknown }
   /** How run `run` ended, and why when it did not complete. */
   | { readonly type: "run_end"; readonly run: number; readonly outcome: SessionOutcome; readonly reason?: string };
 
@@ -158,6 +176,9 @@ const shapes: Record<SessionEntry["type"], (entry: Record<string, unknown>) => b
   active_tools: (entry) => Array.isArray(entry["names"]) && entry["names"].every(isText),
   permission: (entry) => isText(entry["callId"]) && (entry["decision"] === "allow" || entry["decision"] === "deny")
     && ["floor", "mode", "rule", "operator", "session", "hook"].includes(entry["by"] as string) && isText(entry["reason"]),
+  job_start: (entry) => isText(entry["job"]) && isText(entry["callId"]) && entry["kind"] === "agent" && isText(entry["description"])
+    && isFlag(entry["background"]) && isText(entry["session"]),
+  job_end: (entry) => isText(entry["job"]) && isText(entry["outcome"]) && isText(entry["text"]),
   run_end: (entry) => isText(entry["outcome"]) && (entry["reason"] === undefined || isText(entry["reason"])),
 };
 

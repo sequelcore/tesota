@@ -175,7 +175,7 @@ describe("compaction", () => {
     const reply = (id: string, stopReason: string) => ({ role: "assistant", content: [{ type: "toolCall", id, name: "write",
       arguments: { path: `${id}.txt`, content: "x" } }], api: "faux", provider: "faux", model: "small", usage, stopReason, timestamp: 0 });
     const lines = [
-      { type: "session", format: "tesota-session", version: 4, id: "repaired", cwd, createdAt: new Date(0).toISOString() },
+      { type: "session", format: "tesota-session", version: 5, id: "repaired", cwd, createdAt: new Date(0).toISOString() },
       { type: "request", run: 1, text: request, origin: "interactive", at: new Date(0).toISOString(), base: { units: [] } },
       { type: "assistant", run: 1, message: reply("first", "toolUse") },
       { type: "tool_result", run: 1, message: { role: "toolResult", toolCallId: "first", toolName: "write",
