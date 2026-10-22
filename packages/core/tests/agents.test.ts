@@ -1,7 +1,6 @@
 import { type AssistantMessage, type Context, createModels, InMemoryCredentialStore, type JsonObject, fauxAssistantMessage, fauxProvider,
   fauxToolCall } from "@earendil-works/pi-ai";
-import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
-import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -11,7 +10,7 @@ import { agentTypes, agentTypesIn } from "../src/agents.ts";
 import { childLimits } from "../src/children.ts";
 import { createSession, type EngineSession, openSession, type SessionOptions } from "../src/session.ts";
 import { readSessionFile, type SessionEntry } from "../src/session-file.ts";
-import { accepts } from "./scripted.ts";
+import { accepts, signInWithChatGPT } from "./scripted.ts";
 
 /**
  * Subagents (#525): the `agent` tool starts a child session as a job of the
@@ -230,12 +229,9 @@ describe("the agent tool", () => {
       pick: [{ calls: [{ tool: "agent", args: { prompt: "x", description: "x", model: "openai/gpt-5.5" } }] }, "done"],
     });
     const credentials = new InMemoryCredentialStore();
-    await credentials.modify("openai", async () => ({ type: "oauth", access: "token", refresh: "refresh", expires: Date.now() + 3_600_000 }));
     const models = createModels({ credentials });
     for (const provider of scripted.models.getProviders()) models.setProvider(provider);
-    models.setProvider(openaiProvider());
-    // The sign-in's own list, as `GET /models` on its token answers.
-    const listed = spyOn(globalThis, "fetch").mockImplementation((async () => Response.json({ models: [{ slug: "gpt-6.1-sol" }] })) as never);
+    const signOut = await signInWithChatGPT(models, credentials, ["gpt-6.1-sol"]);
     try {
       const parent = session({}, { models, model: scripted.model });
       await parent.prompt("pick");
@@ -244,9 +240,30 @@ describe("the agent tool", () => {
       expect(text).toContain("Not started: no model openai/gpt-5.5");
       expect(text).toContain("openai/gpt-6.1-sol");
       expect(text).not.toContain("openai/gpt-5.6-sol");
-      expect(String(listed.mock.calls[0]?.[0])).toBe("https://api.openai.com/v1/models");
     } finally {
-      listed.mockRestore();
+      signOut();
+    }
+  });
+
+  test("with ChatGPT sign-in, a child's model the sign-in's list could not check is kept, saying why (#567)", async () => {
+    const scripted = routed({
+      pick: [{ calls: [{ tool: "agent", args: { prompt: "x", description: "x", model: "openai/gpt-6.1-sol", wait: true } }] }, "done"],
+    });
+    const credentials = new InMemoryCredentialStore();
+    const models = createModels({ credentials });
+    for (const provider of scripted.models.getProviders()) models.setProvider(provider);
+    const signOut = await signInWithChatGPT(models, credentials, "offline");
+    try {
+      const parent = session({}, { models, model: scripted.model });
+      await parent.prompt("pick");
+      const result = parent.history().find((message) => message.role === "toolResult");
+      const text = result?.role === "toolResult" ? textOf(result.content) : "";
+      expect(text).not.toContain("Not started");
+      expect(text).toContain("openai/gpt-6.1-sol was not checked against the models the ChatGPT sign-in serves");
+      // It started: offline, its request itself fails.
+      expect(text).toContain("ended error");
+    } finally {
+      signOut();
     }
   });
 

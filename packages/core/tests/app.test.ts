@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { readSettings, writeSettings } from "../src/settings.ts";
 import { runApp } from "../src/shell/app.ts";
 import type { ScriptStep } from "./engine.ts";
-import { scriptedReply } from "./scripted.ts";
+import { scriptedReply, signInWithChatGPT } from "./scripted.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
 
 /**
@@ -50,11 +50,15 @@ function scripted(replies: readonly ScriptStep[]): { models: MutableModels; cred
 }
 
 /** The app in a temporary folder, its settings and sessions there too, once it has drawn its first frame. */
-async function app(replies: readonly ScriptStep[] = [], { repository = false, mcp, projectMcp, skills = {} }:
-  { repository?: boolean; mcp?: object; projectMcp?: object; skills?: Record<string, string> } = {}) {
+async function app(replies: readonly ScriptStep[] = [], { repository = false, mcp, projectMcp, skills = {}, served, model }:
+  { repository?: boolean; mcp?: object; projectMcp?: object; skills?: Record<string, string>;
+    /** Signed in to OpenAI with ChatGPT, which serves these models (#566), or whose list cannot be fetched. */
+    served?: readonly string[] | "offline"; model?: string } = {}) {
   const terminal = new VirtualTerminal(100, 30);
   const { models, credentials } = scripted(replies);
+  const signOut = served === undefined ? () => undefined : await signInWithChatGPT(models, credentials, served);
   const settingsPath = join(folder("tesota-core-app-settings-"), "settings.json");
+  if (model !== undefined) writeSettings({ model }, settingsPath);
   const sessions = folder("tesota-core-app-sessions-");
   const cwd = folder("tesota-core-app-");
   // Further sessions need a Git repository with a commit, for their own worktrees (#453).
@@ -75,7 +79,7 @@ async function app(replies: readonly ScriptStep[] = [], { repository = false, mc
     mkdirSync(join(cwd, ".agents", "skills", name), { recursive: true });
     writeFileSync(join(cwd, ".agents", "skills", name, "SKILL.md"), content);
   }
-  const running = runApp({ cwd, terminal, models, credentials, settingsPath, sessions });
+  const running = runApp({ cwd, terminal, models, credentials, settingsPath, sessions }).finally(signOut);
   await terminal.until("tesota-core");
   return { terminal, credentials, settingsPath, sessions, running, cwd };
 }
@@ -206,6 +210,36 @@ describe("tesota-core", () => {
     const screen = await terminal.until("Model: ");
     expect(readSettings(settingsPath).settings.model).toMatch(/^faux/u);
     expect(screen).toContain(readSettings(settingsPath).settings.model ?? "missing");
+    send(terminal, "/quit");
+    await running;
+  });
+
+  test("with ChatGPT sign-in, /model lists only the OpenAI models it serves (#566)", async () => {
+    const { terminal, running } = await app([], { served: ["gpt-6.1-sol"] });
+    send(terminal, "/model");
+    const screen = await terminal.until("openai/");
+    expect(screen).toContain("openai/gpt-6.1-sol");
+    // The catalog's first OpenAI models, which the sign-in does not serve.
+    expect(screen).not.toContain("openai/gpt-4");
+    terminal.type("\x1b");
+    send(terminal, "/quit");
+    await running;
+  });
+
+  test("with ChatGPT sign-in, a saved model it does not serve is refused at start, naming those it serves (#566)", async () => {
+    const { terminal, running } = await app([], { served: ["gpt-6.1-sol"], model: "openai/gpt-5.5" });
+    const screen = await terminal.until("no model openai/gpt-5.5");
+    expect(screen).toContain("openai/gpt-6.1-sol");
+    expect(screen).toContain("Choose one with /model.");
+    send(terminal, "/quit");
+    await running;
+  });
+
+  test("with ChatGPT sign-in, a saved model it could not check is kept at start, saying why (#567)", async () => {
+    const { terminal, running } = await app([], { served: "offline", model: "openai/gpt-6.1-sol" });
+    const screen = await terminal.until("was not checked");
+    expect(screen).not.toContain("The saved model is not used");
+    expect(screen.split("\n").at(-1)).toContain("gpt-6.1-sol");
     send(terminal, "/quit");
     await running;
   });

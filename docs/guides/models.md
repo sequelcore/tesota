@@ -31,6 +31,12 @@ each new session starts with it. `tesota -p "…" --model openai/gpt-6-sol`
 picks one for a single run. Tesota never picks a model for you: until you
 choose one, the shell's status says so, and `-p` stops and says how.
 
+Signed in with ChatGPT, OpenAI serves only some of its models to your plan.
+`/model` lists only those, and a saved or `--model` choice outside them is
+refused before any request, naming the ones you can use. When that list
+can't be fetched, such as offline, your choice is kept and Tesota says it
+wasn't checked; OpenAI still refuses a model it doesn't serve.
+
 ## Thinking
 
 For a model that reasons, `/settings` → **Thinking** sets how hard it

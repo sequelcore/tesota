@@ -7,7 +7,7 @@ import { provideHost } from "../../../../src/host.ts";
 import { isReceipt, type Receipt, receiptStanding } from "../../../../src/receipt.ts";
 import tesota from "../../../../src/tesota.ts";
 import { fileCredentialStore } from "../credentials.ts";
-import { chosenModel, engineModels, loginOptions } from "../model-access.ts";
+import { chosenModel, engineModels, loginOptions, runnableModel, runnableModels } from "../model-access.ts";
 import type { Mode } from "../permission-rule.ts";
 import type { HistoryMessage } from "../loop.ts";
 import type { McpServers, startMcp } from "../mcp.ts";
@@ -421,7 +421,11 @@ export async function runApp(options: AppOptions): Promise<void> {
   };
   const commands: Readonly<Record<string, { description: string; argumentHint?: string; run: (args: string) => Promise<void> }>> = {
     "/model": { description: "Choose the model", run: async () => {
-      const available = await models.getAvailable();
+      let available: readonly Model<Api>[];
+      try { available = await runnableModels(models); } catch (error) {
+        shell.note(`No models to choose from: ${error instanceof Error ? error.message : String(error)}.`, "warning");
+        return;
+      }
       if (available.length === 0) { shell.note("No provider is logged in: /login first, or set its API key.", "warning"); return; }
       const picked = await shell.pick("Model", available.map((candidate) => ({ value: label(candidate), label: label(candidate) })));
       const next = available.find((candidate) => label(candidate) === picked);
@@ -531,7 +535,14 @@ export async function runApp(options: AppOptions): Promise<void> {
   await trustProjectHooks();
   serversStarted = startServers();
   await serversStarted;
-  if (model === undefined) shell.note("No provider is logged in: /login, or set a provider's API key, then /model.", "warning");
+  // A saved model the sign-in does not serve is refused before the first request (#566).
+  const saved = model === undefined ? undefined : await runnableModel(models, label(model));
+  if (typeof saved === "string") {
+    model = undefined;
+    await reopen();
+    shell.note(`The saved model is not used: ${saved} Choose one with /model.`, "warning");
+  } else if (saved?.unchecked !== undefined) shell.note(saved.unchecked, "warning");
+  else if (model === undefined) shell.note("No provider is logged in: /login, or set a provider's API key, then /model.", "warning");
   await shell.stopped;
   for (const each of lives) {
     each.unsubscribe();

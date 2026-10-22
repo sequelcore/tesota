@@ -5,8 +5,10 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { fileCredentialStore } from "../src/credentials.ts";
 import { chosenModel, engineModels, loginOptions } from "../src/model-access.ts";
+import { runPrint } from "../src/print.ts";
 import { createSession, type EngineSession } from "../src/session.ts";
-import { accepts, scriptedReply } from "./scripted.ts";
+import { writeSettings } from "../src/settings.ts";
+import { accepts, scriptedReply, signInWithChatGPT } from "./scripted.ts";
 
 /** The models a session runs on (#443): pi-ai's catalog over the engine's credentials, never the operator's real ones. */
 const folder = (prefix: string): string => mkdtempSync(join(tmpdir(), prefix));
@@ -65,6 +67,47 @@ describe("the engine's models", () => {
     expect(chosenModel(models, {})).toBeUndefined();
     expect(chosenModel(models, { model: `anthropic/${first.id}` })).toMatchObject({ provider: "anthropic", id: first.id });
     expect(chosenModel(models, { model: "anthropic/no-such-model" })).toBeUndefined();
+  });
+
+  test("with ChatGPT sign-in, -p refuses a --model or a saved model it does not serve, naming those it serves (#566)", async () => {
+    const credentials = new InMemoryCredentialStore();
+    const models = engineModels(credentials);
+    const signOut = await signInWithChatGPT(models, credentials, ["gpt-6.1-sol"]);
+    try {
+      const settingsPath = join(folder("tesota-core-print-"), "settings.json");
+      writeSettings({ model: "openai/gpt-5.5" }, settingsPath);
+      for (const args of [["hi", "--model", "openai/gpt-5.5"], ["hi"]]) {
+        let errors = "";
+        const code = await runPrint(args, folder("tesota-core-print-cwd-"), { out: () => undefined, error: (text) => { errors += text; } },
+          {}, settingsPath, models);
+        expect(code).toBe(1);
+        expect(errors).toContain("no model openai/gpt-5.5");
+        expect(errors).toContain("openai/gpt-6.1-sol");
+      }
+    } finally {
+      signOut();
+    }
+  });
+
+  test("with ChatGPT sign-in, -p keeps a --model or saved model it could not check, saying why (#567)", async () => {
+    const credentials = new InMemoryCredentialStore();
+    const models = engineModels(credentials);
+    const signOut = await signInWithChatGPT(models, credentials, "offline");
+    try {
+      const settingsPath = join(folder("tesota-core-print-"), "settings.json");
+      writeSettings({ model: "openai/gpt-6.1-sol" }, settingsPath);
+      for (const args of [["hi", "--model", "openai/gpt-6.1-sol"], ["hi"]]) {
+        let errors = "";
+        await runPrint(args, folder("tesota-core-print-cwd-"), { out: () => undefined, error: (text) => { errors += text; } },
+          {}, settingsPath, models);
+        expect(errors).not.toContain("Not run:");
+        expect(errors).toContain("openai/gpt-6.1-sol was not checked against the models the ChatGPT sign-in serves");
+        // It ran: offline, the request itself fails.
+        expect(errors).toContain("Ended error");
+      }
+    } finally {
+      signOut();
+    }
   });
 
   test("logging in stores the credential in the engine's file, and logging out removes it", async () => {
