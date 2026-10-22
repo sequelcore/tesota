@@ -227,6 +227,11 @@ the temporary folder with the checkout's `node_modules` linked in:
 - when the base fails without it too, the JUnit reports of both runs
   decide: the test notices the change when tests fail with it that pass,
   or are missing, without it, as SWE-bench grades fail-to-pass;
+- when neither decides and the project's `test` script is `bun test`, its
+  test command runs again with `-- --pass-with-no-tests`, so a base with no
+  tests passes without the file (#575): the test notices the change when
+  that run fails on the base with it, passes there without it, and passes
+  on the change;
 - anything else stays unknown, with the reason.
 
 The receipt keeps that apart from the test's provenance (#527): whether the

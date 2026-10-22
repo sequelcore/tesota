@@ -1,8 +1,10 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { runShell } from "../src/test-rung.js";
+import { suggestChecks } from "../src/projects.js";
+import { exerciseTests, runShell } from "../src/test-rung.js";
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -27,6 +29,39 @@ function folder(): string {
   roots.push(root);
   return root;
 }
+
+/** A Git repository holding only `math.ts` and a `package.json` whose tests are Bun's, with no tests (#575); its commit. */
+function noTests(): { root: string; base: string } {
+  const root = folder();
+  writeFileSync(join(root, "math.ts"), "export function sub(a: number, b: number): number { return a - b; }\n");
+  writeFileSync(join(root, "package.json"), JSON.stringify({ name: "math", private: true, scripts: { test: "bun test" } }));
+  const git = (...args: string[]): string => execFileSync("git", args, { cwd: root, encoding: "utf8" });
+  git("init", "--quiet");
+  git("add", ".");
+  git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "--quiet", "-m", "base");
+  writeFileSync(join(root, "math.ts"), "export function sub(a: number, b: number): number { return a - b; }\n" +
+    "export function add(a: number, b: number): number { return a + b; }\n");
+  return { root, base: git("rev-parse", "HEAD").trim() };
+}
+
+const addTest = "import { expect, test } from \"bun:test\";\nimport { add } from \"./math\";\n\n" +
+  "test(\"adds\", () => { expect(add(1, 2)).toBe(3); });\n";
+
+it("credits a test added to a project with no tests that fails on the base and passes with the change", async () => {
+  const { root, base } = noTests();
+  writeFileSync(join(root, "math.test.ts"), addTest);
+  const [exercise] = await exerciseTests(root, base, ["math.test.ts"], ["math.ts", "math.test.ts"], suggestChecks(root),
+    new AbortController().signal);
+  expect(exercise).toMatchObject({ path: "math.test.ts", provenance: "added", sensitivity: "fails_then_passes" });
+}, 60_000);
+
+it("does not credit a test added to a project with no tests when the test itself cannot run", async () => {
+  const { root, base } = noTests();
+  writeFileSync(join(root, "math.test.ts"), `${addTest}test("broken", () => {\n`);
+  const [exercise] = await exerciseTests(root, base, ["math.test.ts"], ["math.ts", "math.test.ts"], suggestChecks(root),
+    new AbortController().signal);
+  expect(exercise).toMatchObject({ path: "math.test.ts", sensitivity: "unknown" });
+}, 60_000);
 
 it("stops every process a cancelled command started, not only its shell", async () => {
   const root = folder();
