@@ -102,7 +102,8 @@ export async function runPrint(args: readonly string[], cwd: string, write: Prin
   const session = createSession({ cwd, models, model, verifier: (pi, request) => { tesota(pi, request); }, mode: "print", flags,
     hooks: () => hooks, mcp: () => servers,
     permissions: { mode: () => settings.permissionMode ?? "ask", rules },
-    ...settings.thinkingLevel === undefined ? {} : { thinkingLevel: settings.thinkingLevel } });
+    ...settings.thinkingLevel === undefined ? {} : { thinkingLevel: settings.thinkingLevel },
+    ...settings.agentLimit === undefined ? {} : { agentLimit: settings.agentLimit } });
   let stopped = false;
   const stop = (): void => { stopped = true; void session.abort(); };
   process.once("SIGINT", stop);

@@ -126,6 +126,7 @@ unit as a receipt of its own, with the run's `version`, `startedAt`,
 | `units` | Unit[], optional | Present when the session ran in a folder that is in no Git repository and holds repositories directly. Then the fields from `snapshot` to `endState` are empty or absent, `repository` is true and `base` is null |
 | `openCases` | OpenCases, optional | The cases the operator's request leaves open, as a model listed them for the operator to settle. A model's opinion, never evidence, and never one of the receipt's decisions. Absent when the operator ran Tesota with `--open-cases-model off` |
 | `clarifications` | Clarification[], optional | Explicitly submitted answers to the agent's questions, in submission order. Request context, never evidence, execution permission or acceptance. Absent when no batch was submitted |
+| `children` | Child[], optional | The [subagents](guides/subagents.md) the run started, in the order they ended: who did what. Never this receipt's evidence: a child's own receipt covers its own branch. Absent when the run started none |
 
 ### Clarification
 
@@ -139,6 +140,22 @@ were supplied by the agent. Its matching answer has `selected` (zero-based
 option indices) and optional `text`, the operator's words kept verbatim.
 An answer can include both selections and text. Unsubmitted drafts,
 dismissed questions and unavailable answers do not enter this list.
+
+### Child
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `description` | string | What the agent asked it, in a few words |
+| `type` | string, optional | Its agent type, when it had one |
+| `model` | string, optional | Its model, as `provider/id` |
+| `writes` | boolean | Whether it could change files, in a worktree of its own |
+| `outcome` | string | How its run ended: `completed`, `aborted`, `error`, `incomplete`, or `unknown` when the process ended while it ran |
+| `verification` | `verified`, `incomplete` or `failed`, optional | Where its own receipt stands, when its run settled with one |
+| `session` | string | Its session's file |
+| `branch` | string, optional | The branch its work stays on, when it wrote something |
+
+What a child changed counts toward the request only once the run brought it
+into its own workspace, where this receipt's checks measured it.
 
 ### Unit
 

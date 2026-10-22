@@ -82,6 +82,24 @@ async function app(replies: readonly ScriptStep[] = [], { repository = false, mc
 
 const send = (terminal: VirtualTerminal, text: string): void => { terminal.type(text); terminal.type(enter); };
 
+test("a subagent shows under its call and in the dashboard (#525)", async () => {
+  const { terminal, running } = await app([{ tool: "agent", args: { prompt: "say hi", description: "greet the operator", wait: true } },
+    "hi from the child", "parent done"]);
+  try {
+    send(terminal, "/model");
+    await terminal.until("Model"); terminal.type(enter); await terminal.until("Model: ");
+    send(terminal, "delegate the greeting");
+    await terminal.until("parent done");
+    expect((await terminal.screen()).join("\n")).toMatch(/↳ agent · reads · faux\/[^ ]+ · depth 1 · completed/u);
+    terminal.type("\x14"); await terminal.until("Sessions (2)");
+    expect((await terminal.screen()).join("\n")).toContain("↳ greet the operator");
+    terminal.type("\x1b"); await terminal.untilGone("Sessions");
+  } finally {
+    send(terminal, "/quit");
+    await running;
+  }
+});
+
 test("a native question remains waiting after reattachment and can close while hidden", async () => {
   const { terminal, running } = await app([{ tool: "ask_user", args: { questions: [{ question: "Choose a path.", options: [
     { label: "Small", description: "Use the small change." }, { label: "Full", description: "Use the complete change." },

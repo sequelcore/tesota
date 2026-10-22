@@ -465,11 +465,11 @@ describe("the session file", () => {
   });
 
   // Older formats are refused, not reinterpreted or migrated.
-  for (const version of [1, 2, 3]) {
+  for (const version of [1, 2, 3, 4]) {
     test(`a session of version ${version} refuses to open, naming it`, async () => {
       const file = await finished();
       const lines = readFileSync(file, "utf8").split("\n");
-      lines[0] = (lines[0] ?? "").replace("\"version\":4", `"version":${version}`);
+      lines[0] = (lines[0] ?? "").replace("\"version\":5", `"version":${version}`);
       const before = lines.join("\n");
       writeFileSync(file, before);
       expect(() => openSession(file, scriptless())).toThrow(`version ${version}`);
@@ -477,9 +477,9 @@ describe("the session file", () => {
     });
   }
 
-  test("version 4 reads, with the verifier's message in the conversation and its data outside it", () => {
-    const fixture = join(import.meta.dir, "fixtures", "session-v4.jsonl");
-    const copy = join(folder(), "session-v4.jsonl");
+  test("version 5 reads, with the verifier's message in the conversation and its data outside it", () => {
+    const fixture = join(import.meta.dir, "fixtures", "session-v5.jsonl");
+    const copy = join(folder(), "session-v5.jsonl");
     writeFileSync(copy, readFileSync(fixture));
     const resumed = openSession(copy, scriptless());
     open.push(resumed);

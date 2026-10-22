@@ -20,8 +20,9 @@ a call that only reads says it changed nothing. Other calls that started
 say their outcome is unknown; calls that never started say "not run".
 No call runs again automatically. An interrupted shell call also shows the
 end of what it printed, when saved, and the path to its full output.
-Session files use format version 4; other versions are refused without
-changing their files.
+A [subagent](subagents.md) the session was running ends "outcome unknown",
+and its own session ends interrupted. Session files use format version 5;
+other versions are refused without changing their files.
 
 Long shell output stays beside the session file: `name.jsonl` keeps its
 output in `name.output/`. The folder is created on first use and kept when

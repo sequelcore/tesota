@@ -27,6 +27,8 @@ verify, in a receipt.
 - [Hooks](guides/hooks.md): your own commands before and after the agent's
   tool calls.
 - [MCP servers](guides/mcp.md): tools from MCP servers.
+- [Subagents](guides/subagents.md): the agent hands a task to another
+  agent with its own context, and gets its report and receipt.
 - [The terminal](guides/terminal.md): display modes, themes, terminal color
   schemes and Windows.
 

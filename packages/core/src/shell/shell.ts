@@ -334,6 +334,7 @@ export function startShell(options: ShellOptions): Shell {
     if (event.type === "message") transcript.add(event.message);
     else if (event.type === "reply") transcript.stream(event.partial);
     else if (event.type === "call") transcript.start(event.call);
+    else if (event.type === "job") transcript.job(event.callId, event.details);
     else if (event.type === "state") working(event.state);
     else if (event.type === "note") note(event.text, "warning");
     else if (event.type === "compacting") loader.setMessage("Compacting…");

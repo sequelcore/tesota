@@ -6,6 +6,7 @@ import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
+import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { type Base, captureBase } from "./base.ts";
 import type { BranchEntry, EntryDraft, ExtensionFactory, RunOutcome, Session, SessionOutcome, ToolDefinition } from "../../../src/contract.ts";
@@ -23,7 +24,7 @@ import {
 import { judge, type Mode, type Rules } from "./permissions.ts";
 import type { EngineTool, ToolOutput } from "./tool.ts";
 import { codingTools } from "./tools/index.ts";
-import { isNativeAskTool } from "./tools/ask.ts";
+import { type AskHost, isNativeAskTool } from "./tools/ask.ts";
 import { askQuestions, type QuestionResponder } from "./questions.ts";
 import { askAccepted } from "./questions-rule.ts";
 import { clarificationText, type Clarification, type ClarificationAnswer, type ClarificationQuestion } from "../../../src/clarification.ts";
@@ -37,7 +38,7 @@ export interface LoopOptions {
   /** The instructions and skills after the default prompt; the operator's and the project's (#457) when not given. */
   readonly instructions?: string;
   /** The tools the model may call; the file tools and platform's shell when not given. */
-  readonly tools?: (spool: () => string) => readonly EngineTool[];
+  readonly tools?: (spool: () => string, cwd: string) => readonly EngineTool[];
   /** Where the session's entries go. */
   readonly writer: SessionWriter;
   /** The durable output folder beside the session's file, created on first use. */
@@ -84,6 +85,54 @@ export interface LoopOptions {
   readonly mcp?: () => McpTools | undefined;
   /** The terminal's explicit operator-question bridge; absent in print and headless runs. */
   readonly questions?: QuestionResponder;
+  /** Tools whose calls start jobs of the run (#525), such as `agent`; none when not given. */
+  readonly jobTools?: (jobs: Jobs) => readonly EngineTool[];
+}
+
+/**
+ * What a job is recorded with before it runs (#525): the call that starts
+ * it, what it is, whether it runs in the background, the session an agent
+ * job runs as, and what the shell shows of it.
+ */
+export interface JobStart {
+  readonly callId: string;
+  readonly kind: "agent";
+  readonly description: string;
+  readonly background: boolean;
+  readonly session: string;
+  readonly details: JsonValue;
+}
+
+/** How a job ended: its outcome, what the model reads, and its report for the shell and the receipt. */
+export interface JobEnd {
+  readonly outcome: string;
+  readonly text: string;
+  readonly details: JsonValue;
+}
+
+/**
+ * The jobs of a session's runs (#525, built once for #524's background
+ * commands): work a call starts that goes on beside the run. A job is
+ * recorded, and synced, before it runs; it stops when its run stops or the
+ * session closes. A background job's end reaches the run as input, in the
+ * order the jobs ended; the call waits for one that is not in the background.
+ * A run never settles while one runs.
+ */
+export interface Jobs {
+  /**
+   * Starts a job of the running run, which `begin` prepares under its id:
+   * what it is recorded with, its work, and how to let go of what it
+   * prepared if it cannot be recorded. Resolves at once with its id in the
+   * background, else with its end.
+   */
+  start(begin: (job: string) => PreparedJob): Promise<{ readonly job: string; readonly end?: JobEnd }>;
+}
+
+/** A job ready to run: what it is recorded with, and its work, which stops on `signal`. */
+export interface PreparedJob {
+  readonly start: JobStart;
+  readonly work: (signal: AbortSignal) => Promise<JobEnd>;
+  readonly discard: () => Promise<void>;
 }
 
 /** The tools of the MCP servers a session reaches (#459). */
@@ -129,6 +178,8 @@ export type SessionEvent =
   | { readonly type: "note"; readonly text: string }
   | { readonly type: "compacting" }
   | { readonly type: "compacted"; readonly tokensBefore: number; readonly tokensAfter: number }
+  /** A job the run started (#525), from its call: running, then ended, with what the shell shows of it. */
+  | { readonly type: "job"; readonly job: string; readonly callId: string; readonly state: "running" | "ended"; readonly details: JsonValue }
   | { readonly type: "ended"; readonly outcome: SessionOutcome };
 
 /** The engine's session as the loop runs it: the contract's, its conversation, and its events. */
@@ -159,6 +210,13 @@ export interface LoopState {
 }
 
 const skillType = "tesota.skill";
+
+/** A background job's end as it enters the conversation (#525): the model reads it as the operator's, and the shell shows it. */
+export const jobType = "tesota.job";
+
+/** A background job's end as a message, in the conversation as the run took it in. */
+export const jobMessage = (text: string, details: unknown, timestamp: number): CustomMessage =>
+  ({ role: "custom", customType: jobType, content: text, display: true, ...details === undefined ? {} : { details }, timestamp });
 
 /**
  * The instructions of a skill the operator started by name (#540): the model
@@ -405,6 +463,10 @@ function toolbox(given: EngineTool[], writer: SessionWriter) {
   };
 }
 
+/** A session's own tools: those given, or the file tools, the platform's shell and `ask_user`; then those that start jobs (#525). */
+const sessionTools = (options: LoopOptions, spool: () => string, questions: AskHost, jobs: Jobs): EngineTool[] =>
+  [...options.tools?.(spool, options.cwd) ?? codingTools(options.cwd, spool, undefined, questions), ...options.jobTools?.(jobs) ?? []];
+
 /** What the model is told of a tool. */
 const declaration = ({ name, description, parameters }: EngineTool) => ({ name, description, parameters });
 
@@ -488,7 +550,69 @@ export function createLoop(options: LoopOptions): LoopSession {
       }
     },
   };
-  const tools = toolbox([...options.tools?.(spool) ?? codingTools(options.cwd, spool, undefined, questionHost)], writer);
+  /** The jobs running now (#525), each stopped by its own controller, and the background ones that ended, waiting to enter the conversation. */
+  const jobs = new Map<string, { readonly controller: AbortController; readonly done: Promise<void> }>();
+  const finishedJobs: { readonly job: string; readonly end: JobEnd }[] = [];
+  /** How many times something a run waiting on its jobs wakes for happened: a job's end or new input. */
+  let changes = 0;
+  const wakers = new Set<() => void>();
+  const changed = (): void => {
+    changes += 1;
+    const waking = [...wakers];
+    wakers.clear();
+    for (const wake of waking) wake();
+  };
+  /** Waits until something happened after `seen`; the operator's stop interrupts the wait. */
+  const change = (seen: number): Effect.Effect<void> => Effect.callback<void>((resume) => {
+    if (changes !== seen) { resume(Effect.void); return; }
+    const wake = (): void => { resume(Effect.void); };
+    wakers.add(wake);
+    return Effect.sync(() => { wakers.delete(wake); });
+  });
+  const jobHost: Jobs = {
+    start: async (begin) => {
+      const signal = controller?.signal;
+      if (signal === undefined || running === undefined || closed) throw new Error("A job starts only during a run.");
+      const run = runs;
+      const job = randomUUID().slice(0, 8);
+      const { start, work, discard } = begin(job);
+      try {
+        writer.append({ type: "job_start", run, job, callId: start.callId, kind: start.kind, description: start.description,
+          background: start.background, session: start.session, details: start.details });
+        writer.sync();
+      } catch (error) {
+        await discard();
+        throw error;
+      }
+      const stopper = new AbortController();
+      const stop = (): void => { stopper.abort(); };
+      if (signal.aborted) stopper.abort(); else signal.addEventListener("abort", stop, { once: true });
+      emit({ type: "job", job, callId: start.callId, state: "running", details: start.details });
+      const finished = work(stopper.signal).catch((error: unknown): JobEnd => ({ outcome: "error", details: start.details,
+        text: `The job failed: ${error instanceof Error ? error.message : String(error)}` })).then((end) => {
+        signal.removeEventListener("abort", stop);
+        jobs.delete(job);
+        // A background job's end waits for the run to take it in; the call that waited for one carries it in its result.
+        if (start.background) finishedJobs.push({ job, end });
+        else {
+          writer.append({ type: "job_end", run, job, outcome: end.outcome, text: end.text, details: end.details });
+          writer.sync();
+        }
+        emit({ type: "job", job, callId: start.callId, state: "ended", details: end.details });
+        changed();
+        return end;
+      });
+      jobs.set(job, { controller: stopper, done: finished.then(() => undefined, () => undefined) });
+      return start.background ? { job } : { job, end: await finished };
+    },
+  };
+  /** Stops the jobs still running, as their run ends, and waits for each to end. */
+  const stopJobs = async (): Promise<void> => {
+    const stopping = [...jobs.values()];
+    for (const { controller: stopper } of stopping) stopper.abort();
+    await Promise.all(stopping.map(({ done }) => done));
+  };
+  const tools = toolbox(sessionTools(options, spool, questionHost, jobHost), writer);
   const thinkingLevel = thinkingOf(options.model, options.thinkingLevel);
   const base = options.captureBase ?? captureBase;
   /** The operator's and the project's skills, read once as the session starts, from its own folder (#457). */
@@ -597,7 +721,14 @@ export function createLoop(options: LoopOptions): LoopSession {
       toLedger(instructed, order);
       add(instructed);
     }
-    return due.length > 0;
+    // The background jobs that ended come after, in the order they ended (#525); they are no request input, so not in the ledger.
+    const reported = finishedJobs.splice(0);
+    for (const { job, end } of reported) {
+      writer.append({ type: "job_end", run, job, outcome: end.outcome, text: end.text, details: end.details });
+      add(jobMessage(end.text, end.details, Date.now()));
+    }
+    if (reported.length > 0) writer.sync();
+    return due.length > 0 || reported.length > 0;
   }
 
   /** Calls the operator allowed for the rest of the session, by tool and what they were about. */
@@ -814,6 +945,19 @@ export function createLoop(options: LoopOptions): LoopSession {
   });
 
   /**
+   * Whether input came for a run whose model stopped, delivered: what waited,
+   * or, while its jobs still run, the next job's end or input, which it waits
+   * for (#525). None once nothing waits and no job runs.
+   */
+  const awaitInput = (run: number): Effect.Effect<boolean> => Effect.gen(function* () {
+    for (let seen = changes; !deliver(run, ["steer", "followUp"]); seen = changes) {
+      if (jobs.size === 0) return false;
+      yield* change(seen);
+    }
+    return true;
+  });
+
+  /**
    * The model's turns, until it answers without calling a tool and no input
    * waits, fails, or is stopped. After settlement sent the run back, the run
    * is at the boundary where follow-ups enter, so they enter with the steers.
@@ -844,7 +988,7 @@ export function createLoop(options: LoopOptions): LoopSession {
       if (message.stopReason === "aborted" || signal.aborted) return { outcome: "aborted", reason: stoppedReason };
       const calls = message.content.filter((part): part is ToolCall => part.type === "toolCall");
       if (calls.length === 0) {
-        if (deliver(run, ["steer", "followUp"])) continue;
+        if (yield* awaitInput(run)) continue;
         return { outcome: "completed" };
       }
       const replyIndex = (replyIndexes.get(run) ?? 1) - 1;
@@ -922,7 +1066,7 @@ export function createLoop(options: LoopOptions): LoopSession {
     const verdict = settled(run, generation, "verifier", returned);
     const errors = [...ordinary.errors, ...verdict.errors];
     const next = afterVerifier(ended.outcome, verifying, signal.aborted, errors.length > 0, verdict.registered, verdict.continued,
-      queue.length > 0, continuations, continuationLimit);
+      queue.length > 0 || finishedJobs.length > 0, jobs.size > 0, continuations, continuationLimit);
     if (next === "continue") return { next: "continue", automatic: verdict.continued };
     const reason = next === "completed" ? undefined : next === "aborted" ? stoppedReason
       : errors.length > 0 ? `a settle handler failed: ${errors.join("; ")}`
@@ -976,6 +1120,11 @@ export function createLoop(options: LoopOptions): LoopSession {
     let continuations = 0;
     for (;;) {
       const ended = await turnsOf(run, signal, generation > 0);
+      // A run's jobs end with it (#525): those still running are stopped, and their ends enter the conversation before it settles.
+      if (jobs.size > 0) {
+        await stopJobs();
+        deliver(run, []);
+      }
       settling = true;
       emit({ type: "state", state: "settling" });
       const decided = await settle(run, generation, ended, continuations, signal).finally(release);
@@ -1005,6 +1154,7 @@ export function createLoop(options: LoopOptions): LoopSession {
     writer.append({ type: "amendment", run, id, behavior, origin, text, at: new Date().toISOString(), ...skill === undefined ? {} : { skill } });
     writer.sync();
     queue.push({ id, behavior, text, order: nextInputOrder++, ...skill === undefined ? {} : { skill } });
+    changed();
     const handlers = () => host.input({ type: "input", text, source: origin, streamingBehavior: behavior }, signal);
     if (settling) { waiting.push(handlers); return; }
     const running = handlers();

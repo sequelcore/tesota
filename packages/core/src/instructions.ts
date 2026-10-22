@@ -14,7 +14,8 @@ export interface ContextFile {
   readonly content: string;
 }
 
-function projectFolders(cwd: string): string[] {
+/** The folders from `cwd` up to its Git root, nearest first; `cwd` alone outside Git. */
+export function projectFolders(cwd: string): string[] {
   const folder = resolve(cwd);
   const folders: string[] = [];
   for (let at = folder; ; at = dirname(at)) {
@@ -24,7 +25,7 @@ function projectFolders(cwd: string): string[] {
   }
 }
 
-function readText(path: string): string | undefined {
+export function readText(path: string): string | undefined {
   try {
     const content = readFileSync(path, "utf8");
     return content.trim() === "" ? undefined : content;
@@ -79,14 +80,18 @@ function frontmatter(content: string): { readonly lines: string[]; readonly end:
   return end < 0 ? undefined : { lines, end };
 }
 
-function skillMetadata(content: string): SkillMetadata | undefined {
+/**
+ * A Markdown file's frontmatter fields among `names`, unquoted, and its body
+ * after it; none when it has no frontmatter. A description may go on over
+ * indented lines, folded or not, as Agent Skills write it (#457).
+ */
+export function frontmatterFields(content: string, names: readonly string[]):
+  { readonly fields: ReadonlyMap<string, string>; readonly body: string } | undefined {
   const found = frontmatter(content);
   if (found === undefined) return undefined;
-  let name = "";
+  const fields = new Map<string, string>();
   let description = "";
   let inDescription = false;
-  let disableModelInvocation = false;
-  let userInvocable = true;
   for (const line of found.lines.slice(1, found.end)) {
     if (inDescription && /^\s+\S/.test(line)) {
       description += " " + line.trim();
@@ -94,21 +99,27 @@ function skillMetadata(content: string): SkillMetadata | undefined {
     }
     if (line.trim() === "") continue;
     inDescription = false;
-    const field = /^(name|description|disable-model-invocation|user-invocable):\s*(.*)$/.exec(line);
-    if (field === null) continue;
+    const field = /^([\w-]+):\s*(.*)$/.exec(line);
+    const name = field?.[1] ?? "";
+    if (field === null || !names.includes(name)) continue;
     const value = (field[2] ?? "").trim();
-    if (field[1] === "name") name = unquote(value);
-    else if (field[1] === "disable-model-invocation") disableModelInvocation = unquote(value) === "true";
-    else if (field[1] === "user-invocable") userInvocable = unquote(value) !== "false";
+    if (name !== "description") fields.set(name, unquote(value));
     else {
       description = /^[>|][+-]?$/.test(value) ? "" : value;
       inDescription = true;
     }
   }
-  description = unquote(description);
-  if (description === "") return undefined;
-  return { name, description, ...disableModelInvocation ? { disableModelInvocation: true } : {},
-    ...userInvocable ? {} : { userInvocable: false } };
+  if (names.includes("description")) fields.set("description", unquote(description));
+  return { fields, body: found.lines.slice(found.end + 1).join("\n").trim() };
+}
+
+function skillMetadata(content: string): SkillMetadata | undefined {
+  const fields = frontmatterFields(content, ["name", "description", "disable-model-invocation", "user-invocable"])?.fields;
+  const description = fields?.get("description") ?? "";
+  if (fields === undefined || description === "") return undefined;
+  return { name: fields.get("name") ?? "", description,
+    ...fields.get("disable-model-invocation") === "true" ? { disableModelInvocation: true } : {},
+    ...fields.get("user-invocable") === "false" ? { userInvocable: false } : {} };
 }
 
 /** The skills in `folder`: each subfolder with a SKILL.md that has a description. */
@@ -188,9 +199,8 @@ export function startedSkill(text: string, list: readonly Skill[]): StartedSkill
   const skill = typed === null ? undefined : list.find((each) => each.name === typed[1] && startable(each, "operator"));
   if (typed === null || skill === undefined) return undefined;
   const content = readText(skill.path);
-  const found = content === undefined ? undefined : frontmatter(content);
-  if (found === undefined) throw new Error(`The skill ${skill.name} could not be read from ${skill.path}.`);
-  const body = found.lines.slice(found.end + 1).join("\n").trim();
+  const body = content === undefined ? undefined : frontmatterFields(content, [])?.body;
+  if (body === undefined) throw new Error(`The skill ${skill.name} could not be read from ${skill.path}.`);
   return { name: skill.name, path: skill.path,
     instructions: `Base directory for this skill: ${dirname(skill.path)}\n\n${withArguments(body, (typed[2] ?? "").trim())}` };
 }
@@ -203,22 +213,33 @@ const catalogHeading = "Available skills: read each skill's SKILL.md with the re
  * out (#540).
  */
 export function skillCatalog(skills: readonly Skill[], contextWindow: number | undefined): string {
-  const list = skills.filter((skill) => startable(skill, "model"));
-  if (list.length === 0) return "";
+  return catalog(catalogHeading, skills.filter((skill) => startable(skill, "model"))
+    .map(({ name, description, path }) => ({ name, description, after: ` (${path})` })), "skills", contextWindow);
+}
+
+/**
+ * A catalog of `entries` under `heading` within the context budget, as the
+ * skill catalog (#457) and the agent types (#525) are listed: whole, then
+ * each description cut to 250 characters, then the last entries left out
+ * and counted as more `kind` available; empty when there are none.
+ */
+export function catalog(heading: string, entries: readonly { readonly name: string; readonly description: string; readonly after: string }[],
+  kind: string, contextWindow: number | undefined): string {
+  if (entries.length === 0) return "";
   const budget = catalogBudget(Math.max(0, Math.floor(contextWindow ?? 0)));
-  const render = (limit: number): string[] => list.map((skill) => "- " + skill.name + ": "
-    + skill.description.slice(0, limit) + " (" + skill.path + ")");
+  const render = (limit: number): string[] => entries.map((entry) => "- " + entry.name + ": "
+    + entry.description.slice(0, limit) + entry.after);
   let lines = render(Infinity);
-  let catalog = [catalogHeading, ...lines].join("\n");
-  if (catalog.length <= budget) return catalog;
+  let text = [heading, ...lines].join("\n");
+  if (text.length <= budget) return text;
   lines = render(250);
-  catalog = [catalogHeading, ...lines].join("\n");
-  if (catalog.length <= budget) return catalog;
+  text = [heading, ...lines].join("\n");
+  if (text.length <= budget) return text;
   while (lines.length > 0) {
     lines.pop();
-    const more = list.length - lines.length;
-    catalog = [catalogHeading, ...lines, more + " more skills available."].join("\n");
-    if (catalog.length <= budget) return catalog;
+    const more = entries.length - lines.length;
+    text = [heading, ...lines, more + " more " + kind + " available."].join("\n");
+    if (text.length <= budget) return text;
   }
   return "";
 }

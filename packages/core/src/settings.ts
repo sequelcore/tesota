@@ -21,6 +21,8 @@ export interface Settings {
   readonly permissionMode?: Mode;
   /** This installation's id, a UUID, which some providers' login asks for. */
   readonly deviceId?: string;
+  /** How many subagents may run at once across a session's tree (#525), from 1 to 16; 4 when not set. */
+  readonly agentLimit?: number;
 }
 
 const levels = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
@@ -35,6 +37,7 @@ const checks: { readonly [Name in keyof Settings]-?: (value: unknown) => boolean
   tuiMode: (value) => modes.has(value as string),
   permissionMode: (value) => permissionModes.has(value as string),
   deviceId: (value) => typeof value === "string" && uuid.test(value),
+  agentLimit: (value) => Number.isInteger(value) && (value as number) >= 1 && (value as number) <= 16,
 };
 
 /** The settings read back, and the names of those that were invalid and left out. */

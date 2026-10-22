@@ -1,21 +1,25 @@
 import type { ToolCall } from "@earendil-works/pi-ai";
 import { createHash, randomUUID } from "node:crypto";
 import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readSync, statSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
+import type { ReceiptChild } from "../../../src/receipt.ts";
 import type { Base } from "./base.ts";
 import type { ExtensionAPI } from "../../../src/contract.ts";
+import { type AgentType, agentTypes } from "./agents.ts";
 import { branchOf } from "./branch.ts";
+import { agentHost, type AgentTree, defaultAgentLimit, maxDepth } from "./children.ts";
 import type { StartedSkill } from "./instructions.ts";
 import {
-  compactedHead, createLoop, type HistoryMessage, type LoopOptions, type LoopSession, type LoopState, skillMessage, toolResult,
+  compactedHead, createLoop, type HistoryMessage, jobMessage, type LoopOptions, type LoopSession, type LoopState, skillMessage, toolResult,
 } from "./loop.ts";
+import { agentTool } from "./tools/agent.ts";
 import { noEffect, notRun, outcomeUnknown, repairs } from "./reconcile-rule.ts";
 import {
   type Behavior, createSessionFile, type Origin, readSessionFile, type Repair, type SessionEntry, sessionFormat, sessionVersion,
-  sessionWriter, type SessionWriter,
+  type SessionHeader, sessionWriter, type SessionWriter,
 } from "./session-file.ts";
-import { lockSession } from "./session-lock.ts";
+import { lockSession, SessionLockedError } from "./session-lock.ts";
 import { outputPrefix } from "./tools/shell.ts";
 import { keepTail, maxBytes } from "./truncate.ts";
 import { bindWorkspace, reopenWorkspace, type Workspace } from "./workspace.ts";
@@ -41,6 +45,18 @@ export interface LedgerRequest {
   readonly amendments: readonly LedgerAmendment[];
   /** Every accepted request input in the order it entered the durable journal. */
   readonly inputs: readonly RequestInput[];
+  /** The subagents the run started and how each ended (#525), in the order they ended. */
+  readonly children: readonly ReceiptChild[];
+}
+
+/** What makes a session a child of another (#525): its parent, where it works, the tree it counts in, its types and instructions. */
+export interface ChildSession {
+  readonly parent: NonNullable<SessionHeader["parent"]>;
+  readonly bind: (id: string) => Workspace;
+  readonly tree: AgentTree;
+  readonly types: readonly AgentType[];
+  /** Its instructions, in the folder it works in, on its branch when it has one. */
+  readonly instructions: (cwd: string, branch: string | undefined) => string;
 }
 
 /** A session of the engine: the contract's, plus its file and its request ledger. */
@@ -68,6 +84,10 @@ export type SessionOptions = Omit<LoopOptions, "writer" | "resumed" | "verifier"
   readonly folder?: string;
   /** Wraps the file's writer; tests use it to fail a write. */
   readonly writer?: (writer: SessionWriter) => SessionWriter;
+  /** How many subagents may run at once across the session's tree (#525); 4 when not given. */
+  readonly agentLimit?: number;
+  /** Given when the session is another's subagent (#525). */
+  readonly child?: ChildSession;
 };
 
 export type OpenOptions = Omit<SessionOptions, "cwd" | "folder">;
@@ -80,6 +100,11 @@ export function sessionsFolder(cwd: string): string {
 
 const lockOf = (file: string): string => file.replace(/\.jsonl$/u, ".lock");
 const outputOf = (file: string): string => file.replace(/\.jsonl$/u, ".output");
+
+/** What recovery tells the model about a job the session was running when it ended (#525). */
+const unknownJobText = (description: string, session: string): string => `Outcome unknown: the session ended while subagent `
+  + `"${description}" ran. Its own session, ${session}, ended with it, and it was not run again. Anything it wrote stays in its `
+  + "own worktree.";
 
 /** What recovery tells the model about a call it repaired. */
 export const repairText: Record<Repair, string> = {
@@ -191,6 +216,13 @@ export function recovery(entries: readonly SessionEntry[], output: (callId: stri
         ...kind === outcomeUnknown ? output(call.id) : {} });
     });
   }
+  // A job the session was running when it ended (#525) ends "outcome unknown", like a call; nothing runs it again.
+  const jobsEnded = new Set(entries.flatMap((entry) => entry.type === "job_end" ? [entry.job] : []));
+  for (const entry of entries) {
+    if (entry.type !== "job_start" || jobsEnded.has(entry.job)) continue;
+    added.push({ type: "job_end", run: entry.run, job: entry.job, outcome: "unknown", text: unknownJobText(entry.description, entry.session),
+      ...typeof entry.details === "object" && entry.details !== null ? { details: { ...entry.details, outcome: "unknown" } } : {} });
+  }
   const runs = entries.filter((entry) => entry.type === "request").length;
   if (runs > 0 && !entries.some((entry) => entry.type === "run_end" && entry.run === runs)) {
     added.push({ type: "run_end", run: runs, outcome: "interrupted" });
@@ -241,6 +273,21 @@ function conversation(entries: readonly SessionEntry[]): Pick<LoopState, "histor
   };
   /** Each reply by its run and its place in the run, so a repair written later finds it. */
   const replies = new Map<string, HistoryMessage>();
+  /** Whether each job ran in the background, by its id. */
+  const background = new Map<string, boolean>();
+  /**
+   * A repair goes after the other results of its reply, in the order repairs were written: a compaction
+   * written before it kept what the session held then, and a reply it summarized takes its repair with it.
+   */
+  const repair = (entry: Extract<SessionEntry, { readonly type: "reconciliation" }>): void => {
+    const reply = replies.get(`${entry.run}:${entry.reply}`);
+    const at = reply === undefined ? -1 : history.indexOf(reply);
+    if (at < 0) return;
+    let after = at + 1;
+    while (history[after]?.role === "toolResult") after += 1;
+    history.splice(after, 0,
+      toolResult({ id: entry.callId, name: entry.toolName }, { text: reconciliationText(entry), isError: true }, 0));
+  };
   const counts = new Map<number, number>();
   for (const [order, entry] of entries.entries()) {
     if (entry.type === "request") {
@@ -253,17 +300,8 @@ function conversation(entries: readonly SessionEntry[]): Pick<LoopState, "histor
     } else if (entry.type === "amendment") amendments.set(entry.id, { text: entry.text, order, skill: entry.skill });
     else if (entry.type === "delivered") deliver(entry, order);
     else if (entry.type === "clarification") answered.set(`${entry.run}:${entry.clarification.callId}`, order);
-    else if (entry.type === "reconciliation") {
-      // A repair goes after the other results of its reply, in the order repairs were written: a compaction
-      // written before it kept what the session held then, and a reply it summarized takes its repair with it.
-      const reply = replies.get(`${entry.run}:${entry.reply}`);
-      const at = reply === undefined ? -1 : history.indexOf(reply);
-      if (at < 0) continue;
-      let after = at + 1;
-      while (history[after]?.role === "toolResult") after += 1;
-      history.splice(after, 0,
-        toolResult({ id: entry.callId, name: entry.toolName }, { text: reconciliationText(entry), isError: true }, 0));
-    } else if (entry.type === "compaction") {
+    else if (entry.type === "reconciliation") repair(entry);
+    else if (entry.type === "compaction") {
       const files = { read: entry.read, changed: entry.changed };
       const cut = Math.max(0, history.length - entry.kept);
       history.splice(0, cut, compactedHead(ledger, entry.summary, files, history.slice(cut)));
@@ -274,6 +312,9 @@ function conversation(entries: readonly SessionEntry[]): Pick<LoopState, "histor
       replies.set(`${entry.run}:${index}`, entry.message);
       history.push(entry.message);
     } else if (entry.type === "tool_result") result(entry);
+    else if (entry.type === "job_start") background.set(entry.job, entry.background);
+    // A background job's end entered the conversation as the run took it in; a waited one's is its call's result (#525).
+    else if (entry.type === "job_end") { if (background.get(entry.job) === true) history.push(jobMessage(entry.text, entry.details, 0)); }
     else if (entry.type === "custom_message") {
       const { customType, content, display, details } = entry;
       history.push({ role: "custom", customType, content, display, ...details === undefined ? {} : { details }, timestamp: 0 });
@@ -294,7 +335,19 @@ function ledgerOf(entries: readonly SessionEntry[]): LedgerRequest[] {
     inputs: entries.flatMap((input): RequestInput[] => (input.type === "active_tools" || input.run !== entry.run) ? []
       : input.type === "amendment" ? [{ kind: "amendment", origin: input.origin, text: input.text }]
         : input.type === "clarification" ? [{ kind: "clarification", clarification: input.clarification }] : []),
+    children: entries.flatMap((ended) => ended.type === "job_end" && ended.run === entry.run ? childOf(ended.details) : []),
   }]);
+}
+
+/** A subagent as a receipt lists it (#525), from its job's report; none when the report says too little. */
+function childOf(details: unknown): ReceiptChild[] {
+  if (typeof details !== "object" || details === null) return [];
+  const { description, type, model, writes, outcome, verification, session, branch } = details as Record<string, unknown>;
+  if (typeof description !== "string" || typeof outcome !== "string" || typeof session !== "string") return [];
+  return [{ description, outcome, session, writes: writes === true, ...typeof type === "string" ? { type } : {},
+    ...typeof model === "string" ? { model } : {},
+    ...verification === "verified" || verification === "incomplete" || verification === "failed" ? { verification } : {},
+    ...typeof branch === "string" ? { branch } : {} }];
 }
 
 /** Where a session read back stands. */
@@ -327,7 +380,7 @@ function stateOf(entries: readonly SessionEntry[]): LoopState {
  * resumes from its entries; a new one starts empty.
  */
 function engineSession(file: string, release: () => void, entries: SessionEntry[], options: OpenOptions, workspace: Workspace,
-  opened: boolean): EngineSession {
+  opened: boolean, depth: number): EngineSession {
   const written = sessionWriter(file);
   const staged: SessionEntry[] = [];
   let poisoned: Error | undefined;
@@ -347,10 +400,18 @@ function engineSession(file: string, release: () => void, entries: SessionEntry[
     close: () => { written.close(); },
   };
   const request = (): LedgerRequest | undefined => ledgerOf(entries).at(-1);
+  const id = basename(file, ".jsonl");
+  // A session starts subagents while it is less than two below its top session (#525), counted across the top session's tree.
+  const types = options.child?.types ?? agentTypes(workspace.cwd);
+  const tree = options.child?.tree ?? { running: 0, limit: options.agentLimit ?? defaultAgentLimit };
+  const host = depth < maxDepth ? agentHost({ id, folder: dirname(file), depth, workspace, options, types, tree, create: createSession })
+    : undefined;
   let loop: LoopSession;
   try {
-    loop = createLoop({ ...options, cwd: workspace.cwd, sessionId: basename(file, ".jsonl"), verifier: (pi) => { options.verifier(pi, request); }, branch: () => branchOf(entries),
-      writer: options.writer?.(recording) ?? recording, outputFolder: outputOf(file), ...opened ? { resumed: stateOf(entries) } : {} });
+    loop = createLoop({ ...options, cwd: workspace.cwd, sessionId: id, verifier: (pi) => { options.verifier(pi, request); }, branch: () => branchOf(entries),
+      writer: options.writer?.(recording) ?? recording, outputFolder: outputOf(file), ...opened ? { resumed: stateOf(entries) } : {},
+      ...host === undefined ? {} : { jobTools: (jobs) => [agentTool(host, jobs)] },
+      ...options.child === undefined ? {} : { instructions: options.child.instructions(workspace.cwd, workspace.branch) } });
   } catch (error) {
     // An extension or the verifier that throws as it registers leaves nothing open.
     written.close();
@@ -394,15 +455,48 @@ export function createSession(options: SessionOptions): EngineSession {
   const lock = lockSession(lockOf(file));
   let workspace: Workspace | undefined;
   try {
-    workspace = bindWorkspace(options.cwd, id);
+    workspace = options.child?.bind(id) ?? bindWorkspace(options.cwd, id);
     const { cwd, checkout, worktree, branch, base } = workspace;
     createSessionFile(file, { type: "session", format: sessionFormat, version: sessionVersion, id, cwd, createdAt, checkout,
-      ...worktree === undefined ? {} : { worktree }, ...branch === undefined ? {} : { branch }, ...base === undefined ? {} : { base } });
-    return engineSession(file, () => { lock.release(); }, [], options, workspace, false);
+      ...worktree === undefined ? {} : { worktree }, ...branch === undefined ? {} : { branch }, ...base === undefined ? {} : { base },
+      ...options.child === undefined ? {} : { parent: options.child.parent } });
+    return engineSession(file, () => { lock.release(); }, [], options, workspace, false, options.child?.parent.depth ?? 0);
   } catch (error) {
     workspace?.release();
     lock.release();
     throw error;
+  }
+}
+
+/**
+ * What recovery adds to the session in `file`, whose lock is held, synced
+ * before anything runs; each child whose job it found running is recovered
+ * too (#525), so it ends `interrupted` with its parent.
+ */
+function recovered(file: string, entries: readonly SessionEntry[]): SessionEntry[] {
+  const added = recovery(entries, (callId) => interruptedOutput(outputOf(file), callId));
+  if (added.length === 0) return added;
+  const writer = sessionWriter(file);
+  try {
+    for (const entry of added) writer.append(entry);
+    writer.sync();
+  } finally {
+    writer.close();
+  }
+  const unknown = new Set(added.flatMap((entry) => entry.type === "job_end" ? [entry.job] : []));
+  for (const entry of entries) if (entry.type === "job_start" && unknown.has(entry.job)) recoverChild(entry.session);
+  return added;
+}
+
+/** Recovers a child's session as opening it would, without opening it; one another writer holds, or that cannot be read, is left as it is. */
+function recoverChild(file: string): void {
+  let lock: { release(): void };
+  try { lock = lockSession(lockOf(file)); } catch (error) {
+    if (error instanceof SessionLockedError) return;
+    throw error;
+  }
+  try { recovered(file, readSessionFile(file).entries); } catch { /* the parent opens whatever its child's file holds */ } finally {
+    lock.release();
   }
 }
 
@@ -419,17 +513,8 @@ export function openSession(file: string, options: OpenOptions): EngineSession {
     workspace = reopenWorkspace({ cwd: header.cwd, checkout: header.checkout ?? header.cwd,
       ...header.worktree === undefined ? {} : { worktree: header.worktree }, ...header.branch === undefined ? {} : { branch: header.branch },
       ...header.base === undefined ? {} : { base: header.base } });
-    const added = recovery(entries, (callId) => interruptedOutput(outputOf(file), callId));
-    if (added.length > 0) {
-      const writer = sessionWriter(file);
-      try {
-        for (const entry of added) writer.append(entry);
-        writer.sync();
-      } finally {
-        writer.close();
-      }
-    }
-    return engineSession(file, () => { lock.release(); }, [...entries, ...added], options, workspace, true);
+    const added = recovered(file, entries);
+    return engineSession(file, () => { lock.release(); }, [...entries, ...added], options, workspace, true, header.parent?.depth ?? 0);
   } catch (error) {
     workspace?.release();
     lock.release();

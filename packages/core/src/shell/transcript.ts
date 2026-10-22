@@ -1,6 +1,6 @@
 import type { AssistantMessage, ToolCall, ToolResultMessage } from "@earendil-works/pi-ai";
 import { type Component, Container, Markdown, Text, truncateToWidth } from "@earendil-works/pi-tui";
-import type { CustomMessage, HistoryMessage } from "../loop.ts";
+import { type CustomMessage, type HistoryMessage, jobType } from "../loop.ts";
 import type { MessageRenderer, ToolDrawing } from "./surface.ts";
 import type { ShellTheme } from "../../../../src/theme.ts";
 import { terminalText } from "../../../../src/terminal-text.ts";
@@ -76,7 +76,22 @@ function summary(call: ToolCall): string {
   const text = (value: unknown): string => typeof value === "string" ? value.split("\n")[0] ?? "" : "";
   // A search shows what it looks for, then where: `quesillo in notes`.
   if (typeof args["pattern"] === "string") return [text(args["pattern"]), text(args["path"])].filter((part) => part !== "").join(" in ");
-  return text(args["path"] ?? args["command"]);
+  return text(args["path"] ?? args["command"] ?? args["description"]);
+}
+
+/** A subagent's line under the call that started it (#525): its type, model and depth, and where it stands. */
+function childLine(details: unknown, theme: ShellTheme): string | undefined {
+  if (typeof details !== "object" || details === null) return undefined;
+  const { type, model, depth, writes } = details as Record<string, unknown>;
+  return `${theme.fg("dim", "↳")} ${theme.fg("muted", [typeof type === "string" ? type : "agent", writes === true ? "writes" : "reads",
+    String(model), `depth ${String(depth)}`].join(" · "))} ${theme.fg("dim", "·")} ${childStanding(details, theme)}`;
+}
+
+/** Where a subagent stands: working, or how it ended, its receipt's standing, and the limit that stopped it. */
+function childStanding(details: unknown, theme: ShellTheme): string {
+  const { outcome, verification, limited } = (details ?? {}) as Record<string, unknown>;
+  if (outcome === "running") return theme.fg("accent", "working");
+  return `${String(outcome)}${typeof verification === "string" ? `, ${verification}` : ""}${typeof limited === "string" ? ` (${limited} limit)` : ""}`;
 }
 
 /** An edit's replacements as removed and added lines. */
@@ -100,6 +115,8 @@ class CallView extends Container {
   private readonly drawings: Drawings;
   private readonly startedAt = Date.now();
   private durationMs: number | undefined;
+  /** The subagent the call started (#525), as its job last said. */
+  private child: unknown;
   constructor(call: ToolCall, theme: ShellTheme, drawings: Drawings) {
     super();
     this.call = call;
@@ -107,8 +124,15 @@ class CallView extends Container {
     this.drawings = drawings;
     this.draw();
   }
+  /** The subagent the call started, as its job now says (#525). */
+  job(details: unknown): void {
+    this.child = details;
+    this.draw();
+  }
   finish(result: ToolResultMessage): void {
     this.result = result;
+    // A call that waited for its subagent carries its end; one in the background only started it.
+    if (result.details !== undefined && this.call.name === "agent") this.child = result.details;
     this.durationMs = Date.now() - this.startedAt;
     this.draw();
   }
@@ -124,6 +148,7 @@ class CallView extends Container {
     const title = `${theme.fg(result?.isError === true ? "error" : "muted", glyph)} ${theme.bold(theme.fg("toolTitle", call.name))}`
       + ` ${theme.fg("muted", summary(call))}${note}`;
     this.addChild(cached((width) => [truncateToWidth(`${MARGIN}${title}`, width)]));
+    this.drawChild();
     const lines: string[] = [];
     const expanded = this.drawings.expanded();
     if (expanded && diff.length > 0) {
@@ -134,6 +159,11 @@ class CallView extends Container {
       if (expanded && output.length > outputLines) lines.push(theme.fg("dim", `… ${output.length - outputLines} more lines`));
     }
     if (lines.length > 0) this.addChild(prefixedText(lines.join("\n"), "  "));
+  }
+  /** The line of the subagent the call started, when it started one (#525). */
+  private drawChild(): void {
+    const child = childLine(this.child, this.theme);
+    if (child !== undefined) this.addChild(cached((width) => [truncateToWidth(`${MARGIN}  ${child}`, width)]));
   }
   /** A call drawn as its extension's tool says, Pi's way: its call, then its result once there is one. */
   private drawn(drawing: ToolDrawing): void {
@@ -152,8 +182,22 @@ class CallView extends Container {
   }
 }
 
+/** A background subagent's end (#525): one line, and its report once expanded. */
+function jobView(message: CustomMessage, theme: ShellTheme, drawings: Drawings): Component {
+  const details = (message.details ?? {}) as Record<string, unknown>;
+  const title = `${theme.fg("dim", "↳")} ${theme.bold(theme.fg("toolTitle", "subagent"))} ${theme.fg("muted", String(details["description"] ?? ""))}`
+    + ` ${theme.fg("dim", "·")} ${childStanding(details, theme)}`;
+  const head = cached((width) => [truncateToWidth(`${MARGIN}${title}`, width)]);
+  if (!drawings.expanded()) return head;
+  const box = new Container();
+  box.addChild(head);
+  box.addChild(prefixedText(theme.fg("toolOutput", terminalText(message.content)), "  "));
+  return box;
+}
+
 /** A message a settle handler added: as its extension draws it (#446), or as plain text when it draws none. */
 function customView(message: CustomMessage, theme: ShellTheme, drawings: Drawings): Component {
+  if (message.customType === jobType) return jobView(message, theme, drawings);
   const renderer = drawings.renderers.get(message.customType);
   const drawn = renderer?.(message, { expanded: drawings.expanded(), outputPad: 1 }, theme);
   if (drawn !== undefined) return drawn;
@@ -200,6 +244,11 @@ export class Transcript extends Container {
     const view = new CallView(call, this.theme, this.drawings);
     this.calls.set(call.id, view);
     this.addChild(view);
+  }
+
+  /** A subagent's job, as it now stands, under the call that started it (#525). */
+  job(callId: string, details: unknown): void {
+    this.calls.get(callId)?.job(details);
   }
 
   /** A message that entered the conversation. */

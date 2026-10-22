@@ -21,8 +21,8 @@ describe("the settings file", () => {
 
   test("an invalid value is left out and named, and the rest still reads", () => {
     const path = fileIn();
-    writeFileSync(path, JSON.stringify({ model: "no-slash", thinkingLevel: "loud", tuiMode: "fullscreen", other: 1 }));
-    expect(readSettings(path)).toEqual({ settings: { tuiMode: "fullscreen" }, invalid: ["model", "thinkingLevel"] });
+    writeFileSync(path, JSON.stringify({ model: "no-slash", thinkingLevel: "loud", tuiMode: "fullscreen", agentLimit: 17, other: 1 }));
+    expect(readSettings(path)).toEqual({ settings: { tuiMode: "fullscreen" }, invalid: ["model", "thinkingLevel", "agentLimit"] });
   });
 
   test("a file that begins with a byte-order mark, as Windows PowerShell 5.1 writes one, reads as any other (#470)", () => {

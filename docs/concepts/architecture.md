@@ -24,6 +24,10 @@ A run is one request, from what you asked to its end:
    [permission](../guides/permissions.md) boundary and your
    [hooks](../guides/hooks.md), with each call's intent synced before it
    runs. What you type meanwhile steers the run or follows it.
+   A call can start a **job** that goes on beside the run, such as a
+   [subagent](../guides/subagents.md): recorded before it runs, stopped
+   with its run, and its end delivered to the run as input. A run doesn't
+   settle while a job runs.
 3. **The run settles,** in two phases:
    - **extensions** settle first; their results add up, so none can drop
      another's message or cancel its send-back;
@@ -41,7 +45,8 @@ A run is one request, from what you asked to its end:
      finds it.
 
 The decision between those is a proved rule (`settle-rule.ts`): "the model
-stopped" never counts as "the work is done".
+stopped" never counts as "the work is done", and neither does a run whose
+jobs still run.
 
 ## Sessions
 
