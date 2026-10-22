@@ -16,7 +16,8 @@ import { build } from "./build.ts";
  * file are compared with the limits in `budgets.json` for this platform; a measurement without a limit there is reported only.
  * An exceeded budget is retried once; a measurement fails only when both attempts exceed its limit (#462).
  * The first frame divided by the same attempt's median startup is a measurement of its own, which Windows limits
- * instead of the first frame, since a slow runner there slows both (#556).
+ * closely, since a slow runner there slows both; its first frame keeps a looser limit, for a regression that
+ * slows startup and the first frame together (#556).
  * `--report` prints them all without failing, to set or revise a limit.
  */
 

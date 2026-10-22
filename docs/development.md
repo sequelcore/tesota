@@ -112,7 +112,8 @@ size, the scripted loop's time and memory, the request's base, the number
 of syncs to disk, settlement, resuming a session of about 1,000 entries,
 that session's size, the shell's first frame, and its memory. On Windows the
 first frame is limited divided by the same attempt's median startup, since
-runners there differ in speed for the whole job (#556). A second attempt
+runners there differ in speed for the whole job, with a looser limit in
+milliseconds for a regression that slows both (#556). A second attempt
 measures everything again only when the first exceeds a budget. A sync's time
 depends on the disk, so it's only reported; their number has the limit.
 New or changed limits are proposed from measurements, and need the owner's
