@@ -148,8 +148,9 @@ workflow from a tag; no one publishes from their own machine.
    `0.1.0-alpha.2`, and merge it to `dev`.
 2. Tag that commit `v<version>` and push the tag.
 3. The workflow refuses a tag that isn't both versions, or a version
-   already released. It builds and starts every target, then the publish
-   job, the only one that may write, checks the files against their
+   already released. It builds and starts every target and runs the whole
+   check (`ci.yml`) on the tagged commit. Only once all of them pass, the
+   publish job, the only one that may write, checks the files against their
    `SHA256SUMS`, attests each binary's provenance, and publishes them
    unchanged. A version with a suffix, such as `-alpha.1`, is a prerelease
    and never becomes the latest release.

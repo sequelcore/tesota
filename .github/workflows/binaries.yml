@@ -124,10 +124,14 @@ jobs:
           .\install.ps1
           & "$env:TESOTA_INSTALL_DIR\tesota.exe" --version
           if ($LASTEXITCODE -ne 0) { exit 1 }
+  # The whole check, on the tagged commit itself: a release is never published from a commit that fails it.
+  check:
+    if: startsWith(github.ref, 'refs/tags/v')
+    uses: ./.github/workflows/ci.yml
   publish:
     # Only a tag publishes, and only this job may write: the files the jobs above built and started, unchanged.
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build, start]
+    needs: [build, start, check]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
