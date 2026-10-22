@@ -8,6 +8,8 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
+import { claudeCodeProvider } from "../src/providers/claude-code.ts";
 import { readSettings, writeSettings } from "../src/settings.ts";
 import { runApp } from "../src/shell/app.ts";
 import type { ScriptStep } from "./engine.ts";
@@ -50,12 +52,17 @@ function scripted(replies: readonly ScriptStep[]): { models: MutableModels; cred
 }
 
 /** The app in a temporary folder, its settings and sessions there too, once it has drawn its first frame. */
-async function app(replies: readonly ScriptStep[] = [], { repository = false, mcp, projectMcp, skills = {}, served, model }:
+async function app(replies: readonly ScriptStep[] = [], { repository = false, mcp, projectMcp, skills = {}, served, model, claudeCode }:
   { repository?: boolean; mcp?: object; projectMcp?: object; skills?: Record<string, string>;
     /** Signed in to OpenAI with ChatGPT, which serves these models (#566), or whose list cannot be fetched. */
-    served?: readonly string[] | "offline"; model?: string } = {}) {
+    served?: readonly string[] | "offline"; model?: string;
+    /** Claude through Claude Code (#546), signed in there or not. */
+    claudeCode?: "signed in" | "signed out" } = {}) {
   const terminal = new VirtualTerminal(100, 30);
   const { models, credentials } = scripted(replies);
+  if (claudeCode !== undefined) {
+    models.setProvider(claudeCodeProvider(anthropicProvider().getModels(), { signedIn: async () => claudeCode === "signed in" }));
+  }
   const signOut = served === undefined ? () => undefined : await signInWithChatGPT(models, credentials, served);
   const settingsPath = join(folder("tesota-core-app-settings-"), "settings.json");
   if (model !== undefined) writeSettings({ model }, settingsPath);
@@ -224,6 +231,23 @@ describe("tesota-core", () => {
     terminal.type("\x1b");
     send(terminal, "/quit");
     await running;
+  });
+
+  test("/model lists Claude Code's models once it is signed in, and says how to sign in to it before (#546)", async () => {
+    const signedOut = await app([], { claudeCode: "signed out" });
+    send(signedOut.terminal, "/model");
+    const before = await signedOut.terminal.until("sign in there");
+    expect(before).toContain("sign in there (run `claude`, then `/login`)");
+    expect(before).not.toContain("claude-code/");
+    signedOut.terminal.type("");
+    send(signedOut.terminal, "/quit");
+    await signedOut.running;
+    const signedIn = await app([], { claudeCode: "signed in" });
+    send(signedIn.terminal, "/model");
+    expect(await signedIn.terminal.until("claude-code/")).not.toContain("sign in there");
+    signedIn.terminal.type("");
+    send(signedIn.terminal, "/quit");
+    await signedIn.running;
   });
 
   test("with ChatGPT sign-in, a saved model it does not serve is refused at start, naming those it serves (#566)", async () => {

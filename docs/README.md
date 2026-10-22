@@ -49,4 +49,5 @@ verify, in a receipt.
 
 - [Roadmap](../ROADMAP.md)
 - [Development](development.md): building, testing and proving Tesota.
+- [The claude-code route under Anthropic's terms](decisions/claude-code-route-terms.md)
 - [Contributing](../CONTRIBUTING.md) and [Security](../SECURITY.md)

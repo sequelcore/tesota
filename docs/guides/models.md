@@ -20,6 +20,22 @@ An API key in the environment works without `/login`, such as
 
 `/logout` forgets a provider's sign-in.
 
+### Claude through Claude Code
+
+On a Claude plan, Tesota runs Claude through your own Claude Code, the
+unmodified program the Claude Agent SDK installs with Tesota. Sign in there,
+not in Tesota: run `claude`, then `/login`. Tesota never sees your Claude
+sign-in. Once you are signed in, `/model` lists Anthropic's models as
+`claude-code/<id>`, such as `claude-code/claude-sonnet-5-5`. Until then it
+says how to sign in.
+
+Claude Code only answers. Tesota's tools, permissions, hooks, compaction and
+verification run as on any model, and none of your Claude Code settings,
+`CLAUDE.md`, skills or MCP servers load. Usage draws on your plan's limits,
+which assume ordinary individual use; shared or heavy use belongs on an
+`anthropic` API key. Why this route fits Anthropic's terms is in
+[the decision record](../decisions/claude-code-route-terms.md).
+
 ## Choose a model
 
 ```text
