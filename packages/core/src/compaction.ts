@@ -3,6 +3,7 @@ import { type HistoryMessage, modelContext } from "./loop.ts";
 
 /** What the summary model needs to condense the earlier conversation. */
 export interface SummaryRequest {
+  readonly cwd: string;
   readonly models: Models;
   readonly model: Model<Api>;
   readonly previous: string | undefined;
@@ -82,7 +83,7 @@ export async function summarize(request: SummaryRequest):
   try {
     const stream = request.models.streamSimple(request.model,
       { systemPrompt, messages: [{ role: "user", content, timestamp: Date.now() }], tools: [] },
-      { signal: request.signal });
+      { signal: request.signal, metadata: { cwd: request.cwd } });
     const result = await stream.result();
     const usage = result.usage;
     if (result.stopReason === "error" || result.stopReason === "aborted") {

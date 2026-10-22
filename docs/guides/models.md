@@ -34,7 +34,10 @@ says how to sign in.
 
 Claude Code only answers. Tesota's tools, permissions, hooks, compaction and
 verification run as on any model, and none of your Claude Code settings,
-`CLAUDE.md`, skills or MCP servers load. Usage draws on your plan's limits,
+`CLAUDE.md`, skills or MCP servers load. Claude Code runs in the session's
+folder, including its worktree. Tesota removes the Claude Code transcripts
+it creates when the query ends, and their project folder only if it is empty.
+Usage draws on your plan's limits,
 which assume ordinary individual use; shared or heavy use belongs on an
 `anthropic` API key. Why this route fits Anthropic's terms is in
 [the decision record](../decisions/claude-code-route-terms.md).

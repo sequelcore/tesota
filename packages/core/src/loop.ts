@@ -682,8 +682,9 @@ export function createLoop(options: LoopOptions): LoopSession {
     try {
       const stream = options.models.streamSimple(options.model,
         { systemPrompt: promptFor(), messages: modelContext(history), tools: offered.map(declaration) },
+        // Claude Code reads metadata.cwd for its query and transient transcript; never the shell's folder.
         // The session's id is the provider's prompt-cache key and session affinity, as Pi passed it (`prompt_cache_key` for OpenAI).
-        { signal, ...options.sessionId === undefined ? {} : { sessionId: options.sessionId },
+        { signal, metadata: { cwd: options.cwd }, ...options.sessionId === undefined ? {} : { sessionId: options.sessionId },
           ...thinkingLevel === "off" ? {} : { reasoning: thinkingLevel } });
       for await (const event of stream) if ("partial" in event && !left.aborted) emit({ type: "reply", partial: event.partial });
       return await stream.result();
@@ -907,7 +908,7 @@ export function createLoop(options: LoopOptions): LoopSession {
     };
     let failure = "";
     for (let attempt = 0; attempt < 2; attempt++) {
-      const result = yield* step(() => summarize({ models: options.models, model: options.model, previous: compacted?.summary,
+      const result = yield* step(() => summarize({ cwd: options.cwd, models: options.models, model: options.model, previous: compacted?.summary,
         messages: older, files, signal }), (given) => { if (Option.isSome(given)) counted(given.value); });
       if (signal.aborted) return stoppedReason;
       if ("error" in result) { failure = result.error; continue; }

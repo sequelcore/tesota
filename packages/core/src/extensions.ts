@@ -99,7 +99,8 @@ export function createHost(options: HostOptions, extensions: readonly ExtensionF
   const errors: string[] = [];
   const modelRegistry: ExtensionContext["modelRegistry"] = {
     find: (provider, id) => options.models.getModel(provider, id),
-    complete: (model, context, completeOptions) => options.models.complete(model, context, completeOptions),
+    complete: (model, context, completeOptions) => options.models.complete(model, context,
+      { ...completeOptions, metadata: { cwd: options.cwd } }),
   };
   const context = (signal: AbortSignal | undefined): ExtensionContext => ({
     cwd: options.cwd, mode: options.mode, model: options.model, modelRegistry, signal, ui: options.surface?.ui ?? headless,
