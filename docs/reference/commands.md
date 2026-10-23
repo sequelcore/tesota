@@ -74,9 +74,12 @@ In the dashboard:
 | `x` | Close it; `y` confirms for a running one |
 | Esc | Back |
 
-While answering an agent question, use 1–4 or Space to select options, the
-arrow keys to move, and Tab to reach custom text and Submit. Enter on Submit
-sends the whole batch; a recommended option starts unselected. Esc dismisses
+While answering an agent question, use 1–4 or Space to select options.
+↑/↓ move through the options, custom text and Submit in order, wrapping at
+either end; ←/→ switch questions while outside the text field. Tab moves
+from choices to custom text to Submit and back to choices. Enter toggles
+an option, moves from text to Submit, or sends the whole batch on Submit;
+a recommended option starts unselected. Esc dismisses
 the question, Ctrl+C stops its run, and Ctrl+T opens the session dashboard.
 Page Up and Page Down scroll the question's descriptions;
 moving to another choice or field brings it into view.
