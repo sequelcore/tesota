@@ -334,6 +334,8 @@ One of:
   operator's messages for the request, not the change.
 - `{ "status": "not_listed", "reason": "<why>" }`. The reasons are:
   - the model is not among Tesota's models;
+  - the model reports that listing depends on reference contents missing
+    from the request, naming what it cannot read;
   - its request failed, ran past its 2-minute limit, was stopped, or
     recorded no answer.
 
