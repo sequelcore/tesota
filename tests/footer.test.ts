@@ -1,4 +1,4 @@
-﻿import { join, sep } from "node:path";
+import { join, sep } from "node:path";
 import type { ContextUsage, FooterData, Theme } from "../src/contract.js";
 import { shellTheme } from "../src/theme.js";
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
