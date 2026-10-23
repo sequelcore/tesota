@@ -2,7 +2,7 @@ import { expect, it } from "vitest";
 import { type RemovedLine, changedLines } from "../src/diff-lines.js";
 import { bodilessLemmas, commentLines, type FileChange, provedOnTrust, weakenedEvidence, withGrammarComments }
   from "../src/verification-changes.js";
-import { removalCounts, testWeakens } from "../src/verification/test-weakening-rule.js";
+import { addsItems, removalCounts, testWeakens, type Token, type TokenKind } from "../src/verification/test-weakening-rule.js";
 import { weakens } from "../src/verification/weakening-rule.js";
 
 const numbered = (...lines: string[]): RemovedLine[] => lines.map((text, k) => ({ number: k + 1, base: k + 1, text }));
@@ -26,15 +26,136 @@ it("weakens on a removed requires or ensures, a requires added to an existing fu
 });
 
 it("weakens tests on a deleted file, or an edit that removes a line that counts or changes how tests run", () => {
-  expect(removalCounts(false, false, false)).toBe(true);
-  expect(removalCounts(true, false, false)).toBe(false);
-  expect(removalCounts(false, true, false)).toBe(false);
-  expect(removalCounts(false, false, true)).toBe(false);
+  expect(removalCounts(false, false, false, false)).toBe(true);
+  expect(removalCounts(true, false, false, false)).toBe(false);
+  expect(removalCounts(false, true, false, false)).toBe(false);
+  expect(removalCounts(false, false, true, false)).toBe(false);
+  expect(removalCounts(false, false, false, true)).toBe(false);
   expect(testWeakens("deleted", false, false)).toBe(true);
   expect(testWeakens("modified", true, false)).toBe(true);
   expect(testWeakens("modified", false, true)).toBe(true);
   expect(testWeakens("modified", false, false)).toBe(false);
   expect(testWeakens("added", true, true)).toBe(false);
+});
+
+it("admits a replacement only with an alignment that keeps every token and adds whole list items without a check", () => {
+  const t = (text: string, kind: TokenKind = "plain"): Token => ({ text, kind });
+  const open = t("(", "open");
+  const close = t(")", "close");
+  const comma = t(",", "separator");
+  const call = ["f", "(", "a", ")"];
+  // f(a) → f(a, b), f(b, a) and f(a), g(b): an argument at the end, one at the start, and one after the call's end.
+  expect(addsItems(call, [t("f"), open, t("a"), comma, t("b"), close], [0, 1, 2, 5])).toBe(true);
+  expect(addsItems(call, [t("f"), open, t("b"), comma, t("a"), close], [0, 1, 4, 5])).toBe(true);
+  expect(addsItems(call, [t("f"), open, t("a"), close, comma, t("g"), open, t("b"), close], [0, 1, 2, 3])).toBe(true);
+  // f() → f(b): the first item of an empty list.
+  expect(addsItems(["f", "(", ")"], [t("f"), open, t("b"), close], [0, 1, 3])).toBe(true);
+  const extended = [t("f"), open, t("a"), comma, t("b"), close];
+  expect(addsItems(call, extended, [0, 1, 4, 5])).toBe(false);
+  expect(addsItems(call, extended, [0, 1, 2])).toBe(false);
+  expect(addsItems(call, extended, [0, 2, 1, 5])).toBe(false);
+  expect(addsItems(call, extended, [0, 1, 2, 6])).toBe(false);
+  // f(a) → f(a, skip): an added token that checks or skips something.
+  expect(addsItems(call, [t("f"), open, t("a"), comma, t("skip", "check"), close], [0, 1, 2, 5])).toBe(false);
+  // f(a) → f(a b): an added token that is no list item.
+  expect(addsItems(call, [t("f"), open, t("a"), t("b"), close], [0, 1, 2, 4])).toBe(false);
+  // f(a, b) → f(a, x), g(y, b): balanced, but it closes the list it was added to.
+  expect(addsItems(["f", "(", "a", ",", "b", ")"], [t("f"), open, t("a"), comma, t("x"), close, comma, t("g"), open, t("y"),
+    comma, t("b"), close], [0, 1, 2, 3, 11, 12])).toBe(false);
+  // f(a) → f(a, (b): a bracket the item does not close.
+  expect(addsItems(call, [t("f"), open, t("a"), comma, open, t("b"), close], [0, 1, 2, 6])).toBe(false);
+});
+
+/** A file's change from one hunk at its first line, its lines marked " ", "-" or "+" as Git shows them, with its content on both sides. */
+const hunk = (path: string, lines: string[]): FileChange => {
+  const base = lines.filter((line) => !line.startsWith("+")).map((line) => line.slice(1));
+  const now = lines.filter((line) => !line.startsWith("-")).map((line) => line.slice(1));
+  const diff = [`diff --git a/${path} b/${path}`, `--- a/${path}`, `+++ b/${path}`, `@@ -1,${base.length} +1,${now.length} @@`, ...lines];
+  const [file] = changedLines(diff.join("\n"), [{ path, status: "modified" }]);
+  if (file === undefined) throw new Error("no change");
+  return { ...file, content: now.join("\n"), baseContent: base.join("\n") };
+};
+
+it("does not flag removed test lines whose replacements only gain arguments, properties or parameters (#578, #583)", () => {
+  // PR #578: a helper's parameter list and destructuring each gained one option.
+  const shell = hunk("packages/core/tests/shell.test.ts", [
+    " function shellOn(script: readonly ScriptStep[], mode: TuiMode = \"fullscreen\", size: [number, number] = [80, 24],",
+    "   extra: { tokensPerSecond?: number; copy?: (text: string) => Promise<boolean>; commands?: readonly SlashCommand[]; surface?: Surface;",
+    "-    cwd?: string; command?: (text: string) => Promise<boolean> } = {}) {",
+    "+    cwd?: string; command?: (text: string) => Promise<boolean>; answersQueriesAfterMs?: number } = {}) {",
+    "   const faux = fauxProvider({ tokensPerSecond: extra.tokensPerSecond ?? 400 });",
+    "   faux.setResponses(script.map(scriptedReply));",
+    "   const models = createModels();",
+    "   models.setProvider(faux.provider);",
+    "-  const { cwd = folder(\"tesota-core-shell-\"), ...options } = extra;",
+    "+  const { cwd = folder(\"tesota-core-shell-\"), answersQueriesAfterMs, ...options } = extra;",
+    "   const session = createSession({ cwd, folder: folder(\"tesota-core-sessions-\"), models, model: faux.getModel(), verifier: accepts });",
+    "   const terminal = new VirtualTerminal(...size);",
+    "+  terminal.answersQueriesAfterMs = answersQueriesAfterMs;",
+    "   const shell = startShell({ terminal, mode, fullRepaint: false, theme: shellTheme(\"dark\", \"truecolor\"), session,",
+    "     status: () => \"scripted model\", ...options });",
+    "   open.push({ session, shell });",
+    "   return { terminal, session, shell };",
+    " }",
+  ]);
+  // PR #583: calls that gained an argument.
+  const claudeCode = hunk("packages/core/tests/claude-code.test.ts", [
+    " function provider(start: StartQuery) {",
+    "   const models = createModels();",
+    "   const model = (id: string): Model<\"anthropic-messages\"> => models.getModel(\"claude-code\", id) as Model<\"anthropic-messages\">;",
+    "   const step = async (messages: Message[], options: { sessionId?: string; signal?: AbortSignal; model?: string } = {}): Promise<AssistantMessage> =>",
+    "     await models.streamSimple(model(options.model ?? \"claude-haiku-4-5\"), { systemPrompt, messages, tools: [echo] },",
+    "-      { sessionId: options.sessionId ?? \"session-1\", ...options.signal === undefined ? {} : { signal: options.signal } }).result();",
+    "+      { metadata: { cwd: process.cwd() }, sessionId: options.sessionId ?? \"session-1\", ...options.signal === undefined ? {} : { signal: options.signal } }).result();",
+    "   return { models, step };",
+    " }",
+  ]);
+  const compaction = hunk("packages/core/tests/compaction.test.ts", [
+    " function scripted(responses: FauxResponseStep[], overrides: Partial<SummaryRequest> = {}) {",
+    "   const models = createModels();",
+    "   const request: SummaryRequest = {",
+    "-    models, model: faux.getModel(), previous: undefined, messages: [],",
+    "+    cwd: process.cwd(), models, model: faux.getModel(), previous: undefined, messages: [],",
+    "     files: { read: [], changed: [] }, signal: new AbortController().signal, ...overrides,",
+    "   };",
+    "   return { faux, request };",
+    " }",
+    " ",
+    " test(\"the model receives the fixed contract and a single text transcript with bounded tool results\", async () => {",
+    "   const signal = new AbortController().signal;",
+    "   const { faux, request } = scripted([(context, options) => {",
+    "     expect(options?.signal).toBe(signal);",
+    "+    expect(options?.metadata).toEqual({ cwd: \"session-worktree\" });",
+    "     expect(context.messages).toHaveLength(2);",
+    "     return fauxAssistantMessage([{ type: \"text\", text: \"  compact summary  \" }]);",
+    "-  }], { signal, messages: [",
+    "+  }], { cwd: \"session-worktree\", signal, messages: [",
+    "     { role: \"system\", content: \"Earlier instructions\", timestamp: 0 },",
+    "   ] });",
+    "   expect(await summarize(request)).toMatchObject({ summary: \"compact summary\" });",
+    " });",
+  ]);
+  expect([shell, claudeCode, compaction].map(({ removed }) => removed.length)).toEqual([2, 1, 2]);
+  expect(weakenedEvidence([shell, claudeCode, compaction])).toEqual([]);
+});
+
+it("flags an in-place edit that changes an assertion, its expected value, a skip or a return, or adds more than list items", () => {
+  const cases: [string, string[]][] = [
+    ["assertion", ["-  expect(near(1)).toBeCloseTo(1);", "+  expect(near(1)).toBeCloseTo(1, -5);"]],
+    ["expected", [" it(\"lists\", () => {", "   expect(list()).toEqual([", "-    \"a\",", "+    \"a\", \"b\",", "   ]);", " });"]],
+    ["test", ["-it(\"adds\", () => {", "+it(\"adds\", { skip: true }, () => {", "   run();", " });"]],
+    ["options", [" it(\"adds\",", "-  { timeout: 1000 },", "+  { todo: true, timeout: 1000 },", "   () => run());"]],
+    ["retry", [" it(\"adds\",", "-  { mode: \"fast\" },", "+  { retry: 3, mode: \"fast\" },", "   () => run());"]],
+    ["return", [" it(\"adds\", () => {", "-  run(input);", "+  run(input); return;", "   check(input);", " });"]],
+    ["changed", ["-const total = sum([1, 2]);", "+const total = sum([1, 3]);"]],
+    ["regrouped", ["-const total = add(a, b);", "+const total = add(a, x), other(y, b);"]],
+    // An added item that opens a comment or a template, which would take in the lines after it.
+    ["comment", ["-const order = create(base", "+const order = create(base, /*", "   , { total: 1 });", "+*/);"]],
+    ["template", ["-const order = create(base", "+const order = create(base, `", "   , { total: 1 });", "+`);"]],
+    ["elsewhere", ["-setup(a);", " check(a);", "+setup(a, b);"]],
+  ];
+  const changes = cases.map(([name, lines]) => hunk(`tests/${name}.test.ts`, lines));
+  expect(weakenedEvidence(changes)).toEqual(cases.map(([name]) => ({ path: `tests/${name}.test.ts`, kind: "edited_test" })));
 });
 
 const edit = (path: string, added: string[], removed: string[] = []): FileChange =>
