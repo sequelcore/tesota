@@ -1443,7 +1443,7 @@ it("publishes the test rung's commands, each test on the base and its base contr
   write(root, { "src/price.mjs": "export const total = (n) => Math.max(n, 0);\n", "test/negative.test.mjs": priceTest(-1, 0) });
   await run.settle();
   expect(shape(run)).toEqual([["command", "bun run test", "ended", "passed"], ["exercise", "bun run test", "ended", "failed"],
-    ["base_control", "bun run test", "ended", "passed"], ["receipt", "receipt", "ended", "done"]]);
+    ["base_control", "bun run test", "ended", "passed"], ["command", "bun run test", "ended", "passed"], ["receipt", "receipt", "ended", "done"]]);
   const [, exercise, control] = run.progress.operations.operations();
   expect(control?.parent).toBe(exercise?.id);
   for (const { startedAt, endedAt, durationMs } of run.progress.operations.operations()) {

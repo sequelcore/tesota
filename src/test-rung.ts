@@ -81,6 +81,10 @@ function read(root: string, path: string): string | undefined {
   try { return readFileSync(join(root, path), "utf8"); } catch { return undefined; }
 }
 
+function bytes(root: string, path: string): Buffer | undefined {
+  try { return readFileSync(join(root, path)); } catch { return undefined; }
+}
+
 /**
  * Run the commands of the projects that own the changed files at `root`, one
  * evidence each, bound to the changed files' content as it was when the
@@ -245,17 +249,18 @@ function others(results: TestResults | undefined, file: string): string {
 }
 
 /**
- * A file that fails on the base `by` its runner alone, credited only when
- * that runner on the change, `onChange`, passed and ran a test from it that
- * passed (#615).
+ * A file that fails on the base `by` what runs it, credited only when that,
+ * `onChange`, passed with the change in the same worktree, so that both
+ * sides lack the same files the repository ignores (#618), and, for a runner
+ * on the files alone, ran a test from it that passed (#615). Undefined
+ * `file` for the whole commands, which name no file.
  */
-function credited(verdict: TestExercise, file: string, by: string, onChange: string, change: BaseRun): TestExercise {
-  if (change.outcome !== "passed") {
-    return { ...verdict, sensitivity: "unknown", reason: `it fails on the base ${by}, but on the change ${onChange} ${change.outcome.replaceAll("_", " ")}` };
-  }
-  const missing = unobserved(change.results, file);
-  return missing === undefined ? { ...verdict, reason: `${verdict.reason}, ${by}` }
-    : { ...verdict, sensitivity: "unknown", reason: `it fails on the base ${by}, but on the change ${onChange} passed and ${missing}` };
+function credited(verdict: TestExercise, file: string | undefined, by: string, onChange: string, change: BaseRun): TestExercise {
+  const but = `it fails on the base ${by}, but with the change in the same worktree, without the checkout's ignored files, ${onChange}`;
+  if (change.outcome !== "passed") return { ...verdict, sensitivity: "unknown", reason: `${but} ${change.outcome.replaceAll("_", " ")}` };
+  const missing = file === undefined ? undefined : unobserved(change.results, file);
+  return missing === undefined ? { ...verdict, reason: `${verdict.reason}; ${by}` }
+    : { ...verdict, sensitivity: "unknown", reason: `${but} passed and ${missing}` };
 }
 
 /** A path as one word for the POSIX shell the project's checks run in. */
@@ -309,12 +314,13 @@ async function probeRun(probe: Probe, project: string, signal: AbortSignal): Pro
  * script is one (`testProbe`), else the project's whole commands. A file
  * that fails there runs once more on the base without it: alone, the base's
  * own version of the file, or none; whole, the base as it is, once per
- * folder. A runner on the files alone also runs them on the change, once per
- * folder, which must pass before it credits any file. Each reason names the
- * command that judged it.
+ * folder. Before it credits any file, what ran them runs once more per
+ * folder in the same worktree holding the whole change, and must pass
+ * (`credited`). Each reason names the command that judged it.
  */
-async function againstBase(project: string, root: string, tests: readonly string[], provenance: ReadonlyMap<string, TestExercise["provenance"]>,
-  projects: readonly ProjectChecks[], signal: AbortSignal, ops: OperationSink): Promise<TestExercise[]> {
+async function againstBase(project: string, root: string, tests: readonly string[], changed: readonly string[],
+  provenance: ReadonlyMap<string, TestExercise["provenance"]>, projects: readonly ProjectChecks[], signal: AbortSignal,
+  ops: OperationSink): Promise<TestExercise[]> {
   const found = new Map<string, TestExercise>();
   const folders = new Map<string, { owning: ProjectChecks; paths: string[] }>();
   for (const path of tests) {
@@ -327,24 +333,39 @@ async function againstBase(project: string, root: string, tests: readonly string
       folders.set(owning.folder, folder);
     }
   }
-  const holding = async (path: string, run: () => Promise<BaseRun>): Promise<BaseRun> => {
-    mkdirSync(dirname(join(project, path)), { recursive: true });
-    writeFileSync(join(project, path), read(root, path) ?? "");
+  // The worktree holding `paths` as the change leaves them, a path the change removed gone, while `run` runs.
+  const holding = async (paths: readonly string[], run: () => Promise<BaseRun>): Promise<BaseRun> => {
+    for (const path of paths) {
+      const content = bytes(root, path);
+      if (content === undefined) { rmSync(join(project, path), { recursive: true, force: true }); continue; }
+      mkdirSync(dirname(join(project, path)), { recursive: true });
+      writeFileSync(join(project, path), content);
+    }
     const ran = await run();
     await git(project, ["reset", "--quiet", "--hard"]);
     await git(project, ["clean", "-qfdx", "-e", "node_modules"]);
     return ran;
   };
+  const ended = ({ outcome }: BaseRun): OperationResult => outcome;
   for (const { owning: { folder, commands }, paths } of folders.values()) {
     const alone = (files: readonly string[]): ReturnType<typeof testProbe> =>
       testProbe(project, folder, files.map((path) => posix.relative(folder, path)));
     let without: BaseRun | undefined;
-    let change: BaseRun | undefined;
+    // What runs `files` there, once, with the whole change in the same worktree.
+    const changes = new Map<string, { target: string; ran: Promise<BaseRun> }>();
+    const withChange = (files: readonly string[]): { target: string; ran: Promise<BaseRun> } => {
+      const key = files.join("\n");
+      const onChange = alone(files);
+      const target = onChange?.command ?? commands.join(" && ");
+      const made = changes.get(key) ?? { target, ran: holding(changed, () => ops.run({ method: "command", unit: "", target },
+        () => onChange === undefined ? baseRun(commands, project, folder, signal) : probeRun(onChange, project, signal), ended)) };
+      changes.set(key, made);
+      return made;
+    };
     // What runs each file there is what the operations name: the runner on the file alone, else the project's whole commands.
     const probes = new Map(paths.map((path) => [path, alone([path])] as const));
     const target = (path: string): string => probes.get(path)?.command ?? commands.join(" && ");
     const planned = new Map(paths.map((path) => [path, ops.plan({ method: "exercise", unit: "", target: target(path) })] as const));
-    const ended = ({ outcome }: BaseRun): OperationResult => outcome;
     for (const path of paths) {
       const origin = provenance.get(path) ?? "added";
       const probe = probes.get(path);
@@ -352,15 +373,17 @@ async function againstBase(project: string, root: string, tests: readonly string
       const parent = planned.get(path);
       const control: OperationSpec = { method: "base_control", unit: "", target: target(path), ...parent === undefined ? {} : { parent } };
       if (probe === undefined) {
-        const withTest = await holding(path, () => ops.run(exercising, () => baseRun(commands, project, folder, signal), ended, planned.get(path)));
+        const withTest = await holding([path], () => ops.run(exercising, () => baseRun(commands, project, folder, signal), ended, planned.get(path)));
         if (withTest.outcome !== "passed") {
           without ??= await ops.run(control, () => baseRun(commands, project, folder, signal), ended);
         }
         const verdict = exercise(path, origin, withTest, without);
-        found.set(path, { ...verdict, reason: `${verdict.reason}; by the whole check, ${commands.map((command) => `\`${command}\``).join(", ")}` });
+        const by = `by the whole check, ${commands.map((command) => `\`${command}\``).join(", ")}`;
+        found.set(path, verdict.sensitivity === "fails_then_passes" ? credited(verdict, undefined, by, "it", await withChange(paths).ran)
+          : { ...verdict, reason: `${verdict.reason}; ${by}` });
         continue;
       }
-      const withTest = await holding(path, () => ops.run(exercising, () => probeRun(probe, project, signal), ended, planned.get(path)));
+      const withTest = await holding([path], () => ops.run(exercising, () => probeRun(probe, project, signal), ended, planned.get(path)));
       const file = posix.relative(folder, path);
       const by = `by \`${probe.command}\`${others(withTest.results, file)}`;
       const unseen = withTest.outcome === "passed" ? unobserved(withTest.results, file) : undefined;
@@ -371,10 +394,10 @@ async function againstBase(project: string, root: string, tests: readonly string
       const verdict = exercise(path, origin, withTest, withTest.outcome === "passed" ? undefined
         : await ops.run(control, () => probeRun(probe, project, signal), ended));
       if (verdict.sensitivity !== "fails_then_passes") { found.set(path, { ...verdict, reason: `${verdict.reason}; ${by}` }); continue; }
-      const onChange = alone(paths);
-      change ??= onChange === undefined ? { outcome: "not_started", results: undefined }
-        : await ops.run({ method: "command", unit: "", target: onChange.command }, () => probeRun(onChange, root, signal), ended);
-      found.set(path, credited(verdict, file, by, `\`${onChange?.command ?? probe.command}\``, change));
+      // The folder's files together, then, when another of them fails there, this file alone.
+      let change = withChange(paths);
+      if ((await change.ran).outcome !== "passed" && paths.length > 1) change = withChange([path]);
+      found.set(path, credited(verdict, file, by, `\`${change.target}\``, await change.ran));
     }
   }
   return tests.flatMap((path) => found.get(path) ?? []);
@@ -405,7 +428,7 @@ export async function exerciseTests(root: string, base: string, tests: readonly 
     return unknown(`the change touches ${touched.join(", ")}, and the base runs with the checkout's dependencies, so a run there may not be faithful`);
   }
   try {
-    return await atBase(root, base, (project) => againstBase(project, root, tests, provenance, projects, signal, ops));
+    return await atBase(root, base, (project) => againstBase(project, root, tests, changed, provenance, projects, signal, ops));
   } catch (error) {
     const why = error instanceof Error ? error.message.trim().split("\n").at(-1) ?? "" : String(error);
     return unknown(`the base could not be checked out: ${why}`);
