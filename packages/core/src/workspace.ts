@@ -169,7 +169,8 @@ export function newWorktree(checkout: string, id: string, outsideGit: string): W
 export function reopenWorkspace(record: WorkspaceRecord): Workspace {
   if (record.worktree === undefined || record.branch === undefined || record.base === undefined) {
     const leased = leaseOn(canonical(record.cwd));
-    if (leased === undefined) throw new Error(`Another session is working in ${record.cwd}; close it first, then resume this one.`);
+    if (leased === undefined) throw new Error(`Another session is working in ${record.cwd}, in a Tesota that is still open; close that session there, then resume this one. `
+      + "To work now, start a new session beside it: it gets a worktree.");
     return { cwd: record.cwd, checkout: record.cwd, release: () => { leased(); return undefined; } };
   }
   const repository = repositoryOf(record.checkout);
