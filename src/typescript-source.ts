@@ -28,6 +28,28 @@ export function isScriptPath(path: string): boolean {
 }
 
 /**
+ * The lines of `source` that a call whose callee names an identifier
+ * `callee` matches spans, such as an assertion's: `expect(x)` and the
+ * `.toEqual([...])` of it across lines alike.
+ */
+export function callLines(path: string, source: string, callee: RegExp): Set<number> {
+  const ts = typescript();
+  const file = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true);
+  const lineOf = (position: number): number => file.getLineAndCharacterOfPosition(position).line + 1;
+  const names = (node: TypeScript.Node): boolean =>
+    ts.isIdentifier(node) ? callee.test(node.text) : ts.forEachChild(node, names) === true;
+  const lines = new Set<number>();
+  const visit = (node: TypeScript.Node): void => {
+    if (ts.isCallExpression(node) && names(node.expression)) {
+      for (let line = lineOf(node.getStart(file)); line <= lineOf(node.getEnd()); line += 1) lines.add(line);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return lines;
+}
+
+/**
  * The lines of `source` that hold only comments, as the parser reads it, so
  * a line inside a block comment counts whatever it starts with, and a line
  * inside a string or template never does; a `//@` line is an annotation,

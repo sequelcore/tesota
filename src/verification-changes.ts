@@ -4,8 +4,8 @@ import type { ChangedFile, DiffLine, RemovedLine } from "./diff-lines.js";
 import { grammarCommentLines, hasGrammar } from "./grammar-source.js";
 import { packageCheckScripts } from "./projects.js";
 import { contracts, unselectedContracts } from "./proof-guarantees.js";
-import { commentOnlyLines, isScriptPath, typescript } from "./typescript-source.js";
-import { removalCounts, testWeakens } from "./verification/test-weakening-rule.js";
+import { callLines, commentOnlyLines, isScriptPath, typescript } from "./typescript-source.js";
+import { addsItems, removalCounts, testWeakens, type Token, type TokenKind } from "./verification/test-weakening-rule.js";
 import { type AnnotationKind, checkScriptWeakens, weakens } from "./verification/weakening-rule.js";
 
 /**
@@ -335,11 +335,75 @@ function widened(line: string, added: readonly DiffLine[]): boolean {
   });
 }
 
+/**
+ * Words that check or skip something, define a test, retry it, give it more
+ * time or end it early, by the conventions of JavaScript's test runners: a
+ * line that holds one is never extended (`addsItems`), nor one an added list
+ * item puts one in.
+ */
+const checkWord = new RegExp(String.raw`^(?:expect\w*|assert\w*|should\w*|to[A-Z]\w*|not|resolves|rejects|skip\w*|only|todo|` +
+  String.raw`fail\w*|retry\w*|timeout\w*|it|test|describe|suite|context|bench|[fx](?:it|test|describe|context)|return|throw)$`, "u");
+/** The callees of an assertion: every line of its call holds what it checks, such as an expected value. */
+const assertion = /^(?:expect\w*|assert\w*|should\w*)$/u;
+/** A line's tokens: blanks, a comment, a string with its quote and closing quote, a word, or one other character. */
+const tokenPattern = /\s+|\/\/.*|\/\*[\s\S]*?(?:\*\/|$)|(["'`])((?:\\.|(?!\1)[^\\])*)(\1)?|[\w$]+|[^\s\w$]/gu;
+
+function tokenKind(text: string, quote: string | undefined, closed: string | undefined): TokenKind {
+  // A comment, a string left open or a template with an expression may hide code: count it as a check.
+  if (text.startsWith("//") || text.startsWith("/*")) return "check";
+  if (quote !== undefined) return closed === undefined || quote === "`" && text.includes("${") ? "check" : "plain";
+  if (checkWord.test(text)) return "check";
+  return "([{".includes(text) ? "open" : ")]}".includes(text) ? "close" : ",;".includes(text) ? "separator" : "plain";
+}
+
+/** The tokens of one line of JavaScript or TypeScript, without its blanks. */
+function lineTokens(line: string): Token[] {
+  return [...line.matchAll(tokenPattern)].flatMap(([text, quote, , closed]) =>
+    /^\s/u.test(text) ? [] : [{ text, kind: tokenKind(text, quote, closed) }]);
+}
+
+/** Where `after` keeps each token of `before`, each at the first place after the last one's, as far as it does. */
+function alignment(before: readonly Token[], after: readonly Token[]): number[] {
+  const at: number[] = [];
+  let next = 0;
+  for (const { text } of before) {
+    while (next < after.length && after[next]?.text !== text) next += 1;
+    if (next === after.length) break;
+    at.push(next);
+    next += 1;
+  }
+  return at;
+}
+
+/** The lines of each side of a JavaScript or TypeScript test file that an assertion's call spans, unless a side was not read. */
+function assertionLines(file: FileChange): { readonly before: Set<number>; readonly now: Set<number> } | undefined {
+  if (!isScriptPath(file.path) || file.removed.length === 0 || file.content === undefined || file.baseContent === undefined) return undefined;
+  return { before: callLines(file.path, file.baseContent, assertion), now: callLines(file.path, file.content, assertion) };
+}
+
+/**
+ * Whether a removed line of a test file was extended (`addsItems`) by the
+ * line the change added in its place: the one at its position within its run
+ * of removed lines. Neither line may lie in an assertion's call
+ * (`assertionLines`), which only a JavaScript or TypeScript file read on both
+ * sides has.
+ */
+function extended(file: FileChange, line: RemovedLine, asserted: ReturnType<typeof assertionLines>): boolean {
+  if (asserted === undefined || asserted.before.has(line.base)) return false;
+  const place = line.number + file.removed.filter(({ number, base }) => number === line.number && base < line.base).length;
+  const replacement = file.added.find(({ number }) => number === place);
+  if (replacement === undefined || asserted.now.has(place)) return false;
+  const before = lineTokens(line.text);
+  const after = lineTokens(replacement.text);
+  return addsItems(before.map(({ text }) => text), after, alignment(before, after));
+}
+
 function testChange(file: FileChange): Weakening[] {
   if (!isTestPath(file.path)) return [];
   const comments = commentLines(file);
-  const removes = file.removed.some((line) =>
-    removalCounts(line.text.trim() === "", comments.removed(line), widened(line.text, file.added)));
+  const asserted = assertionLines(file);
+  const removes = file.removed.some((line) => removalCounts(line.text.trim() === "", comments.removed(line),
+    widened(line.text, file.added), extended(file, line, asserted)));
   const changesRuns = file.added.some((line) => !comments.added(line) &&
     runChanges.some((pattern) => pattern.test(line.text)));
   return !testWeakens(file.status, removes, changesRuns) ? []

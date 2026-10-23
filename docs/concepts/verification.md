@@ -182,11 +182,22 @@ unverified earlier request remains visible when a later request changes files.
   body, written into a `.dfy` by hand. A line LemmaScript generated, which
   its `.dfy.gen` holds, doesn't count.
 - **Tests:** a deleted test file, or an edit that may weaken its tests: a
-  removed line that isn't blank, a comment or a widened import; or an added
-  focus or skip marker (`.only`, `.skip`, `xit`, `@Disabled`, `#[ignore]`,
-  `t.Skip`, `pytest.mark.skip`…), setup or teardown hook, or module mock. A
-  new test file, or one that only gains tests, isn't listed. A line added
-  inside an existing test, such as an early `return`, isn't caught.
+  removed line that isn't blank, a comment, a widened import or an extended
+  line; or an added focus or skip marker (`.only`, `.skip`, `xit`,
+  `@Disabled`, `#[ignore]`, `t.Skip`, `pytest.mark.skip`…), setup or
+  teardown hook, or module mock. A new test file, or one that only gains
+  tests, isn't listed. A line added inside an existing test, such as an
+  early `return`, isn't caught.
+
+  An extended line is one in a JavaScript or TypeScript test file that the
+  added line in its place keeps token for token, adding only whole list
+  items such as arguments, properties or parameters: `{ sessionId }` becoming
+  `{ metadata, sessionId }` (`addsItems`, proved). It still counts when
+  either line is inside an assertion's call (`expect`, `assert`, `should`),
+  or when the line holds or gains a word that checks, skips, defines, retries
+  or times a test or returns early (`toBe…`, `skip`, `only`, `it`, `retry`,
+  `timeout`, `return`…), or a comment or open string that could hide the
+  lines after it.
 - **Check scripts:** a `package.json` script selected at the base whose
   command changed or is no longer selected.
 

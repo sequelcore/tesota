@@ -399,7 +399,8 @@ The kinds are:
   `annotation`;
 - `deleted_test`: a test file deleted;
 - `edited_test`: a test file edited so that it may weaken its tests: a
-  removed line that is not blank, comment-only or a widened import, or an
+  removed line that is not blank, comment-only, a widened import or an
+  extended line (one that only gains list items, such as arguments), or an
   added focus or skip marker, setup or teardown hook, or module mock;
 - `changed_check_script`: a package check script selected at the base whose
   command changed or is no longer selected. This includes removing the
