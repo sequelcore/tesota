@@ -25,8 +25,8 @@ const defaultTimeoutMs = 15 * 60_000;
  * Run one of the project's checks in the shell the engine gives for them (`HostParts.shellConfig`),
  * from `cwd`, through `runProcess`.
  */
-export async function runShell(command: string, cwd: string, signal: AbortSignal, timeoutMs: number = defaultTimeoutMs):
-  Promise<{ outcome: CommandOutcome; output: string }> {
+export async function runShell(command: string, cwd: string, signal: AbortSignal, timeoutMs: number = defaultTimeoutMs,
+  env?: Environment): Promise<{ outcome: CommandOutcome; output: string }> {
   let config: ReturnType<ReturnType<typeof host>["shellConfig"]>;
   try { config = host().shellConfig(); } catch (error) {
     return { outcome: "not_started", output: error instanceof Error ? error.message : String(error) };
@@ -34,7 +34,8 @@ export async function runShell(command: string, cwd: string, signal: AbortSignal
   if (config.commandTransport === "stdin") {
     return { outcome: "not_started", output: `${config.shell} reads commands from its input, which Tesota cannot give it.` };
   }
-  const { ended, exitCode, output } = await runProcess(config.shell, [...config.args, command], cwd, signal, timeoutMs);
+  const { ended, exitCode, output } = await runProcess(config.shell, [...config.args, command], cwd, signal, timeoutMs, undefined,
+    env === undefined ? {} : { env: { ...process.env, ...env } });
   return { outcome: ended === "exited" ? exitCode === 0 ? "passed" : "failed" : ended, output };
 }
 
@@ -91,7 +92,7 @@ function bytes(root: string, path: string): Buffer | undefined {
  * commands started.
  */
 export async function runCommands(root: string, projects: readonly ProjectChecks[], changed: readonly string[],
-  signal: AbortSignal, ops: OperationSink = noOperations): Promise<CommandRun[]> {
+  signal: AbortSignal, ops: OperationSink = noOperations, env?: Environment): Promise<CommandRun[]> {
   const hash = contentHash(changed.map((path) => ({ path, content: read(root, path) })));
   const runs: CommandRun[] = [];
   const spec = (command: string): OperationSpec => ({ method: "command", unit: "", target: command });
@@ -103,7 +104,7 @@ export async function runCommands(root: string, projects: readonly ProjectChecks
       // After a stop nothing is launched, so no start is published and the planned command closes as not started (#590).
       const id = planned[next++];
       const { outcome, output } = signal.aborted ? await runShell(command, root, signal)
-        : await ops.run(spec(command), () => runShell(command, root, signal), (ran) => ran.outcome, id);
+        : await ops.run(spec(command), () => runShell(command, root, signal, undefined, env), (ran) => ran.outcome, id);
       const results = readTestResults(root, reportsWritten(root, folder, started));
       const failingTests = results === undefined ? undefined
         : [...results.tests].filter(([, status]) => status === "failed").map(([name]) => name).sort();
@@ -137,9 +138,9 @@ async function git(cwd: string, args: readonly string[]): Promise<string> {
 }
 
 /** The outcome of a sequence of commands: the first that did not pass, else passed. */
-async function runAll(commands: readonly string[], cwd: string, signal: AbortSignal): Promise<CommandOutcome> {
+async function runAll(commands: readonly string[], cwd: string, signal: AbortSignal, env?: Environment): Promise<CommandOutcome> {
   for (const command of commands) {
-    const { outcome } = await runShell(command, cwd, signal);
+    const { outcome } = await runShell(command, cwd, signal, undefined, env);
     if (outcome !== "passed") return outcome;
   }
   return "passed";
@@ -194,9 +195,9 @@ interface BaseRun {
 }
 
 /** `commands` run in `project`, a worktree of the base, with the reports they wrote under the owning `folder`. */
-async function baseRun(commands: readonly string[], project: string, folder: string, signal: AbortSignal): Promise<BaseRun> {
+async function baseRun(commands: readonly string[], project: string, folder: string, signal: AbortSignal, env?: Environment): Promise<BaseRun> {
   const started = Date.now();
-  const outcome = await runAll(commands, project, signal);
+  const outcome = await runAll(commands, project, signal, env);
   return { outcome, results: readTestResults(project, reportsWritten(project, folder, started)) };
 }
 
@@ -263,6 +264,9 @@ function credited(verdict: TestExercise, file: string | undefined, by: string, o
     : { ...verdict, sensitivity: "unknown", reason: `${but} passed and ${missing}` };
 }
 
+/** What the commands a session runs add to Tesota's environment, such as a writing subagent's branch guard (#619). */
+export type Environment = Readonly<Record<string, string>>;
+
 /** A path as one word for the POSIX shell the project's checks run in. */
 const quoted = (path: string): string => `'${path.replaceAll("'", "'\\''")}'`;
 
@@ -299,11 +303,11 @@ interface Probe {
  * from the runner's folder, so that the tests it names are named by their
  * file there, as the runner was given them.
  */
-async function probeRun(probe: Probe, project: string, signal: AbortSignal): Promise<BaseRun> {
+async function probeRun(probe: Probe, project: string, signal: AbortSignal, env?: Environment): Promise<BaseRun> {
   const report = posix.join(probe.folder, probe.report);
   if (clearTestReports(project, [report]).length > 0) return { outcome: "not_started", results: undefined };
   try {
-    const outcome = await runAll([probe.command], project, signal);
+    const outcome = await runAll([probe.command], project, signal, env);
     return { outcome, results: readTestResults(join(project, probe.folder), [probe.report]) };
   } finally { clearTestReports(project, [report]); }
 }
@@ -320,7 +324,7 @@ async function probeRun(probe: Probe, project: string, signal: AbortSignal): Pro
  */
 async function againstBase(project: string, root: string, tests: readonly string[], changed: readonly string[],
   provenance: ReadonlyMap<string, TestExercise["provenance"]>, projects: readonly ProjectChecks[], signal: AbortSignal,
-  ops: OperationSink): Promise<TestExercise[]> {
+  ops: OperationSink, env?: Environment): Promise<TestExercise[]> {
   const found = new Map<string, TestExercise>();
   const folders = new Map<string, { owning: ProjectChecks; paths: string[] }>();
   for (const path of tests) {
@@ -358,7 +362,7 @@ async function againstBase(project: string, root: string, tests: readonly string
       const onChange = alone(files);
       const target = onChange?.command ?? commands.join(" && ");
       const made = changes.get(key) ?? { target, ran: holding(changed, () => ops.run({ method: "command", unit: "", target },
-        () => onChange === undefined ? baseRun(commands, project, folder, signal) : probeRun(onChange, project, signal), ended)) };
+        () => onChange === undefined ? baseRun(commands, project, folder, signal, env) : probeRun(onChange, project, signal, env), ended)) };
       changes.set(key, made);
       return made;
     };
@@ -373,9 +377,9 @@ async function againstBase(project: string, root: string, tests: readonly string
       const parent = planned.get(path);
       const control: OperationSpec = { method: "base_control", unit: "", target: target(path), ...parent === undefined ? {} : { parent } };
       if (probe === undefined) {
-        const withTest = await holding([path], () => ops.run(exercising, () => baseRun(commands, project, folder, signal), ended, planned.get(path)));
+        const withTest = await holding([path], () => ops.run(exercising, () => baseRun(commands, project, folder, signal, env), ended, planned.get(path)));
         if (withTest.outcome !== "passed") {
-          without ??= await ops.run(control, () => baseRun(commands, project, folder, signal), ended);
+          without ??= await ops.run(control, () => baseRun(commands, project, folder, signal, env), ended);
         }
         const verdict = exercise(path, origin, withTest, without);
         const by = `by the whole check, ${commands.map((command) => `\`${command}\``).join(", ")}`;
@@ -383,7 +387,7 @@ async function againstBase(project: string, root: string, tests: readonly string
           : { ...verdict, reason: `${verdict.reason}; ${by}` });
         continue;
       }
-      const withTest = await holding([path], () => ops.run(exercising, () => probeRun(probe, project, signal), ended, planned.get(path)));
+      const withTest = await holding([path], () => ops.run(exercising, () => probeRun(probe, project, signal, env), ended, planned.get(path)));
       const file = posix.relative(folder, path);
       const by = `by \`${probe.command}\`${others(withTest.results, file)}`;
       const unseen = withTest.outcome === "passed" ? unobserved(withTest.results, file) : undefined;
@@ -392,7 +396,7 @@ async function againstBase(project: string, root: string, tests: readonly string
         continue;
       }
       const verdict = exercise(path, origin, withTest, withTest.outcome === "passed" ? undefined
-        : await ops.run(control, () => probeRun(probe, project, signal), ended));
+        : await ops.run(control, () => probeRun(probe, project, signal, env), ended));
       if (verdict.sensitivity !== "fails_then_passes") { found.set(path, { ...verdict, reason: `${verdict.reason}; ${by}` }); continue; }
       // The folder's files together, then, when another of them fails there, this file alone.
       let change = withChange(paths);
@@ -418,7 +422,7 @@ const dependencyFiles: ReadonlySet<string> = new Set(["package.json", "package-l
  * and none gives a verdict.
  */
 export async function exerciseTests(root: string, base: string, tests: readonly string[], changed: readonly string[],
-  projects: readonly ProjectChecks[], signal: AbortSignal, ops: OperationSink = noOperations): Promise<TestExercise[]> {
+  projects: readonly ProjectChecks[], signal: AbortSignal, ops: OperationSink = noOperations, env?: Environment): Promise<TestExercise[]> {
   if (tests.length === 0) return [];
   const provenance = new Map(await Promise.all(tests.map(async (path) => [path, await atCommit(root, base, path) ? "changed" : "added"] as const)));
   const unknown = (reason: string): TestExercise[] =>
@@ -428,7 +432,7 @@ export async function exerciseTests(root: string, base: string, tests: readonly 
     return unknown(`the change touches ${touched.join(", ")}, and the base runs with the checkout's dependencies, so a run there may not be faithful`);
   }
   try {
-    return await atBase(root, base, (project) => againstBase(project, root, tests, changed, provenance, projects, signal, ops));
+    return await atBase(root, base, (project) => againstBase(project, root, tests, changed, provenance, projects, signal, ops, env));
   } catch (error) {
     const why = error instanceof Error ? error.message.trim().split("\n").at(-1) ?? "" : String(error);
     return unknown(`the base could not be checked out: ${why}`);

@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { noEvidence, type Receipt, receiptEntry } from "../../../src/receipt.ts";
 import { agentTypes, agentTypesIn, unusedModels } from "../src/agents.ts";
 import { childLimits } from "../src/children.ts";
+import { configHooks, installedGit } from "../src/workspace.ts";
 import { createSession, type EngineSession, openSession, type SessionOptions } from "../src/session.ts";
 import { lastFloorNotice, readSessionFile, type SessionEntry } from "../src/session-file.ts";
 import { accepts, signInWithChatGPT } from "./scripted.ts";
@@ -171,7 +172,7 @@ describe("the agent tool", () => {
       delegate: [{ calls: [{ tool: "agent", args: { prompt: "write b.txt", description: "write b", writes: true, wait: true } }] }, "done"],
       "write b.txt": [(context) => { childCwd = /working in (.+?)\. /u.exec(promptOf(context))?.[1] ?? ""; return asMessage(
         { calls: [{ tool: "write", args: { path: "b.txt", content: "b\n" } }] }); }, "wrote b.txt"],
-    }, { cwd, verifier, permissions: { mode: () => "full", rules: [] } });
+    }, { cwd, verifier, permissions: { mode: () => "full", rules: [] }, branchGuard: "warn" });
     await parent.prompt("delegate");
     expect(existsSync(join(cwd, "b.txt"))).toBe(false);
     expect(childCwd).not.toBe(parent.workspace.cwd);
@@ -191,7 +192,7 @@ describe("the agent tool", () => {
       delegate: [{ calls: [{ tool: "agent", args: { prompt: "clean up", description: "clean up", writes: true, wait: true } }] }, "done"],
       "clean up": [{ calls: [{ tool: "write", args: { path: "../outside.txt", content: "x" } }] },
         (context) => { told = textOf(context.messages.at(-1)?.content ?? ""); return fauxAssistantMessage("couldn't"); }],
-    }, { cwd, permissions: { mode: () => "full", rules: [] } });
+    }, { cwd, permissions: { mode: () => "full", rules: [] }, branchGuard: "warn" });
     await parent.prompt("delegate");
     // A child has no one to ask, so it is told to say so in its final reply.
     expect(told).toContain("If the work needs it, say so in your final reply.");
@@ -199,6 +200,49 @@ describe("the agent tool", () => {
     const result = parent.history().find((message) => message.role === "toolResult");
     expect(result?.role === "toolResult" && textOf(result.content)).toContain("Tesota's floor refused 1 of its calls");
     expect(lastFloorNotice(readSessionFile(parent.file).entries)).toContain("its subagents: 1 call, listed in their own sessions");
+  });
+
+  // #619: a writing child's branch is guarded by Git's configuration hooks, which came in Git 2.54.
+  const guarding = configHooks(installedGit());
+  const shellTool = process.platform === "win32" ? "powershell" : "bash";
+
+  test.skipIf(guarding)("on a Git without configuration hooks, a writing child starts only if the operator said to warn (#619)", async () => {
+    const delegate = (): Record<string, Reply[]> => ({ delegate: [{ calls: [{ tool: "agent",
+      args: { prompt: "write b.txt", description: "write b", writes: true, wait: true } }] }, "done"], "write b.txt": ["wrote nothing"] });
+    const required = session(delegate(), { cwd: repository(), permissions: { mode: () => "full", rules: [] } });
+    await required.prompt("delegate");
+    const refusal = required.history().find((message) => message.role === "toolResult");
+    expect(refusal?.role === "toolResult" && textOf(refusal.content)).toContain("a subagent that writes needs Git 2.54 or later");
+    expect(required.ledger()[0]?.children).toEqual([]);
+    const warned = session(delegate(), { cwd: repository(), permissions: { mode: () => "full", rules: [] }, branchGuard: "warn" });
+    await warned.prompt("delegate");
+    expect(warned.ledger()[0]?.children[0]).toMatchObject({ description: "write b", unguarded: true });
+    const result = warned.history().find((message) => message.role === "toolResult");
+    expect(result?.role === "toolResult" && textOf(result.content)).toContain("It ran without Git's guard on its branch");
+  });
+
+  test.skipIf(!guarding)("a writing child moves only its own branch, never one another worktree has checked out (#619)", async () => {
+    const cwd = repository();
+    git(cwd, "branch", "shared");
+    const other = folder("tesota-agents-other-");
+    git(cwd, "worktree", "add", "-q", join(other, "shared"), "shared");
+    const before = git(cwd, "rev-parse", "shared");
+    let said = "";
+    const parent = session({
+      delegate: [{ calls: [{ tool: "agent", args: { prompt: "work", description: "work", writes: true, wait: true } }] }, "done"],
+      work: [{ calls: [{ tool: shellTool, args: { command: "git commit -q --allow-empty -m own" } }] },
+        { calls: [{ tool: shellTool, args: { command: "git switch -q --ignore-other-worktrees shared; git commit -q --allow-empty -m moved" } }] },
+        (context) => { said = textOf(context.messages.at(-1)?.content ?? ""); return fauxAssistantMessage("done"); }],
+    }, { cwd, permissions: { mode: () => "full", rules: [] } });
+    await parent.prompt("delegate");
+    expect(said).toContain("Tesota: this subagent may move only its own branch");
+    expect(git(cwd, "rev-parse", "shared")).toBe(before);
+    const [child] = parent.ledger()[0]?.children ?? [];
+    expect(child?.unguarded).toBeUndefined();
+    // Its own branch moved, and the parent can still bring its work in.
+    expect(git(cwd, "log", "--format=%s", "-1", child?.branch ?? "missing")).toBe("own");
+    git(cwd, "merge", "-q", "--ff-only", child?.branch ?? "missing");
+    expect(git(cwd, "log", "--format=%s", "-1")).toBe("own");
   });
 
   test("a read-only session starts no writing child, and a reader is read only whatever the mode", async () => {

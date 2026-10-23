@@ -392,6 +392,17 @@ it("attributes both sides of a rename and retains an unchanged deletion as inher
   expect(receipt.inherited).toEqual(["src/rule.ts"]);
 });
 
+it("runs the project's checks with the session's environment, such as a writing subagent's branch guard (#619)", async () => {
+  const root = repository({ "src/rule.ts": contract, "bun.lock": "", "package.json": JSON.stringify({ scripts: {
+    check: "node -e \"require('node:fs').writeFileSync('.git/env-seen', process.env.TESOTA_GUARD_BRANCH ?? 'none')\"" } }) });
+  const run = gate(root, undefined, { env: { TESOTA_GUARD_BRANCH: "refs/heads/tesota/child" } });
+  await run.input();
+  await run.tool("write");
+  write(root, { "src/rule.ts": `${contract}// changed\n` });
+  await run.settle();
+  expect(readFileSync(join(root, ".git", "env-seen"), "utf8")).toBe("refs/heads/tesota/child");
+});
+
 it.each(["tui", "print"])("leaves a %s request ready without verification when no tool or only readers started", async (mode) => {
   const root = repository({ "src/rule.ts": contract, "bun.lock": "",
     "package.json": JSON.stringify({ scripts: { check: "node -e \"require('node:fs').writeFileSync('.git/check-ran','ran')\"" } }) });

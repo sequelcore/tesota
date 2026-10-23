@@ -8,7 +8,7 @@ import { noOperations, type OperationResult, type OperationSink, type OperationS
 import { runProcess } from "./process.js";
 import { counterexampleSteps } from "./receipt.js";
 import { pathBlobs } from "./request-fingerprint.js";
-import { runShell } from "./test-rung.js";
+import { type Environment, runShell } from "./test-rung.js";
 import { projectFiles } from "./verification/lemmascript-verifier.js";
 import type { ProofOutcome } from "./verification/proof-outcome-rule.js";
 import { type FaultVerdict, type ModelRun, type Staleness, faultVerdict, modelOutcome, staleness, tlcRun,
@@ -414,7 +414,7 @@ export async function modelContent(root: string, path: string, header: ModelHead
  * faults and its covered files as they were before the check.
  */
 export async function checkModel(root: string, path: string, changed: readonly string[], signal: AbortSignal,
-  jar: string = tlaToolsJar(), ops: OperationSink = noOperations): Promise<ModelCheck> {
+  jar: string = tlaToolsJar(), ops: OperationSink = noOperations, env?: Environment): Promise<ModelCheck> {
   const started = Date.now();
   const source = await readIfPresent(join(root, path)) ?? "";
   const header = modelHeader(source) ?? { covers: [], invariants: [], atomic: [], omits: [], faults: [] };
@@ -458,7 +458,7 @@ export async function checkModel(root: string, path: string, changed: readonly s
   const counterexample = main.run === "violated" ? tlcCounterexample(main.trace) : undefined;
   const result = evidence(main, faults);
   const link: ModelLink = header.replay === undefined || result.outcome !== "passed" ? "no_replay"
-    : (await ops.run(replaySpec ?? mainSpec, () => runShell(header.replay ?? "", root, signal, timeoutMs), ({ outcome }) => outcome, replayId))
+    : (await ops.run(replaySpec ?? mainSpec, () => runShell(header.replay ?? "", root, signal, timeoutMs, env), ({ outcome }) => outcome, replayId))
       .outcome === "passed" ? "linked" : "replay_failed";
   return { ...facts, staleness: stalenessOf(result.outcome), problems, evidence: result, run: main.run, states: distinctStates(main.output), faults, ...counterexample === undefined ? {} : { counterexample }, link };
 }

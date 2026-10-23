@@ -226,6 +226,8 @@ export interface ExtensionContext {
   readonly modelRegistry: ModelRegistry;
   readonly sessionManager: { getBranch(): readonly BranchEntry[] };
   readonly signal: AbortSignal | undefined;
+  /** What every process the session starts adds to Tesota's environment, such as a writing subagent's branch guard (#619). */
+  readonly env?: Readonly<Record<string, string>>;
   getContextUsage(): ContextUsage | undefined;
 }
 

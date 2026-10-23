@@ -45,6 +45,7 @@ No tool call may read or change `auth.json` or `mcp-auth.json`.
 | `permissionMode` | `read`, `ask` (default), `full` | Shift+Tab |
 | `tuiMode` | `fullscreen` (default), `inline` | `/settings` |
 | `agentLimit` | How many [subagents](../guides/subagents.md) run at once across a session and its subagents: 1 to 16, 4 by default | You |
+| `subagentBranchGuard` | Whether Git keeps a [subagent that writes](../guides/subagents.md#its-branch-and-no-other-619) off every branch but its own: `require` (default), `warn`, `off` | You |
 | `hooks` | See [Hooks](../guides/hooks.md) | You |
 
 A value Tesota doesn't recognize is left out, and Tesota names it when it

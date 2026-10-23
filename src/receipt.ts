@@ -133,6 +133,8 @@ export interface ReceiptChild {
   readonly branch?: string;
   /** How many of its calls Tesota's floor refused (#622). */
   readonly floorRefusals?: number;
+  /** A writing subagent that ran without Git's guard on its branch (#619). */
+  readonly unguarded?: true;
 }
 
 /**
@@ -1027,6 +1029,7 @@ function childLines(receipt: Pick<Receipt, "children">): string[] {
     `${child.description}: ${child.outcome}${child.verification === undefined ? "" : `, ${child.verification}`}`
     + `${!child.writes ? ", read only" : child.branch === undefined ? ", left no change" : `, on branch ${child.branch}`}`
     + `${child.floorRefusals === undefined ? "" : `, ${plural(child.floorRefusals, "call", "calls")} the floor refused`}`
+    + `${child.unguarded === true ? ", with no guard on its branch" : ""}`
     + `${child.model === undefined ? "" : ` · ${child.model}`}`);
 }
 

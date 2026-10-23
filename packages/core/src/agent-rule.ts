@@ -32,3 +32,25 @@ export function childMode(parent: Mode, writes: boolean): Mode {
   if (!writes) return "read";
   return parent;
 }
+
+/** What the operator set for a writing child's branch guard (#619): required, warned about when missing, or off. */
+export type GuardSetting = "require" | "warn" | "off";
+
+/** What a writing child starts with (#619): the guard, no guard, or not at all. */
+export type GuardAdmission = "guard" | "unguarded" | "refuse";
+
+/**
+ * How a writing child starts (#619): with Git's guard on its branch when
+ * this Git can give one and the operator didn't turn it off; without it,
+ * when it can't, only if the operator said to warn; otherwise not at all.
+ */
+//@ ensures setting === "off" ==> \result === "unguarded"
+//@ ensures setting !== "off" && supported ==> \result === "guard"
+//@ ensures setting === "require" && !supported ==> \result === "refuse"
+//@ ensures setting === "warn" && !supported ==> \result === "unguarded"
+export function branchGuard(setting: GuardSetting, supported: boolean): GuardAdmission {
+  if (setting === "off") return "unguarded";
+  if (supported) return "guard";
+  if (setting === "require") return "refuse";
+  return "unguarded";
+}

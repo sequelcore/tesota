@@ -43,7 +43,9 @@ export interface LoopOptions {
   /** The instructions and skills after the default prompt; the operator's and the project's (#457) when not given. */
   readonly instructions?: string;
   /** The tools the model may call; the file tools and platform's shell when not given. */
-  readonly tools?: (spool: () => string, cwd: string) => readonly EngineTool[];
+  readonly tools?: (spool: () => string, cwd: string, env?: Readonly<Record<string, string>>) => readonly EngineTool[];
+  /** What every process the session starts adds to Tesota's environment (#619). */
+  readonly env?: Readonly<Record<string, string>>;
   /** Where the session's entries go. */
   readonly writer: SessionWriter;
   /** The durable output folder beside the session's file, created on first use. */
@@ -476,7 +478,8 @@ function toolbox(given: EngineTool[], writer: SessionWriter) {
 
 /** A session's own tools: those given, or the file tools, the platform's shell and `ask_user`; then those that start jobs (#525). */
 const sessionTools = (options: LoopOptions, spool: () => string, questions: AskHost, jobs: Jobs): EngineTool[] =>
-  [...options.tools?.(spool, options.cwd) ?? codingTools(options.cwd, spool, undefined, questions), ...options.jobTools?.(jobs) ?? []];
+  [...options.tools?.(spool, options.cwd, options.env) ?? codingTools(options.cwd, spool, undefined, questions, options.env),
+    ...options.jobTools?.(jobs) ?? []];
 
 /** What the model is told of a tool. */
 const declaration = ({ name, description, parameters }: EngineTool) => ({ name, description, parameters });
@@ -658,6 +661,7 @@ export function createLoop(options: LoopOptions): LoopSession {
     compacted?.counted ?? 0);
   const host = createHost({
     cwd: options.cwd, mode: options.mode ?? "print", models: options.models, model: options.model, thinkingLevel,
+    ...options.env === undefined ? {} : { env: options.env },
     ...options.flags === undefined ? {} : { flags: options.flags },
     tools: { register: (tool) => { tools.register(tool, (signal) => host.context(signal)); }, active: tools.active,
       setActive: tools.setActive },

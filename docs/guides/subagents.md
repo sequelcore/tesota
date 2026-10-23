@@ -46,6 +46,41 @@ in an error, such as a provider's refusal, tells the agent why.
 The receipt lists each subagent the run started, with how it ended and
 where its own receipt stands. See [Receipt v2](../receipt-v2.md#child).
 
+### Its branch, and no other (#619)
+
+Worktrees share their repository's branches, so a subagent's shell could
+move a branch another worktree has checked out, yours included. Git keeps
+it to its own: every process a subagent that writes starts, its shell and
+its verification's commands, runs with a `reference-transaction` hook
+defined in Git's configuration through the environment. In the repository
+it was given, a change that would move any branch but its own, or any tag,
+is aborted before it happens, and the subagent is told to report the
+conflict. Your repository's own hooks and configuration are untouched, and
+other repositories are unaffected.
+
+It needs Git 2.54 or later, the first that runs configured hooks beside a
+repository's own. `subagentBranchGuard` in
+[settings](../reference/configuration.md#settingsjson) decides what happens
+without it:
+
+| Value | With Git 2.54 or later | With an older Git |
+| --- | --- | --- |
+| `require` (default) | Guarded | No subagent that writes starts; the agent is told why |
+| `warn` | Guarded | It starts unguarded, and its result and your receipt say so |
+| `off` | Unguarded | Unguarded |
+
+It guards branches, not workspaces. It doesn't cover:
+
+- a command that turns it off, such as `git -c hook.tesota-branch-guard.enabled=false`;
+- `git -C` or `--git-dir` aimed at another worktree, which can move that
+  worktree's `HEAD` and files without moving a branch;
+- what an aborted command already did to the subagent's own files and
+  index, such as `git reset --hard` onto another branch;
+- editing `.git` directly, Git run by anything but the subagent's own
+  processes, and the stash, configuration, hooks and remotes the worktrees
+  share. Remote-tracking branches stay shared and writable, so `git fetch`
+  works.
+
 ## Limits
 
 | Limit | Value |

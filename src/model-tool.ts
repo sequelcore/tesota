@@ -106,7 +106,7 @@ export const modelTool: ToolDefinition<typeof parameters, ModelCheck | undefined
     if (modelHeader(source) === undefined) {
       return text(`${path} has no tesota-model header, so it is no model Tesota checks. Start it with:\n\n${HEADER_FORMAT}`);
     }
-    const check = await checkModel(ctx.cwd, path, [], signal ?? new AbortController().signal);
+    const check = await checkModel(ctx.cwd, path, [], signal ?? new AbortController().signal, undefined, undefined, ctx.env);
     return { content: [{ type: "text", text: modelToolReport(check) }], details: check,
       ...check.evidence.outcome === "passed" ? {} : { isError: true } };
   },
