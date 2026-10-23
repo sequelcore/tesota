@@ -790,8 +790,9 @@ export function createLoop(options: LoopOptions): LoopSession {
     writer.sync();
     emit({ type: "call", call });
     const nativeQuestion = selected !== undefined && isNativeAskTool(selected);
-    await host.toolStart({ type: "tool_execution_start", toolCallId: call.id, toolName: call.name, args: call.arguments, nativeQuestion },
-      signal, left);
+    const readOnly = options.permissions?.mode() === "read";
+    await host.toolStart({ type: "tool_execution_start", toolCallId: call.id, toolName: call.name, args: call.arguments, nativeQuestion,
+      readOnly }, signal, left);
     if (signal.aborted) return stoppedCall;
     activeQuestion = nativeQuestion ? { run, reply, callId: call.id } : undefined;
     let output: ToolOutput;

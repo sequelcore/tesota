@@ -98,6 +98,20 @@ test("only the exact native bridge is identified as a question for verification"
   }
 });
 
+test("a tool that starts in a read-only session says so to verification (#585)", async () => {
+  for (const mode of ["read", "full"] as const) {
+    let readOnly: boolean | undefined;
+    const session = start([{ tool: "ls", args: {} }, "done"], {
+      permissions: { mode: () => mode, rules: [] }, verifier: (pi) => {
+        pi.on("tool_execution_start", (event) => { readOnly = event.readOnly; });
+        accepts(pi);
+      },
+    });
+    await session.prompt("List the folder.");
+    expect(readOnly).toBe(mode === "read");
+  }
+});
+
 test("a reply that repeats a call id runs only the first, keeps its one result, and leaves the session usable", async () => {
   let opened = 0;
   const session = start([{ calls: [

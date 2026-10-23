@@ -55,9 +55,10 @@ vi.mock("../src/model-check.js", async (original) => {
 const roots: string[] = [];
 
 it("asking a question alone cannot change project files, while unknown tools remain eligible", () => {
-  expect(toolMayChangeFiles("ask_user", true)).toBe(false);
-  expect(toolMayChangeFiles("ask_user", false)).toBe(true);
-  expect(toolMayChangeFiles("unknown_tool", false)).toBe(true);
+  expect(toolMayChangeFiles("ask_user", true, false)).toBe(false);
+  expect(toolMayChangeFiles("ask_user", false, false)).toBe(true);
+  expect(toolMayChangeFiles("unknown_tool", false, false)).toBe(true);
+  expect(toolMayChangeFiles("agent", false, true)).toBe(false);
 });
 beforeEach(() => { scripted.clear(); scriptedModels.clear(); modelCalls.clear(); mutantOutcome = "failed"; });
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -126,7 +127,8 @@ interface Settled { entries?: { type?: string; customType: string; content: stri
 
 /** The gate's handlers on a fake Pi, run as Pi runs them in `root`; the open-case list is off unless `session` sets its flag. */
 function gate(root: string, active = ["read", "edit", "prove"], session: object = {}, recorded?: () => RecordedRequest): {
-  input: (source?: string, streamingBehavior?: string, text?: string) => Promise<void>; agentStart: () => void; tool: (name: string) => Promise<void>;
+  input: (source?: string, streamingBehavior?: string, text?: string) => Promise<void>; agentStart: () => void;
+  tool: (name: string, readOnly?: boolean) => Promise<void>;
   settle: (outcome?: string, reason?: string) => Promise<Settled | undefined>; progress: GateProgress; steps: GateStatus[];
 } {
   const handlers = new Map<string, (event: unknown, ctx: unknown) => unknown>();
@@ -143,7 +145,9 @@ function gate(root: string, active = ["read", "edit", "prove"], session: object 
       await handlers.get("input")?.({ type: "input", text, source, streamingBehavior }, ctx);
     },
     agentStart: () => { handlers.get("agent_start")?.({ type: "agent_start" }, ctx); },
-    tool: async (toolName) => { await handlers.get("tool_execution_start")?.({ type: "tool_execution_start", toolName }, ctx); },
+    tool: async (toolName, readOnly) => {
+      await handlers.get("tool_execution_start")?.({ type: "tool_execution_start", toolName, ...readOnly === undefined ? {} : { readOnly } }, ctx);
+    },
     settle: async (outcome = "completed", reason) =>
       await handlers.get("agent_before_settle")?.({ type: "agent_before_settle", outcome, reason }, ctx) as Settled | undefined,
   };
@@ -412,7 +416,21 @@ it.each(["tui", "print"])("leaves a %s request ready without verification when n
   } finally { gitCalls.mockRestore(); diffCalls.mockRestore(); }
 });
 
-it.each(["prove", "bash", "powershell", "mcp__files__write", "unknown", "extension-tool"])(
+it("never verifies, in a read-only session, the edits a parent makes in the folder it shares (#585)", async () => {
+  const root = repository({ "src/rule.ts": contract, "bun.lock": "",
+    "package.json": JSON.stringify({ scripts: { check: "node -e \"require('node:fs').writeFileSync('.git/check-ran','ran')\"" } }) });
+  const run = gate(root, undefined, { mode: "print", flags: { "open-cases-model": undefined } });
+  await run.input("interactive", undefined, "review the change");
+  // The reviewer delegates to readers of its own, while its parent edits the folder they share.
+  await run.tool("agent", true);
+  await run.tool("grep", true);
+  write(root, { "src/rule.ts": `${contract}// the parent's half-finished edit\n` });
+  scripted.set("src/rule.ts", { outcome: "failed", output: "throws" });
+  expect(await run.settle()).toBeUndefined();
+  expect(existsSync(join(root, ".git", "check-ran"))).toBe(false);
+});
+
+it.each(["prove", "bash", "powershell", "mcp__files__write", "unknown", "extension-tool", "agent"])(
   "verifies changed files after %s starts, even if the call never succeeds", async (name) => {
     const root = project();
     const run = gate(root);

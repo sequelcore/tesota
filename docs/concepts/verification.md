@@ -103,7 +103,10 @@ none of them is snapshotted.
 The gate runs when a run completes. It verifies only when a tool that may
 change files started during the request: any tool except the built-in
 readers `read`, `grep`, `find` and `ls`. `prove` counts because it regenerates
-proof files. Without such a start, the footer returns to ready, with no
+proof files. Nothing counts in a read-only session, such as a subagent that
+only reads: only tools that read start there, and its own subagents only
+read, so its gate never verifies edits it didn't make, such as its parent's
+in the folder they share (#585). Without such a start, the footer returns to ready, with no
 checks, model call, diff or receipt. If no unit's fingerprint is eligible,
 it also returns to ready without checks, an open-cases call or a receipt.
 Eligible units climb:

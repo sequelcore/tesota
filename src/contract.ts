@@ -77,6 +77,12 @@ export interface ToolExecutionStartEvent {
   readonly args: unknown;
   /** Set by the engine only for its native clarification bridge. */
   readonly nativeQuestion?: boolean;
+  /**
+   * Set by the engine when the session is read only: only tools that read
+   * start there, and its subagents only read, so the call changes nothing in
+   * its folder (#585).
+   */
+  readonly readOnly?: boolean;
 }
 
 export interface ToolResultEvent {
