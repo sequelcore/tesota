@@ -76,8 +76,46 @@ const labels: Readonly<Record<OperationMethod, string>> = {
   open_cases: "Listing open cases", receipt: "Assembling receipt",
 };
 
+/** What each method ran, named for a row of the ledger once it ended: its glyph is that run's own result, never a verdict. */
+const ran: Readonly<Record<OperationMethod, string>> = {
+  proof: "Proof", command: "Project check", exercise: "Base run with the test", base_control: "Base run without the test",
+  mutation: "Contract strength", claimcheck: "ClaimCheck", model_main: "Model", model_fault: "Model with planted fault",
+  model_replay: "Model replay", open_cases: "Open cases", receipt: "Receipt",
+};
+
+/** A result's glyph: only a pass is ✓; an end that gives no verdict, or none, is ○. */
+const glyphs: Readonly<Record<OperationResult, string>> = {
+  passed: "✓", failed: "✗", vacuous: "◐", timed_out: "○", cancelled: "○", not_started: "○", done: "○", interrupted: "○",
+};
+
+/** What a result adds to its row, beyond its time. */
+const endings: Readonly<Partial<Record<OperationResult, string>>> = {
+  vacuous: " · verified nothing", timed_out: " · ran past its limit", cancelled: " · stopped", interrupted: " · no end reported",
+};
+
+/**
+ * Runs whose result is not the check's own: a planted fault that passes is not
+ * caught, and one that fails may be caught or malformed, which only the
+ * receipt tells apart; a base run says only how the base did.
+ */
+const observed: Readonly<Partial<Record<OperationMethod, Partial<Record<OperationResult, readonly [string, string]>>>>> = {
+  model_fault: { passed: ["✗", " · passed: fault not caught"], failed: ["○", " · model failed"] },
+  exercise: { passed: ["○", " · passed on the base"], failed: ["○", " · failed on the base"] },
+  base_control: { passed: ["○", " · passed on the base"], failed: ["○", " · failed on the base"] },
+};
+
+/** One row of the ledger (#591): a glyph, its words, and how far under an earlier attempt it sits. */
+export interface LedgerRow {
+  readonly glyph: string;
+  readonly text: string;
+  readonly depth: number;
+}
+
+/** How many ended operations the ledger shows of the attempt running, collapsed. */
+const RECENT = 3;
+
 /** Elapsed milliseconds as `m:ss`. */
-function clock(ms: number): string {
+export function clock(ms: number): string {
   const seconds = Math.max(0, Math.floor(ms / 1000));
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
@@ -88,6 +126,8 @@ function clock(ms: number): string {
  * the footer read.
  */
 export class GateOperations implements WorkingDetail, OperationSink {
+  /** The message renderer that draws the ledger as the request's transcript block. */
+  readonly block = "tesota-ledger";
   readonly #now: () => number;
   #run = "";
   #generation = 0;
@@ -187,6 +227,36 @@ export class GateOperations implements WorkingDetail, OperationSink {
     const running = this.#all.filter((op) => op.state === "running");
     return running.length === 0 ? undefined : running
       .map((op) => `${labels[op.method]} · ${op.target} · ${clock(now - (op.startedAt ?? now))}`).join(" | ");
+  }
+
+  /**
+   * The request's checks as a ledger (#591): each attempt that went back to
+   * the agent folded into one row, then the latest attempt's ended checks,
+   * the three latest when collapsed with a count of the earlier ones, then
+   * what runs at `now`. Expanded, every check of every attempt.
+   */
+  ledger(now: number, all: boolean): LedgerRow[] {
+    const returned = new Set(this.#attempts.filter(({ closedAs }) => closedAs === "returned_to_agent").map(({ generation }) => generation));
+    const ended = (op: Operation, depth: number): LedgerRow => {
+      const result = op.result ?? "interrupted";
+      const [glyph, ending] = observed[op.method]?.[result] ?? [glyphs[result], endings[result] ?? ""];
+      return { glyph, text: `${ran[op.method]} · ${op.unit === "" ? "" : `${op.unit}: `}${op.target}${op.reused ? " · reused, not run again"
+        : result === "not_started" ? " · not started" : ` · ${clock(op.durationMs ?? 0)}${ending}`}`, depth };
+    };
+    const folded = [...returned].flatMap((generation) => {
+      const ops = this.#all.filter((op) => op.generation === generation);
+      return [{ glyph: "↺", text: `Attempt ${generation} · returned to agent · ${ops.length} ${ops.length === 1 ? "check" : "checks"}`, depth: 0 },
+        ...all ? ops.map((op) => ended(op, 1)) : []];
+    });
+    const latest = this.#all.filter((op) => !returned.has(op.generation));
+    const done = latest.filter(({ state }) => state === "ended");
+    const shown = all ? done : done.slice(-RECENT);
+    const earlier = done.length - shown.length;
+    return [...folded,
+      ...earlier === 0 ? [] : [{ glyph: "·", text: `${earlier} earlier ${earlier === 1 ? "check" : "checks"}`, depth: 0 }],
+      ...shown.map((op) => ended(op, 0)),
+      ...latest.filter(({ state }) => state === "running").map((op) => ({ glyph: "›",
+        text: `${labels[op.method]} · ${op.target} · ${clock(now - (op.startedAt ?? now))}`, depth: 0 }))];
   }
 
   subscribe(listener: () => void): () => void {

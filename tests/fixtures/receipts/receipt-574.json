@@ -1,0 +1,100 @@
+{
+  "version": 2,
+  "base": "39d91577bad913253f1e9585e1f885d6cdd176ba",
+  "startedAt": "2026-10-22T19:58:43.567Z",
+  "engine": "0.1.0-alpha.1",
+  "model": "claude-code/claude-opus-5-5",
+  "repository": true,
+  "proofs": [],
+  "contracts": [],
+  "inherited": [],
+  "unmeasured": [],
+  "startState": {
+    "status": "known",
+    "head": "39d91577bad913253f1e9585e1f885d6cdd176ba"
+  },
+  "endState": {
+    "status": "known",
+    "head": "fd23384f4c011b7304acd163aafd1e4949adac0d"
+  },
+  "tests": [
+    {
+      "command": "bun run check",
+      "evidence": {
+        "verifier": "command",
+        "claim": "`bun run check` passes with these changes.",
+        "limits": "Shows only that the project's commands passed on these files; it says nothing about what the tests leave unchecked.",
+        "outcome": "passed",
+        "output": "t at settlement's edges > a follow-up that arrives during verification enters with the next model turn [340.34ms]\n(pass) input at settlement's edges > an extension that throws as it registers leaves the session's file unlocked [25.91ms]\n(pass) input at settlement's edges > input that arrives as the verifier's result is written comes after the run's end, and is refused, not lost [306.27ms]\n(pass) input at settlement's edges > settlement waits for an input handler still running when the model finishes, and counts its failure [1914.78ms]\n(pass) a failed write during settlement > rejects the prompt before the verifier runs, and nothing records the run as completed [308.22ms]\n\ntests\\shell.test.ts:\n(pass) the shell > slash suggestions stay on the mounted editor when a surface replaces it [53.61ms]\n(pass) the shell > / offers the session's skills beside the commands, and /name runs one as a request of its own (#540) [420.41ms]\n(pass) the shell > @ suggests files in the shown session's folder, including after switching sessions [280.34ms]\n(pass) the shell > a request typed and sent shows with its answer, the editor below and the footer last [396.19ms]\n(pass) the shell > an operator message has a dim prompt, aligned continuation and no background [365.69ms]\n(pass) the shell > a write is one unfilled row until Ctrl+O expands it, and folds again (fullscreen) [453.11ms]\n(pass) the shell > a write is one unfilled row until Ctrl+O expands it, and folds again (inline) [428.05ms]\n(pass) the shell > an edit shows replacement counts collapsed and its diff after Ctrl+O [511.44ms]\n(pass) the shell > a failed call keeps its reason visible while collapsed [402.24ms]\n(pass) the shell > ending a fullscreen shell leaves the conversation in the terminal's scrollback [368.98ms]\n(pass) the shell > ending the shell with Ctrl+D leaves no terminal reply at the prompt (fullscreen, #574) [426.25ms]\n(pass) the shell > ending the shell with Ctrl+C twice leaves no terminal reply at the prompt (fullscreen, #574) [436.80ms]\n(pass) the shell > ending the shell with Ctrl+D leaves no terminal reply at the prompt (inline, #574) [427.34ms]\n(pass) the shell > ending the shell with Ctrl+C twice leaves no terminal reply at the prompt (inline, #574) [430.57ms]\n(pass) the shell > inline, the conversation prints into the scrollback as it goes [361.74ms]\n(pass) the shell > Esc stops a run as it streams, and the shell says so [189.96ms]\n(pass) the shell > Enter while the agent works steers it, and Alt+Enter queues a follow-up, both answered before the run ends [1254.17ms]\n(pass) the shell > a resized terminal is drawn again, the editor and footer still at the bottom [499.87ms]\n(pass) the shell > in a long conversation the latest stays in view, and reading back holds still while the answer streams [5070.90ms]\n(pass) the shell > search finds a word in the conversation [982.39ms]\n(pass) the shell > text selected with the mouse is copied when the button is released [478.52ms]\n(pass) the shell > Ctrl+C clears the editor, and twice on an empty one ends the shell [96.79ms]\n(pass) the shell > a question does not select its recommendation, and submits only after its explicit submit action [45.16ms]\n(pass) the shell > a question taller than the fullscreen terminal scrolls, keeping its hint and the footer in view [45.40ms]\n(pass) the shell > a question taller than the inline terminal scrolls, keeping its hint and the footer in view [43.61ms]\n(pass) the shell > a question leads its form at the transcript's column, with no spinner while it waits and a count only for several [115.86ms]\n(pass) the shell > everything in the input's place has one frame: a bar whose color says what it asks, one title style, one marker [163.25ms]\n(pass) the shell > the mouse reaches what a frame holds: a click picks a choice, and moves a prompt's cursor [85.84ms]\n(pass) the shell > the hint says how to reach and use the submit action, and selection keys there do not change the answer [40.47ms]\n(pass) the shell > a multiple-choice answer keeps its selected options and supplemental text [41.71ms]\n(pass) the shell > model control characters cannot repaint the question's selection chrome [41.56ms]\n(pass) the shell > a question draft survives two session switches and a late release cannot submit it [83.55ms]\n(pass) the shell > long questions scroll through every option and keep the active field visible (fullscreen) [1134.28ms]\n(pass) the shell > long questions scroll through every option and keep the active field visible (inline) [925.97ms]\n\ntests\\snapshot.test.ts:\n(pass) two requests snapshot one fresh folder together, each recording its own commit [615.41ms]\n(pass) two processes snapshot one fresh folder together [980.43ms]\n(pass) a stop while the snapshot store is held by another ends the request at once, with no snapshot taken [329.05ms]\n\ntests\\stop-admission.test.ts:\n(pass) a prompt stopped while waiting for startup is refused before it runs; a later prompt runs [296.37ms]\n(pass) a prompt stopped while waiting for manual compaction is refused; a prompt after the stop runs [514.64ms]\n(pass) disposing tells a startup handler to stop and waits for it before the session's lock goes [48.16ms]\n(pass) a disposed session refuses prompts and compaction without calling the model or writing [327.34ms]\n(pass) a run that fails stops its input handlers still running and waits for them before it reports [319.12ms]\n\ntests\\tools.test.ts:\n(pass) paths > a Git Bash path is refused on Windows, with its Windows spelling [0.08ms]\n(pass) paths > a relative path resolves against the session's folder, an absolute one stays [0.80ms]\n(pass) truncation > the head and the tail keep whole lines within the limits [1.22ms]\n(pass) truncation > a line longer than the byte limit is cut without splitting a character [0.53ms]\n(pass) edit > a byte-order mark stays, and overlapping or unchanged edits are refused [21.27ms]\n(pass) read > an offset past the end fails and names the file's length [1.53ms]\n(pass) Windows PowerShell 5.1 > output is UTF-8 and the tool says which shell it is [524.90ms]\n(pass) Windows PowerShell 5.1 > output past the limit goes to a file the model is told about, and the end stays in the reply [4887.32ms]\n(pass) Windows PowerShell 5.1 > a single line past the capture window keeps its end without a newline [292.05ms]\n(pass) Windows PowerShell 5.1 > an empty output file exists before the process starts and is removed when its output fits [517.44ms]\n(pass) Windows PowerShell 5.1 > a spool write failure closes the file and keeps collecting the tail [827.18ms]\n(pass) Windows PowerShell 5.1 > a spool file that cannot be created keeps the tail and reports the failure only for long output [797.64ms]\n(skip) bash is found on the PATH\n\ntests\\transcript.test.ts:\n(pass) operator messages start at the replies' column and wrap with a two-column indent, no padding rows or background [1.26ms]\n(pass) a user message cannot repaint the terminal, such as a submitted answer quoting the agent's question [0.14ms]\n(pass) a pending call has a muted glyph, a single clipped row and no result note [0.27ms]\n(pass) expanded output keeps twelve lines and the remainder count, without a background [0.42ms]\n(pass) collapsed failures show only the first output line and never show edit counts [0.13ms]\n(pass) a deletion counts no added lines and a final newline adds no phantom line [0.15ms]\n(pass) a search shows its pattern and where it looks [0.12ms]\n\n3 tests skipped:\n(skip) the credentials file > only its owner can read the file\n(skip) the floor, which no mode crosses > a link named .env is a secret, whatever it points to\n(skip) bash is found on the PATH\n\n 557 pass\n 3 skip\n 0 fail\n 2342 expect() calls\nRan 560 tests across 41 files. [214.53s]\n$ bun scripts/isolated.ts bun scripts/budget.ts\nBudget on win32: startup 22.2 ms (median of 21), binary 101697536 bytes, loop 227.8 ms (median of 5), loop memory 65548288 bytes, base 295 ms (median of 5), sync 0.34 ms (median), syncs 106, settle 0.56 ms (median of 5), resume 29.6 ms (median of 5), session 651444 bytes, first frame 149.9 ms (median of 5, 6.75 times startup, 5.06 times resume), shell memory 114475008 bytes (median of 5)\n",
+        "durationMs": 461913,
+        "files": [
+          "packages/core/src/shell/shell.ts",
+          "packages/core/tests/shell.test.ts",
+          "packages/core/tests/virtual-terminal.ts"
+        ],
+        "contentHash": "b472eb29c6c8f5a46fba3f70d205903e16b06141ff6be5cdd5a0e37f682ddd8f"
+      },
+      "verdict": "proved"
+    }
+  ],
+  "exercises": [
+    {
+      "path": "packages/core/tests/shell.test.ts",
+      "provenance": "changed",
+      "sensitivity": "unknown",
+      "reason": "on the base it failed, but so does the base without it, and no test report says which tests fail"
+    },
+    {
+      "path": "packages/core/tests/virtual-terminal.ts",
+      "provenance": "changed",
+      "sensitivity": "unknown",
+      "reason": "on the base it failed, but so does the base without it, and no test report says which tests fail"
+    }
+  ],
+  "weakened": [
+    {
+      "path": "packages/core/tests/shell.test.ts",
+      "kind": "edited_test"
+    }
+  ],
+  "unverified": [
+    "packages/core/src/shell/shell.ts"
+  ],
+  "uncovered": [],
+  "changed": [
+    {
+      "path": "packages/core/src/shell/shell.ts",
+      "blob": "cdc8eeb2dc639cdfa46b1bdf9175f74b9ba30d61"
+    },
+    {
+      "path": "packages/core/tests/shell.test.ts",
+      "blob": "7b662590fd693e521ee455fb82af2c8903269772"
+    },
+    {
+      "path": "packages/core/tests/virtual-terminal.ts",
+      "blob": "cfdfea01afc9d498513b3b5fec699235a9ea9d2f"
+    }
+  ],
+  "lines": {
+    "implementation": {
+      "added": 3,
+      "removed": 3
+    },
+    "tests": {
+      "added": 31,
+      "removed": 2
+    },
+    "other": {
+      "added": 0,
+      "removed": 0
+    },
+    "binary": [],
+    "generated": []
+  },
+  "openCases": {
+    "status": "listed",
+    "model": "openai/gpt-6-sol",
+    "cases": []
+  },
+  "settledAt": "2026-10-22T20:30:04.551Z"
+}

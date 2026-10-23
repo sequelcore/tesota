@@ -27,6 +27,36 @@ lemma verdictTone_ensures(decisions: int, failed: bool, gaps: int)
 {
 }
 
+function methodStanding(held: int, partly: int, failed: int, runs: int): string
+  requires (held >= 0)
+  requires (partly >= 0)
+  requires (failed >= 0)
+  requires (((held + partly) + failed) <= runs)
+{
+  if ((runs > 0) && (held == runs)) then
+    "holds"
+  else
+    if ((held + partly) > 0) then
+      "partly"
+    else
+      if (failed > 0) then
+        "fails"
+      else
+        "none"
+}
+
+lemma methodStanding_ensures(held: int, partly: int, failed: int, runs: int)
+  requires (held >= 0)
+  requires (partly >= 0)
+  requires (failed >= 0)
+  requires (((held + partly) + failed) <= runs)
+  ensures ((methodStanding(held, partly, failed, runs) == "holds") <==> ((runs > 0) && (held == runs)))
+  ensures ((methodStanding(held, partly, failed, runs) == "partly") <==> (((held + partly) > 0) && (held < runs)))
+  ensures ((methodStanding(held, partly, failed, runs) == "fails") <==> (((held + partly) == 0) && (failed > 0)))
+  ensures ((methodStanding(held, partly, failed, runs) == "none") <==> (((held + partly) + failed) == 0))
+{
+}
+
 method decisions(standings: seq<Standing>) returns (res: int)
   ensures (0 <= res)
   ensures (res <= |standings|)

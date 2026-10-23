@@ -60,3 +60,22 @@ export function verdictTone(decisions: number, failed: boolean, gaps: number): "
   if (decisions > 0) return failed ? "error" : "warning";
   return gaps > 0 ? "warning" : "success";
 }
+
+/**
+ * How a method's row of the receipt sums up its `runs` (#591), of which
+ * `held` held outright, `partly` held with less than they claim, such as a
+ * proof trusting what the change added, and `failed` failed: `holds` only
+ * when every run held outright, so no row reads as a universal success
+ * unless it is one; `partly` when some held and not all outright; `fails`
+ * when none held and one failed; `none` when no run held or failed.
+ */
+//@ requires held >= 0 && partly >= 0 && failed >= 0 && held + partly + failed <= runs
+//@ ensures \result === "holds" <==> (runs > 0 && held === runs)
+//@ ensures \result === "partly" <==> (held + partly > 0 && held < runs)
+//@ ensures \result === "fails" <==> (held + partly === 0 && failed > 0)
+//@ ensures \result === "none" <==> held + partly + failed === 0
+export function methodStanding(held: number, partly: number, failed: number, runs: number): "holds" | "partly" | "fails" | "none" {
+  if (runs > 0 && held === runs) return "holds";
+  if (held + partly > 0) return "partly";
+  return failed > 0 ? "fails" : "none";
+}

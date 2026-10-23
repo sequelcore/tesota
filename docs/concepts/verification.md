@@ -444,22 +444,41 @@ request.
   folder, the model, the context % and the permission mode. As the terminal
   narrows it drops the folder, then the model, shortens the evidence, then
   drops the context % (`footerLayout`, proved); the permission mode stays.
-- **The receipt card** opens with the verdict, `✓ Nothing needs you`,
-  `○ Nothing needs you · 1 unverified` or `! 4 things need you`, counting
-  only findings the checks established (`decisions`, proved). Its color is
-  green only when nothing needs you and nothing is unverified, amber
-  otherwise, red when a check failed (`verdictTone`, proved). Then NEEDS
-  YOU, the model's opinion (marked `◇`), UNVERIFIED with its count, and one
-  row of what holds, which never reads stronger than the rows above it:
-  `Contract strong (1 of 4)`. Rows wrap; a reason is never cut.
+- **The request's block** is one block at the end of the conversation.
+  While the gate verifies it is a ledger read from the same operations:
+  the operation running, up to three that ended most recently, each with
+  its glyph and time (`✓` passed, `✗` failed, `◐` verified nothing, `○`
+  ended without a verdict, such as not started, past its limit or with no
+  end), a count of the earlier ones, and each attempt that went back to the
+  agent folded into `↺ Attempt 1 · returned to agent`. Ctrl+O shows every
+  check of every attempt. When the run settles the receipt takes its place.
+- **The receipt** is built from the receipt's `details` (`receiptSummary`),
+  as the card, as plain text and, separately, as Markdown, so no Markdown
+  escape reaches plain text. It opens with its counts, failed checks, review
+  flags and verification limits, counting only findings the checks
+  established (`decisions`, proved), and `Check evidence, not your
+  acceptance.` Its color is green only when there are no flags and no limits,
+  amber otherwise, red when a check failed (`verdictTone`, proved). Then one
+  row per method (Tested, Proved, Models, and Exercised or Contracts when
+  something held), each saying only what ran and how it ended, `✓` only
+  when every run held outright (`methodStanding`, proved): a passing
+  model reads `model-checked`, never proved; a proof resting on assumptions
+  the change added reads `◐ … trusting 3 unproved parts`. Then the review
+  flags and the limits, findings of the same reason grouped into one row,
+  such as `! Review test edits · 2 heuristic flags`. The models' opinions
+  (ClaimCheck, open cases, marked `◇`) follow under their own heading and
+  are never counted. `▸ Details` holds every path, output and assumption;
+  `▸ Context` the operator's answers, inherited files and subagents, whose
+  receipts cover their own branch, never the parent's change. Rows wrap; a
+  reason is never cut.
 - **What the gate sends back** is a card titled with what failed, such as
   `↺ Sent back to the agent: the tests fail`.
 - **`prove`** shows the file, how long the proof took, and `✓ Proved` or
   `✗ Not proved` with Dafny's error and the contract line it points at.
 
 Ctrl+O expands each one to its details.
-Inherited paths occupy one collapsed row in the receipt card, with their
-paths under Ctrl+O. Unknown capture states show their reasons.
+Inherited paths occupy the receipt's Context row, with their paths under
+Ctrl+O. Unknown capture states show their reasons.
 
 ## Proved rules
 
@@ -482,7 +501,7 @@ by `bun run formal:check` on every pull request.
 | `range-rule.ts` | How the receipt groups line numbers |
 | `footer-rule.ts` | What Tesota can verify before a request, and what the footer's one row drops as the terminal narrows, never the permission mode |
 | `model-rule.ts` | How a TLC run ended, what a planted fault shows, how a model's check ends, when a model runs, whether it may be stale, and whether it was written with its code |
-| `verdict-rule.ts` | How many findings need you, never a model's opinion, when a summary must say how many hold, and the receipt's color |
+| `verdict-rule.ts` | How many findings need you, never a model's opinion, when a summary must say how many hold, the receipt's color, and when a method's row reads as holding |
 | `settle-rule.ts` | Whether a run goes on or how it ends, after its extensions and its verifier |
 | `permission-rule.ts` | Whether a call may run: the floor, the mode and the strongest rule |
 | `reconcile-rule.ts` | What recovery says of each call of an interrupted run |

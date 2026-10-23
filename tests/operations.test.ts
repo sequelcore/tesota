@@ -180,3 +180,97 @@ it("gives work through the empty sink without recording anything", async () => {
   expect(noOperations.plan(command)).toBe("");
   expect(noOperations.forUnit("x")).toBe(noOperations);
 });
+
+/** The ledger of a request that went back once and now runs its second attempt (#591). */
+function secondAttempt(): { ops: GateOperations; now: number } {
+  const { ops, advance } = tracker();
+  ops.beginRun("r");
+  ops.beginAttempt();
+  const first = ops.start({ method: "proof", unit: "", target: "src/a.ts" });
+  advance(3_000);
+  ops.end(first, "failed");
+  ops.closeAttempt("returned_to_agent");
+  ops.beginAttempt();
+  const steps = [[{ method: "proof", unit: "", target: "src/a.ts" }, 2_000, "passed"],
+    [{ method: "command", unit: "api", target: "bun run check" }, 62_000, "passed"],
+    [{ method: "exercise", unit: "", target: "bun test tests/a.test.ts" }, 4_000, "failed"],
+    [{ method: "mutation", unit: "", target: "inRange in src/a.ts" }, 1_000, "vacuous"]] as const;
+  for (const [spec, ms, result] of steps) {
+    const id = ops.start(spec);
+    advance(ms);
+    ops.end(id, result);
+  }
+  ops.reused({ method: "model_main", unit: "", target: "models/Stock.tla" }, "passed");
+  ops.start({ method: "model_fault", unit: "", target: "models/Fault.tla" });
+  advance(5_000);
+  return { ops, now: 1_000 + 3_000 + 2_000 + 62_000 + 4_000 + 1_000 + 5_000 };
+}
+
+it("shows the running check, the three latest ended ones with their time, how many came before, and earlier attempts folded (#591)", () => {
+  const { ops, now } = secondAttempt();
+  expect(ops.ledger(now, false)).toEqual([
+    { glyph: "↺", text: "Attempt 1 · returned to agent · 1 check", depth: 0 },
+    { glyph: "·", text: "2 earlier checks", depth: 0 },
+    { glyph: "○", text: "Base run with the test · bun test tests/a.test.ts · 0:04 · failed on the base", depth: 0 },
+    { glyph: "◐", text: "Contract strength · inRange in src/a.ts · 0:01 · verified nothing", depth: 0 },
+    { glyph: "✓", text: "Model · models/Stock.tla · reused, not run again", depth: 0 },
+    { glyph: "›", text: "Checking planted fault · models/Fault.tla · 0:05", depth: 0 },
+  ]);
+});
+
+it("expanded, lists every check of every attempt, an earlier attempt's under it", () => {
+  const { ops, now } = secondAttempt();
+  expect(ops.ledger(now, true)).toEqual([
+    { glyph: "↺", text: "Attempt 1 · returned to agent · 1 check", depth: 0 },
+    { glyph: "✗", text: "Proof · src/a.ts · 0:03", depth: 1 },
+    { glyph: "✓", text: "Proof · src/a.ts · 0:02", depth: 0 },
+    { glyph: "✓", text: "Project check · api: bun run check · 1:02", depth: 0 },
+    { glyph: "○", text: "Base run with the test · bun test tests/a.test.ts · 0:04 · failed on the base", depth: 0 },
+    { glyph: "◐", text: "Contract strength · inRange in src/a.ts · 0:01 · verified nothing", depth: 0 },
+    { glyph: "✓", text: "Model · models/Stock.tla · reused, not run again", depth: 0 },
+    { glyph: "›", text: "Checking planted fault · models/Fault.tla · 0:05", depth: 0 },
+  ]);
+});
+
+it("never shows an end that is not a pass as one: a limit, a stop, no end and an opinion are each said", () => {
+  const { ops, advance } = tracker();
+  ops.beginRun("r");
+  ops.beginAttempt();
+  const listing = ops.start({ method: "open_cases", unit: "", target: "openai/gpt-6-sol" });
+  advance(5_000);
+  ops.end(listing, "done");
+  const check = ops.start({ method: "command", unit: "", target: "bun test" });
+  advance(900_000);
+  ops.end(check, "timed_out");
+  ops.plan({ method: "proof", unit: "", target: "src/b.ts" });
+  ops.start({ method: "proof", unit: "", target: "src/c.ts" });
+  advance(1_000);
+  ops.closeAttempt("stopped");
+  expect(ops.ledger(0, true)).toEqual([
+    { glyph: "○", text: "Open cases · openai/gpt-6-sol · 0:05", depth: 0 },
+    { glyph: "○", text: "Project check · bun test · 15:00 · ran past its limit", depth: 0 },
+    { glyph: "○", text: "Proof · src/b.ts · not started", depth: 0 },
+    { glyph: "○", text: "Proof · src/c.ts · 0:01 · no end reported", depth: 0 },
+  ]);
+  ops.beginRun("next");
+  expect(ops.ledger(0, true)).toEqual([]);
+});
+
+it("says a planted fault that passed was not caught, and leaves a failed fault and the base runs without a verdict", () => {
+  const { ops, advance } = tracker();
+  ops.beginRun("r");
+  ops.beginAttempt();
+  const ran = (method: "model_fault" | "base_control", target: string, result: "passed" | "failed"): void => {
+    const id = ops.start({ method, unit: "", target });
+    advance(1_000);
+    ops.end(id, result);
+  };
+  ran("model_fault", "models/Lost.tla", "passed");
+  ran("model_fault", "models/Caught.tla", "failed");
+  ran("base_control", "bun test tests/a.test.ts", "passed");
+  expect(ops.ledger(0, true)).toEqual([
+    { glyph: "✗", text: "Model with planted fault · models/Lost.tla · 0:01 · passed: fault not caught", depth: 0 },
+    { glyph: "○", text: "Model with planted fault · models/Caught.tla · 0:01 · model failed", depth: 0 },
+    { glyph: "○", text: "Base run without the test · bun test tests/a.test.ts · 0:01 · passed on the base", depth: 0 },
+  ]);
+});

@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { decisions, partlyHolds, verdictTone } from "../src/verification/verdict-rule.js";
+import { decisions, methodStanding, partlyHolds, verdictTone } from "../src/verification/verdict-rule.js";
 
 it("counts only what the checks established, never a model's opinion", () => {
   expect(decisions([])).toBe(0);
@@ -19,4 +19,13 @@ it("colors a verdict green only when nothing needs the operator and nothing is a
   expect(verdictTone(0, false, 1)).toBe("warning");
   expect(verdictTone(2, false, 0)).toBe("warning");
   expect(verdictTone(1, true, 3)).toBe("error");
+});
+
+it("sums up a method as holding only when every run held outright (#591)", () => {
+  expect(methodStanding(2, 0, 0, 2)).toBe("holds");
+  expect(methodStanding(1, 0, 1, 2)).toBe("partly");
+  expect(methodStanding(0, 1, 0, 1)).toBe("partly");
+  expect(methodStanding(0, 0, 1, 2)).toBe("fails");
+  expect(methodStanding(0, 0, 0, 1)).toBe("none");
+  expect(methodStanding(0, 0, 0, 0)).toBe("none");
 });
