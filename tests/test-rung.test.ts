@@ -114,7 +114,45 @@ it("never credits a test that fails on the base when none of its tests runs on t
   const test = 'import { expect, test } from "bun:test";\nimport * as math from "./math";\n\n' +
     'test.skipIf(typeof (math as Record<string, unknown>).add === "function")("adds", () => expect((math as any).add(1, 2)).toBe(3));\n';
   expect(await judged("math.test.ts", test)).toMatchObject({ sensitivity: "unknown",
-    reason: expect.stringMatching(/^it fails on the base by .*, but on the change .* passed and every test from math\.test\.ts was skipped$/u) });
+    reason: expect.stringMatching(/^it fails on the base by .*, but with the change in the same worktree, without the checkout's ignored files, .* passed and every test from math\.test\.ts was skipped$/u) });
+}, 60_000);
+
+// The base worktree lacks files the repository ignores, so the change runs there too, not in the checkout (#618).
+it.each([["the runner on it alone", "bun test"], ["the whole check", "bun test && echo whole"]])(
+  "never credits a test, judged by %s, that fails on the base only for want of an ignored file", async (_label, script) => {
+    const { root } = noTests();
+    writeFileSync(join(root, "package.json"), JSON.stringify({ name: "math", private: true, scripts: { test: script } }));
+    writeFileSync(join(root, ".gitignore"), "vendor/\n");
+    writeFileSync(join(root, "sub.test.ts"), 'import { expect, test } from "bun:test";\nimport { sub } from "./math";\n\n' +
+      'test("subs", () => expect(sub(3, 1)).toBe(2));\n');
+    const git = (...args: string[]): string => execFileSync("git", args, { cwd: root, encoding: "utf8" });
+    git("add", "package.json", ".gitignore", "sub.test.ts");
+    git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "--quiet", "-m", "ignored vendor");
+    const base = git("rev-parse", "HEAD").trim();
+    mkdirSync(join(root, "vendor"));
+    writeFileSync(join(root, "vendor", "helper.cjs"), "module.exports = () => 1;\n");
+    writeFileSync(join(root, "helper.test.ts"), 'import { expect, test } from "bun:test";\nimport helper from "./vendor/helper.cjs";\n\n' +
+      'test("helps", () => expect(helper()).toBe(1));\n');
+    const [exercise] = await exerciseTests(root, base, ["helper.test.ts"], ["helper.test.ts"], suggestChecks(root), new AbortController().signal);
+    expect(exercise).toMatchObject({ sensitivity: "unknown",
+      reason: expect.stringMatching(/but with the change in the same worktree, without the checkout's ignored files, .* failed$/u) });
+  }, 60_000);
+
+it("still credits a test of a real change beside one that needs an ignored file (#618)", async () => {
+  const { root } = noTests();
+  writeFileSync(join(root, ".gitignore"), "vendor/\n");
+  const git = (...args: string[]): string => execFileSync("git", args, { cwd: root, encoding: "utf8" });
+  git("add", ".gitignore");
+  git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "--quiet", "-m", "ignored vendor");
+  const base = git("rev-parse", "HEAD").trim();
+  mkdirSync(join(root, "vendor"));
+  writeFileSync(join(root, "vendor", "helper.cjs"), "module.exports = () => 1;\n");
+  writeFileSync(join(root, "helper.test.ts"), 'import { expect, test } from "bun:test";\nimport helper from "./vendor/helper.cjs";\n\n' +
+    'test("helps", () => expect(helper()).toBe(1));\n');
+  writeFileSync(join(root, "math.test.ts"), addTest);
+  const exercises = await exerciseTests(root, base, ["helper.test.ts", "math.test.ts"], ["math.ts", "helper.test.ts", "math.test.ts"],
+    suggestChecks(root), new AbortController().signal);
+  expect(exercises.map((each) => each.sensitivity)).toEqual(["unknown", "fails_then_passes"]);
 }, 60_000);
 
 // A filter selects every path that ends the same way; what else it ran is said, never taken for the file (#620).
@@ -176,11 +214,12 @@ it.each(["bun test", "vitest run"])("credits %s tests in an empty project and ru
   const base = git("rev-parse", "HEAD").trim();
   for (const name of ["first.test.ts", "second.test.ts"]) {
     writeFileSync(join(root, name), addTest.replace('"bun:test"', runner === "bun test" ? '"bun:test"' : '"vitest"') +
-      '\nimport { appendFileSync } from "node:fs";\nappendFileSync("runs", "x");\n');
+      `\nimport { appendFileSync } from "node:fs";\nif (typeof add === "function") appendFileSync(${JSON.stringify(join(root, "runs"))}, "x");\n`);
   }
   const exercises = await exerciseTests(root, base, ["first.test.ts", "second.test.ts"],
     ["math.ts", "first.test.ts", "second.test.ts"], suggestChecks(root), new AbortController().signal);
   expect(exercises.map((each) => each.sensitivity)).toEqual(["fails_then_passes", "fails_then_passes"]);
+  // Only the change has `add`, in the base's worktree, so each file counts once per run with the change.
   expect(readFileSync(join(root, "runs"), "utf8")).toBe("xx");
 }, 120_000);
 

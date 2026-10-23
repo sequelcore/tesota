@@ -258,8 +258,12 @@ reason names the command that judged it.
 - when the base fails without it too, the reports of both runs decide: the
   test notices the change when tests fail with it that pass, or are
   missing, without it, as SWE-bench grades fail-to-pass;
-- the runner on the files alone must also pass on the change, run once per
-  project folder, and run a test from each file it credits that passed;
+- what ran it must also pass with the whole change, run once per project
+  folder in the same worktree, so that both sides lack the same files the
+  repository ignores: a base that fails for want of a vendored binary
+  isn't a defect the change repaired (#618). The runner on the files alone,
+  when another file fails there, runs once more on the file alone, and must
+  run a test from each file it credits that passed;
 - anything else stays unknown, with the reason.
 
 The runner on one file sees what the test asserts, not the project's
