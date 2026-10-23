@@ -12,6 +12,7 @@ import { runProcess } from "./process.js";
 import { clearTestReports, introducedTests, readTestResults, type TestResults } from "./test-report.js";
 import { type CheckOutcome, checkOrigin } from "./verification/check-origin-rule.js";
 import { host } from "./host.js";
+import { noOperations, type OperationResult, type OperationSink, type OperationSpec } from "./operations.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -86,13 +87,19 @@ function read(root: string, path: string): string | undefined {
  * commands started.
  */
 export async function runCommands(root: string, projects: readonly ProjectChecks[], changed: readonly string[],
-  signal: AbortSignal): Promise<CommandRun[]> {
+  signal: AbortSignal, ops: OperationSink = noOperations): Promise<CommandRun[]> {
   const hash = contentHash(changed.map((path) => ({ path, content: read(root, path) })));
   const runs: CommandRun[] = [];
+  const spec = (command: string): OperationSpec => ({ method: "command", unit: "", target: command });
+  const planned = projects.flatMap(({ commands }) => commands).map((command) => ops.plan(spec(command)));
+  let next = 0;
   for (const { folder, commands } of projects) {
     for (const command of commands) {
       const started = Date.now();
-      const { outcome, output } = await runShell(command, root, signal);
+      // After a stop nothing is launched, so no start is published and the planned command closes as not started (#590).
+      const id = planned[next++];
+      const { outcome, output } = signal.aborted ? await runShell(command, root, signal)
+        : await ops.run(spec(command), () => runShell(command, root, signal), (ran) => ran.outcome, id);
       const results = readTestResults(root, reportsWritten(root, folder, started));
       const failingTests = results === undefined ? undefined
         : [...results.tests].filter(([, status]) => status === "failed").map(([name]) => name).sort();
@@ -253,7 +260,7 @@ async function probeRun(probe: { command: string; report: string }, project: str
  * command that judged it.
  */
 async function againstBase(project: string, root: string, tests: readonly string[], provenance: ReadonlyMap<string, TestExercise["provenance"]>,
-  projects: readonly ProjectChecks[], signal: AbortSignal): Promise<TestExercise[]> {
+  projects: readonly ProjectChecks[], signal: AbortSignal, ops: OperationSink): Promise<TestExercise[]> {
   const found = new Map<string, TestExercise>();
   const folders = new Map<string, { owning: ProjectChecks; paths: string[] }>();
   for (const path of tests) {
@@ -279,22 +286,34 @@ async function againstBase(project: string, root: string, tests: readonly string
       testProbe(project, folder, files.map((path) => posix.relative(folder, path)));
     let without: BaseRun | undefined;
     let change: BaseRun | undefined;
+    // What runs each file there is what the operations name: the runner on the file alone, else the project's whole commands.
+    const probes = new Map(paths.map((path) => [path, alone([path])] as const));
+    const target = (path: string): string => probes.get(path)?.command ?? commands.join(" && ");
+    const planned = new Map(paths.map((path) => [path, ops.plan({ method: "exercise", unit: "", target: target(path) })] as const));
+    const ended = ({ outcome }: BaseRun): OperationResult => outcome;
     for (const path of paths) {
       const origin = provenance.get(path) ?? "added";
-      const probe = alone([path]);
+      const probe = probes.get(path);
+      const exercising: OperationSpec = { method: "exercise", unit: "", target: target(path) };
+      const parent = planned.get(path);
+      const control: OperationSpec = { method: "base_control", unit: "", target: target(path), ...parent === undefined ? {} : { parent } };
       if (probe === undefined) {
-        const withTest = await holding(path, () => baseRun(commands, project, folder, signal));
-        if (withTest.outcome !== "passed") without ??= await baseRun(commands, project, folder, signal);
+        const withTest = await holding(path, () => ops.run(exercising, () => baseRun(commands, project, folder, signal), ended, planned.get(path)));
+        if (withTest.outcome !== "passed") {
+          without ??= await ops.run(control, () => baseRun(commands, project, folder, signal), ended);
+        }
         const verdict = exercise(path, origin, withTest, without);
         found.set(path, { ...verdict, reason: `${verdict.reason}; by the whole check, ${commands.map((command) => `\`${command}\``).join(", ")}` });
         continue;
       }
-      const withTest = await holding(path, () => probeRun(probe, project, signal));
-      const verdict = exercise(path, origin, withTest, withTest.outcome === "passed" ? undefined : await probeRun(probe, project, signal));
+      const withTest = await holding(path, () => ops.run(exercising, () => probeRun(probe, project, signal), ended, planned.get(path)));
+      const verdict = exercise(path, origin, withTest, withTest.outcome === "passed" ? undefined
+        : await ops.run(control, () => probeRun(probe, project, signal), ended));
       const by = `by \`${probe.command}\``;
       if (verdict.sensitivity !== "fails_then_passes") { found.set(path, { ...verdict, reason: `${verdict.reason}; ${by}` }); continue; }
       const onChange = alone(paths);
-      change ??= onChange === undefined ? { outcome: "not_started", results: undefined } : await probeRun(onChange, root, signal);
+      change ??= onChange === undefined ? { outcome: "not_started", results: undefined }
+        : await ops.run({ method: "command", unit: "", target: onChange.command }, () => probeRun(onChange, root, signal), ended);
       found.set(path, change.outcome === "passed" ? { ...verdict, reason: `${verdict.reason}, ${by}` } : { ...verdict, sensitivity: "unknown",
         reason: `it fails on the base ${by}, but on the change \`${onChange?.command ?? probe.command}\` ${change.outcome.replaceAll("_", " ")}` });
     }
@@ -317,7 +336,7 @@ const dependencyFiles: ReadonlySet<string> = new Set(["package.json", "package-l
  * and none gives a verdict.
  */
 export async function exerciseTests(root: string, base: string, tests: readonly string[], changed: readonly string[],
-  projects: readonly ProjectChecks[], signal: AbortSignal): Promise<TestExercise[]> {
+  projects: readonly ProjectChecks[], signal: AbortSignal, ops: OperationSink = noOperations): Promise<TestExercise[]> {
   if (tests.length === 0) return [];
   const provenance = new Map(await Promise.all(tests.map(async (path) => [path, await atCommit(root, base, path) ? "changed" : "added"] as const)));
   const unknown = (reason: string): TestExercise[] =>
@@ -327,7 +346,7 @@ export async function exerciseTests(root: string, base: string, tests: readonly 
     return unknown(`the change touches ${touched.join(", ")}, and the base runs with the checkout's dependencies, so a run there may not be faithful`);
   }
   try {
-    return await atBase(root, base, (project) => againstBase(project, root, tests, provenance, projects, signal));
+    return await atBase(root, base, (project) => againstBase(project, root, tests, provenance, projects, signal, ops));
   } catch (error) {
     const why = error instanceof Error ? error.message.trim().split("\n").at(-1) ?? "" : String(error);
     return unknown(`the base could not be checked out: ${why}`);

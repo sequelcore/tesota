@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, onTestFinished } from "vitest";
 import { checkModel, inProject, modelContent, modelHeader, modelReport, plannedModels, tlcCounterexample, unheadedReport } from "../src/model-check.js";
+import { GateOperations } from "../src/operations.js";
 import { counterexampleSteps } from "../src/receipt.js";
 
 /** The operator's TLC, where Tesota looks for it in their home; the runs that need it are skipped without it, as proofs are without Dafny. */
@@ -171,6 +172,32 @@ it("says TLC is missing rather than failing the run", async () => {
   expect(check.evidence.outcome).toBe("not_started");
   expect(check.evidence.output).toContain("TLC is not installed");
 });
+
+it("publishes the model's run and plans its planted fault as operations, the run ending as not started without TLC (#590)", async () => {
+  const { root } = repository((base) => ({ "models/Counter.tla": spec("Counter", header(base)), "models/Counter.cfg": config(true),
+    "models/CounterNoLock.cfg": config(false) }));
+  const ops = new GateOperations();
+  ops.beginRun("r");
+  ops.beginAttempt();
+  await checkModel(root, "models/Counter.tla", ["src/counter.ts"], new AbortController().signal, join(root, "absent.jar"), ops);
+  const [main, fault] = ops.operations();
+  expect(main).toMatchObject({ method: "model_main", state: "ended", result: "not_started", target: expect.stringContaining("models/Counter.tla") });
+  expect(fault).toMatchObject({ method: "model_fault", state: "planned", parent: main?.id, target: expect.stringContaining("models/CounterNoLock.cfg") });
+  ops.closeAttempt("settled");
+  expect(ops.operations()[1]).toMatchObject({ state: "ended", result: "not_started" });
+});
+
+it.skipIf(!withTlc)("publishes the main run, each planted fault under it, with TLC's own command (#590)", async () => {
+  const { root } = repository((base) => ({ "models/Counter.tla": spec("Counter", header(base)), "models/Counter.cfg": config(true),
+    "models/CounterNoLock.cfg": config(false) }));
+  const ops = new GateOperations();
+  ops.beginRun("r");
+  ops.beginAttempt();
+  await checkModel(root, "models/Counter.tla", ["src/counter.ts"], new AbortController().signal, jar, ops);
+  expect(ops.operations().map(({ method, state, result }) => [method, state, result])).toEqual([["model_main", "ended", "passed"],
+    ["model_fault", "ended", "failed"]]);
+  expect(ops.operations()[0]?.target).toContain("tlc2.TLC");
+}, 120_000);
 
 it.skipIf(!withTlc)("model-checks a model whose planted fault breaks its invariant, and says its code may have moved on", async () => {
   const { root, base } = repository((commit) => ({ "models/Counter.tla": spec("Counter", header(commit)), "models/Counter.cfg": config(true),

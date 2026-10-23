@@ -181,6 +181,16 @@ export interface ToolDrawing<Args = unknown, Details = unknown> {
   renderResult?(result: ToolResult<Details>, options: { readonly expanded: boolean; readonly isPartial: boolean }, theme: Theme): Component;
 }
 
+/**
+ * What the working indicator's label says while the gate verifies (#590): `line` gives the work running at
+ * `now`, on the clock of `performance.now()`, or undefined when none runs; `subscribe` calls the listener when it
+ * changes and returns the function that stops it. The shell listens only while it shows the label.
+ */
+export interface WorkingDetail {
+  line(now: number): string | undefined;
+  subscribe(listener: () => void): () => void;
+}
+
 /** What Tesota draws through the shell, as `ctx.ui`. */
 export interface ShellUI {
   setHeader(factory: ((tui: TUI, theme: Theme) => Mounted) | undefined): void;
@@ -188,6 +198,8 @@ export interface ShellUI {
   setEditorComponent(factory: ((tui: TUI, theme: EditorTheme) => Editor) | undefined): void;
   setWorkingIndicator(options?: { frames?: string[]; intervalMs?: number }): void;
   setStatus(key: string, text: string | undefined): void;
+  /** What the label says while the gate verifies; undefined leaves it at its plain words. */
+  setWorkingDetail(detail: WorkingDetail | undefined): void;
   readonly theme: Theme;
 }
 

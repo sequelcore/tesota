@@ -1,5 +1,6 @@
 import type { ExtensionContext } from "./contract.js";
 import type { ts as TypeScript } from "ts-morph";
+import { noOperations, type OperationSink } from "./operations.js";
 import { type ClaimCheck, type Comparison, claimCheck } from "./pi-claimcheck.js";
 import { type MutationResult, mutateContract } from "./proof-mutation.js";
 import { typescript } from "./typescript-source.js";
@@ -177,19 +178,22 @@ export type ClaimCheckRun = Omit<Extract<ClaimCheck, { status: "judged" }>, "jud
  */
 export async function contractStrength(ctx: Pick<ExtensionContext, "model" | "modelRegistry">, requests: readonly string[],
   files: readonly { readonly path: string; readonly source: string; readonly baseSource: string | undefined }[],
-  signal: AbortSignal, restateWith?: string): Promise<{ readonly contracts: readonly ContractStrength[]; readonly claimcheck?: ClaimCheckRun }> {
+  signal: AbortSignal, restateWith?: string, ops: OperationSink = noOperations): Promise<{ readonly contracts: readonly ContractStrength[]; readonly claimcheck?: ClaimCheckRun }> {
   const items = files.flatMap(({ path, source, baseSource }) =>
     changedContracts(path, source, baseSource).map((contract) => ({ contract, source })));
   if (items.length === 0) return { contracts: [] };
   const mutate = async (): Promise<MutationResult[]> => {
     const results: MutationResult[] = [];
     for (const { contract, source } of items) {
-      results.push(await mutateContract(contract, source, signal));
+      results.push(await ops.run({ method: "mutation", unit: "", target: `${contract.path}#${contract.name}` },
+        () => mutateContract(contract, source, signal), () => "done"));
     }
     return results;
   };
-  const [mutations, judged] = await Promise.all([mutate(), claimCheck(ctx, requests, items.map(({ contract }) => contract), signal,
-    restateWith)]);
+  // Both publish as they start, so the operations show them running at once.
+  const [mutations, judged] = await Promise.all([mutate(), ops.run({ method: "claimcheck", unit: "",
+    target: items.map(({ contract }) => `${contract.path}#${contract.name}`).join(", ") },
+  () => claimCheck(ctx, requests, items.map(({ contract }) => contract), signal, restateWith), () => "done")]);
   return {
     contracts: items.map(({ contract }, index) => ({ path: contract.path, name: contract.name, lines: contractLines(contract),
       mutation: mutations[index] ?? { rejected: 0, survived: [], inconclusive: 0, equivalent: 0 },

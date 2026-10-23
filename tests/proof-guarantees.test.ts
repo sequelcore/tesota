@@ -1,5 +1,6 @@
 import { expect, it, vi } from "vitest";
 import { changedContracts, contractStrength, contracts, unselectedContracts } from "../src/proof-guarantees.js";
+import { GateOperations } from "../src/operations.js";
 import { extracted } from "../src/verification/selection-rule.js";
 import { renderReceipt } from "../src/receipt.js";
 import { emptyReceipt } from "./receipts.js";
@@ -164,6 +165,22 @@ it("mutates and has a model judge only the changed contracts, and labels the ver
   expect(await contractStrength(ctx, [], [{ path: "src/rules.ts", source: base, baseSource: base }], new AbortController().signal))
     .toEqual({ contracts: [] });
   expect(complete).toHaveBeenCalledTimes(2);
+});
+
+it("publishes each contract's mutation and ClaimCheck as operations that ran at once (#590)", async () => {
+  const complete = vi.fn((_model: unknown, context: { tools: { name: string }[] }) => Promise.resolve({ stopReason: "toolUse",
+    content: [{ type: "toolCall", id: "1", name: context.tools[0]?.name, arguments: context.tools[0]?.name === "record_comparisons"
+      ? { comparisons: [{ function: 1, verdict: "justified", explanation: "Yes." }] }
+      : { informalizations: [{ function: 1, preconditions: "amount >= 0", postcondition: "returns amount", strength: "moderate" }] } }] }));
+  const ctx = { model: { provider: "provider", id: "model" } as never, modelRegistry: { complete } as never };
+  const ops = new GateOperations();
+  ops.beginRun("r");
+  ops.beginAttempt();
+  await contractStrength(ctx, ["total keeps negative amounts"], [{ path: "src/rules.ts", source: changed, baseSource: base }],
+    new AbortController().signal, undefined, ops.forUnit("api"));
+  expect(ops.operations().map(({ method, unit, target, state, result, concurrent }) => ({ method, unit, target, state, result, concurrent })))
+    .toEqual([{ method: "mutation", unit: "api", target: "src/rules.ts#total", state: "ended", result: "done", concurrent: true },
+      { method: "claimcheck", unit: "api", target: "src/rules.ts#total", state: "ended", result: "done", concurrent: true }]);
 });
 
 it("says when ClaimCheck judged nothing", async () => {

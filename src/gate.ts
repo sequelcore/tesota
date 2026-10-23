@@ -1,7 +1,7 @@
 import type * as Effect from "effect/Effect";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { BranchEntry, ExtensionAPI, ExtensionContext, SettleResult } from "./contract.js";
+import type { BranchEntry, ExtensionAPI, ExtensionContext, SettleEvent, SettleResult } from "./contract.js";
 import { clarificationText, type Clarification, type RequestInput } from "./clarification.js";
 import { type ChangeStatus, type ChangedFile, changedLines } from "./diff-lines.js";
 import type { Evidence } from "./evidence.js";
@@ -9,6 +9,7 @@ import { git, gitOutput, headCommit } from "./git.js";
 import { host } from "./host.js";
 import type { ModelCheck } from "./model-check.js";
 import { OPEN_CASES_MODEL, openCases } from "./open-cases.js";
+import { type AttemptEnd, GateOperations, type OperationSink, type OperationSpec } from "./operations.js";
 import type { ContractStrength } from "./proof-guarantees.js";
 import { inFolder, owningProjects, suggestChecks } from "./projects.js";
 import { proofReport } from "./prove-tool.js";
@@ -184,15 +185,15 @@ function testFailure({ command, failingTests }: CommandRun): string {
  * which shows whether it exercises the change.
  */
 async function testRung(root: string, base: string | null, changed: readonly string[],
-  sentBack: ReadonlyMap<string, readonly string[]>, signal: AbortSignal): Promise<Pick<Receipt, "tests" | "exercises">> {
+  sentBack: ReadonlyMap<string, readonly string[]>, signal: AbortSignal, ops: OperationSink): Promise<Pick<Receipt, "tests" | "exercises">> {
   const projects = owningProjects(suggestChecks(root), changed);
-  const tests = (await checks().runCommands(root, projects, changed, signal)).map((run) =>
+  const tests = (await checks().runCommands(root, projects, changed, signal, ops)).map((run) =>
     ({ ...run, verdict: gateVerdict(run.evidence.outcome, testFailure(run), sentBack.get(run.command) ?? []) }));
   const passed = tests.every(({ evidence }) => evidence.outcome === "passed");
   // A snapshot counts as a test for weakened evidence, but is not one a runner can run alone.
   const runnable = changed.filter((path) => checks().isTestPath(path) && !path.endsWith(".snap"));
   const present = (await Promise.all(runnable.map(async (path) => await readIfPresent(join(root, path)) === undefined ? [] : [path]))).flat();
-  const exercises = passed && base !== null ? await checks().exerciseTests(root, base, present, changed, projects, signal) : [];
+  const exercises = passed && base !== null ? await checks().exerciseTests(root, base, present, changed, projects, signal, ops) : [];
   return { tests, exercises };
 }
 
@@ -344,6 +345,8 @@ function tally(proofs: Receipt["proofs"], tests?: Receipt["tests"], contracts?: 
 
 /** The gate's status and who listens to it; the gate alone changes it. */
 export class GateProgress {
+  /** The operations the gate and its runners publish (#590); the status line reads them. */
+  readonly operations: GateOperations = new GateOperations();
   #readiness: Readiness = "nothing";
   #status: GateStatus = { step: "ready", readiness: "nothing" };
   readonly #listeners = new Set<() => void>();
@@ -445,6 +448,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
   /** The request's units and bases, recorded before the agent can run anything; a run no operator input started takes them as it settles. */
   let start: Promise<Start> | undefined;
   let startedAt: string | undefined;
+  let requestNumber = 0;
   pi.on("input", async (event, ctx) => {
     if (event.streamingBehavior !== undefined) {
       if (event.source !== "extension") requests.push(event.text);
@@ -461,6 +465,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     clarifications = [];
     children = [];
     start = undefined;
+    progress.operations.beginRun(`request-${requestNumber += 1}`);
     progress.waiting();
     // On the engine the ledger holds the request and its start; the gate reads them as it settles.
     if (recorded !== undefined) return undefined;
@@ -495,6 +500,17 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
       startedAt = request.at;
       start = Promise.resolve(recordedStart(request.base));
     }
+    // One pass over the request: it closes as returned to the agent, settled or stopped, whatever it published.
+    progress.operations.beginAttempt();
+    let closed: AttemptEnd = "stopped";
+    try {
+      const result = await verify(event, ctx);
+      closed = result?.continue === true ? "returned_to_agent"
+        : event.outcome !== "completed" || ctx.signal?.aborted === true ? "stopped" : "settled";
+      return result;
+    } finally { progress.operations.closeAttempt(closed); }
+  });
+  const verify = async (event: SettleEvent, ctx: ExtensionContext): Promise<SettleResult | undefined> => {
     if (event.outcome !== "completed") {
       const reason = "reason" in event && typeof event.reason === "string" ? event.reason : undefined;
       return stopped(ctx, reason ?? (event.outcome === "aborted" ? "the operator stopped the run before Tesota verified it"
@@ -508,7 +524,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
       progress.reset();
       throw error;
     }
-  });
+  };
   /** A run that ended before verification finished: after a tool that may change files, a receipt that verified nothing, and why. */
   const stopped = async (ctx: ExtensionContext, reason: string): Promise<SettleResult | undefined> => {
     if (!mayHaveChanged) {
@@ -538,7 +554,8 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
   const listOpen = (ctx: ExtensionContext): Effect.Effect<Pick<Receipt, "openCases">> => {
     const lister = listWith(pi);
     return lister === undefined ? effect().succeed({})
-      : effect().map(step((signal) => openCases(ctx, requests, lister, signal)), (listed) => ({ openCases: listed }));
+      : effect().map(step((signal) => progress.operations.run({ method: "open_cases", unit: "", target: lister },
+        () => openCases(ctx, requests, lister, signal), () => "done")), (listed) => ({ openCases: listed }));
   };
   const failure = (proof: Evidence): string => `${proof.outcome}\n${proof.output}`;
   const sendBack = (content: string, details: SentBack): SettleResult =>
@@ -547,10 +564,16 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
   const prove = (units: readonly ChangedUnit[]): Effect.Effect<Map<string, Receipt["proofs"][number][]>> => effect().gen(function* () {
     const proofs = new Map<string, Receipt["proofs"][number][]>(units.map(({ folder }) => [folder, []]));
     for (const unit of units) {
-      for (const path of yield* step((signal) => contractFiles(unit.root, unit.changed, signal))) {
+      const files = yield* step((signal) => contractFiles(unit.root, unit.changed, signal));
+      const ops = progress.operations.forUnit(unit.folder);
+      // What LemmaScript launches for a file: `lsc regen`, then `lsc check` (`proveFile`).
+      const spec = (path: string): OperationSpec => ({ method: "proof", unit: unit.folder, target: `lsc regen && lsc check --backend=dafny ${path}` });
+      const planned = files.map((path) => ops.plan(spec(path)));
+      for (const [k, path] of files.entries()) {
         progress.publish({ step: "proving", path: inUnit(unit.folder, path), startedAt: performance.now(),
           tally: tally([...proofs.values()].flat()) });
-        const evidence = yield* step((signal) => proveFile(unit.root, path, signal));
+        const evidence = yield* step((signal) => ops.run(spec(path), () => proveFile(unit.root, path, signal),
+          (proved) => proved.outcome, planned[k]));
         proofs.get(unit.folder)?.push({ path, evidence,
           verdict: gateVerdict(evidence.outcome, failure(evidence), sentBack.get(inUnit(unit.folder, path)) ?? []) });
       }
@@ -590,7 +613,8 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
         path.endsWith(".dfy") ? [path, `${path}.gen`] : [path])));
       const sources = yield* step(() => provedSources(unit.root, unit.base, judged));
       if (sources.length > 0) progress.publish({ step: "measuring", startedAt: performance.now(), tally: tallied });
-      const strength = yield* step((signal) => checks().contractStrength(ctx, requests, sources, signal, restateWith(pi)));
+      const strength = yield* step((signal) => checks().contractStrength(ctx, requests, sources, signal, restateWith(pi),
+        progress.operations.forUnit(unit.folder)));
       measured.set(unit.folder, { covered, sources, strength });
     }
     return measured;
@@ -613,11 +637,15 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
         const judged = (check: ModelCheck): ModelResult =>
           ({ ...check, verdict: gateVerdict(check.evidence.outcome, checks().modelFailure(check), modelsSentBack.get(key) ?? []) });
         if (!checksModel(plan.touched, earlier !== undefined)) {
-          if (plan.touched && earlier !== undefined) models.push(judged(earlier));
+          if (plan.touched && earlier !== undefined) {
+            progress.operations.reused({ method: "model_main", unit: unit.folder, target: plan.path }, earlier.evidence.outcome);
+            models.push(judged(earlier));
+          }
           continue;
         }
         progress.publish({ step: "checking", path: key, startedAt: performance.now(), tally: tallied });
-        const check = yield* step((signal) => checks().checkModel(unit.root, plan.path, unit.changed, signal));
+        const check = yield* step((signal) => checks().checkModel(unit.root, plan.path, unit.changed, signal, undefined,
+          progress.operations.forUnit(unit.folder)));
         modelsChecked.set(key, check);
         if (check.evidence.outcome === "passed") modelsPassed.set(key, check);
         models.push(judged(check));
@@ -664,7 +692,8 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     const rungs = new Map<string, Pick<Receipt, "tests" | "exercises">>();
     for (const unit of changed) {
       rungs.set(unit.folder, yield* step((signal) =>
-        testRung(unit.root, unit.base, unit.changed, commandsSentBack.get(unit.folder) ?? new Map(), signal)));
+        testRung(unit.root, unit.base, unit.changed, commandsSentBack.get(unit.folder) ?? new Map(), signal,
+          progress.operations.forUnit(unit.folder))));
     }
     const allTests = [...rungs.values()].flatMap(({ tests }) => tests);
     const failing = [...rungs].flatMap(([folder, { tests }]) =>
@@ -681,8 +710,10 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     const modelRungs = yield* checkModels(changed, tally(allProofs, allTests, contracts));
     const modelsSent = modelsBack(modelRungs, tally(allProofs, allTests, contracts));
     if (modelsSent !== undefined) return modelsSent;
-    const [evidence, open] = yield* effect().all([step(() => Promise.all(changed.map((unit) =>
-      unitEvidence(unit, proofs.get(unit.folder) ?? [], rungs.get(unit.folder), measured.get(unit.folder), modelRungs.get(unit.folder))))),
+    const [evidence, open] = yield* effect().all([step(() => progress.operations.run(
+      { method: "receipt", unit: "", target: "receipt" }, () => Promise.all(changed.map((unit) =>
+        unitEvidence(unit, proofs.get(unit.folder) ?? [], rungs.get(unit.folder), measured.get(unit.folder), modelRungs.get(unit.folder)))),
+      () => "done")),
     listOpen(ctx)], { concurrency: "unbounded" });
     const settledAt = new Date().toISOString();
     const only = workspace ? undefined : evidence[0];

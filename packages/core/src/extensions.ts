@@ -83,6 +83,7 @@ const headless: ShellUI = {
   setEditorComponent: () => undefined,
   setWorkingIndicator: () => undefined,
   setStatus: () => undefined,
+  setWorkingDetail: () => undefined,
   get theme(): never { throw new Error("There is no theme without the terminal shell."); },
 };
 
