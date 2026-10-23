@@ -146,6 +146,24 @@ the checkout, including a search with the embedded ripgrep.
 A release is a GitHub Release of the binaries, published by the binaries
 workflow from a tag; no one publishes from their own machine.
 
+Until the first stable release, alphas follow one another (`alpha.4`,
+`alpha.5`, …). Tesota is built with the installed alpha, so a new one is
+cut:
+
+- **when the installed alpha becomes a wall for the work at hand:** it
+  stops it, such as a session that fails or verification that doesn't
+  finish; it pollutes it, such as false credit, false flags or a receipt
+  that has to be checked by hand; or it wastes it, such as minutes of
+  needless verification;
+- **when a phase of the plan closes,** so that its work reaches the
+  installed version.
+
+A public announcement goes out on an alpha that closes a phase, not one cut
+mid-phase. A fix waits for the next alpha unless it's urgent: one that
+stops sessions or loses work, makes the receipt claim more than it
+observed, or fails a permission or security boundary goes out in its own
+alpha at once.
+
 1. Set the version in [package.json](../package.json) and
    [packages/core/package.json](../packages/core/package.json), such as
    `0.1.0-alpha.2`, and merge it to `dev`.
