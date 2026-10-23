@@ -49,6 +49,11 @@ other than `~/.tesota/bin`.
 
 An x64 processor without AVX2 gets the `-baseline` build of its binary.
 
+On macOS and Linux the agent runs commands in bash when it's on your
+`PATH`, and otherwise in `/bin/sh`, which every system has; the agent is
+told which. On Alpine that is BusyBox's `sh`; install `bash` (`apk add
+bash`) if your commands need bash's features.
+
 ### Checking a binary yourself
 
 Each release holds `SHA256SUMS` and a build-provenance attestation for each
