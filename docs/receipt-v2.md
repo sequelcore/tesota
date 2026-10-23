@@ -258,7 +258,7 @@ The `outcome` values are:
 | `states` | number | The distinct states TLC reported; 0 when it reported none |
 | `faults` | FaultCheck[] | Each planted fault TLC ran, once the model passed |
 | `counterexample` | Counterexample, optional | The steps to the broken property, when `run` is `violated` |
-| `staleness` | `"current"`, `"possibly_stale"` or `"unknown"` | Whether a covered file differs from the `confirmed` commit; `unknown` without one or when it isn't in the repository |
+| `staleness` | `"current"`, `"possibly_stale"` or `"unknown"` | Whether a covered file differs from the `confirmed` commit; `unknown` without one or when it isn't in the repository; always `current` for a model written with its code whose check passed |
 | `stale` | string[] | The covered files that differ from it |
 | `writtenWithCode` | boolean | The request changed both the model's own files and a covered file, so the evidence counts as weaker |
 | `link` | `"no_replay"`, `"linked"` or `"replay_failed"` | Whether the header's `replay` command passed after the model did. Only `linked` ties the model to the code |
@@ -334,6 +334,8 @@ One of:
   operator's messages for the request, not the change.
 - `{ "status": "not_listed", "reason": "<why>" }`. The reasons are:
   - the model is not among Tesota's models;
+  - the model reports that listing depends on reference contents missing
+    from the request, naming what it cannot read;
   - its request failed, ran past its 2-minute limit, was stopped, or
     recorded no answer.
 

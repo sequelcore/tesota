@@ -7,7 +7,7 @@ import { resolveToolPath } from "../src/paths.ts";
 import type { EngineTool } from "../src/tool.ts";
 import { editTool } from "../src/tools/edit.ts";
 import { byteOrderMark, readTool } from "../src/tools/read.ts";
-import { bash, platformShell, powershell, type Shell, shellTool } from "../src/tools/shell.ts";
+import { bash, platformShell, powershell, type Shell, shellTool, unixShell } from "../src/tools/shell.ts";
 import { keepHead, keepTail, maxBytes } from "../src/truncate.ts";
 
 /** What only `@tesota/core`'s tools promise; the loop tests compare the shared behavior with Pi. */
@@ -211,7 +211,20 @@ for (const shell of shells()) {
   });
 }
 
-test.if(process.platform !== "win32")("bash is found on the PATH", () => {
+test.if(process.platform !== "win32")("the platform's shell is found on the PATH, bash or else sh (#547)", () => {
   expect(bash("/bin/bash").args("true")).toEqual(["-c", "true"]);
   expect(existsSync(platformShell().executable)).toBe(true);
+});
+
+test("bash where it is installed, and POSIX sh where it is not, as on Alpine, with the model told which (#547)", () => {
+  expect(unixShell((program) => `/usr/bin/${program}`)).toMatchObject({ tool: "bash", executable: "/usr/bin/bash", label: "bash" });
+  const sh = unixShell((program) => program === "sh" ? "/bin/sh" : null);
+  // The tool keeps its name, so permission rules and hooks that name it still apply.
+  expect(sh).toMatchObject({ tool: "bash", executable: "/bin/sh", label: "POSIX sh (/bin/sh)" });
+  expect(sh.args("echo hi")).toEqual(["-c", "echo hi"]);
+  expect(unixShell(() => null)).toMatchObject({ executable: "/bin/sh" });
+  const description = shellTool(folder(), sh, folder).description;
+  expect(description).toContain("POSIX sh (/bin/sh)");
+  expect(description).toContain("not bash");
+  expect(shellTool(folder(), bash("/bin/bash"), folder).description).not.toContain("not bash");
 });

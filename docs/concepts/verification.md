@@ -364,7 +364,10 @@ judged TLC unavailable and wrote an interleaving test instead of a model
   the repository: a hint, never a guarantee, since a change outside the
   covered files can break what the model assumes;
 - "written with the code", which counts as weaker, when the request changed
-  both the model and the code it covers (`writtenWithCode`, proved).
+  both the model and the code it covers (`writtenWithCode`, proved). Such a
+  model that passed was checked against the code as the request leaves it,
+  so it is never called stale; a later request that changes the covered
+  code without the model gets the hint again.
 
 A model checks the properties it's given. Open cases still apply after a
 pass.
@@ -384,7 +387,11 @@ The model is GPT-6 Sol, the one that found every open case with few false
 alarms on held-out requests
 ([#397](https://github.com/sequelcore/tesota/issues/397)), or
 `--open-cases-model`; `off` turns it off. When the model isn't available,
-or takes more than 2 minutes, the receipt says why nothing was listed.
+or takes more than 2 minutes, the receipt says why nothing was listed. If
+listing depends on an issue, PR, file or other reference whose relevant
+contents aren't in your messages, the model reports what is missing instead
+of guessing its cases. The lister cannot fetch references; include their
+requirements in the request to have it list them.
 
 ## Coverage
 

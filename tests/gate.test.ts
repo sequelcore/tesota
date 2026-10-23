@@ -164,7 +164,7 @@ it.each([false, true])("verifies clarifications and amendments in their journal 
   const run = gate(root, undefined, { flags: { "open-cases-model": "test/lister" }, modelRegistry: {
     find: () => ({ provider: "test", id: "lister" }), complete: (_model: unknown, context: { messages: { content: { text: string }[] }[] }) => {
       prompts.push(context.messages[0]?.content[0]?.text ?? "");
-      return Promise.resolve({ stopReason: "toolUse", content: [{ type: "toolCall", id: "result", name: "record_open_cases", arguments: { cases: [] } }] });
+      return Promise.resolve({ stopReason: "toolUse", content: [{ type: "toolCall", id: "result", name: "record_open_cases", arguments: { status: "listed", cases: [] } }] });
     },
   } }, () => ({ text: "Choose the behavior.", at: clarification.at, inputs,
     base: { units: [{ folder: "", kind: "commit", commit }] } }));
@@ -745,7 +745,7 @@ it("lists the cases the request leaves open with GPT-6 Sol unless the operator n
     Promise<unknown> => {
     asked.push({ model: `${model.provider}/${model.id}`, text: context.messages[0]?.content[0]?.text ?? "", system: context.systemPrompt });
     return Promise.resolve({ stopReason: "toolUse", content: [{ type: "toolCall", id: "1", name: "record_open_cases",
-      arguments: { cases: [{ input: "lateFee(-1)", outcomes: ["0", "-5"] }] } }] });
+      arguments: { status: "listed", cases: [{ input: "lateFee(-1)", outcomes: ["0", "-5"] }] } }] });
   };
   const find = (provider: string, id: string): object => ({ provider, id });
   for (const [named, model] of [[undefined, "openai/gpt-6-sol"], ["other/lister", "other/lister"]] as const) {
@@ -761,6 +761,31 @@ it("lists the cases the request leaves open with GPT-6 Sol unless the operator n
     expect(asked.at(-1)).toMatchObject({ model, system: openCasesSystemPrompt });
     expect(asked.at(-1)?.text).toContain("A person gave a coding agent this request:\n\nlateFee charges 5 per day late, at most 50\n\n");
   }
+});
+
+it("reports missing issue contents instead of inventing an open case for the #575 request (#582)", async () => {
+  const root = project();
+  const reason = "Issue #575 and its comments are not supplied in the request; their requirements cannot be read.";
+  const asked: string[] = [];
+  const complete = (_model: unknown, context: { messages: { content: { text: string }[] }[] }): Promise<unknown> => {
+    asked.push(context.messages[0]?.content[0]?.text ?? "");
+    return Promise.resolve({ stopReason: "toolUse", content: [{ type: "toolCall", id: "1", name: "record_open_cases",
+      arguments: { status: "not_listed", reason } }] });
+  };
+  const run = gate(root, undefined, { model: { provider: "provider", id: "model" },
+    modelRegistry: { complete, find: (provider: string, id: string) => ({ provider, id }) },
+    flags: { "open-cases-model": "openai/gpt-6-sol" } });
+  await run.input("interactive", undefined, "Fix issue #575 (read it and its comments with gh issue view 575 --comments).");
+  await run.tool("write");
+  writeFileSync(join(root, "src", "notes.md"), "The agent's solution must not reach the lister.\n");
+  const settled = entry(await run.settle());
+  expect((settled.details as Receipt).openCases).toEqual({ status: "not_listed", reason: `openai/gpt-6-sol ${reason}` });
+  expect(settled.content).toContain("- **not listed** — the cases the request leaves open:");
+  expect(settled.content).not.toContain("cases the request may leave open");
+  expect(asked).toHaveLength(1);
+  expect(asked[0]).toContain("Fix issue #575 (read it and its comments with gh issue view 575 --comments).");
+  expect(asked[0]).not.toContain("The agent's solution");
+  expect(asked[0]).toContain("Missing reference contents are not an open case");
 });
 
 it("leaves the open cases out when the operator turns the list off, and says why when no model lists them", async () => {
