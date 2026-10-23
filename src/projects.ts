@@ -1,5 +1,5 @@
-import { type Dirent, existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { type Dirent, accessSync, constants, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { delimiter, join } from "node:path";
 import { parseJson } from "./json.js";
 import { below, builtIn, checkScript, keepsProjectKind, owner, pinnedIn } from "./verification/project-rule.js";
 
@@ -90,11 +90,41 @@ export function inFolder(folder: string, command: string): string {
   return `cd ${word} && ${command}`;
 }
 
+/** The package managers whose `run` Tesota uses, in the order it looks for them on the `PATH`. */
+const packageManagers: readonly string[] = ["npm", "bun", "pnpm", "yarn"];
+
+/** Whether `program` is an executable file in a folder of the `PATH`, with one of `PATHEXT`'s endings on Windows. */
+function onPath(program: string): boolean {
+  const endings = process.platform === "win32" ? (process.env["PATHEXT"] ?? ".COM;.EXE;.BAT;.CMD").split(";") : [""];
+  return (process.env["PATH"] ?? "").split(delimiter).filter((folder) => folder !== "").some((folder) =>
+    endings.some((ending) => {
+      try {
+        const file = join(folder, `${program}${ending}`);
+        if (!statSync(file).isFile()) return false;
+        if (process.platform !== "win32") accessSync(file, constants.X_OK);
+        return true;
+      } catch { return false; }
+    }));
+}
+
+/**
+ * The package manager's `run` for a package (#576): the one its
+ * `packageManager` field names, else its folder's lockfile's, else the first
+ * found on the `PATH`; npm when none is, so the command fails as the
+ * operator's own would.
+ */
 function packageRunner(directory: string): string {
+  try {
+    const manifest: unknown = parseJson(readFileSync(join(directory, "package.json"), "utf8"));
+    const named: unknown = typeof manifest === "object" && manifest !== null ? Reflect.get(manifest, "packageManager") : undefined;
+    const name = typeof named === "string" ? named.split("@")[0] : undefined;
+    if (name !== undefined && packageManagers.includes(name)) return `${name} run`;
+  } catch { /* An unreadable manifest names no package manager. */ }
   if (existsSync(join(directory, "bun.lock")) || existsSync(join(directory, "bun.lockb"))) return "bun run";
   if (existsSync(join(directory, "pnpm-lock.yaml"))) return "pnpm run";
   if (existsSync(join(directory, "yarn.lock"))) return "yarn run";
-  return "npm run";
+  if (existsSync(join(directory, "package-lock.json")) || existsSync(join(directory, "npm-shrinkwrap.json"))) return "npm run";
+  return `${packageManagers.find(onPath) ?? "npm"} run`;
 }
 
 /** The check scripts discovery selects from a manifest, in execution order; a non-string command is undefined. */
@@ -125,7 +155,7 @@ export function packageTest(checkout: string, folder: string): { script: string;
   } catch { return undefined; }
 }
 
-/** A package's `check` script, or its `typecheck`, `lint` and `test` scripts, with the package manager its lockfile names. */
+/** A package's `check` script, or its `typecheck`, `lint` and `test` scripts, with its package manager (`packageRunner`). */
 function packageChecks(directory: string): string[] {
   const runner = packageRunner(directory);
   try {
