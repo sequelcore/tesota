@@ -4,13 +4,13 @@ datatype GateVerdict = proved | send_back | no_progress | operator
 
 datatype ProofOutcome = passed | failed | vacuous | timed_out | cancelled | not_started
 
-function toolMayChangeFiles(toolName: string, nativeQuestion: bool): bool
+function toolMayChangeFiles(toolName: string, nativeQuestion: bool, readOnly: bool): bool
 {
-  ((((!(nativeQuestion) && (toolName != "read")) && (toolName != "grep")) && (toolName != "find")) && (toolName != "ls"))
+  (((((!(nativeQuestion) && !(readOnly)) && (toolName != "read")) && (toolName != "grep")) && (toolName != "find")) && (toolName != "ls"))
 }
 
-lemma toolMayChangeFiles_ensures(toolName: string, nativeQuestion: bool)
-  ensures (toolMayChangeFiles(toolName, nativeQuestion) <==> ((((!(nativeQuestion) && (toolName != "read")) && (toolName != "grep")) && (toolName != "find")) && (toolName != "ls")))
+lemma toolMayChangeFiles_ensures(toolName: string, nativeQuestion: bool, readOnly: bool)
+  ensures (toolMayChangeFiles(toolName, nativeQuestion, readOnly) <==> (((((!(nativeQuestion) && !(readOnly)) && (toolName != "read")) && (toolName != "grep")) && (toolName != "find")) && (toolName != "ls")))
 {
 }
 

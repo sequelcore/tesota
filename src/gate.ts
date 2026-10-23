@@ -476,7 +476,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     return undefined;
   });
   pi.on("tool_execution_start", async (event, ctx) => {
-    if (!toolMayChangeFiles(event.toolName, event.nativeQuestion === true)) return;
+    if (!toolMayChangeFiles(event.toolName, event.nativeQuestion === true, event.readOnly === true)) return;
     mayHaveChanged = true;
     const request = recorded?.();
     if (request !== undefined) start ??= Promise.resolve(recordedStart(request.base));
