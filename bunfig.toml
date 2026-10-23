@@ -1,2 +1,6 @@
 [install]
 ignoreScripts = true
+
+[test]
+# Root-level direct engine runs must enforce the same guard as packages/core.
+preload = ["./packages/core/tests/isolated-home.ts"]

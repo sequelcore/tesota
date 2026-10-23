@@ -69,6 +69,9 @@ package's.
 
 - **Behavior, not wording.** The loop and tool tests check what happened to
   files and which calls failed, not how a message is worded.
+- **Engine home isolation.** Run engine tests with `bun run --cwd packages/core test`.
+  Direct `bun test` runs from the root or engine folder refuse to start outside
+  the isolated wrapper, before tests can read or write the operator's home.
 - **Real processes.** Session tests kill a process mid-run, and mid-settle,
   to check recovery: that shows what survives a killed process, not a
   power cut.
