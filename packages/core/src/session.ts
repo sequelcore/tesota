@@ -33,6 +33,7 @@ export interface LedgerAmendment {
   readonly text: string;
   readonly at: string;
   readonly delivered: boolean;
+  readonly withdrawn: boolean;
 }
 
 /** A request as the ledger keeps it: exactly as it came, with its base and every amendment. */
@@ -327,15 +328,16 @@ function conversation(entries: readonly SessionEntry[]): Pick<LoopState, "histor
 
 /** The ledger: each request with its amendments, from the ledger entries and the deliveries alone. */
 function ledgerOf(entries: readonly SessionEntry[]): LedgerRequest[] {
+  const withdrawn = new Set(entries.flatMap((entry) => entry.type === "withdrawn" ? [entry.amendment] : []));
   const delivered = new Set(entries.flatMap((entry) => entry.type === "delivered" ? [entry.amendment] : []));
   return entries.flatMap((entry) => entry.type !== "request" ? [] : [{
     run: entry.run, text: entry.text, origin: entry.origin, at: entry.at, base: entry.base,
     amendments: entries.flatMap((amendment) => amendment.type !== "amendment" || amendment.run !== entry.run ? [] : [{
       id: amendment.id, behavior: amendment.behavior, origin: amendment.origin, text: amendment.text, at: amendment.at,
-      delivered: delivered.has(amendment.id),
+      delivered: delivered.has(amendment.id), withdrawn: withdrawn.has(amendment.id),
     }]),
     inputs: entries.flatMap((input): RequestInput[] => (input.type === "active_tools" || input.run !== entry.run) ? []
-      : input.type === "amendment" ? [{ kind: "amendment", origin: input.origin, text: input.text }]
+      : input.type === "amendment" ? withdrawn.has(input.id) ? [] : [{ kind: "amendment", origin: input.origin, text: input.text }]
         : input.type === "clarification" ? [{ kind: "clarification", clarification: input.clarification }] : []),
     children: entries.flatMap((ended) => ended.type === "job_end" && ended.run === entry.run ? childOf(ended.details) : []),
   }]);

@@ -21,7 +21,7 @@ say their outcome is unknown; calls that never started say "not run".
 No call runs again automatically. An interrupted shell call also shows the
 end of what it printed, when saved, and the path to its full output.
 A [subagent](subagents.md) the session was running ends "outcome unknown",
-and its own session ends interrupted. Session files use format version 5;
+and its own session ends interrupted. Session files use format version 6, which records withdrawals of pending messages;
 other versions are refused without changing their files.
 
 Long shell output stays beside the session file: `name.jsonl` keeps its

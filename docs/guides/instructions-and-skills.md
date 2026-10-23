@@ -67,8 +67,9 @@ Type `/` and the skill's name at the start of a message, in the shell or in
 
 The skills appear in the shell's `/` menu beside its commands; a command
 wins over a skill of the same name. Sent while the agent works, a skill
-waits as a follow-up for the run's turns to end; it never steers them. The
-agent gets the skill's `SKILL.md`
+waits as a follow-up for the run's turns to end; it never steers them.
+Like other [pending messages](../reference/commands.md#keys), it shows above
+the input and can be returned there to edit or withdraw. The agent gets the skill's `SKILL.md`
 with your words in place, as Claude Code places them:
 
 | In `SKILL.md` | Becomes |

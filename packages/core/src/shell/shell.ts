@@ -1,7 +1,7 @@
 import {
   type Component, Container, Editor, type Focusable, Input, Loader, matchesKey, ScrollView, type SelectItem, SelectList,
   type SlashCommand,
-  Spacer, type Terminal, type TerminalColors, Text, TuiAltScreen, type TuiAltScreenOptions, TuiMainScreen, VStack,
+  Spacer, type Terminal, type TerminalColors, Text, TruncatedText, TuiAltScreen, type TuiAltScreenOptions, TuiMainScreen, VStack,
 } from "@earendil-works/pi-tui";
 import { type FooterData, QUESTION_STATUS } from "../../../../src/contract.ts";
 import type { SessionEvent } from "../loop.ts";
@@ -16,6 +16,7 @@ import { Transcript } from "./transcript.ts";
 import type { QuestionOutcome, QuestionSubmit } from "../questions.ts";
 import { createQuestionDraft, type QuestionDraft, QuestionForm } from "./question.ts";
 import { framed, frameTitle, type FrameTone } from "./frame.ts";
+import { terminalText } from "../../../../src/terminal-text.ts";
 
 /** The fullscreen renderer that draws every cell on every frame, for terminals that leave stale fragments otherwise. */
 class RepaintingAltScreen extends TuiAltScreen {
@@ -165,6 +166,19 @@ export function startShell(options: ShellOptions): Shell {
   // A blank row between the header and the conversation's first entry.
   document.addChild(new Spacer(1));
   document.addChild(transcript);
+  // Pi uses Alt+Q on Windows, where Alt+Up is not reliably passed through by consoles.
+  const dequeueKey = process.platform === "win32" ? "alt+q" : "alt+up";
+  const dequeueHint = process.platform === "win32" ? "Alt+Q" : "Alt+Up";
+  const pending = new Container();
+  const drawPending = (): void => {
+    pending.clear();
+    for (const message of session.pendingMessages()) {
+      const label = message.behavior === "steer" ? "Steer (next model turn)" : "Follow-up (when the run ends)";
+      pending.addChild(new TruncatedText(theme.fg("dim", `${label}: ${terminalText(message.text).replaceAll("\n", " ")}`), 1, 0));
+    }
+    if (pending.children.length > 0) pending.addChild(new TruncatedText(theme.fg("dim", `↳ ${dequeueHint} to edit all queued messages`), 1, 0));
+  };
+  drawPending();
   const status = new Container();
   const loader = new Loader(tui, (text) => theme.fg("accent", text), (text) => theme.fg("muted", text), "Working…");
   const editorSlot = new VStack();
@@ -184,7 +198,7 @@ export function startShell(options: ShellOptions): Shell {
   // also show as working: the question leads, directly under the conversation.
   const statusRow: Component = { render: (width) => questions.length > 0 ? [] : status.render(width), invalidate: () => { status.invalidate(); } };
   // A blank row always above the input, so the conversation's last card never touches it.
-  const dock: readonly Component[] = [new Spacer(1), statusRow, editorSlot, footerSlot];
+  const dock: readonly Component[] = [new Spacer(1), pending, statusRow, editorSlot, footerSlot];
   if (tui instanceof TuiAltScreen) {
     tui.setLayoutRoot(new VStack([
       { component: new ScrollView(document, { follow: "end", primary: true, overscroll: "chain" }), basis: 0, grow: 1, shrink: 1, minSize: 1 },
@@ -330,8 +344,14 @@ export function startShell(options: ShellOptions): Shell {
       loader.start();
     }
   };
+  const restorePending = (): void => {
+    const withdrawn = session.withdrawPendingMessages();
+    if (withdrawn.length > 0) editor.setText([...withdrawn.map(({ text }) => text), editor.getText()].filter((text) => text.trim() !== "").join("\n\n"));
+    tui.requestRender();
+  };
   const onEvent = (event: SessionEvent): void => {
-    if (event.type === "message") transcript.add(event.message);
+    if (event.type === "pending") drawPending();
+    else if (event.type === "message") transcript.add(event.message);
     else if (event.type === "reply") transcript.stream(event.partial);
     else if (event.type === "call") transcript.start(event.call);
     else if (event.type === "job") transcript.job(event.callId, event.details);
@@ -343,6 +363,7 @@ export function startShell(options: ShellOptions): Shell {
       note(`Compacted the conversation: about ${event.tokensBefore.toLocaleString("en")} tokens to ${event.tokensAfter.toLocaleString("en")}.`);
     } else {
       working(undefined);
+      restorePending();
       if (event.outcome !== "completed") note(`The run ended ${event.outcome}.`, event.outcome === "aborted" ? "warning" : "error");
       drawFooter();
     }
@@ -434,7 +455,8 @@ export function startShell(options: ShellOptions): Shell {
     }
     // A dialog or the dashboard has the keyboard: Esc goes back there, and the shell's own keys wait (#455).
     if (covering !== undefined) return undefined;
-    if (matchesKey(data, "escape") && busy) { void session.abort(); return { consume: true }; }
+    if (matchesKey(data, dequeueKey)) { restorePending(); return { consume: true }; }
+    if (matchesKey(data, "escape") && busy) { restorePending(); void session.abort(); return { consume: true }; }
     if (matchesKey(data, "alt+enter")) {
       const text = editor.getText().trim();
       if (text !== "") { editor.setText(""); send(text, busy ? "followUp" : undefined); }
@@ -536,6 +558,7 @@ export function startShell(options: ShellOptions): Shell {
       editor.setText(drafts.get(next) ?? "");
       drafts.delete(next);
       transcript.load(session.history());
+      drawPending();
       working(state);
       drawFooter();
       mountClarificationsFor(next);

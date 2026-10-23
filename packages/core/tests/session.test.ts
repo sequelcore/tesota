@@ -465,11 +465,11 @@ describe("the session file", () => {
   });
 
   // Older formats are refused, not reinterpreted or migrated.
-  for (const version of [1, 2, 3, 4]) {
+  for (const version of [1, 2, 3, 4, 5]) {
     test(`a session of version ${version} refuses to open, naming it`, async () => {
       const file = await finished();
       const lines = readFileSync(file, "utf8").split("\n");
-      lines[0] = (lines[0] ?? "").replace("\"version\":5", `"version":${version}`);
+      lines[0] = (lines[0] ?? "").replace("\"version\":6", `"version":${version}`);
       const before = lines.join("\n");
       writeFileSync(file, before);
       expect(() => openSession(file, scriptless())).toThrow(`version ${version}`);
@@ -477,9 +477,9 @@ describe("the session file", () => {
     });
   }
 
-  test("version 5 reads, with the verifier's message in the conversation and its data outside it", () => {
-    const fixture = join(import.meta.dir, "fixtures", "session-v5.jsonl");
-    const copy = join(folder(), "session-v5.jsonl");
+  test("version 6 reads, with the verifier's message in the conversation and its data outside it", () => {
+    const fixture = join(import.meta.dir, "fixtures", "session-v6.jsonl");
+    const copy = join(folder(), "session-v6.jsonl");
     writeFileSync(copy, readFileSync(fixture));
     const resumed = openSession(copy, scriptless());
     open.push(resumed);
@@ -487,6 +487,20 @@ describe("the session file", () => {
       .toEqual(["user", "assistant", "toolResult", "assistant", "gate", "assistant"]);
     expect(resumed.outcome()).toBe("completed");
     expect(resumed.ledger()).toMatchObject([{ run: 1, text: "write a", origin: "interactive", amendments: [] }]);
+  });
+
+  test("a withdrawal must name pending input of the same run and cannot withdraw it twice", async () => {
+    for (const amendment of [99, 1, 2]) {
+      const file = await finished();
+      appendFileSync(file, `${JSON.stringify({ type: "amendment", run: 1, id: 1, text: "delivered", behavior: "steer", origin: "interactive", at: new Date(0).toISOString() })}\n`
+        + `${JSON.stringify({ type: "delivered", run: 1, amendment: 1 })}\n`
+        + `${JSON.stringify({ type: "amendment", run: 1, id: 2, text: "pending", behavior: "followUp", origin: "interactive", at: new Date(0).toISOString() })}\n`
+        + `${JSON.stringify({ type: "withdrawn", run: 1, amendment: 2 })}\n`
+        + `${JSON.stringify({ type: "withdrawn", run: 1, amendment })}\n`);
+      const before = readFileSync(file, "utf8");
+      expect(() => openSession(file, scriptless())).toThrow(SessionFileError);
+      expect(readFileSync(file, "utf8")).toBe(before);
+    }
   });
 
   test("a call intent without declared access is refused without changing the file", async () => {

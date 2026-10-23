@@ -37,12 +37,21 @@
 | --- | --- |
 | Enter | Send; while the agent works, steer the run |
 | Alt+Enter | Queue a follow-up for when the run ends |
-| Esc | Stop the run |
+| Alt+Up (Alt+Q on Windows) | Return all pending steers and follow-ups to the input to edit or withdraw |
+| Esc | Stop the run and return pending messages to the input |
 | Shift+Tab | Switch the permission mode: ask, full access, read only |
 | Ctrl+O | Expand or fold tool output and Tesota's cards |
 | Ctrl+T | Open the dashboard |
 | Ctrl+C | Clear the input; twice on an empty input, end the shell |
 | Ctrl+D | End the shell, on an empty input |
+
+Pending messages stay above the input until the loop takes them. Each row
+shows its kind and delivery point: a steer at the next model turn, a
+follow-up when the run would end. The edit key removes all still-pending
+messages from the queue and puts them before any unsent text, separated by
+blank lines. Edit and send again, or clear the input to withdraw them.
+Stopping the run also restores pending messages; already delivered messages
+stay in the conversation.
 
 In fullscreen:
 
