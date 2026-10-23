@@ -13,15 +13,17 @@ afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: 
 it("keeps Jest assertions in different files distinct and refuses malformed native reports", () => {
   const root = mkdtempSync(join(tmpdir(), "tesota-jest-report-"));
   roots.push(root);
+  // Jest names suites by real path; tmpdir() may be behind a link or a short name.
+  const real = realpathSync.native(root);
   const report = { testResults: [
-    { name: join(root, "first.test.js"), assertionResults: [{ fullName: "adds", status: "passed" }] },
-    { name: join(root, "second.test.js"), assertionResults: [{ fullName: "adds", status: "failed" }] },
+    { name: join(real, "first.test.js"), assertionResults: [{ fullName: "adds", status: "passed" }] },
+    { name: join(real, "second.test.js"), assertionResults: [{ fullName: "adds", status: "failed" }] },
   ] };
   writeFileSync(join(root, "results.json"), JSON.stringify(report));
   expect([...readTestResults(root, ["results.json"])?.tests ?? []]).toEqual([
     ["first.test.js > adds", "passed"], ["second.test.js > adds", "failed"],
   ]);
-  writeFileSync(join(root, "results.json"), JSON.stringify({ testResults: [{ name: join(root, "first.test.js"), assertionResults: [{ fullName: "adds", status: "unknown" }] }] }));
+  writeFileSync(join(root, "results.json"), JSON.stringify({ testResults: [{ name: join(real, "first.test.js"), assertionResults: [{ fullName: "adds", status: "unknown" }] }] }));
   expect(readTestResults(root, ["results.json"])).toBeUndefined();
 });
 
