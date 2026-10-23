@@ -129,6 +129,7 @@ unit as a receipt of its own, with the run's `version`, `startedAt`,
 | `openCases` | OpenCases, optional | The cases the operator's request leaves open, as a model listed them for the operator to settle. A model's opinion, never evidence, and never one of the receipt's decisions. Absent when the operator ran Tesota with `--open-cases-model off` |
 | `clarifications` | Clarification[], optional | Explicitly submitted answers to the agent's questions, in submission order. Request context, never evidence, execution permission or acceptance. Absent when no batch was submitted |
 | `children` | Child[], optional | The [subagents](guides/subagents.md) the run started, in the order they ended: who did what. Never this receipt's evidence: a child's own receipt covers its own branch. Absent when the run started none |
+| `floorRefusals` | FloorRefusal[], optional | The calls Tesota's [floor](guides/permissions.md#the-floor) refused in the request, in order: `tool`, `subject` (what the call named, on one line and cut to 80 characters) and `reason`. Rendered without `subject`, which may be a secret's path. A refusal shows that one call didn't run, not what ran instead: never evidence, and never part of the verdict. Absent when there were none |
 
 ### Clarification
 
@@ -155,6 +156,7 @@ dismissed questions and unavailable answers do not enter this list.
 | `verification` | `verified`, `incomplete` or `failed`, optional | Where its own receipt stands, when its run settled with one |
 | `session` | string | Its session's file |
 | `branch` | string, optional | The branch its work stays on, when it wrote something |
+| `floorRefusals` | number, optional | How many of its calls Tesota's floor refused; its own session lists them |
 
 What a child changed counts toward the request only once the run brought it
 into its own workspace, where this receipt's checks measured it.

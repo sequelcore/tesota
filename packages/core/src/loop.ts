@@ -21,13 +21,18 @@ import { type Hooks, runHooks } from "./hooks.ts";
 import {
   contextFiles, instructionsText, type Skill, skillCatalog, skills, startable, type StartedSkill, startedSkill,
 } from "./instructions.ts";
-import { judge, type Mode, type Rules } from "./permissions.ts";
+import { judge, type Mode, type Rules, type Verdict } from "./permissions.ts";
+import { type Access, afterRefusal } from "./permission-rule.ts";
+
 import type { EngineTool, ToolOutput } from "./tool.ts";
 import { codingTools } from "./tools/index.ts";
 import { type AskHost, isNativeAskTool } from "./tools/ask.ts";
 import { askQuestions, type QuestionResponder } from "./questions.ts";
 import { askAccepted } from "./questions-rule.ts";
 import { clarificationText, type Clarification, type ClarificationAnswer, type ClarificationQuestion } from "../../../src/clarification.ts";
+
+/** Who decided whether a call runs, as the session records it (#449, #622). */
+type Decider = Verdict["by"] | "operator" | "session" | "hook" | "after_floor";
 
 export interface LoopOptions {
   /** The session's folder: tools resolve paths and run commands from here. */
@@ -746,6 +751,20 @@ export function createLoop(options: LoopOptions): LoopSession {
   const allowedForSession = new Set<string>();
   /** Why the last call `permitted` refused was refused, by its id. */
   const refusals = new Map<string, string>();
+  /** Why a call is asked, or refused, after the floor refused one in its request (#622). */
+  const afterFloor = "Tesota's floor refused a call earlier in this request, so it asks before any other command or file change.";
+  /** The runs in which Tesota's floor refused a call (#622). */
+  const floorRefused = new Set<number>();
+  /**
+   * What the model is told after the floor refuses: the refusal covers the
+   * effect, not the command, and no one can lift it; with no one to answer
+   * a question, as for a subagent, its final reply is where it says so.
+   */
+  const effectRefused = (offered: readonly EngineTool[]): string =>
+    "No one can allow it, the operator included: don't reach the same effect another way, through another tool, a script, an "
+    + "interpreter or a subagent. If the work needs it, say so in your final reply"
+    + `${options.questions !== undefined && offered.some(isNativeAskTool) ? ", or ask the operator what they want instead" : ""}. `
+    + "Until this request ends, Tesota asks before any other command or file change.";
   const refusedCall = (call: ToolCall): ToolOutput =>
     ({ text: `Not run: ${refusals.get(call.id) ?? "it was not allowed."}`, isError: true });
 
@@ -758,11 +777,13 @@ export function createLoop(options: LoopOptions): LoopSession {
     const permissions = options.permissions;
     const access = offered.find((tool) => tool.name === call.name)?.access ?? "run";
     const key = `${call.name}\n${JSON.stringify(call.arguments)}`;
-    const verdict = judge(call, access, options.cwd, permissions?.mode() ?? "full", permissions?.rules ?? [], permissions?.ask !== undefined);
+    const present = permissions?.ask !== undefined;
+    const verdict = heightened(judge(call, access, options.cwd, permissions?.mode() ?? "full", permissions?.rules ?? [], present),
+      access, run, present);
     let decision: "allow" | "deny" = verdict.decision === "deny" ? "deny" : "allow";
-    let by: "floor" | "mode" | "rule" | "operator" | "session" | "hook" = verdict.by;
+    let by: Decider = verdict.by;
     let reason = verdict.reason;
-    if (verdict.decision === "ask" && allowedForSession.has(key)) {
+    if (verdict.decision === "ask" && by !== "after_floor" && allowedForSession.has(key)) {
       by = "session";
       reason = "The operator allowed it for this session.";
     } else if (verdict.decision === "ask") {
@@ -773,8 +794,19 @@ export function createLoop(options: LoopOptions): LoopSession {
       if (answer === "session") allowedForSession.add(key);
     }
     writer.append({ type: "permission", run, callId: call.id, decision, by, reason });
-    if (decision === "deny") refusals.set(call.id, reason);
+    if (by === "floor") floorRefused.add(run);
+    if (decision === "deny") refusals.set(call.id, by === "floor" ? `${reason} ${effectRefused(offered)}` : reason);
     return decision === "allow";
+  }
+
+  /**
+   * `verdict` once the floor refused a call in run `run` (#622): what it
+   * would allow beyond reading is asked instead, or refused with no one to
+   * ask (`afterRefusal`), for the floor's own reason, not the mode's.
+   */
+  function heightened(verdict: Verdict, access: Access, run: number, present: boolean): Omit<Verdict, "by"> & { by: Decider } {
+    const decision = afterRefusal(verdict.decision, access, floorRefused.has(run), present);
+    return decision === verdict.decision ? verdict : { decision, by: "after_floor", reason: afterFloor };
   }
 
   /**

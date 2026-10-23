@@ -18,7 +18,7 @@ import { loadRules } from "../permissions.ts";
 import { createSession, type EngineSession, openSession, sessionsFolder, type Verifier } from "../session.ts";
 import { checkoutRoot } from "../workspace.ts";
 import { anyHooks, type Hooks, joinHooks } from "../hooks.ts";
-import { peekSessionFile } from "../session-file.ts";
+import { lastFloorNotice, peekSessionFile } from "../session-file.ts";
 import { readStandards } from "../standards.ts";
 import { trust } from "../trust.ts";
 import { readSettings, type Settings, updateSettings } from "../settings.ts";
@@ -228,6 +228,9 @@ export async function runApp(options: AppOptions): Promise<void> {
         made.state = "ended";
         made.outcome = event.outcome;
         if (made !== attached) shell.note(`“${firstLine(made.request)}” ended ${event.outcome}${made.verification === undefined ? "" : `, ${made.verification}`}.`);
+        // What the floor refused shows at every request's end, whatever else happened (#622).
+        const refused = lastFloorNotice(peekSessionFile(made.session.file).entries);
+        if (refused !== undefined) shell.note(refused.trimEnd());
       } else if (event.type === "job") follows(made, event.details);
       else if (event.type === "message") {
         made.request ??= made.session.ledger()[0]?.text;

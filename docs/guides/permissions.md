@@ -36,7 +36,30 @@ No mode or rule allows these:
   bomb.
 
 The floor is a net of patterns, not a sandbox: a command can do harm it
-doesn't recognize. Tesota has no sandbox of its own.
+doesn't recognize. Tesota has no sandbox of its own. It judges what a call
+names, so it can't see that a later call reaches what it refused another
+way: a script written and then run, an interpreter's one-liner, another
+tool, or a subagent (#622). So after it refuses:
+
+- **The model is told the refusal covers the effect, not the command:** no
+  one can allow it, you included, and it's not to reach it another way. If
+  the work needs it, it says so in its final reply, or asks you what you
+  want instead. Your answer can change the task; it never allows what the
+  floor refused.
+- **The rest of the request asks first.** Every command and file change
+  the mode or a rule would allow is asked instead, even in full access.
+  With no one to ask, it's refused. Reading isn't asked. The next request
+  starts as before.
+- **The request's end lists what it refused,** whatever else happened,
+  with or without a receipt: each call, what it named, and why, and how
+  many calls its subagents had refused. The receipt lists them too, without
+  what they named, which may be a secret's path. A refusal shows that one
+  call didn't run, not what ran instead, and it doesn't change the
+  verdict.
+
+A determined agent can still reach a refused effect where you allow it to
+continue: these make each attempt visible and put it to you, they don't
+contain it.
 
 ## Rules
 
