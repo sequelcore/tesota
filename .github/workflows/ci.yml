@@ -3,6 +3,8 @@ on:
   push:
     branches: [main, dev]
   pull_request:
+  # The merge queue on dev tests each pull request merged with what's ahead of it, then merges it.
+  merge_group:
   # The binaries workflow runs these checks on a release tag, and publishes only once they pass (#372).
   workflow_call:
 permissions:
