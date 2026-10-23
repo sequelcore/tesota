@@ -25,6 +25,11 @@ it("keeps Jest assertions in different files distinct and refuses malformed nati
   ]);
   writeFileSync(join(root, "results.json"), JSON.stringify({ testResults: [{ name: join(real, "first.test.js"), assertionResults: [{ fullName: "adds", status: "unknown" }] }] }));
   expect(readTestResults(root, ["results.json"])).toBeUndefined();
+  // A report holding fewer tests than it counts was cut short, so none of it is evidence (#615).
+  writeFileSync(join(root, "results.json"), JSON.stringify({ ...report, numTotalTests: 3 }));
+  expect(readTestResults(root, ["results.json"])).toBeUndefined();
+  writeFileSync(join(root, "results.json"), JSON.stringify({ ...report, numTotalTests: 2 }));
+  expect(readTestResults(root, ["results.json"])?.tests.size).toBe(2);
 });
 
 it("reads a real Jest report of a checkout behind a link, as macOS and Windows temp folders are", () => {
@@ -127,6 +132,32 @@ it.each([
   ["a truncated file", '<testsuites><testsuite name="s"><testcase name="a"/>'],
 ])("reads nothing from a report that is not whole: %s", (_label, xml) => {
   expect(parseJUnitReport(xml)).toBeUndefined();
+});
+
+// Bun 1.4's JUnit report, as written on Windows: the file only in `file`, the describe block as the class.
+const bun = `<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="bun test" tests="3" assertions="2" failures="1" skipped="1" time="0.02">
+  <testsuite name="tests\\x.test.ts" file="tests\\x.test.ts" tests="3" assertions="2" failures="1" skipped="1" time="0.001" hostname="">
+    <testsuite name="grp" file="tests\\x.test.ts" line="2" tests="2" assertions="1" failures="0" skipped="1" time="0" hostname="">
+      <testcase name="a" classname="grp" time="0.000021" file="tests\\x.test.ts" line="2" assertions="1" />
+      <testcase name="s" classname="grp" time="0" file="tests\\x.test.ts" line="2" assertions="0"><skipped /></testcase>
+    </testsuite>
+    <testcase name="b" classname="" time="0.0001" file="tests\\x.test.ts" line="3" assertions="1"><failure type="AssertionError"/></testcase>
+  </testsuite>
+</testsuites>
+`;
+
+it("names Bun's tests by their file, as the other runners' are (#615)", () => {
+  expect(parseJUnitReport(bun)).toEqual(new Map<string, ReportedStatus>([
+    ["tests/x.test.ts > grp > a", "passed"], ["tests/x.test.ts > grp > s", "skipped"], ["tests/x.test.ts > b", "failed"],
+  ]));
+});
+
+it("reads nothing from a report holding fewer or more tests than its root counts (#615)", () => {
+  expect(parseJUnitReport(bun.replace('tests="3" assertions="2" failures="1" skipped="1" time="0.02"', 'tests="4"'))).toBeUndefined();
+  expect(parseJUnitReport(bun.replace('tests="3" assertions="2" failures="1" skipped="1" time="0.02"', 'tests="2"'))).toBeUndefined();
+  expect(parseJUnitReport(bun.replace('tests="3" assertions="2" failures="1" skipped="1" time="0.02"', 'tests="many"'))).toBeUndefined();
+  expect(parseJUnitReport('<testsuites name="vitest tests" tests="0"></testsuites>')).toEqual(new Map());
 });
 
 it("counts a test named twice as failed when either run failed, and as passed only when both passed", () => {

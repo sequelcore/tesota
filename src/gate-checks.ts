@@ -18,4 +18,4 @@ export { checkModel, modelFailure, modelReport, plannedModels, unheadedReport } 
 export { contractStrength } from "./proof-guarantees.js";
 export { uncoveredLines } from "./proof-coverage.js";
 export { exerciseTests, runCommands } from "./test-rung.js";
-export { commentLines, isTestPath, needsContent, weakenedEvidence, withGrammarComments } from "./verification-changes.js";
+export { commentLines, isSourcePath, isTestPath, needsContent, weakenedEvidence, withGrammarComments } from "./verification-changes.js";

@@ -345,7 +345,7 @@ One of:
 | --- | --- | --- |
 | `path` | string | The test file |
 | `provenance` | `"added"` or `"changed"` | `changed` when the base held the file and this request changed it; `added` when this request added it, so what it expects is the request's own |
-| `sensitivity` | `"fails_then_passes"`, `"passes_on_base"` or `"unknown"` | `fails_then_passes` when it fails on the base while the base passes without it, or the tests it adds newly fail there by the base's test reports, or, for a `bun test` script, the same holds with `--pass-with-no-tests`. `passes_on_base` when it passes on the base too. `unknown` otherwise |
+| `sensitivity` | `"fails_then_passes"`, `"passes_on_base"` or `"unknown"` | `fails_then_passes` when it fails on the base while the base passes without it, or the tests it adds newly fail there by the base's test reports, or, for a `bun test` script, the same holds with `--pass-with-no-tests`. `passes_on_base` when it passes on the base too. A runner on the file alone counts only when its report holds a test from the file that ran and passed, on the base and, to credit it, on the change (#615). `unknown` otherwise |
 | `reason` | string | Why, in words |
 
 Provenance and sensitivity are two facts, never one score. A test that

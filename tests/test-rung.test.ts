@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { suggestChecks } from "../src/projects.js";
 import { exerciseTests, runShell } from "../src/test-rung.js";
@@ -79,6 +79,42 @@ it("does not credit a test added to a project with no tests when the test itself
   const [exercise] = await exerciseTests(root, base, ["math.test.ts"], ["math.ts", "math.test.ts"], suggestChecks(root),
     new AbortController().signal);
   expect(exercise).toMatchObject({ path: "math.test.ts", sensitivity: "unknown" });
+}, 60_000);
+
+/** `test` added to `noTests()`'s project at `path`, with `others` committed to its base first; the sensitivity and reason it gets. */
+async function judged(path: string, test: string, others: Record<string, string> = {}): Promise<{ sensitivity: string; reason: string } | undefined> {
+  const { root } = noTests();
+  for (const [other, content] of Object.entries(others)) {
+    mkdirSync(dirname(join(root, other)), { recursive: true });
+    writeFileSync(join(root, other), content);
+  }
+  const git = (...args: string[]): string => execFileSync("git", args, { cwd: root, encoding: "utf8" });
+  if (Object.keys(others).length > 0) git("add", ...Object.keys(others));
+  git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "--quiet", "--allow-empty", "-m", "others");
+  const base = git("rev-parse", "HEAD").trim();
+  mkdirSync(dirname(join(root, path)), { recursive: true });
+  writeFileSync(join(root, path), test);
+  const [exercise] = await exerciseTests(root, base, [path], ["math.ts", path], suggestChecks(root), new AbortController().signal);
+  return exercise;
+}
+
+// A runner that selects nothing passes with no tests, so its exit alone shows no test ran (#615).
+it.each([
+  ["a file the runner does not select", "tests/math.check.ts", addTest, {}, /on the base it passed, but the runner wrote no test report/u],
+  ["a file whose only test is skipped", "math.test.ts", addTest.replace("test(", "test.skip("), {}, /every test from math\.test\.ts was skipped/u],
+  ["a file whose filter selects only another file's test", "x.test.ts", 'import { test } from "bun:test";\n',
+    { "extra/x.test.ts": 'import { expect, test } from "bun:test";\ntest("other", () => expect(1).toBe(1));\n' },
+    /the runner ran no test from x\.test\.ts/u],
+])("never says %s passes on the base", async (_label, path, test, others, reason) => {
+  expect(await judged(path, test, others)).toMatchObject({ sensitivity: "unknown", reason: expect.stringMatching(reason) });
+}, 60_000);
+
+it("never credits a test that fails on the base when none of its tests runs on the change (#615)", async () => {
+  // On the base `add` is missing, so the test runs and fails; on the change it exists, so the only test is skipped.
+  const test = 'import { expect, test } from "bun:test";\nimport * as math from "./math";\n\n' +
+    'test.skipIf(typeof (math as Record<string, unknown>).add === "function")("adds", () => expect((math as any).add(1, 2)).toBe(3));\n';
+  expect(await judged("math.test.ts", test)).toMatchObject({ sensitivity: "unknown",
+    reason: expect.stringMatching(/^it fails on the base by .*, but on the change .* passed and every test from math\.test\.ts was skipped$/u) });
 }, 60_000);
 
 it("credits a changed test from the runner's report when a composite check fails on the base for an unrelated reason", async () => {

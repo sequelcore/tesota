@@ -89,18 +89,40 @@ interface Reading {
   readonly open: string[];
   readonly suites: (string | undefined)[];
   testcase: { name: string; status: ReportedStatus } | undefined;
+  /** The tests the root says it holds, when it says; the report is whole only when that many were read. */
+  declared: number | undefined;
+  count: number;
+}
+
+/** The root's count of its tests, when it gives one; false when that count is not a number. */
+function declared(reading: Reading, values: ReadonlyMap<string, string>): boolean {
+  const tests = values.get("tests");
+  if (tests === undefined) return true;
+  if (!/^\d+$/u.test(tests)) return false;
+  reading.declared = Number(tests);
+  return true;
+}
+
+function testcase(reading: Reading, values: ReadonlyMap<string, string>): boolean {
+  const test = values.get("name");
+  if (reading.testcase !== undefined || test === undefined) return false;
+  reading.count += 1;
+  const group = values.get("classname") ?? reading.suites.findLast((suite) => suite !== undefined) ?? "";
+  // Bun names the file only in `file`, as `tests\x.test.ts`, with the describe block as the class, so a test is named by
+  // its file there too (#615). Node's absolute `file` differs between the base's worktree and the checkout, so it names none.
+  const file = normalizeReportPath(values.get("file") ?? "");
+  const parts = file === undefined || file === group ? [group, test] : [file, group, test];
+  reading.testcase = { name: parts.filter((part) => part.length > 0).join(" > "), status: "passed" };
+  return true;
 }
 
 function opened(reading: Reading, name: string, attributeText: string): boolean {
   const values = attributes(attributeText);
   if (values === undefined) return false;
-  if (reading.open.length === 0 && name !== "testsuites" && name !== "testsuite") return false;
+  if (reading.open.length === 0 && (name !== "testsuites" && name !== "testsuite" || !declared(reading, values))) return false;
   if (name === "testsuite") reading.suites.push(values.get("name"));
   if (name === "testcase") {
-    const test = values.get("name");
-    if (reading.testcase !== undefined || test === undefined) return false;
-    const group = values.get("classname") ?? reading.suites.findLast((suite) => suite !== undefined) ?? "";
-    reading.testcase = { name: group.length === 0 ? test : `${group} > ${test}`, status: "passed" };
+    if (!testcase(reading, values)) return false;
   } else if (reading.testcase !== undefined && (name === "failure" || name === "error")) {
     reading.testcase.status = "failed";
   } else if (reading.testcase !== undefined && name === "skipped" && reading.testcase.status === "passed") {
@@ -124,11 +146,12 @@ const tagPattern = /<(\/?)([A-Za-z_][\w.:-]*)((?:\s+[^\s=/>]+\s*=\s*(?:"[^"]*"|'
 /**
  * The tests of one JUnit XML report: a test is failed when it has a
  * `failure` or `error`, skipped when it has `skipped`, and passed otherwise.
- * Undefined when the text is not a well-formed report, or declares a
- * document type, so that nothing is read from what could not be read whole.
+ * Undefined when the text is not a well-formed report, declares a document
+ * type, or holds fewer or more tests than its root says, so that nothing is
+ * read from what could not be read whole.
  */
 export function parseJUnitReport(xml: string): Map<string, ReportedStatus> | undefined {
-  const reading: Reading = { tests: new Map(), open: [], suites: [], testcase: undefined };
+  const reading: Reading = { tests: new Map(), open: [], suites: [], testcase: undefined, declared: undefined, count: 0 };
   let position = 0;
   let root = false;
   for (;;) {
@@ -152,7 +175,12 @@ export function parseJUnitReport(xml: string): Map<string, ReportedStatus> | und
     reading.open.push(name);
     if (selfClosing === "/" && !closed(reading, name)) return undefined;
   }
-  return root && reading.open.length === 0 ? reading.tests : undefined;
+  return root && reading.open.length === 0 ? whole(reading) : undefined;
+}
+
+/** A finished reading's tests, when it read as many as the root counts. */
+function whole(reading: Reading): Map<string, ReportedStatus> | undefined {
+  return reading.declared === undefined || reading.declared === reading.count ? reading.tests : undefined;
 }
 
 /**
@@ -183,7 +211,8 @@ function jestAssertion(tests: Map<string, ReportedStatus>, file: string, asserti
 }
 
 /**
- * Jest's native JSON report; incomplete or malformed reports give no evidence.
+ * Jest's native JSON report; incomplete or malformed reports, or ones holding
+ * fewer or more tests than `numTotalTests` says, give no evidence.
  * Jest names suites by real path, so the checkout is resolved too: a temp
  * folder behind a symlink (macOS /var) or a short name (Windows) would
  * otherwise put every suite outside it.
@@ -193,6 +222,7 @@ function parseJestReport(text: string, checkout: string): Map<string, ReportedSt
     const report: unknown = parseJson(text);
     if (typeof report !== "object" || report === null || !("testResults" in report) || !Array.isArray(report.testResults)) return undefined;
     const tests = new Map<string, ReportedStatus>();
+    let count = 0;
     for (const suite of report.testResults as unknown[]) {
       if (typeof suite !== "object" || suite === null || !("name" in suite) || typeof suite.name !== "string" ||
         !("assertionResults" in suite) || !Array.isArray(suite.assertionResults)) return undefined;
@@ -200,9 +230,11 @@ function parseJestReport(text: string, checkout: string): Map<string, ReportedSt
       if (file === undefined) return undefined;
       for (const assertion of suite.assertionResults as unknown[]) {
         if (!jestAssertion(tests, file, assertion)) return undefined;
+        count += 1;
       }
     }
-    return tests;
+    const declared = "numTotalTests" in report ? report.numTotalTests : count;
+    return declared === count ? tests : undefined;
   } catch { return undefined; }
 }
 
