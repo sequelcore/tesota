@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
@@ -23,6 +23,19 @@ it("keeps Jest assertions in different files distinct and refuses malformed nati
   ]);
   writeFileSync(join(root, "results.json"), JSON.stringify({ testResults: [{ name: join(root, "first.test.js"), assertionResults: [{ fullName: "adds", status: "unknown" }] }] }));
   expect(readTestResults(root, ["results.json"])).toBeUndefined();
+});
+
+it("reads a real Jest report of a checkout behind a link, as macOS and Windows temp folders are", () => {
+  const real = mkdtempSync(join(tmpdir(), "tesota-jest-real-"));
+  const link = `${real}-link`;
+  roots.push(real, link);
+  symlinkSync(real, link, "junction");
+  const fixture = JSON.parse(readFileSync(join(import.meta.dirname, "fixtures", "jest-report.json"), "utf8"));
+  fixture.testResults[0].name = join(realpathSync.native(real), "math.test.cjs");
+  writeFileSync(join(real, "results.json"), JSON.stringify(fixture));
+  expect([...readTestResults(link, ["results.json"])?.tests ?? []]).toEqual([
+    ["math.test.cjs > adds", "passed"], ["math.test.cjs > subtracts badly", "failed"], ["math.test.cjs > later", "skipped"],
+  ]);
 });
 
 const outcomes: readonly CheckOutcome[] = ["passed", "failed", "timed_out", "cancelled", "not_started", "unconfirmed", "changed_files"];

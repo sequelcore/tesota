@@ -1,0 +1,136 @@
+{
+    "numFailedTestSuites":  1,
+    "numFailedTests":  1,
+    "numPassedTestSuites":  0,
+    "numPassedTests":  1,
+    "numPendingTestSuites":  0,
+    "numPendingTests":  1,
+    "numRuntimeErrorTestSuites":  0,
+    "numTodoTests":  0,
+    "numTotalTestSuites":  1,
+    "numTotalTests":  3,
+    "openHandles":  [
+
+                    ],
+    "snapshot":  {
+                     "added":  0,
+                     "didUpdate":  false,
+                     "failure":  false,
+                     "filesAdded":  0,
+                     "filesRemoved":  0,
+                     "filesRemovedList":  [
+
+                                          ],
+                     "filesUnmatched":  0,
+                     "filesUpdated":  0,
+                     "matched":  0,
+                     "total":  0,
+                     "unchecked":  0,
+                     "uncheckedKeysByFile":  [
+
+                                             ],
+                     "unmatched":  0,
+                     "updated":  0
+                 },
+    "startTime":  1792717603528,
+    "success":  false,
+    "testResults":  [
+                        {
+                            "assertionResults":  [
+                                                     {
+                                                         "ancestorTitles":  [
+
+                                                                            ],
+                                                         "duration":  3,
+                                                         "failing":  false,
+                                                         "failureDetails":  [
+
+                                                                            ],
+                                                         "failureMessages":  [
+
+                                                                             ],
+                                                         "fullName":  "adds",
+                                                         "invocations":  1,
+                                                         "location":  null,
+                                                         "numPassingAsserts":  1,
+                                                         "retryMessages":  [
+
+                                                                           ],
+                                                         "retryReasons":  [
+
+                                                                          ],
+                                                         "status":  "passed",
+                                                         "title":  "adds",
+                                                         "startAt":  1792717604055
+                                                     },
+                                                     {
+                                                         "ancestorTitles":  [
+
+                                                                            ],
+                                                         "duration":  4,
+                                                         "failing":  false,
+                                                         "failureDetails":  [
+                                                                                {
+                                                                                    "matcherResult":  {
+                                                                                                          "actual":  3,
+                                                                                                          "expected":  -1,
+                                                                                                          "message":  "expect(received).toBe(expected) // Object.is equality\n\nExpected: -1\nReceived: 3",
+                                                                                                          "name":  "toBe",
+                                                                                                          "pass":  false
+                                                                                                      }
+                                                                                }
+                                                                            ],
+                                                         "failureMessages":  [
+                                                                                 "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: -1\nReceived: 3\n    at Object.\u003canonymous\u003e (C:\\Users\\R3XED\\AppData\\Local\\Temp\\jestfix\\math.test.cjs:3:49)"
+                                                                             ],
+                                                         "fullName":  "subtracts badly",
+                                                         "invocations":  1,
+                                                         "location":  null,
+                                                         "numPassingAsserts":  0,
+                                                         "retryMessages":  [
+
+                                                                           ],
+                                                         "retryReasons":  [
+
+                                                                          ],
+                                                         "status":  "failed",
+                                                         "title":  "subtracts badly",
+                                                         "startAt":  1792717604059
+                                                     },
+                                                     {
+                                                         "ancestorTitles":  [
+
+                                                                            ],
+                                                         "duration":  null,
+                                                         "failing":  false,
+                                                         "failureDetails":  [
+
+                                                                            ],
+                                                         "failureMessages":  [
+
+                                                                             ],
+                                                         "fullName":  "later",
+                                                         "invocations":  1,
+                                                         "location":  null,
+                                                         "numPassingAsserts":  0,
+                                                         "retryMessages":  [
+
+                                                                           ],
+                                                         "retryReasons":  [
+
+                                                                          ],
+                                                         "status":  "pending",
+                                                         "title":  "later",
+                                                         "startAt":  1792717604070
+                                                     }
+                                                 ],
+                            "endTime":  1792717604089,
+                            "message":  "",
+                            "name":  "\u003croot\u003e/math.test.cjs",
+                            "startTime":  1792717603855,
+                            "status":  "failed",
+                            "summary":  ""
+                        }
+                    ],
+    "wasInterrupted":  false
+}

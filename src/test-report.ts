@@ -1,4 +1,4 @@
-import { lstatSync, readFileSync, rmSync } from "node:fs";
+import { lstatSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { join, relative } from "node:path";
 import { parseJson } from "./json.js";
 import { baseTestStatus, testOrigin } from "./verification/check-origin-rule.js";
@@ -182,7 +182,12 @@ function jestAssertion(tests: Map<string, ReportedStatus>, file: string, asserti
   return true;
 }
 
-/** Jest's native JSON report; incomplete or malformed reports give no evidence. */
+/**
+ * Jest's native JSON report; incomplete or malformed reports give no evidence.
+ * Jest names suites by real path, so the checkout is resolved too: a temp
+ * folder behind a symlink (macOS /var) or a short name (Windows) would
+ * otherwise put every suite outside it.
+ */
 function parseJestReport(text: string, checkout: string): Map<string, ReportedStatus> | undefined {
   try {
     const report: unknown = parseJson(text);
@@ -191,7 +196,7 @@ function parseJestReport(text: string, checkout: string): Map<string, ReportedSt
     for (const suite of report.testResults as unknown[]) {
       if (typeof suite !== "object" || suite === null || !("name" in suite) || typeof suite.name !== "string" ||
         !("assertionResults" in suite) || !Array.isArray(suite.assertionResults)) return undefined;
-      const file = normalizeReportPath(relative(checkout, suite.name));
+      const file = normalizeReportPath(relative(realpathSync.native(checkout), suite.name));
       if (file === undefined) return undefined;
       for (const assertion of suite.assertionResults as unknown[]) {
         if (!jestAssertion(tests, file, assertion)) return undefined;

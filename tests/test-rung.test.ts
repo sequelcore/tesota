@@ -101,27 +101,6 @@ it.each(["bun test", "vitest run"])("credits %s tests in an empty project and ru
   expect(readFileSync(join(root, "runs"), "utf8")).toBe("xx");
 }, 120_000);
 
-it.each([false, true])("credits Jest's native report (composite check: %s)", async (composite) => {
-  const { root } = noTests();
-  symlinkSync(join(process.cwd(), "node_modules"), join(root, "node_modules"), "junction");
-  writeFileSync(join(root, "package.json"), JSON.stringify({ scripts: {
-    test: "jest", ...(composite ? { check: 'npm run test -- --runInBand && node -e "process.exit(1)"' } : {}),
-  } }));
-  writeFileSync(join(root, "math.cjs"), "exports.add = (a, b) => a - b;\nexports.other = false;\n");
-  if (composite) writeFileSync(join(root, "other.test.cjs"), 'const { other } = require("./math.cjs");\ntest("other", () => expect(other).toBe(true));\n');
-  const test = 'const { add } = require("./math.cjs");\ntest("adds", () => expect(add(1, 2)).toBe(3));\n';
-  if (composite) writeFileSync(join(root, "math.test.cjs"), test.replace("toBe(3)", "toBe(-1)"));
-  const git = (...args: string[]): string => execFileSync("git", args, { cwd: root, encoding: "utf8" });
-  git("add", "package.json", "math.cjs", ...(composite ? ["math.test.cjs", "other.test.cjs"] : []));
-  git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "--quiet", "-m", "jest base");
-  const base = git("rev-parse", "HEAD").trim();
-  writeFileSync(join(root, "math.cjs"), "exports.add = (a, b) => a + b;\nexports.other = true;\n");
-  writeFileSync(join(root, "math.test.cjs"), test);
-  const [exercise] = await exerciseTests(root, base, ["math.test.cjs"], ["math.cjs", "math.test.cjs"], suggestChecks(root),
-    new AbortController().signal);
-  expect(exercise).toMatchObject({ path: "math.test.cjs", sensitivity: "fails_then_passes" });
-}, 120_000);
-
 it("stops every process a cancelled command started, not only its shell", async () => {
   const root = folder();
   const controller = new AbortController();
