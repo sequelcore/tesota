@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
@@ -9,6 +9,36 @@ import { baseTestStatus, checkOrigin, type CheckOutcome, type ReportedTest, test
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
+
+it("keeps Jest assertions in different files distinct and refuses malformed native reports", () => {
+  const root = mkdtempSync(join(tmpdir(), "tesota-jest-report-"));
+  roots.push(root);
+  // Jest names suites by real path; tmpdir() may be behind a link or a short name.
+  const real = realpathSync.native(root);
+  const report = { testResults: [
+    { name: join(real, "first.test.js"), assertionResults: [{ fullName: "adds", status: "passed" }] },
+    { name: join(real, "second.test.js"), assertionResults: [{ fullName: "adds", status: "failed" }] },
+  ] };
+  writeFileSync(join(root, "results.json"), JSON.stringify(report));
+  expect([...readTestResults(root, ["results.json"])?.tests ?? []]).toEqual([
+    ["first.test.js > adds", "passed"], ["second.test.js > adds", "failed"],
+  ]);
+  writeFileSync(join(root, "results.json"), JSON.stringify({ testResults: [{ name: join(real, "first.test.js"), assertionResults: [{ fullName: "adds", status: "unknown" }] }] }));
+  expect(readTestResults(root, ["results.json"])).toBeUndefined();
+});
+
+it("reads a real Jest report of a checkout behind a link, as macOS and Windows temp folders are", () => {
+  const real = mkdtempSync(join(tmpdir(), "tesota-jest-real-"));
+  const link = `${real}-link`;
+  roots.push(real, link);
+  symlinkSync(real, link, "junction");
+  const fixture = JSON.parse(readFileSync(join(import.meta.dirname, "fixtures", "jest-report.json"), "utf8"));
+  fixture.testResults[0].name = join(realpathSync.native(real), "math.test.cjs");
+  writeFileSync(join(real, "results.json"), JSON.stringify(fixture));
+  expect([...readTestResults(link, ["results.json"])?.tests ?? []]).toEqual([
+    ["math.test.cjs > adds", "passed"], ["math.test.cjs > subtracts badly", "failed"], ["math.test.cjs > later", "skipped"],
+  ]);
+});
 
 const outcomes: readonly CheckOutcome[] = ["passed", "failed", "timed_out", "cancelled", "not_started", "unconfirmed", "changed_files"];
 const statuses: readonly TestStatus[] = ["passed", "failed", "skipped", "absent", "unread"];

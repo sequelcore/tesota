@@ -215,7 +215,7 @@ folders below, and their commands:
 
 | Project | Commands |
 | --- | --- |
-| JavaScript or TypeScript | `check`, or else `typecheck`, `lint` and `test`, with the package manager the lockfile names |
+| JavaScript or TypeScript | `check`, or else `typecheck`, `lint` and `test`, with the package manager `package.json`'s `packageManager` field names, else the lockfile's, else the first of npm, Bun, pnpm and Yarn on the `PATH` |
 | Gradle | `check`, through `./gradlew` when present |
 | Maven | `verify`, through `./mvnw` when present |
 | Cargo | `cargo test` |
@@ -238,11 +238,14 @@ the temporary folder with the checkout's `node_modules` linked in:
 - when the base fails without it too, the JUnit reports of both runs
   decide: the test notices the change when tests fail with it that pass,
   or are missing, without it, as SWE-bench grades fail-to-pass;
-- when neither decides and the project's `test` script is `bun test`, its
-  test command runs again with `-- --pass-with-no-tests`, so a base with no
-  tests passes without the file (#575): the test notices the change when
-  that run fails on the base with it, passes there without it, and passes
-  on the change;
+- when neither decides and the project's `test` script directly runs Bun,
+  Vitest or Jest with plain arguments, that script runs again with per-test
+  reporting and the runner's empty-suite success flag. This works even when
+  a composite `check` is the project's normal command. Bun and Vitest write
+  JUnit XML; Jest writes its native JSON report. The test notices the change
+  when that run fails on the base with it, and either passes there without
+  it or reports newly failing tests. The runner must also pass on the change.
+  The base without the file and the change each run once per project folder;
 - anything else stays unknown, with the reason.
 
 The receipt keeps that apart from the test's provenance (#527): whether the
@@ -355,7 +358,10 @@ judged TLC unavailable and wrote an interleaving test instead of a model
   the repository: a hint, never a guarantee, since a change outside the
   covered files can break what the model assumes;
 - "written with the code", which counts as weaker, when the request changed
-  both the model and the code it covers (`writtenWithCode`, proved).
+  both the model and the code it covers (`writtenWithCode`, proved). Such a
+  model that passed was checked against the code as the request leaves it,
+  so it is never called stale; a later request that changes the covered
+  code without the model gets the hint again.
 
 A model checks the properties it's given. Open cases still apply after a
 pass.

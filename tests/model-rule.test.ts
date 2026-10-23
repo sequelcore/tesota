@@ -34,9 +34,12 @@ it("checks a touched model unless the session passed the same content, and tells
   expect(checksModel(true, false)).toBe(true);
   expect(checksModel(true, true)).toBe(false);
   expect(checksModel(false, false)).toBe(false);
-  expect(staleness(true, [false, false])).toBe("current");
-  expect(staleness(true, [false, true])).toBe("possibly_stale");
-  expect(staleness(false, [false])).toBe("unknown");
+  expect(staleness(false, "passed", true, [false, false])).toBe("current");
+  expect(staleness(false, "passed", true, [false, true])).toBe("possibly_stale");
+  expect(staleness(false, "passed", false, [false])).toBe("unknown");
+  expect(staleness(true, "passed", true, [false, true])).toBe("current");
+  expect(staleness(true, "passed", false, [true])).toBe("current");
+  expect(staleness(true, "failed", true, [false, true])).toBe("possibly_stale");
   expect(writtenWithCode(true, true)).toBe(true);
   expect(writtenWithCode(true, false)).toBe(false);
 });

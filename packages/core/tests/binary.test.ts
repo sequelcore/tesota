@@ -26,6 +26,16 @@ const clamp = "//@ requires low <= high\n//@ ensures low <= \\result && \\result
   "export function clamp(value: number, low: number, high: number): number {\n  if (value < low) return low;\n" +
   "  if (value > high) return high;\n  return value;\n}\n";
 
+test("the split engine bundle does not retain unused Effect APIs through the lazy gate", async () => {
+  const result = await Bun.build({ entrypoints: [join(import.meta.dir, "..", "src", "main.ts")],
+    target: "bun", format: "esm", splitting: true, minify: true });
+  expect(result.success).toBe(true);
+  const chunks = await Promise.all(result.outputs.map((output) => output.text()));
+  // No consumer uses this API. Importing Effect's namespace dynamically makes Bun retain
+  // its export table and otherwise-unused code in chunks shared with shell startup (#532).
+  expect(chunks.join("\n")).not.toContain("annotateLogsScoped");
+});
+
 test("the engine's binary starts, and runs LemmaScript it embeds", () => {
   const binary = join(folder("tesota-core-binary-"), executable("tesota"));
   build(binary);

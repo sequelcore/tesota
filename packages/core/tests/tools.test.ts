@@ -13,13 +13,30 @@ import { keepHead, keepTail, maxBytes } from "../src/truncate.ts";
 /** What only `@tesota/core`'s tools promise; the loop tests compare the shared behavior with Pi. */
 
 const folders: string[] = [];
-afterEach(() => { for (const folder of folders.splice(0)) rmSync(folder, { recursive: true, force: true, maxRetries: 3 }); });
+/** The tools' runs still going: a test that times out leaves its command running in its folder (#562). */
+const running: { readonly stop: AbortController; readonly done: Promise<unknown> }[] = [];
+/**
+ * Stops the test's runs and waits for them to end, then removes its folders: on Windows a process keeps its
+ * working folder busy, so removing it while the command runs fails with EBUSY (#562).
+ */
+async function cleanUp(): Promise<void> {
+  const runs = running.splice(0);
+  for (const each of runs) each.stop.abort();
+  await Promise.allSettled(runs.map((each) => each.done));
+  for (const folder of folders.splice(0)) rmSync(folder, { recursive: true, force: true, maxRetries: 3 });
+}
+afterEach(cleanUp);
 const folder = (): string => {
   const created = mkdtempSync(join(tmpdir(), "tesota-core-tools-"));
   folders.push(created);
   return created;
 };
-const run = (tool: EngineTool, args: unknown, signal = new AbortController().signal) => tool.execute(args as never, signal, "call");
+const run = (tool: EngineTool, args: unknown, callId = "call") => {
+  const stop = new AbortController();
+  const done = tool.execute(args as never, stop.signal, callId);
+  running.push({ stop, done });
+  return done;
+};
 
 describe("paths", () => {
   test.if(process.platform === "win32")("a Git Bash path is refused on Windows, with its Windows spelling", () => {
@@ -86,6 +103,16 @@ for (const shell of shells()) {
     const longLine = shell.tool === "powershell" ? `[Console]::Write(('x' * ${3 * maxBytes}) + 'end')`
       : `printf '%${3 * maxBytes}s' '' | tr ' ' x; printf end`;
 
+    test("a command still running when its test ends is stopped before its folder is removed (#562)", async () => {
+      const cwd = folder();
+      const tool = shellTool(cwd, shell, folder);
+      const command = shell.tool === "powershell" ? "New-Item started -ItemType File | Out-Null; Start-Sleep 30" : "touch started; sleep 30";
+      void run(tool, { command });
+      while (!existsSync(join(cwd, "started"))) await Bun.sleep(20);
+      await cleanUp();
+      expect(existsSync(cwd)).toBe(false);
+    });
+
     test("output is UTF-8 and the tool says which shell it is", async () => {
       const cwd = folder();
       const spool = folder();
@@ -105,20 +132,20 @@ for (const shell of shells()) {
       const tool = shellTool(cwd, shell, () => spool);
       const newline = shell.tool === "powershell" ? "\r\n" : "\n";
       const expected = Array.from({ length: 20000 }, (_, index) => `row-${String(index + 1).padStart(5, "0")}-padding-padding${newline}`).join("");
-      const output = await tool.execute({ command: print }, new AbortController().signal, "call|first:1");
+      const output = await run(tool, { command: print }, "call|first:1");
       expect(output.text).toContain("row-20000");
       const saved = readdirSync(spool);
       expect(saved).toHaveLength(1);
       expect(output.text).toContain(join(spool, saved[0] ?? ""));
       const firstPath = join(spool, saved[0] ?? "");
       expect(readFileSync(firstPath, "utf8")).toBe(expected);
-      const second = await tool.execute({ command: print.replaceAll("padding-padding", "second-output") }, new AbortController().signal, "call|first:1");
+      const second = await run(tool, { command: print.replaceAll("padding-padding", "second-output") }, "call|first:1");
       expect(readdirSync(spool)).toHaveLength(2);
       const secondPath = /Full output: (.+)\]/u.exec(second.text)?.[1] ?? "";
       expect(secondPath).not.toBe(firstPath);
       expect(readFileSync(secondPath, "utf8")).toBe(expected.replaceAll("padding-padding", "second-output"));
       expect(readFileSync(firstPath, "utf8")).toBe(expected);
-      await tool.execute({ command: say("small") }, new AbortController().signal, "call|first:1");
+      await run(tool, { command: say("small") }, "call|first:1");
       expect(readdirSync(spool)).toHaveLength(2);
       expect(readFileSync(firstPath, "utf8")).toBe(expected);
     });

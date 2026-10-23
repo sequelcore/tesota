@@ -113,18 +113,23 @@ export function checksModel(touched: boolean, checkedAsIs: boolean): boolean {
 }
 
 /**
- * Whether a model may no longer describe its code: `unknown` when the commit
- * it was last confirmed against is not in the repository; `possibly_stale`
- * when some covered file differs from that commit (`changed`); `current`
- * otherwise. A hint, never a guarantee: a change outside the covered files
- * can still break what the model assumes.
+ * Whether a model may no longer describe its code. A model the request wrote
+ * with its code (`withCode`, from `writtenWithCode`) whose check passed
+ * against the code as the request leaves it (`outcome`) is `current`, measured against that
+ * end state rather than its confirmed commit. Otherwise: `unknown` when the
+ * commit it was last confirmed against is not in the repository;
+ * `possibly_stale` when some covered file differs from that commit
+ * (`changed`); `current` otherwise. A hint, never a guarantee: a change
+ * outside the covered files can still break what the model assumes.
  */
 export type Staleness = "current" | "possibly_stale" | "unknown";
 
-//@ ensures !confirmedFound ==> \result === "unknown"
-//@ ensures \result === "possibly_stale" <==> confirmedFound && exists(k: nat, k < changed.length && changed[k])
-//@ ensures \result === "current" <==> confirmedFound && forall(k: nat, k < changed.length ==> !changed[k])
-export function staleness(confirmedFound: boolean, changed: readonly boolean[]): Staleness {
+//@ ensures withCode && outcome === "passed" ==> \result === "current"
+//@ ensures !(withCode && outcome === "passed") && !confirmedFound ==> \result === "unknown"
+//@ ensures \result === "possibly_stale" <==> !(withCode && outcome === "passed") && confirmedFound && exists(k: nat, k < changed.length && changed[k])
+//@ ensures \result === "current" <==> (withCode && outcome === "passed") || (confirmedFound && forall(k: nat, k < changed.length ==> !changed[k]))
+export function staleness(withCode: boolean, outcome: ProofOutcome, confirmedFound: boolean, changed: readonly boolean[]): Staleness {
+  if (withCode && outcome === "passed") return "current";
   if (!confirmedFound) return "unknown";
   let k = 0;
   while (k < changed.length) {
