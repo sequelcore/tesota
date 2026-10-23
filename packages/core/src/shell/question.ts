@@ -1,4 +1,4 @@
-import { type Focusable, Input, matchesKey, ScrollView, Text } from "@earendil-works/pi-tui";
+import { type Focusable, Input, matchesKey, ScrollView, Text, truncateToWidth } from "@earendil-works/pi-tui";
 import { terminalText } from "../../../../src/terminal-text.ts";
 import { BAR_WIDTH, barLines, frameTitle } from "./frame.ts";
 import type { ClarificationAnswer, ClarificationQuestion } from "../../../../src/clarification.ts";
@@ -66,6 +66,8 @@ export class QuestionForm extends ScrollView implements Focusable {
     if (this.browse(data)) return;
     this.#revealFocus = true;
     if (matchesKey(data, "escape")) { this.cancel(); return; }
+    if (matchesKey(data, "up")) { this.moveRow(-1); return; }
+    if (matchesKey(data, "down")) { this.moveRow(1); return; }
     if (this.draft.field === "text") {
       const text = this.currentText();
       if (matchesKey(data, "tab") || matchesKey(data, "enter")) { this.draft.field = "submit"; return; }
@@ -76,8 +78,6 @@ export class QuestionForm extends ScrollView implements Focusable {
     if (matchesKey(data, "left")) { this.moveQuestion(-1); return; }
     if (matchesKey(data, "right")) { this.moveQuestion(1); return; }
     if (matchesKey(data, "tab")) { this.draft.field = this.draft.field === "choices" ? "text" : "choices"; return; }
-    if (matchesKey(data, "up")) { this.moveOption(-1); return; }
-    if (matchesKey(data, "down")) { this.moveOption(1); return; }
     if (matchesKey(data, "enter")) {
       if (this.draft.field === "submit") this.save();
       else this.toggle(this.draft.option);
@@ -141,7 +141,12 @@ export class QuestionForm extends ScrollView implements Focusable {
     if (this.draft.field === "text") this.#focusRow = lines.length;
     text.focused = this.focused && this.draft.field === "text";
     // In the choices' column, past the gutter where `→` marks the focus, so the answer's parts line up.
-    lines.push(...text.render(Math.max(1, inner - 2)).map((line) => `  ${line}`));
+    // Input draws a fake inverse-video cursor even when unfocused. Render the
+    // inactive value as plain text so it cannot look like a second focus marker.
+    const textWidth = Math.max(1, inner - 2);
+    const textLines = text.focused ? text.render(textWidth)
+      : [truncateToWidth(`Text: ${terminalText(text.getValue() || "optional context")}`, textWidth, "")];
+    lines.push(...textLines.map((line) => `  ${line}`));
     if (this.draft.field === "submit") this.#focusRow = lines.length;
     lines.push(...new Text(this.marked(this.draft.field === "submit", "[Submit answers]"), 0, 0).render(inner));
     return barLines(this.theme, "answer", lines);
@@ -165,8 +170,8 @@ export class QuestionForm extends ScrollView implements Focusable {
 
   /** The way on from where the focus is, so the submit action is found without knowing the keys. */
   private hint(): string {
-    if (this.draft.field === "choices") return `${this.questions.length > 1 ? "←/→ questions · " : ""}Space selects · Tab adds text · Esc cancels`;
-    return this.draft.field === "text" ? "Tab or Enter goes to Submit · Esc cancels" : "Enter submits · Tab goes back to the choices · Esc cancels";
+    if (this.draft.field === "choices") return `${this.questions.length > 1 ? "←/→ questions · " : ""}↑/↓ moves · Space selects · Tab adds text · Esc cancels`;
+    return this.draft.field === "text" ? "↑/↓ moves · Tab or Enter goes to Submit · Esc cancels" : "↑/↓ moves · Enter submits · Tab goes back to the choices · Esc cancels";
   }
 
   private currentQuestion(): ClarificationQuestion {
@@ -184,9 +189,12 @@ export class QuestionForm extends ScrollView implements Focusable {
     this.scrollToStart();
   }
 
-  private moveOption(offset: number): void {
+  private moveRow(offset: number): void {
     const count = this.currentQuestion().options.length;
-    this.draft.option = (this.draft.option + offset + count) % count;
+    const row = this.draft.field === "choices" ? this.draft.option : count + (this.draft.field === "submit" ? 1 : 0);
+    const next = (row + offset + count + 2) % (count + 2);
+    this.draft.field = next < count ? "choices" : next === count ? "text" : "submit";
+    if (next < count) this.draft.option = next;
   }
 
   private toggle(index: number): void {
