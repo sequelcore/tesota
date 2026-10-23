@@ -235,8 +235,13 @@ runs it there (#603): when the project's `test` script directly runs Bun,
 Vitest or Jest with plain arguments, that script on the file alone, with
 per-test reporting and the runner's empty-suite success flag, even when a
 composite `check` is the project's normal command; Bun and Vitest write
-JUnit XML, Jest its native JSON report. Otherwise the project's whole
-commands run. Each reason names the command that judged it.
+JUnit XML, Jest its native JSON report. Jest takes the file as an exact
+path (`--runTestsByPath`), which keeps the project's own selection. Bun
+and Vitest take it as a filter, which also selects every path that ends the
+same way: Bun's exact form, `./`, runs files the project excludes, and
+Vitest has none. So the reason names any other file the runner ran tests
+from on the base (#620). Otherwise the project's whole commands run. Each
+reason names the command that judged it.
 
 - a test that passes there passes on the base: it doesn't depend on the
   change, though it may still guard against a regression. For the runner

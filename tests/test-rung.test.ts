@@ -117,6 +117,35 @@ it("never credits a test that fails on the base when none of its tests runs on t
     reason: expect.stringMatching(/^it fails on the base by .*, but on the change .* passed and every test from math\.test\.ts was skipped$/u) });
 }, 60_000);
 
+// A filter selects every path that ends the same way; what else it ran is said, never taken for the file (#620).
+it.each(["bun test", "vitest run"])("says which other files %s ran when judging one test file", async (runner) => {
+  const { root } = noTests();
+  symlinkSync(join(process.cwd(), "node_modules"), join(root, "node_modules"), "junction");
+  writeFileSync(join(root, "package.json"), JSON.stringify({ type: "module", scripts: { test: runner } }));
+  const from = runner === "bun test" ? '"bun:test"' : '"vitest"';
+  mkdirSync(join(root, "extra", "tests"), { recursive: true });
+  writeFileSync(join(root, "extra", "tests", "x.test.ts"), `import { expect, test } from ${from};\ntest("extra", () => expect(1).toBe(2));\n`);
+  const git = (...args: string[]): string => execFileSync("git", args, { cwd: root, encoding: "utf8" });
+  git("add", "package.json", "extra");
+  git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "--quiet", "-m", "collision");
+  const base = git("rev-parse", "HEAD").trim();
+  mkdirSync(join(root, "tests"));
+  writeFileSync(join(root, "tests", "x.test.ts"), `import { expect, test } from ${from};\ntest("x", () => expect(1).toBe(1));\n`);
+  const [exercise] = await exerciseTests(root, base, ["tests/x.test.ts"], ["tests/x.test.ts"], suggestChecks(root), new AbortController().signal);
+  expect(exercise).toMatchObject({ sensitivity: "unknown", reason: expect.stringMatching(/, which also ran tests from extra\/tests\/x\.test\.ts$/u) });
+}, 60_000);
+
+it("gives Jest each test file as an exact path, which keeps the project's own selection (#620)", async () => {
+  const { root } = noTests();
+  writeFileSync(join(root, "package.json"), JSON.stringify({ scripts: { test: "jest" } }));
+  const git = (...args: string[]): string => execFileSync("git", args, { cwd: root, encoding: "utf8" });
+  git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "--quiet", "-am", "jest");
+  const base = git("rev-parse", "HEAD").trim();
+  writeFileSync(join(root, "math.test.ts"), addTest);
+  const [exercise] = await exerciseTests(root, base, ["math.test.ts"], ["math.test.ts"], suggestChecks(root), new AbortController().signal);
+  expect(exercise?.reason).toMatch(/by `\w+ run test (-- )?--passWithNoTests --runInBand --runTestsByPath .* 'math\.test\.ts'`$/u);
+}, 60_000);
+
 it("credits a changed test from the runner's report when a composite check fails on the base for an unrelated reason", async () => {
   const { root } = noTests();
   writeFileSync(join(root, "package.json"), JSON.stringify({ scripts: {
