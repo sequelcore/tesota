@@ -139,7 +139,7 @@ function ending(run: Awaited<ReturnType<typeof runProcess>>, timeout: number | u
  * file under `spool()` and its path given. A timeout or a stop ends every
  * process the command started.
  */
-export function shellTool(cwd: string, shell: Shell, spool: () => string): EngineTool {
+export function shellTool(cwd: string, shell: Shell, spool: () => string, env?: Readonly<Record<string, string>>): EngineTool {
   const tool: EngineTool<typeof parameters> = {
     name: shell.tool,
     access: "run",
@@ -155,7 +155,8 @@ export function shellTool(cwd: string, shell: Shell, spool: () => string): Engin
       let run: Awaited<ReturnType<typeof runProcess>>;
       try {
         run = await runProcess(shell.executable, shell.args(command), cwd, signal,
-          timeout === undefined ? undefined : timeout * 1000, (chunk) => { capture.add(chunk); });
+          timeout === undefined ? undefined : timeout * 1000, (chunk) => { capture.add(chunk); },
+          env === undefined ? {} : { env: { ...process.env, ...env } });
       } finally {
         capture.close();
       }

@@ -1,7 +1,7 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { entryReceipt, isReceipt, type Receipt, receiptStanding, renderReceipt } from "../../../src/receipt.ts";
 import { type AgentType, agentCatalog } from "./agents.ts";
-import { admitChild, childMode } from "./agent-rule.ts";
+import { admitChild, branchGuard, childMode, type GuardAdmission } from "./agent-rule.ts";
 import { branchOf } from "./branch.ts";
 import { contextFiles, instructionsText, skillCatalog, skills } from "./instructions.ts";
 import type { JobEnd } from "./loop.ts";
@@ -10,7 +10,7 @@ import { floorRefusals, peekSessionFile, type SessionEntry, type SessionHeader }
 import type { EngineTool, ToolOutput } from "./tool.ts";
 import type { AgentHost, AgentRequest } from "./tools/agent.ts";
 import { codingTools } from "./tools/index.ts";
-import { newWorktree, type Workspace } from "./workspace.ts";
+import { configHooks, guardedWorktree, installedGit, newWorktree, type Workspace } from "./workspace.ts";
 
 /** How far below its top session a child may be (#525): two, as pstack's `orchestrate` playbook spawns sub-coordinators. */
 export const maxDepth = 2;
@@ -45,6 +45,8 @@ export interface ChildReport {
   readonly branch?: string;
   /** How many of its calls Tesota's floor refused (#622), when any were. */
   readonly floorRefusals?: number;
+  /** A writing child that ran without Git's guard on its branch (#619): this Git has none and the operator said to warn, or turned it off. */
+  readonly unguarded?: true;
   readonly worktree?: string;
 }
 
@@ -92,6 +94,8 @@ function endText(report: ChildReport, said: string | undefined, receipt: Receipt
     // What the floor refused it binds this run too: the same effect is not to be reached another way (#622).
     ...report.floorRefusals === undefined ? [] : [`Tesota's floor refused ${report.floorRefusals} of its calls; no one can allow `
       + "those effects, so don't reach them another way. Its session lists them."],
+    ...report.unguarded === undefined ? [] : ["It ran without Git's guard on its branch, so nothing kept it off other branches: "
+      + "check that no branch but its own moved."],
     `Its report, in its own words (not evidence):\n${said?.trim() || "(it said nothing)"}`,
     ...receipt === undefined ? [] : [renderReceipt(receipt)],
     ...report.branch === undefined ? [] : [`Its work is on branch ${report.branch}, in ${report.worktree ?? "its worktree"}. `
@@ -172,6 +176,8 @@ export function agentHost(parent: Parent): AgentHost {
       if (admission === "too_deep") return refused(`a subagent ${maxDepth} below the top session starts none of its own.`);
       if (admission === "read_only") return refused("the session is read only, so it starts no subagent that writes.");
       if (admission === "too_many") return refused(`${parent.tree.limit} subagents already run; wait for one to end.`);
+      const guard = writingGuard(parent, writes);
+      if (guard === "refuse") return refused(guardMissing());
       const runnable = await modelFor(parent, request, type);
       if (typeof runnable === "string") return refused(runnable);
       const { model, unchecked } = runnable;
@@ -184,9 +190,10 @@ export function agentHost(parent: Parent): AgentHost {
       try {
         const started = await jobs.start((job) => {
           const header: NonNullable<SessionHeader["parent"]> = { session: parent.id, job, depth };
-          const child = parent.create(childOptions(parent, { header, writes, model, type }));
+          const child = parent.create(childOptions(parent, { header, writes, model, type, guarded: guard === "guard" }));
           const report: ChildReport = { description: request.description, ...type === undefined ? {} : { type: type.name },
-            model: label(model), depth, writes, outcome: "running", session: child.file };
+            model: label(model), depth, writes, outcome: "running", session: child.file,
+            ...guard === "unguarded" ? { unguarded: true } : {} };
           return {
             start: { callId, kind: "agent", description: request.description, background, session: child.file, details: report as never },
             work: (signal) => runChild(child, request.prompt, report, signal).finally(uncount),
@@ -206,23 +213,41 @@ export function agentHost(parent: Parent): AgentHost {
   };
 }
 
+/**
+ * How a child of `parent` starts (#619): one that writes, with Git's guard
+ * on its branch, which needs Git 2.54, or without it only if the operator
+ * said to warn or turned it off; one that only reads needs none.
+ */
+function writingGuard(parent: Parent, writes: boolean): GuardAdmission | undefined {
+  return writes ? branchGuard(parent.options.branchGuard ?? "require", configHooks(installedGit())) : undefined;
+}
+
+/** Why a writing child doesn't start without Git's guard, and what the operator can do. */
+const guardMissing = (): string => `a subagent that writes needs Git 2.54 or later, which keeps it off every branch but its own; `
+  + `this Git is ${installedGit() || "missing"}. Ask the operator to update Git, or to set "subagentBranchGuard": "warn" in `
+  + "~/.tesota/settings.json to start it unguarded.";
+
 /** The options a child of `parent` opens with. */
 function childOptions(parent: Parent, child: { readonly header: NonNullable<SessionHeader["parent"]>; readonly writes: boolean;
-  readonly model: Model<Api>; readonly type: AgentType | undefined }): SessionOptions {
+  readonly model: Model<Api>; readonly type: AgentType | undefined; readonly guarded: boolean }): SessionOptions {
   const { permissions, mcp, questions: _questions, surface: _surface, instructions: _instructions, tools: _tools, child: _child,
     ...inherited } = parent.options;
   const { cwd, checkout } = parent.workspace;
-  const bind = child.writes
-    ? (id: string): Workspace => newWorktree(cwd, id, `${cwd} is not a Git repository with a commit, so a subagent that writes `
-      + "has no worktree of its own to work in.")
-    : (): Workspace => ({ cwd, checkout, release: () => undefined });
+  const worktree = (id: string): Workspace => newWorktree(cwd, id, `${cwd} is not a Git repository with a commit, so a subagent `
+    + "that writes has no worktree of its own to work in.");
+  // A guard that can't be set leaves no worktree behind, and no child starts unguarded for it.
+  const guarded = (id: string): Workspace => {
+    const made = worktree(id);
+    try { return guardedWorktree(made); } catch (error) { made.release(); throw error; }
+  };
+  const bind = !child.writes ? (): Workspace => ({ cwd, checkout, release: () => undefined }) : child.guarded ? guarded : worktree;
   return {
     ...inherited, cwd, folder: parent.folder, model: child.model, mode: "print",
     child: { parent: child.header, bind, tree: parent.tree, types: parent.types,
       instructions: (at, branch) => [instructionsText(contextFiles(at), skillCatalog(skills(at), child.model.contextWindow)),
         childInstructions(child.writes, branch), child.type?.instructions ?? ""].filter((part) => part !== "").join("\n\n") },
-    tools: (spool: () => string, at: string): readonly EngineTool[] => codingTools(at, spool)
-      .filter((tool) => child.writes || tool.access === "read"),
+    tools: (spool: () => string, at: string, env?: Readonly<Record<string, string>>): readonly EngineTool[] =>
+      codingTools(at, spool, undefined, undefined, env).filter((tool) => child.writes || tool.access === "read"),
     // One that only reads reaches the parent's MCP servers, which run in its folder; one that writes has none in its worktree yet.
     ...mcp === undefined || child.writes ? {} : { mcp },
     ...permissions === undefined ? {} : { permissions: { ...permissions, mode: () => childMode(permissions.mode(), child.writes) } },

@@ -31,6 +31,8 @@ export interface HostOptions {
   readonly contextUsage: () => ContextUsage | undefined;
   /** The shell extensions draw on; none draws nothing, as Pi's print mode. */
   readonly surface?: DrawingSurface;
+  /** What every process the session starts adds to Tesota's environment (#619). */
+  readonly env?: Readonly<Record<string, string>>;
 }
 
 /** What one settle phase returned: its handlers' entries in order, whether any sent the run back, and what each that threw said. */
@@ -107,6 +109,7 @@ export function createHost(options: HostOptions, extensions: readonly ExtensionF
     cwd: options.cwd, mode: options.mode, model: options.model, modelRegistry, signal, ui: options.surface?.ui ?? headless,
     sessionManager: { getBranch: options.branch },
     getContextUsage: options.contextUsage,
+    ...options.env === undefined ? {} : { env: options.env },
   });
   const api = (handlers: Handlers): ExtensionAPI => ({
     on: ((event: keyof Events, handler: never) => { handlers[event].push(handler); }) as ExtensionAPI["on"],

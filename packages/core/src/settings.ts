@@ -1,4 +1,5 @@
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
+import type { GuardSetting } from "./agent-rule.ts";
 import type { Mode } from "./permission-rule.ts";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -23,11 +24,18 @@ export interface Settings {
   readonly deviceId?: string;
   /** How many subagents may run at once across a session's tree (#525), from 1 to 16; 4 when not set. */
   readonly agentLimit?: number;
+  /**
+   * Whether Git keeps a writing subagent off every branch but its own (#619):
+   * `require` starts none without it, `warn` starts one unguarded and says
+   * so, `off` never guards; `require` when not set.
+   */
+  readonly subagentBranchGuard?: GuardSetting;
 }
 
 const levels = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 const modes = new Set(["fullscreen", "inline"]);
 const permissionModes = new Set(["read", "ask", "full"]);
+const guardSettings = new Set(["require", "warn", "off"]);
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 
 /** Each setting's check; a value that fails it is left out and named. */
@@ -38,6 +46,7 @@ const checks: { readonly [Name in keyof Settings]-?: (value: unknown) => boolean
   permissionMode: (value) => permissionModes.has(value as string),
   deviceId: (value) => typeof value === "string" && uuid.test(value),
   agentLimit: (value) => Number.isInteger(value) && (value as number) >= 1 && (value as number) <= 16,
+  subagentBranchGuard: (value) => guardSettings.has(value as string),
 };
 
 /** The settings read back, and the names of those that were invalid and left out. */

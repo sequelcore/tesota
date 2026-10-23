@@ -9,6 +9,7 @@ import type { ExtensionAPI } from "../../../src/contract.ts";
 import { type AgentType, agentTypes } from "./agents.ts";
 import { branchOf } from "./branch.ts";
 import { agentHost, type AgentTree, defaultAgentLimit, maxDepth } from "./children.ts";
+import type { GuardSetting } from "./agent-rule.ts";
 import type { StartedSkill } from "./instructions.ts";
 import {
   compactedHead, createLoop, type HistoryMessage, jobMessage, type LoopOptions, type LoopSession, type LoopState, skillMessage, toolResult,
@@ -91,6 +92,8 @@ export type SessionOptions = Omit<LoopOptions, "writer" | "resumed" | "verifier"
   readonly writer?: (writer: SessionWriter) => SessionWriter;
   /** How many subagents may run at once across the session's tree (#525); 4 when not given. */
   readonly agentLimit?: number;
+  /** Whether a writing subagent's branch is guarded by Git (#619): required, warned about when this Git can't, or off. */
+  readonly branchGuard?: GuardSetting;
   /** Given when the session is another's subagent (#525). */
   readonly child?: ChildSession;
 };
@@ -350,12 +353,13 @@ function ledgerOf(entries: readonly SessionEntry[]): LedgerRequest[] {
 /** A subagent as a receipt lists it (#525), from its job's report; none when the report says too little. */
 function childOf(details: unknown): ReceiptChild[] {
   if (typeof details !== "object" || details === null) return [];
-  const { description, type, model, writes, outcome, verification, session, branch, floorRefusals: refused } = details as Record<string, unknown>;
+  const { description, type, model, writes, outcome, verification, session, branch, unguarded, floorRefusals: refused } =
+    details as Record<string, unknown>;
   if (typeof description !== "string" || typeof outcome !== "string" || typeof session !== "string") return [];
   return [{ description, outcome, session, writes: writes === true, ...typeof type === "string" ? { type } : {},
     ...typeof model === "string" ? { model } : {},
     ...verification === "verified" || verification === "incomplete" || verification === "failed" ? { verification } : {},
-    ...typeof branch === "string" ? { branch } : {},
+    ...typeof branch === "string" ? { branch } : {}, ...unguarded === true ? { unguarded } : {},
     ...typeof refused === "number" && refused > 0 ? { floorRefusals: refused } : {} }];
 }
 
@@ -417,7 +421,7 @@ function engineSession(file: string, release: () => void, entries: SessionEntry[
     : undefined;
   let loop: LoopSession;
   try {
-    loop = createLoop({ ...options, cwd: workspace.cwd, sessionId: id, verifier: (pi) => { options.verifier(pi, request); }, branch: () => branchOf(entries),
+    loop = createLoop({ ...options, cwd: workspace.cwd, ...workspace.env === undefined ? {} : { env: workspace.env }, sessionId: id, verifier: (pi) => { options.verifier(pi, request); }, branch: () => branchOf(entries),
       writer: options.writer?.(recording) ?? recording, outputFolder: outputOf(file), ...opened ? { resumed: stateOf(entries) } : {},
       ...host === undefined ? {} : { jobTools: (jobs) => [agentTool(host, jobs)] },
       ...options.child === undefined ? {} : { instructions: options.child.instructions(workspace.cwd, workspace.branch) } });

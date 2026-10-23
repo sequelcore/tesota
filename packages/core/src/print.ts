@@ -108,7 +108,8 @@ export async function runPrint(args: readonly string[], cwd: string, write: Prin
     hooks: () => hooks, mcp: () => servers,
     permissions: { mode: () => settings.permissionMode ?? "ask", rules },
     ...settings.thinkingLevel === undefined ? {} : { thinkingLevel: settings.thinkingLevel },
-    ...settings.agentLimit === undefined ? {} : { agentLimit: settings.agentLimit } });
+    ...settings.agentLimit === undefined ? {} : { agentLimit: settings.agentLimit },
+    ...settings.subagentBranchGuard === undefined ? {} : { branchGuard: settings.subagentBranchGuard } });
   const unused = unusedModels(session.types, `${model.provider}/${model.id}`);
   if (unused !== undefined) write.error(`${unused}\n`);
   let stopped = false;

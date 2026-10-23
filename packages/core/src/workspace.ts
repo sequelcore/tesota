@@ -1,13 +1,14 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, realpathSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
 import { lockSession, SessionLockedError } from "./session-lock.ts";
 
 /**
  * Where a session works (#453): the checkout itself, or a Git worktree of it
- * on its own branch. Its tools run there, the permission floor keeps it
- * there, and its base, diff, checks and receipt are its own.
+ * on its own branch. Its tools run there, and its base, diff, checks and
+ * receipt are its own. The permission floor keeps its file tools' writes
+ * there, not its shell: a command can reach anything the operator can.
  */
 export interface Workspace {
   /** The folder the session works in: the checkout, or the same folder inside its worktree. */
@@ -18,6 +19,8 @@ export interface Workspace {
   readonly worktree?: string;
   readonly branch?: string;
   readonly base?: string;
+  /** What every process the session starts adds to Tesota's environment, such as a writing subagent's branch guard (#619). */
+  readonly env?: Readonly<Record<string, string>>;
   /**
    * Lets go of the workspace as the session closes: the checkout for the
    * next session, or the worktree, removed with its branch only when nothing
@@ -159,6 +162,62 @@ export function newWorktree(checkout: string, id: string, outsideGit: string): W
   }
   const made = canonical(worktree);
   return worktreeWorkspace(at, made, relative(repository.top, at), branch, repository.head, worktreeLease(made));
+}
+
+/** Whether a Git, by its `--version` line, runs hooks defined in configuration beside a repository's own: Git 2.54 and later (#619). */
+export function configHooks(version: string): boolean {
+  const [major = 0, minor = 0] = (/(\d+)\.(\d+)/u.exec(version) ?? []).slice(1).map(Number);
+  return major > 2 || (major === 2 && minor >= 54);
+}
+
+let gitVersion: string | undefined;
+/** The `--version` line of the Git that sessions run, read once. */
+export const installedGit = (): string => gitVersion ??= gitIn(".", ["--version"]).out;
+
+/**
+ * Git's guard on a writing subagent's branch (#619): a `reference-transaction`
+ * hook defined in configuration, so it runs beside the repository's own
+ * hooks and changes neither them nor the repository's configuration. In the
+ * repository it was admitted to, by Git's absolute common folder, a
+ * transaction that would move another branch or any tag is aborted before
+ * it changes anything; a folder Git can't place counts as that repository.
+ * Anywhere else it does nothing. `git -c` can turn it off; it guards
+ * branches, not the worktrees' files.
+ */
+const guardScript = `#!/bin/sh
+[ "$1" = prepared ] || { cat >/dev/null; exit 0; }
+common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || common="$TESOTA_GUARD_COMMON"
+[ "$common" = "$TESOTA_GUARD_COMMON" ] || { cat >/dev/null; exit 0; }
+refused=0
+while read -r old new ref; do
+  case "$ref" in
+    "$TESOTA_GUARD_BRANCH") ;;
+    refs/heads/*|refs/tags/*)
+      echo "Tesota: this subagent may move only its own branch, \${TESOTA_GUARD_BRANCH#refs/heads/}, not $ref. Report the conflict to your parent instead." >&2
+      refused=1 ;;
+  esac
+done
+exit $refused
+`;
+
+/**
+ * `workspace`, a worktree on its own branch, with Git's guard on that branch
+ * in the environment of every process its session starts (#619): appended
+ * to the configuration pairs Tesota's own environment has, never in a file.
+ */
+export function guardedWorktree(workspace: Workspace): Workspace {
+  if (workspace.worktree === undefined || workspace.branch === undefined) throw new Error("Only a worktree's own branch can be guarded.");
+  const common = gitIn(workspace.worktree, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+  if (!common.ok || common.out === "") throw new Error(`Could not guard the subagent's branch: ${common.err}`);
+  const script = join(tesotaHome(), "hooks", "branch-guard.sh");
+  mkdirSync(dirname(script), { recursive: true });
+  if (!existsSync(script) || readFileSync(script, "utf8") !== guardScript) writeFileSync(script, guardScript);
+  const pairs = Number.parseInt(process.env["GIT_CONFIG_COUNT"] ?? "0", 10) || 0;
+  return { ...workspace, env: { ...workspace.env, GIT_CONFIG_COUNT: String(pairs + 2),
+    [`GIT_CONFIG_KEY_${pairs}`]: "hook.tesota-branch-guard.event", [`GIT_CONFIG_VALUE_${pairs}`]: "reference-transaction",
+    [`GIT_CONFIG_KEY_${pairs + 1}`]: "hook.tesota-branch-guard.command",
+    [`GIT_CONFIG_VALUE_${pairs + 1}`]: `sh '${script.replaceAll("\\", "/").replaceAll("'", "'\\''")}'`,
+    TESOTA_GUARD_BRANCH: `refs/heads/${workspace.branch}`, TESOTA_GUARD_COMMON: common.out } };
 }
 
 /**

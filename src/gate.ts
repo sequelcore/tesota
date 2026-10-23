@@ -185,15 +185,16 @@ function testFailure({ command, failingTests }: CommandRun): string {
  * which shows whether it exercises the change.
  */
 async function testRung(root: string, base: string | null, changed: readonly string[],
-  sentBack: ReadonlyMap<string, readonly string[]>, signal: AbortSignal, ops: OperationSink): Promise<Pick<Receipt, "tests" | "exercises">> {
+  sentBack: ReadonlyMap<string, readonly string[]>, signal: AbortSignal, ops: OperationSink,
+  env: Readonly<Record<string, string>> | undefined): Promise<Pick<Receipt, "tests" | "exercises">> {
   const projects = owningProjects(suggestChecks(root), changed);
-  const tests = (await checks().runCommands(root, projects, changed, signal, ops)).map((run) =>
+  const tests = (await checks().runCommands(root, projects, changed, signal, ops, env)).map((run) =>
     ({ ...run, verdict: gateVerdict(run.evidence.outcome, testFailure(run), sentBack.get(run.command) ?? []) }));
   const passed = tests.every(({ evidence }) => evidence.outcome === "passed");
   // A snapshot or a fixture counts as a test for weakened evidence, but is not one a runner can run alone (#615).
   const runnable = changed.filter((path) => checks().isTestPath(path) && checks().isSourcePath(path));
   const present = (await Promise.all(runnable.map(async (path) => await readIfPresent(join(root, path)) === undefined ? [] : [path]))).flat();
-  const exercises = passed && base !== null ? await checks().exerciseTests(root, base, present, changed, projects, signal, ops) : [];
+  const exercises = passed && base !== null ? await checks().exerciseTests(root, base, present, changed, projects, signal, ops, env) : [];
   return { tests, exercises };
 }
 
@@ -630,7 +631,8 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
    * again against what went back. With them, the TLA+ and Quint files the
    * request changed that declare no header.
    */
-  const checkModels = (units: readonly ChangedUnit[], tallied: Tally): Effect.Effect<Map<string, ModelRung>> => effect().gen(function* () {
+  const checkModels = (units: readonly ChangedUnit[], tallied: Tally, env: Readonly<Record<string, string>> | undefined):
+    Effect.Effect<Map<string, ModelRung>> => effect().gen(function* () {
     const rungs = new Map<string, ModelRung>();
     for (const unit of units) {
       const planned = yield* step(() => checks().plannedModels(unit.root, unit.changed));
@@ -649,7 +651,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
         }
         progress.publish({ step: "checking", path: key, startedAt: performance.now(), tally: tallied });
         const check = yield* step((signal) => checks().checkModel(unit.root, plan.path, unit.changed, signal, undefined,
-          progress.operations.forUnit(unit.folder)));
+          progress.operations.forUnit(unit.folder), env));
         modelsChecked.set(key, check);
         if (check.evidence.outcome === "passed") modelsPassed.set(key, check);
         models.push(judged(check));
@@ -698,7 +700,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     for (const unit of changed) {
       rungs.set(unit.folder, yield* step((signal) =>
         testRung(unit.root, unit.base, unit.changed, commandsSentBack.get(unit.folder) ?? new Map(), signal,
-          progress.operations.forUnit(unit.folder))));
+          progress.operations.forUnit(unit.folder), ctx.env)));
     }
     const allTests = [...rungs.values()].flatMap(({ tests }) => tests);
     const failing = [...rungs].flatMap(([folder, { tests }]) =>
@@ -712,7 +714,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
       progress.publish({ step: "sent_back", tally: tally(allProofs, allTests, contracts) });
       return sendBack(weak.map(weakContractReport).join("\n\n"), { round: "contracts", contracts: weak });
     }
-    const modelRungs = yield* checkModels(changed, tally(allProofs, allTests, contracts));
+    const modelRungs = yield* checkModels(changed, tally(allProofs, allTests, contracts), ctx.env);
     const modelsSent = modelsBack(modelRungs, tally(allProofs, allTests, contracts));
     if (modelsSent !== undefined) return modelsSent;
     const [evidence, open] = yield* effect().all([step(() => progress.operations.run(

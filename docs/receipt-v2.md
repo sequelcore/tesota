@@ -157,6 +157,7 @@ dismissed questions and unavailable answers do not enter this list.
 | `session` | string | Its session's file |
 | `branch` | string, optional | The branch its work stays on, when it wrote something |
 | `floorRefusals` | number, optional | How many of its calls Tesota's floor refused; its own session lists them |
+| `unguarded` | `true`, optional | It could write and ran without Git's guard on its branch: its Git was older than 2.54 and `subagentBranchGuard` said `warn`, or the guard was `off` |
 
 What a child changed counts toward the request only once the run brought it
 into its own workspace, where this receipt's checks measured it.

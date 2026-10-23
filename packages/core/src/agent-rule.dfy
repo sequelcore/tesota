@@ -2,6 +2,10 @@
 
 datatype Admission = start | too_deep | too_many | read_only
 
+datatype GuardSetting = require | warn | off
+
+datatype GuardAdmission = guard | unguarded | refuse
+
 datatype Mode = read | ask | full
 
 function admitChild(depth: int, maxDepth: int, running: int, maxRunning: int, writes: bool, readOnly: bool): Admission
@@ -45,5 +49,27 @@ function childMode(parent: Mode, writes: bool): Mode
 lemma childMode_ensures(parent: Mode, writes: bool)
   ensures (!(writes) ==> childMode(parent, writes).read?)
   ensures (writes ==> (childMode(parent, writes) == parent))
+{
+}
+
+function branchGuard(setting: GuardSetting, supported: bool): GuardAdmission
+{
+  if setting.off? then
+    GuardAdmission.unguarded
+  else
+    if supported then
+      GuardAdmission.guard
+    else
+      if setting.require? then
+        GuardAdmission.refuse
+      else
+        GuardAdmission.unguarded
+}
+
+lemma branchGuard_ensures(setting: GuardSetting, supported: bool)
+  ensures (setting.off? ==> branchGuard(setting, supported).unguarded?)
+  ensures ((!setting.off?) ==> supported ==> branchGuard(setting, supported).guard?)
+  ensures (setting.require? ==> !(supported) ==> branchGuard(setting, supported).refuse?)
+  ensures (setting.warn? ==> !(supported) ==> branchGuard(setting, supported).unguarded?)
 {
 }
