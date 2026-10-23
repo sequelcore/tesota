@@ -1128,8 +1128,7 @@ it("runs the project's tests, and runs each changed test on the request's base e
     "  passes on base test/positive.test.mjs: it passes without the change too; " +
     "by the whole check, `bun run test`; added in this request",
     "  not proved    src/price.mjs: no proof covers it; the project's commands pass with it",
-    "  changed lines implementation +1 -1 · tests +10 -0"].join("
-"));
+    "  changed lines implementation +1 -1 · tests +10 -0"].join("\n"));
   const receipt = entry(settled).details as Receipt;
   expect(receipt.tests.map(({ command, evidence }) => [command, evidence.verifier, evidence.files]))
     .toEqual([["bun run test", "command", changed]]);
