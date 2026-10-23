@@ -81,6 +81,15 @@ test("a request asks the operator at most three times, and the next request may 
   expect(opened).toBe(4);
 });
 
+test("after the floor refuses, a session someone can answer tells the model it may ask what they want instead (#622)", async () => {
+  const session = start([{ tool: process.platform === "win32" ? "powershell" : "bash", args: { command: "cat .env" } }, "done"], {
+    questions: () => () => undefined, permissions: { mode: () => "full", rules: [] },
+  });
+  await session.prompt("Read the secrets.");
+  const [refused] = session.messages().filter((message) => message.role === "toolResult");
+  expect(refused?.text).toContain("If the work needs it, say so in your final reply, or ask the operator what they want instead.");
+});
+
 test("only the exact native bridge is identified as a question for verification", async () => {
   for (const native of [false, true]) {
     let identified: boolean | undefined;

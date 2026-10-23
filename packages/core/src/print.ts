@@ -12,7 +12,7 @@ import { unusedModels } from "./agents.ts";
 import { engineModels, runnableModel } from "./model-access.ts";
 import { loadRules } from "./permissions.ts";
 import { createSession, type EngineSession } from "./session.ts";
-import { peekSessionFile } from "./session-file.ts";
+import { lastFloorNotice, peekSessionFile } from "./session-file.ts";
 import { readSettings } from "./settings.ts";
 import { shellHost } from "./shell/surface.ts";
 import { readStandards } from "./standards.ts";
@@ -59,11 +59,13 @@ function trustedStandards(cwd: string, settingsPath: string, write: PrintOutput)
     mcp: { own: standards.mcp.own, ...standards.mcp.trusted ? { project: standards.mcp.project } : {} } };
 }
 
-/** How the run ended and where its verification stands, from the receipt it settled with. */
+/** How the run ended and where its verification stands, from the receipt it settled with, and what Tesota's floor refused (#622). */
 function ending(outcome: string | undefined, file: string): string {
-  const receipt = branchOf(peekSessionFile(file).entries).map(entryReceipt).findLast((found) => found !== undefined);
+  const { entries } = peekSessionFile(file);
+  const receipt = branchOf(entries).map(entryReceipt).findLast((found) => found !== undefined);
   return `${outcome === "completed" ? "Completed" : `Ended ${outcome ?? "without a run"}`}`
-    + `${isReceipt(receipt) ? `, ${receiptStanding(receipt)}; tesota receipt writes it for a pull request` : ""}.\n`;
+    + `${isReceipt(receipt) ? `, ${receiptStanding(receipt)}; tesota receipt writes it for a pull request` : ""}.\n`
+    + (lastFloorNotice(entries) ?? "");
 }
 
 /** The MCP servers of the folder the session works in, its worktree's when it has one, so they never act in another session's (#459). */
@@ -123,8 +125,9 @@ export async function runPrint(args: readonly string[], cwd: string, write: Prin
     process.off("SIGTERM", stop);
     // Each is let go of whatever the other does, so a session that fails to close never leaves its servers running.
     await Promise.allSettled([session.dispose(), servers?.close()]);
+    // A run that throws still says how it ended and what the floor refused (#622).
+    write.error(ending(session.outcome(), session.file));
   }
-  write.error(ending(session.outcome(), session.file));
   const kept = session.kept();
   if (kept !== undefined) write.error(`${kept}\n`);
   return session.outcome() === "completed" && !stopped ? 0 : 1;

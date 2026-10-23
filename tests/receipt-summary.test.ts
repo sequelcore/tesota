@@ -163,6 +163,27 @@ it("lists a subagent as context, never as evidence of the parent's change", () =
   expect(text.slice(0, text.indexOf("Details"))).not.toContain("review session folder fix");
 });
 
+it("lists the floor's refusals apart from the evidence, never as a verdict, and never what they named (#622)", () => {
+  const receipt = real(577);
+  const refused: Receipt = { ...receipt, floorRefusals: [
+    { tool: "powershell", subject: "Get-Content C:/private/.env", reason: "Tesota never allows this: it names a secret: an .env file, SSH's keys or Tesota's credentials." },
+    { tool: "write", subject: "../cleanup.cjs", reason: "Tesota never allows this: it is outside the session's folder." }],
+    children: (receipt.children ?? []).map((child, index) => index === 0 ? { ...child, floorRefusals: 1 } : child) };
+  const before = receiptSummary(receipt);
+  const after = receiptSummary(refused);
+  expect(after.counts).toBe(before.counts);
+  expect(after.methods).toEqual(before.methods);
+  expect(after.context).toBe("2 subagents · 2 calls the floor refused");
+  // The Markdown escapes its punctuation; the words are the same.
+  for (const text of [renderReceipt(refused), renderReceiptMessage(refused).replaceAll("\\", "")]) {
+    expect(text).toContain("Refused by Tesota's floor (these calls didn't run; that says nothing of what ran instead)");
+    expect(text).toMatch(/powershell: it names a secret/u);
+    expect(text).toMatch(/1 call the floor refused/u);
+    expect(text).not.toContain("private");
+    expect(text).not.toContain("cleanup.cjs");
+  }
+});
+
 describe("receipts beyond the four", () => {
   const stopped: Receipt = { ...emptyReceipt, stopped: "the operator stopped the run while Tesota verified it" };
   const outside: Receipt = { ...emptyReceipt, repository: false, changed: [] };

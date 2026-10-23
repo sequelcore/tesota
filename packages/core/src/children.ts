@@ -6,7 +6,7 @@ import { branchOf } from "./branch.ts";
 import { contextFiles, instructionsText, skillCatalog, skills } from "./instructions.ts";
 import type { JobEnd } from "./loop.ts";
 import type { EngineSession, SessionOptions } from "./session.ts";
-import { peekSessionFile, type SessionEntry, type SessionHeader } from "./session-file.ts";
+import { floorRefusals, peekSessionFile, type SessionEntry, type SessionHeader } from "./session-file.ts";
 import type { EngineTool, ToolOutput } from "./tool.ts";
 import type { AgentHost, AgentRequest } from "./tools/agent.ts";
 import { codingTools } from "./tools/index.ts";
@@ -43,6 +43,8 @@ export interface ChildReport {
   readonly session: string;
   /** A writing child's branch and worktree, when it changed something and they stay. */
   readonly branch?: string;
+  /** How many of its calls Tesota's floor refused (#622), when any were. */
+  readonly floorRefusals?: number;
   readonly worktree?: string;
 }
 
@@ -87,6 +89,9 @@ function endText(report: ChildReport, said: string | undefined, receipt: Receipt
     : report.limited === "time" ? ` after ${childLimits.minutes} minutes, its limit` : "";
   return [`Subagent "${report.description}" ended ${report.outcome}${stopped}${report.verification === undefined ? "" : `, ${report.verification}`}.`,
     ...failure === undefined ? [] : [`It failed: ${failure}`],
+    // What the floor refused it binds this run too: the same effect is not to be reached another way (#622).
+    ...report.floorRefusals === undefined ? [] : [`Tesota's floor refused ${report.floorRefusals} of its calls; no one can allow `
+      + "those effects, so don't reach them another way. Its session lists them."],
     `Its report, in its own words (not evidence):\n${said?.trim() || "(it said nothing)"}`,
     ...receipt === undefined ? [] : [renderReceipt(receipt)],
     ...report.branch === undefined ? [] : [`Its work is on branch ${report.branch}, in ${report.worktree ?? "its worktree"}. `
@@ -135,7 +140,9 @@ async function runChild(child: EngineSession, brief: string, report: ChildReport
   if (outcome === "error") failure ??= written.flatMap((entry) => entry.type === "run_end" ? [entry.reason] : []).at(-1);
   const verification = receipt === undefined ? undefined : receiptStanding(receipt);
   const kept = child.kept() !== undefined && child.workspace.branch !== undefined;
+  const refused = floorRefusals(written).length;
   const ended: ChildReport = { ...report, outcome, ...verification === undefined ? {} : { verification },
+    ...refused === 0 ? {} : { floorRefusals: refused },
     ...limited === undefined ? {} : { limited },
     ...kept ? { branch: child.workspace.branch as string, worktree: child.workspace.worktree as string } : {} };
   return { outcome, text: endText(ended, said, receipt, failure), details: ended as never };

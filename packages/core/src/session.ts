@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
-import type { ReceiptChild } from "../../../src/receipt.ts";
+import type { FloorRefusal, ReceiptChild } from "../../../src/receipt.ts";
 import type { Base } from "./base.ts";
 import type { ExtensionAPI } from "../../../src/contract.ts";
 import { type AgentType, agentTypes } from "./agents.ts";
@@ -16,7 +16,7 @@ import {
 import { agentTool } from "./tools/agent.ts";
 import { noEffect, notRun, outcomeUnknown, repairs } from "./reconcile-rule.ts";
 import {
-  type Behavior, createSessionFile, type Origin, readSessionFile, type Repair, type SessionEntry, sessionFormat, sessionVersion,
+  type Behavior, createSessionFile, floorRefusals, type Origin, readSessionFile, type Repair, type SessionEntry, sessionFormat, sessionVersion,
   type SessionHeader, sessionWriter, type SessionWriter,
 } from "./session-file.ts";
 import { lockSession, SessionLockedError } from "./session-lock.ts";
@@ -48,6 +48,8 @@ export interface LedgerRequest {
   readonly inputs: readonly RequestInput[];
   /** The subagents the run started and how each ended (#525), in the order they ended. */
   readonly children: readonly ReceiptChild[];
+  /** The calls Tesota's floor refused in the run (#622), in order. */
+  readonly refusals: readonly FloorRefusal[];
 }
 
 /** What makes a session a child of another (#525): its parent, where it works, the tree it counts in, its types and instructions. */
@@ -340,18 +342,21 @@ function ledgerOf(entries: readonly SessionEntry[]): LedgerRequest[] {
       : input.type === "amendment" ? withdrawn.has(input.id) ? [] : [{ kind: "amendment", origin: input.origin, text: input.text }]
         : input.type === "clarification" ? [{ kind: "clarification", clarification: input.clarification }] : []),
     children: entries.flatMap((ended) => ended.type === "job_end" && ended.run === entry.run ? childOf(ended.details) : []),
+    refusals: floorRefusals(entries, entry.run),
   }]);
 }
+
 
 /** A subagent as a receipt lists it (#525), from its job's report; none when the report says too little. */
 function childOf(details: unknown): ReceiptChild[] {
   if (typeof details !== "object" || details === null) return [];
-  const { description, type, model, writes, outcome, verification, session, branch } = details as Record<string, unknown>;
+  const { description, type, model, writes, outcome, verification, session, branch, floorRefusals: refused } = details as Record<string, unknown>;
   if (typeof description !== "string" || typeof outcome !== "string" || typeof session !== "string") return [];
   return [{ description, outcome, session, writes: writes === true, ...typeof type === "string" ? { type } : {},
     ...typeof model === "string" ? { model } : {},
     ...verification === "verified" || verification === "incomplete" || verification === "failed" ? { verification } : {},
-    ...typeof branch === "string" ? { branch } : {} }];
+    ...typeof branch === "string" ? { branch } : {},
+    ...typeof refused === "number" && refused > 0 ? { floorRefusals: refused } : {} }];
 }
 
 /** Where a session read back stands. */

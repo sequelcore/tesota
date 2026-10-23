@@ -9,7 +9,7 @@ import { noEvidence, type Receipt, receiptEntry } from "../../../src/receipt.ts"
 import { agentTypes, agentTypesIn, unusedModels } from "../src/agents.ts";
 import { childLimits } from "../src/children.ts";
 import { createSession, type EngineSession, openSession, type SessionOptions } from "../src/session.ts";
-import { readSessionFile, type SessionEntry } from "../src/session-file.ts";
+import { lastFloorNotice, readSessionFile, type SessionEntry } from "../src/session-file.ts";
 import { accepts, signInWithChatGPT } from "./scripted.ts";
 
 /**
@@ -182,6 +182,23 @@ describe("the agent tool", () => {
     const result = parent.history().find((message) => message.role === "toolResult");
     expect(result?.role === "toolResult" && textOf(result.content)).toContain("Tesota receipt");
     expect(git(cwd, "branch", "--list", child?.branch ?? "")).toContain(child?.branch ?? "missing");
+  });
+
+  test("what the floor refused a child reaches its parent's result, ledger and end, and binds the parent too (#622)", async () => {
+    const cwd = repository();
+    let told = "";
+    const parent = session({
+      delegate: [{ calls: [{ tool: "agent", args: { prompt: "clean up", description: "clean up", writes: true, wait: true } }] }, "done"],
+      "clean up": [{ calls: [{ tool: "write", args: { path: "../outside.txt", content: "x" } }] },
+        (context) => { told = textOf(context.messages.at(-1)?.content ?? ""); return fauxAssistantMessage("couldn't"); }],
+    }, { cwd, permissions: { mode: () => "full", rules: [] } });
+    await parent.prompt("delegate");
+    // A child has no one to ask, so it is told to say so in its final reply.
+    expect(told).toContain("If the work needs it, say so in your final reply.");
+    expect(parent.ledger()[0]?.children[0]).toMatchObject({ description: "clean up", floorRefusals: 1 });
+    const result = parent.history().find((message) => message.role === "toolResult");
+    expect(result?.role === "toolResult" && textOf(result.content)).toContain("Tesota's floor refused 1 of its calls");
+    expect(lastFloorNotice(readSessionFile(parent.file).entries)).toContain("its subagents: 1 call, listed in their own sessions");
   });
 
   test("a read-only session starts no writing child, and a reader is read only whatever the mode", async () => {

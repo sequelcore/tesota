@@ -3,8 +3,10 @@ import { closeSync, fsyncSync, ftruncateSync, openSync, readFileSync, renameSync
 import { dirname } from "node:path";
 import type { Base } from "./base.ts";
 import type { Clarification } from "../../../src/clarification.ts";
+import type { FloorRefusal } from "../../../src/receipt.ts";
 import type { StartedSkill } from "./instructions.ts";
 import { validateAnswers, validateQuestions } from "./questions-schema.ts";
+import { floorNotice } from "./permissions.ts";
 import type { PromptOptions, RunOutcome, SessionOutcome } from "../../../src/contract.ts";
 
 /**
@@ -110,10 +112,12 @@ export type SessionEntry =
     readonly continued: boolean; readonly errors: readonly string[]; readonly registered: boolean }
   /**
    * Whether call `callId` of run `run` may run, and who decided it (#449):
-   * the floor, the mode, a rule, or the operator asked once or for the session.
+   * the floor, the mode, a rule, the operator asked once or for the session,
+   * or, with no one to ask, the floor's refusal of an earlier call in the
+   * same request (`after_floor`, #622).
    */
   | { readonly type: "permission"; readonly run: number; readonly callId: string; readonly decision: "allow" | "deny";
-    readonly by: "floor" | "mode" | "rule" | "operator" | "session" | "hook"; readonly reason: string }
+    readonly by: "floor" | "mode" | "rule" | "operator" | "session" | "hook" | "after_floor"; readonly reason: string }
   /** The tools the model may call from now on, as extensions set them (#441); a resumed session restores the last. */
   | { readonly type: "active_tools"; readonly names: readonly string[] }
   /**
@@ -179,7 +183,7 @@ const shapes: Record<SessionEntry["type"], (entry: Record<string, unknown>) => b
     && Array.isArray(entry["errors"]) && entry["errors"].every(isText) && isFlag(entry["registered"]),
   active_tools: (entry) => Array.isArray(entry["names"]) && entry["names"].every(isText),
   permission: (entry) => isText(entry["callId"]) && (entry["decision"] === "allow" || entry["decision"] === "deny")
-    && ["floor", "mode", "rule", "operator", "session", "hook"].includes(entry["by"] as string) && isText(entry["reason"]),
+    && ["floor", "mode", "rule", "operator", "session", "hook", "after_floor"].includes(entry["by"] as string) && isText(entry["reason"]),
   job_start: (entry) => isText(entry["job"]) && isText(entry["callId"]) && entry["kind"] === "agent" && isText(entry["description"])
     && isFlag(entry["background"]) && isText(entry["session"]),
   job_end: (entry) => isText(entry["job"]) && isText(entry["outcome"]) && isText(entry["text"]),
@@ -358,4 +362,32 @@ export function createSessionFile(path: string, header: SessionHeader): void {
   }
   renameSync(draft, path);
   syncFolder(dirname(path));
+}
+
+/** What a call names, on one line and cut short: the command a shell runs, or the path another tool reads or changes. */
+function subjectOf(said: unknown): string {
+  const { command, path } = typeof said === "object" && said !== null ? said as Record<string, unknown> : {};
+  const subject = (typeof command === "string" ? command : typeof path === "string" ? path : "").replace(/\s+/gu, " ").trim();
+  return subject.length > 80 ? `${subject.slice(0, 79)}…` : subject;
+}
+
+/** The calls Tesota's floor refused in run `run`, or in every run, from the session's permission entries and the calls they decided (#622). */
+export function floorRefusals(entries: readonly SessionEntry[], run?: number): FloorRefusal[] {
+  const calls = new Map(entries.flatMap((entry) => entry.type !== "assistant" ? []
+    : entry.message.content.flatMap((part) => part.type === "toolCall" ? [[part.id, part] as const] : [])));
+  return entries.flatMap((entry) => entry.type !== "permission" || entry.by !== "floor" || entry.decision !== "deny"
+    || (run !== undefined && entry.run !== run) ? [] : [{ tool: calls.get(entry.callId)?.name ?? "a tool",
+      subject: subjectOf(calls.get(entry.callId)?.arguments), reason: entry.reason }]);
+}
+
+/** What the operator sees of Tesota's floor at the end of the session's last request (`floorNotice`), its subagents' included. */
+export function lastFloorNotice(entries: readonly SessionEntry[]): string | undefined {
+  const run = entries.findLast((entry) => entry.type === "request")?.run;
+  if (run === undefined) return undefined;
+  const children = entries.reduce((count, entry) => {
+    const refused = entry.type === "job_end" && entry.run === run && typeof entry.details === "object" && entry.details !== null
+      ? (entry.details as Record<string, unknown>)["floorRefusals"] : undefined;
+    return count + (typeof refused === "number" ? refused : 0);
+  }, 0);
+  return floorNotice(floorRefusals(entries, run), children);
 }

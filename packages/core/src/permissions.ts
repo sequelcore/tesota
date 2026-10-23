@@ -5,6 +5,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from "node:pat
 import { tesotaHome } from "../../../src/home.ts";
 import { parseJson } from "../../../src/json.ts";
 import { type Access, type Decision, decide, type Mode, type RuleVerdict, strongest } from "./permission-rule.ts";
+import type { FloorRefusal } from "../../../src/receipt.ts";
 
 /** Rules as an operator or a project writes them (#449): `tool(pattern)`, or a tool's name alone, by verdict. */
 export interface RulesFile {
@@ -214,3 +215,20 @@ export function judge(call: ToolCall, access: Access, cwd: string, mode: Mode, r
 export type Rules = readonly Rule[];
 
 export type { Access, Mode };
+
+/**
+ * What the operator sees at a request's end when Tesota's floor refused
+ * calls in it (#622), its own and its subagents', whatever else happened:
+ * each refused call, and that the refusals say nothing of what ran after.
+ * Undefined when there were none.
+ */
+export function floorNotice(refusals: readonly FloorRefusal[], children: number): string | undefined {
+  if (refusals.length === 0 && children === 0) return undefined;
+  const calls = (count: number): string => `${count} call${count === 1 ? "" : "s"}`;
+  const lines = refusals.map(({ tool, subject, reason }) =>
+    `  ${tool}${subject === "" ? "" : ` ${subject}`}: ${reason.replace(/^Tesota never allows this: /u, "")}`);
+  if (children > 0) lines.push(`  its subagents: ${calls(children)}, listed in their own sessions`);
+  const count = refusals.length + children;
+  return `Tesota's floor refused ${calls(count)}; that shows ${count === 1 ? "it" : "they"} didn't run, not what ran instead:\n`
+    + `${lines.join("\n")}\n`;
+}

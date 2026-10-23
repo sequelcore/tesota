@@ -60,3 +60,19 @@ export function decide(floor: boolean, mode: Mode, access: Access, rule: RuleVer
   if (mode === "full" || access === "read") return "allow";
   return present ? "ask" : "deny";
 }
+
+/**
+ * A decision once Tesota's floor has refused a call earlier in the same
+ * request (#622): a call that would be allowed and does more than read is
+ * asked instead, or refused with no one `present`, since the floor is a net
+ * over what calls name and another route can reach what it refused.
+ * Nothing it refused or asked loosens.
+ */
+//@ ensures !refused ==> \result === decision
+//@ ensures refused && decision === "allow" && access !== "read" ==> \result === (present ? "ask" : "deny")
+//@ ensures refused && !(decision === "allow" && access !== "read") ==> \result === decision
+//@ ensures !present && decision !== "ask" ==> \result !== "ask"
+export function afterRefusal(decision: Decision, access: Access, refused: boolean, present: boolean): Decision {
+  if (!refused || decision !== "allow" || access === "read") return decision;
+  return present ? "ask" : "deny";
+}

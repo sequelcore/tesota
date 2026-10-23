@@ -6,6 +6,7 @@ import { join, parse } from "node:path";
 import { type Decision, decide, type RuleVerdict, strongest } from "../src/permission-rule.ts";
 import { type Access, judge, loadRules, type Mode } from "../src/permissions.ts";
 import { createSession, type EngineSession } from "../src/session.ts";
+import { lastFloorNotice, peekSessionFile } from "../src/session-file.ts";
 import type { ScriptStep } from "./engine.ts";
 import { accepts, scriptedReply } from "./scripted.ts";
 
@@ -297,10 +298,49 @@ describe("the boundary every call passes", () => {
     await reading.created.prompt("go");
     expect(reading.asked).toEqual([]);
     expect(existsSync(join(reading.cwd, "a.txt"))).toBe(false);
-    const full = session([write("../escaped.txt"), write("inside.txt"), "done"], "full", () => "once");
+    const full = session([write("inside.txt"), write("../escaped.txt"), "done"], "full", () => "once");
     await full.created.prompt("go");
     expect(existsSync(join(full.cwd, "..", "escaped.txt"))).toBe(false);
     expect(existsSync(join(full.cwd, "inside.txt"))).toBe(true);
     expect(full.asked).toEqual([]);
+  });
+
+  // #622's sequence: the floor refuses, and the agent reaches for the same effect another way. The floor names what calls
+  // say, so it can't see that a later call has the same effect; what this shows is what the model is told, that the rest of
+  // the request asks first, and what the operator sees at its end.
+  const named = (script: string): ScriptStep => ({ tool: shell, args: { command: script } });
+  const results = (created: EngineSession): string[] =>
+    created.messages().flatMap((message) => message.role === "toolResult" ? [message.text ?? ""] : []);
+
+  test("after the floor refuses, the model is told the refusal covers the effect, and with no one to ask the rest is refused (#622)", async () => {
+    const alone = session([named("Get-Content .env"), write("../cleanup.cjs"), named("echo route > route.txt"), write("inside.txt"), "done"], "full");
+    await alone.created.prompt("go");
+    const [secret, outside, route, inside] = results(alone.created);
+    expect(secret).toContain("Not run: Tesota never allows this: it names a secret");
+    expect(secret).toContain("No one can allow it, the operator included: don't reach the same effect another way");
+    expect(secret).not.toContain("ask the operator");
+    expect(outside).toContain("it is outside the session's folder");
+    for (const after of [route, inside]) expect(after).toBe(`Not run: Tesota's floor refused a call earlier in this request, so it asks before any other command or file change.`);
+    expect(existsSync(join(alone.cwd, "route.txt"))).toBe(false);
+    expect(existsSync(join(alone.cwd, "inside.txt"))).toBe(false);
+    expect(entries(alone.created.file).filter(({ type }) => type === "permission").map(({ by }) => by))
+      .toEqual(["floor", "floor", "after_floor", "after_floor"]);
+    const notice = lastFloorNotice(peekSessionFile(alone.created.file).entries);
+    expect(notice).toContain("Tesota's floor refused 2 calls; that shows they didn't run, not what ran instead:");
+    expect(notice).toContain(`${shell} Get-Content .env: it names a secret`);
+    expect(notice).toContain("write ../cleanup.cjs: it is outside the session's folder.");
+    expect(alone.created.ledger().at(-1)?.refusals).toHaveLength(2);
+  });
+
+  test("after the floor refuses, what full access would allow is asked, so the operator decides the other route (#622)", async () => {
+    const full = session([named("Get-Content .env"), write("inside.txt"), { tool: "ls", args: {} }, "done"], "full", () => "once");
+    await full.created.prompt("go");
+    // The write is asked, and the operator's answer decides it; reading still needs no one.
+    expect(full.asked).toEqual(["write"]);
+    expect(existsSync(join(full.cwd, "inside.txt"))).toBe(true);
+    const next = session([named("Get-Content .env"), "done"], "full", () => "once");
+    await next.created.prompt("go");
+    await next.created.prompt("another request");
+    expect(next.asked).toEqual([]);
   });
 });

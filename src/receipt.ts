@@ -112,6 +112,8 @@ export interface Receipt {
   readonly clarifications?: readonly Clarification[];
   /** The subagents the run started (#525), who did what: each one's own receipt is evidence about its own branch only. */
   readonly children?: readonly ReceiptChild[];
+  /** The calls Tesota's floor refused in the request (#622): what didn't run, neither evidence nor a verdict. */
+  readonly floorRefusals?: readonly FloorRefusal[];
 }
 
 /**
@@ -129,6 +131,19 @@ export interface ReceiptChild {
   readonly verification?: "verified" | "incomplete" | "failed";
   readonly session: string;
   readonly branch?: string;
+  /** How many of its calls Tesota's floor refused (#622). */
+  readonly floorRefusals?: number;
+}
+
+/**
+ * A call Tesota's floor refused in a request (#622): the tool, what it
+ * named, cut short, and why. A refusal shows that one call didn't run, not
+ * that its effect was prevented, nor that the run broke a rule.
+ */
+export interface FloorRefusal {
+  readonly tool: string;
+  readonly subject: string;
+  readonly reason: string;
 }
 
 /** A model's check and the gate's verdict on it (`gateVerdict`). */
@@ -967,6 +982,7 @@ export function receiptSummary(receipt: Receipt): ReceiptSummary {
     flags: grouped(of("decide")), limits: grouped(of("gap")), opinions: grouped(of("opinion")),
     context: [...(receipt.clarifications?.length ?? 0) === 0 ? [] : [plural(receipt.clarifications?.length ?? 0, "answer", "answers")],
       ...(receipt.children?.length ?? 0) === 0 ? [] : [plural(receipt.children?.length ?? 0, "subagent", "subagents")],
+      ...(receipt.floorRefusals?.length ?? 0) === 0 ? [] : [`${plural(receipt.floorRefusals?.length ?? 0, "call", "calls")} the floor refused`],
       ...inherited === 0 ? [] : [`${plural(inherited, "file", "files")} already uncommitted, not this request's`]].join(" · "),
   };
 }
@@ -1001,7 +1017,8 @@ export function renderReceipt(receipt: Receipt): string {
     ...summary.methods.map(({ glyph, method, text }) => `${glyph} ${method.padEnd(width)}${text}`),
     ...found.length === 0 ? [] : ["", ...found],
     ...summary.opinions.length === 0 ? [] : ["", OPINIONS, ...groups(summary.opinions)],
-    "", "Details", ...receiptDetailLines(receipt), ...receiptClarificationLines(receipt), ...receiptChildLines(receipt)].join("\n");
+    "", "Details", ...receiptDetailLines(receipt), ...receiptClarificationLines(receipt), ...receiptChildLines(receipt),
+    ...receiptRefusalLines(receipt)].join("\n");
 }
 
 /** Each subagent the run started (#525), in one line; their ends are neither this receipt's evidence nor acceptance. */
@@ -1009,7 +1026,21 @@ function childLines(receipt: Pick<Receipt, "children">): string[] {
   return (receipt.children ?? []).map((child) =>
     `${child.description}: ${child.outcome}${child.verification === undefined ? "" : `, ${child.verification}`}`
     + `${!child.writes ? ", read only" : child.branch === undefined ? ", left no change" : `, on branch ${child.branch}`}`
+    + `${child.floorRefusals === undefined ? "" : `, ${plural(child.floorRefusals, "call", "calls")} the floor refused`}`
     + `${child.model === undefined ? "" : ` · ${child.model}`}`);
+}
+
+/** Each call Tesota's floor refused (#622), by tool and why, without what it named, which may be a secret's path. */
+function refusalLines(receipt: Pick<Receipt, "floorRefusals">): string[] {
+  return (receipt.floorRefusals ?? []).map(({ tool, reason }) => `${tool}: ${reason.replace(/^Tesota never allows this: /u, "")}`);
+}
+
+const refusalsHeading = "Refused by Tesota's floor (these calls didn't run; that says nothing of what ran instead)";
+
+/** The floor's refusals as the receipt lists them, apart from its findings and its verdict. */
+export function receiptRefusalLines(receipt: Pick<Receipt, "floorRefusals">): string[] {
+  const lines = refusalLines(receipt);
+  return lines.length === 0 ? [] : ["", refusalsHeading, ...lines.map((line) => `- ${line}`)];
 }
 
 const childrenHeading = "Subagents (each one's receipt covers its own branch, not this change)";
@@ -1044,6 +1075,7 @@ export function renderReceiptMessage(receipt: Receipt): string {
   const fence = "`".repeat(Math.max(3, ...[...details.matchAll(/`+/gu)].map(([run]) => run.length + 1)));
   const clarifications = receiptClarificationLines(receipt);
   const children = childLines(receipt);
+  const refusals = refusalLines(receipt);
   return ["## Tesota receipt", `**${inline(summary.counts)}**  \n${ACCEPTANCE}`,
     summary.methods.map(({ glyph, method, text }) => `- ${glyph} **${method}** — ${inline(text)}`).join("\n"),
     ...found.length === 0 ? [] : [groups(found)],
@@ -1051,6 +1083,7 @@ export function renderReceiptMessage(receipt: Receipt): string {
     `**Details**\n\n${fence}text\n${details}\n${fence}`,
     ...clarifications.length === 0 ? [] : [clarifications.map((line) => `> ${markdownText(line)}`).join("\n")],
     ...children.length === 0 ? [] : [[markdownText(childrenHeading), ...children.map((line) => `- ${markdownText(line)}`)].join("\n")],
+    ...refusals.length === 0 ? [] : [[markdownText(refusalsHeading), ...refusals.map((line) => `- ${markdownText(line)}`)].join("\n")],
   ].join("\n\n");
 }
 

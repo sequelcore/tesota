@@ -5,7 +5,7 @@ import { terminalText } from "./terminal-text.js";
 import type { SentBack } from "./gate.js";
 import type { LedgerRow } from "./operations.js";
 import { ACCEPTANCE, commandFinding, contractFinding, DETAILS, type Finding, isReceipt, methodWidth, modelFinding, OPINIONS, proofFinding,
-  type Receipt, receiptChildLines, receiptClarificationLines, receiptDetailLines, receiptSummary, type SummaryGroup } from "./receipt.js";
+  type Receipt, receiptChildLines, receiptClarificationLines, receiptRefusalLines, receiptDetailLines, receiptSummary, type SummaryGroup } from "./receipt.js";
 
 /** How the shell asks a message to be drawn: expanded or not, and how far in. */
 type RenderOptions = Parameters<MessageRenderer>[1];
@@ -135,7 +135,7 @@ function receiptCard(theme: Theme, receipt: Receipt, options: RenderOptions): Co
   const summary = receiptSummary(receipt);
   const method = methodWidth(summary.methods);
   const opinions = options.expanded ? summary.opinions : summary.opinions.filter(({ quiet }) => quiet !== true);
-  const context = [...receiptClarificationLines(receipt), ...receiptChildLines(receipt)];
+  const context = [...receiptClarificationLines(receipt), ...receiptChildLines(receipt), ...receiptRefusalLines(receipt)];
   const dim = (lines: readonly string[], width: number): string[] =>
     lines.flatMap((line) => hang(terminalText(line), width, line.length - line.trimStart().length + 2)).map((row) => theme.fg("dim", row));
   return card(theme, options, (width) => {

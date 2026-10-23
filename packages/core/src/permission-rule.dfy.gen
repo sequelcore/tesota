@@ -50,6 +50,25 @@ lemma decide_ensures(floor: bool, mode: Mode, access: Access, rule: RuleVerdict,
 {
 }
 
+function afterRefusal(decision: Decision, access: Access, refused: bool, present: bool): Decision
+{
+  if ((!(refused) || (!decision.allow?)) || access.read?) then
+    decision
+  else
+    if present then
+      Decision.ask
+    else
+      Decision.deny
+}
+
+lemma afterRefusal_ensures(decision: Decision, access: Access, refused: bool, present: bool)
+  ensures (!(refused) ==> (afterRefusal(decision, access, refused, present) == decision))
+  ensures (refused ==> decision.allow? ==> (!access.read?) ==> (afterRefusal(decision, access, refused, present) == (if present then Decision.ask else Decision.deny)))
+  ensures (refused ==> !((decision.allow? && (!access.read?))) ==> (afterRefusal(decision, access, refused, present) == decision))
+  ensures (!(present) ==> (!decision.ask?) ==> (!afterRefusal(decision, access, refused, present).ask?))
+{
+}
+
 method strongest(matched: seq<RuleVerdict>) returns (res: RuleVerdict)
   ensures (res.deny? <==> exists k: nat :: ((k < |matched|) && matched[k].deny?))
   ensures (res.ask? <==> (!(exists k: nat :: ((k < |matched|) && matched[k].deny?)) && exists k: nat :: ((k < |matched|) && matched[k].ask?)))
