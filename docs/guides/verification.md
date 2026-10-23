@@ -125,7 +125,7 @@ folders below, and runs the commands it checks itself with:
 
 | Project | Commands |
 | --- | --- |
-| JavaScript or TypeScript | The `check` script, or else `typecheck`, `lint` and `test`, with the package manager the lockfile names |
+| JavaScript or TypeScript | The `check` script, or else `typecheck`, `lint` and `test`, with the package manager `package.json`'s `packageManager` field names, else the lockfile's, else the first of npm, Bun, pnpm and Yarn on the `PATH` |
 | Gradle | `check`, through `./gradlew` when present |
 | Maven | `verify`, through `./mvnw` when present |
 | Cargo | `cargo test` |

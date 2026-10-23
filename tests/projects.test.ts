@@ -1,16 +1,33 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { below, builtIn, holds, owner, pinnedIn } from "../src/verification/project-rule.js";
-import { findProjects, inFolder, owningProjects, suggestChecks } from "../src/projects.js";
+import { findProjects, inFolder, owningProjects, packageTest, suggestChecks } from "../src/projects.js";
 
 /**
  * Projects found at the root or in folders below it (#318), and the checks
  * suggested for each, run from its own folder.
  */
 const roots: string[] = [];
-afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
+afterEach(async () => {
+  vi.unstubAllEnvs();
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
+
+/** A `PATH` holding only these programs, so a package without a lockfile does not depend on the machine's (#576). */
+async function onPath(...programs: string[]): Promise<void> {
+  const bin = await mkdtemp(join(tmpdir(), "tesota-path-"));
+  roots.push(bin);
+  for (const program of programs) {
+    if (process.platform === "win32") await writeFile(join(bin, `${program}.cmd`), "@echo off\r\n");
+    else await writeFile(join(bin, program), "#!/bin/sh\n", { mode: 0o755 });
+  }
+  vi.stubEnv("PATH", bin);
+  if (process.platform === "win32") vi.stubEnv("PATHEXT", ".COM;.EXE;.BAT;.CMD");
+}
+
+beforeEach(async () => { await onPath("npm"); });
 
 async function repository(files: Record<string, string>): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "tesota-projects-"));
@@ -30,6 +47,32 @@ function commands(root: string): string[] {
 it("reads a package.json that begins with a byte-order mark, as Windows tools may write one (#470)", async () => {
     const root = await repository({ "package.json": `\uFEFF${JSON.stringify({ scripts: { test: "node --test" } })}`, "bun.lock": "" });
     expect(commands(root)).toEqual(["bun run test"]);
+});
+
+it("runs a package without a lockfile with the package manager its packageManager field names (#576)", async () => {
+  const scripts = { test: "bun test" };
+  const bun = await repository({ "package.json": JSON.stringify({ packageManager: "bun@1.4.2", scripts }) });
+  expect(commands(bun)).toEqual(["bun run test"]);
+  expect(packageTest(bun, "")).toEqual({ script: "bun test", command: "bun run test" });
+  expect(commands(await repository({ "package.json": JSON.stringify({ packageManager: "pnpm@9.1.0+sha512.abc", scripts }) })))
+    .toEqual(["pnpm run test"]);
+  // A field naming no package manager Tesota knows says nothing; the lockfile does.
+  expect(commands(await repository({ "package.json": JSON.stringify({ packageManager: "deno@2", scripts }), "yarn.lock": "" })))
+    .toEqual(["yarn run test"]);
+});
+
+it("runs a package without a lockfile or packageManager field with a runner on the PATH (#576)", async () => {
+  const root = await repository({ "package.json": JSON.stringify({ scripts: { test: "bun test" } }) });
+  expect(commands(root)).toEqual(["npm run test"]);
+  expect(packageTest(root, "")).toEqual({ script: "bun test", command: "npm run test --" });
+  await onPath("bun");
+  expect(commands(root)).toEqual(["bun run test"]);
+  expect(packageTest(root, "")).toEqual({ script: "bun test", command: "bun run test" });
+  await onPath("yarn", "pnpm");
+  expect(commands(root)).toEqual(["pnpm run test"]);
+  // With no runner found, the command names npm, and fails as the operator's own would.
+  await onPath();
+  expect(commands(root)).toEqual(["npm run test"]);
 });
 
 it("suggests a root Gradle project's check, through its wrapper when it has one", async () => {
