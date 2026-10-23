@@ -1,4 +1,4 @@
-import { join, sep } from "node:path";
+﻿import { join, sep } from "node:path";
 import type { ContextUsage, FooterData, Theme } from "../src/contract.js";
 import { shellTheme } from "../src/theme.js";
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
@@ -58,7 +58,7 @@ it("says the run waits for you while the shell asks you a question, and does not
 
 it("names the gate's step and what its round found so far", () => {
   expect(words({ step: "proving", path: "src/clamp.ts", startedAt: 0, tally: { proved: 0, notProved: 0 } }))
-    .toBe("◐ proving src/clamp.ts · 0s");
+    .toBe("◐ proving · 0s");
   expect(words({ step: "testing", startedAt: 0, tally: { proved: 2, notProved: 0 } })).toBe("◐ testing… · 0s · 2 proved");
   expect(words({ step: "measuring", startedAt: 0, tally: { proved: 1, notProved: 0, tests: "pass" } }))
     .toBe("◐ measuring contracts… · 0s · 1 proved · tests pass");
@@ -178,19 +178,19 @@ function footer(progress: GateProgress, statuses: Record<string, string> = {}, u
   return { view, renders: () => renders, rows: (width: number) => view.render(width).map(stripTerminalSequences) };
 }
 
-it("shows the proving file and elapsed time even when the verifier produces no output", () => {
+it("shows the proving step and elapsed time, not the file the status line names (#590), even when the verifier produces no output", () => {
   vi.useFakeTimers({ toFake: ["performance", "setInterval", "clearInterval"] });
   const progress = new GateProgress();
   const { view, rows, renders } = footer(progress);
   try {
     progress.publish({ step: "proving", path: "src/lib/rules.ts", startedAt: 0, tally: { proved: 0, notProved: 0 } });
-    expect(rows(120)[1]).toMatch(/^ ◐ proving src\/lib\/rules.ts · 0s +\S.* · ctx 5%$/u);
+    expect(rows(120)[1]).toMatch(/^ ◐ proving · 0s +\S.* · ctx 5%$/u);
     vi.advanceTimersByTime(59_000);
-    expect(rows(120)[1]).toMatch(/^ ◐ proving src\/lib\/rules.ts · 59s +\S.* · ctx 5%$/u);
+    expect(rows(120)[1]).toMatch(/^ ◐ proving · 59s +\S.* · ctx 5%$/u);
     vi.advanceTimersByTime(1_000);
-    expect(rows(120)[1]).toMatch(/^ ◐ proving src\/lib\/rules.ts · 1m 00s +\S.* · ctx 5%$/u);
+    expect(rows(120)[1]).toMatch(/^ ◐ proving · 1m 00s +\S.* · ctx 5%$/u);
     vi.advanceTimersByTime(40_000);
-    expect(rows(120)[1]).toMatch(/^ ◐ proving src\/lib\/rules.ts · 1m 40s +\S.* · ctx 5%$/u);
+    expect(rows(120)[1]).toMatch(/^ ◐ proving · 1m 40s +\S.* · ctx 5%$/u);
     expect(renders()).toBe(101);
   } finally {
     view.dispose();
@@ -211,9 +211,9 @@ it("times each operation from the gate's start, keeps tally updates continuous, 
     expect(rows(120)[1]).toContain("◐ testing… · 1m 05s · 2 proved");
     progress.publish({ step: "proving", path: "src/first.ts", startedAt: performance.now(), tally: { proved: 2, notProved: 0 } });
     vi.advanceTimersByTime(3_000);
-    expect(rows(120)[1]).toContain("◐ proving src/first.ts · 3s");
+    expect(rows(120)[1]).toContain("◐ proving · 3s");
     progress.publish({ step: "proving", path: "src/second.ts", startedAt: performance.now(), tally: { proved: 3, notProved: 0 } });
-    expect(rows(120)[1]).toContain("◐ proving src/second.ts · 0s");
+    expect(rows(120)[1]).toContain("◐ proving · 0s");
     progress.publish({ step: "measuring", startedAt: performance.now(), tally: { proved: 3, notProved: 0 } });
     vi.advanceTimersByTime(61_000);
     expect(rows(120)[1]).toContain("◐ measuring contracts… · 1m 01s");
@@ -239,7 +239,7 @@ it("times each operation from the gate's start, keeps tally updates continuous, 
   }
 });
 
-it("shortens a long proof path before losing time, and drops time before the step name", () => {
+it("keeps the step and its time at a width that fits, and drops time before the step name, whatever the file (#590)", () => {
   vi.useFakeTimers({ toFake: ["performance", "setInterval", "clearInterval"] });
   const progress = new GateProgress();
   progress.publish({ step: "proving", path: `api/${"very-long-folder/".repeat(12)}rules.ts`, startedAt: 0,
@@ -247,8 +247,9 @@ it("shortens a long proof path before losing time, and drops time before the ste
   const { view, rows } = footer(progress);
   try {
     vi.advanceTimersByTime(100_000);
-    expect(rows(80)[1]).toContain("◐ proving rules.ts · 1m 40s");
-    expect(rows(30)[1]).toMatch(/^ ◐ proving +ctx 5%$/u);
+    expect(rows(80)[1]).toContain("◐ proving · 1m 40s");
+    expect(rows(30)[1]).toMatch(/^ ◐ proving · 1m 40s +ctx 5%$/u);
+    expect(rows(22)[1]).toMatch(/^ ◐ proving +ctx 5%$/u);
     for (const width of [120, 80, 60, 40, 30, 20, 12, 2, 1]) {
       for (const row of rows(width)) expect(visibleWidth(row)).toBeLessThanOrEqual(width);
     }
@@ -278,7 +279,7 @@ it("follows the gate as it publishes, and stops when disposed", () => {
   const { view, renders, rows } = footer(progress);
   progress.publish({ step: "proving", path: "src/clamp.ts", startedAt: performance.now(), tally: { proved: 1, notProved: 0 } });
   expect(renders()).toBe(1);
-  expect(rows(120)[1]).toMatch(/^ ◐ proving src\/clamp.ts · 0s · 1 proved +\S.* · ctx 5%$/u);
+  expect(rows(120)[1]).toMatch(/^ ◐ proving · 0s · 1 proved +\S.* · ctx 5%$/u);
   view.dispose();
   progress.reset();
   expect(renders()).toBe(1);

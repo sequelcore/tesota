@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { posix, sep } from "node:path";
+import { sep } from "node:path";
 import { type ContextUsage, type FooterData, QUESTION_STATUS, type Theme, type ThemeColor } from "./contract.js";
 import { type Component, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { GateProgress, GateStatus, Tally } from "./gate.js";
@@ -159,9 +159,8 @@ export function evidenceParts(status: GateStatus, now: number = performance.now(
   if (status.step === "sent_back") return [workingHeads.sent_back, ...tallyParts(status.tally)];
   const { minutes, seconds } = elapsedTime(Math.max(0, Math.floor(now - status.startedAt)));
   const elapsed = minutes === 0 ? `${seconds}s` : `${minutes}m ${String(seconds).padStart(2, "0")}s`;
-  const head = status.step === "proving"
-    ? part(`◐ proving ${status.path}`, `◐ proving ${posix.basename(status.path)}`, "◐ proving", "accent")
-    : workingHeads[status.step];
+  // The status line beside the orb names the file or command running (#590); the footer keeps the step, its timer and the tally.
+  const head = status.step === "proving" ? part("◐ proving", "◐ proving", "◐ proving", "accent") : workingHeads[status.step];
   return [part(`${head.full}${SEPARATOR}${elapsed}`, `${head.short}${SEPARATOR}${elapsed}`, head.glyphs, head.color),
     ...tallyParts(status.tally)];
 }
