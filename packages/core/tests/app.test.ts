@@ -1,5 +1,5 @@
 import {
-  createModels, fauxProvider, InMemoryCredentialStore, type MutableModels, type OAuthCredential,
+  createModels, fauxAssistantMessage, fauxProvider, InMemoryCredentialStore, type MutableModels, type OAuthCredential,
   type ProviderAuthInteraction,
 } from "@earendil-works/pi-ai";
 import { describe, expect, test } from "bun:test";
@@ -52,8 +52,10 @@ function scripted(replies: readonly ScriptStep[]): { models: MutableModels; cred
 }
 
 /** The app in a temporary folder, its settings and sessions there too, once it has drawn its first frame. */
-async function app(replies: readonly ScriptStep[] = [], { repository = false, mcp, projectMcp, skills = {}, served, model, claudeCode }:
-  { repository?: boolean; mcp?: object; projectMcp?: object; skills?: Record<string, string>;
+async function app(replies: readonly ScriptStep[] = [], { repository = false, earlier, mcp, projectMcp, skills = {}, served, model, claudeCode }:
+  { repository?: boolean;
+    /** An earlier session of the folder that worked in its checkout, asked this and answered "earlier answer" (#595). */
+    earlier?: string; mcp?: object; projectMcp?: object; skills?: Record<string, string>;
     /** Signed in to OpenAI with ChatGPT, which serves these models (#566), or whose list cannot be fetched. */
     served?: readonly string[] | "offline"; model?: string;
     /** Claude through Claude Code (#546), signed in there or not. */
@@ -85,6 +87,13 @@ async function app(replies: readonly ScriptStep[] = [], { repository = false, mc
   for (const [name, content] of Object.entries(skills)) {
     mkdirSync(join(cwd, ".agents", "skills", name), { recursive: true });
     writeFileSync(join(cwd, ".agents", "skills", name, "SKILL.md"), content);
+  }
+  if (earlier !== undefined) {
+    const at = new Date(0).toISOString();
+    const header = { type: "session", format: "tesota-session", version: 6, id: "earlier", cwd, createdAt: at, checkout: cwd };
+    writeFileSync(join(sessions, "earlier.jsonl"), [header,
+      { type: "request", run: 1, text: earlier, origin: "interactive", at, base: { units: [] } },
+      { type: "assistant", run: 1, message: fauxAssistantMessage("earlier answer") }].map((line) => JSON.stringify(line)).join("\n") + "\n");
   }
   const running = runApp({ cwd, terminal, models, credentials, settingsPath, sessions }).finally(signOut);
   await terminal.until("tesota-core");
@@ -379,6 +388,19 @@ describe("tesota-core", () => {
     terminal.type(enter);
     await terminal.until("a draft for the first");
     terminal.type("\x03");
+    send(terminal, "/quit");
+    await running;
+  });
+
+  test("/resume of an earlier session of the folder's checkout takes the checkout from the shell's unused session (#595)", async () => {
+    const { terminal, sessions, running } = await app([], { earlier: "the earlier request" });
+    send(terminal, "/resume");
+    await terminal.until("the earlier request");
+    terminal.type(enter);
+    const screen = await terminal.until("earlier answer");
+    expect(screen).not.toContain("Another session is working");
+    // The shell's own session was never asked anything, so it is gone: only the earlier one remains.
+    expect(readdirSync(sessions).filter((name) => name.endsWith(".jsonl"))).toEqual(["earlier.jsonl"]);
     send(terminal, "/quit");
     await running;
   });

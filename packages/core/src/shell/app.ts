@@ -1,6 +1,6 @@
 import type { Api, AuthInteraction, CredentialStore, Model, ModelThinkingLevel, MutableModels } from "@earendil-works/pi-ai";
 import { getTerminalColorMode, ProcessTerminal, type Terminal } from "@earendil-works/pi-tui";
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, rmSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { tesotaHome } from "../../../../src/home.ts";
 import { provideHost } from "../../../../src/host.ts";
@@ -16,6 +16,7 @@ import type { McpServers, startMcp } from "../mcp.ts";
 import { readMcpConfig } from "../mcp-config.ts";
 import { loadRules } from "../permissions.ts";
 import { createSession, type EngineSession, openSession, sessionsFolder, type Verifier } from "../session.ts";
+import { checkoutRoot } from "../workspace.ts";
 import { anyHooks, type Hooks, joinHooks } from "../hooks.ts";
 import { peekSessionFile } from "../session-file.ts";
 import { readStandards } from "../standards.ts";
@@ -264,9 +265,10 @@ export async function runApp(options: AppOptions): Promise<void> {
   /**
    * Closes `gone`: the questions it held refused, so its run can stop, its
    * file let go, its worktree removed when unchanged, or named when it holds
-   * work. Closing it again while it closes does nothing.
+   * work. Closing it again while it closes does nothing. Another session is
+   * shown in its place, unless the caller shows one next (`replace` false).
    */
-  const close = async (gone: Live): Promise<void> => {
+  const close = async (gone: Live, replace = true): Promise<void> => {
     const at = lives.indexOf(gone);
     if (at < 0) return;
     lives.splice(at, 1);
@@ -275,8 +277,26 @@ export async function runApp(options: AppOptions): Promise<void> {
     for (const { refuse } of gone.waiting.splice(0)) refuse();
     await gone.session.dispose();
     const kept = gone.session.kept();
-    if (gone === attached) await attach(lives[0] ?? live((made) => createSession({ cwd: options.cwd, folder, ...sessionOptions(made) })));
+    if (gone === attached && replace) await attach(lives[0] ?? live((made) => createSession({ cwd: options.cwd, folder, ...sessionOptions(made) })));
     if (kept !== undefined) shell.note(kept, "warning");
+  };
+  /**
+   * Opens the session in `picked` and shows it (#595). `holder`, the session
+   * that holds its checkout, is closed first: kept resumable, or deleted if it
+   * was never asked anything.
+   */
+  const resumeHere = async (picked: string, holder?: Live): Promise<void> => {
+    try {
+      if (holder !== undefined && lives.includes(holder)) {
+        const asked = firstRequest(holder.session.file) !== undefined;
+        await close(holder, false);
+        if (!asked) for (const file of [holder.session.file, holder.session.file.replace(/\.jsonl$/u, ".lock")]) rmSync(file, { force: true });
+      }
+      await attach(live((made) => openSession(picked, sessionOptions(made))));
+    } catch (error) {
+      shell.note(error instanceof Error ? error.message : String(error), "warning");
+      if (!lives.includes(attached)) await attach(lives[0] ?? live((made) => createSession({ cwd: options.cwd, folder, ...sessionOptions(made) })));
+    }
   };
   attached = live((made) => createSession({ cwd: options.cwd, folder, ...sessionOptions(made) }));
   showStatuses();
@@ -489,11 +509,22 @@ export async function runApp(options: AppOptions): Promise<void> {
       const picked = await shell.pick("Resume", asked.map(({ file, request }) => ({ value: file, label: request,
         description: basename(file).slice(0, 19) })));
       if (picked === undefined) return;
-      try {
-        await attach(live((made) => openSession(picked, sessionOptions(made))));
-      } catch (error) {
-        shell.note(error instanceof Error ? error.message : String(error), "warning");
-      }
+      const recorded = peekSessionFile(picked).header;
+      const holder = recorded.worktree !== undefined ? undefined : lives.find((each) => each.session.workspace.worktree === undefined
+        && sameFolder(checkoutRoot(each.session.workspace.cwd), checkoutRoot(recorded.cwd)));
+      if (holder === undefined) { await resumeHere(picked); return; }
+      // The session that holds the checkout hands it over once it has no running work (#595).
+      const named = `“${firstLine(holder.request)}”`;
+      if (holder.state === "idle" || holder.state === "ended") { await resumeHere(picked, holder); return; }
+      const wait = await shell.pick(`${named} is running in ${recorded.cwd}, which this session needs`,
+        [{ value: "wait", label: "Resume when it is idle" }, { value: "cancel", label: "Cancel" }]);
+      if (wait !== "wait") return;
+      shell.note(`Will resume the session when ${named} ends.`);
+      const stop = holder.session.subscribe((event) => {
+        if (event.type !== "ended") return;
+        stop();
+        void resumeHere(picked, holder);
+      });
     } },
     "/agents": { description: "Open the sessions dashboard", run: () => { agents(); return Promise.resolve(); } },
     "/settings": { description: "Change terminal mode and thinking", run: async () => {
@@ -585,6 +616,9 @@ interface Live {
   pendingQuestions: number;
   unsubscribe: () => void;
 }
+
+/** Whether two folders are the same, as the platform compares names. */
+const sameFolder = (a: string, b: string): boolean => process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
 
 const firstLine = (text: string | undefined): string => (text ?? "").split("\n")[0]?.trim() || "new session";
 
