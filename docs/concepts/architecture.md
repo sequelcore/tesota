@@ -62,7 +62,12 @@ call's repair includes the saved end of its output and the full output's
 path beside the session file.
 
 **The request ledger.** The request, amendments and submitted answers to
-the agent's questions are kept as given, in their recorded order.
+the agent's questions are kept as given, in their recorded order. Returning
+pending input to the editor records its withdrawal without erasing it;
+withdrawn amendments are excluded from verification's request input.
+The loop owns the pending queue; the shell reads it and is notified when
+it changes. Taking and withdrawing remove entries synchronously, so an
+entry returned to the editor cannot also be delivered.
 When the conversation nears the context window, compaction summarizes the
 older part, keeps the recent part word for word, and puts the ledger back
 at the top. Verification always sees what you actually asked.

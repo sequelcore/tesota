@@ -33,7 +33,9 @@ session**, or **No**. Shift+Tab switches to full access or read only;
 
 While the agent works, the indicator says `Working…`. Press Esc to stop it.
 Type and press Enter to steer the run; Alt+Enter queues a follow-up for
-when it ends.
+when it ends. Both stay visible above the input until taken. Alt+Up (Alt+Q
+on Windows) returns pending messages to the input to edit or withdraw;
+stopping restores them too ([Commands and keys](../reference/commands.md#keys)).
 
 ## 3. Watch Tesota verify
 

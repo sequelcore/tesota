@@ -352,7 +352,7 @@ describe("recovery", () => {
     const cwd = folder();
     const child = join(sessions, "child.jsonl");
     const base = { units: [] };
-    const header = (id: string, extra: object) => JSON.stringify({ type: "session", format: "tesota-session", version: 5, id, cwd,
+    const header = (id: string, extra: object) => JSON.stringify({ type: "session", format: "tesota-session", version: 6, id, cwd,
       createdAt: new Date(0).toISOString(), ...extra });
     writeFileSync(child, [header("child", { parent: { session: "parent", job: "j1", depth: 1 } }),
       JSON.stringify({ type: "request", run: 1, text: "work", origin: "rpc", at: new Date(0).toISOString(), base }), ""].join("\n"));

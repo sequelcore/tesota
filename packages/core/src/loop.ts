@@ -170,6 +170,8 @@ export type HistoryMessage = Message | CustomMessage;
  */
 export type SessionEvent =
   | { readonly type: "message"; readonly message: HistoryMessage }
+  /** The loop's pending input changed; read it with `pendingMessages`. */
+  | { readonly type: "pending" }
   | { readonly type: "reply"; readonly partial: AssistantMessage }
   | { readonly type: "call"; readonly call: ToolCall }
   | { readonly type: "state"; readonly state: "working" | "settling" }
@@ -186,6 +188,10 @@ export type SessionEvent =
 export interface LoopSession extends Session {
   /** The conversation in order, as the model and the shell see it. */
   history(): readonly HistoryMessage[];
+  /** Input not yet taken by the model, in arrival order. */
+  pendingMessages(): readonly PendingMessage[];
+  /** Atomically withdraws input the loop has not taken; delivered input is never returned. */
+  withdrawPendingMessages(): readonly PendingMessage[];
   /** Tells `listener` what happens from now on; the returned function stops it. */
   subscribe(listener: (event: SessionEvent) => void): () => void;
   /** Compacts the conversation between runs (#451); rejects, saying why, while a run goes or when it cannot. */
@@ -475,10 +481,13 @@ const thinkingOf = (model: Model<Api>, level: ModelThinkingLevel | undefined): M
   model.reasoning ? level ?? "off" : "off";
 
 /** An amendment waiting to enter the conversation. */
-interface Queued {
+export interface PendingMessage {
   readonly id: number;
   readonly behavior: Behavior;
   readonly text: string;
+}
+
+interface Queued extends PendingMessage {
   readonly order: number;
   /** The skill it starts by name (#540), whose instructions enter the conversation after it. */
   readonly skill?: StartedSkill;
@@ -712,6 +721,7 @@ export function createLoop(options: LoopOptions): LoopSession {
   function deliver(run: number, behaviors: readonly Behavior[]): boolean {
     const due = queue.filter((amendment) => behaviors.includes(amendment.behavior));
     queue = queue.filter((amendment) => !behaviors.includes(amendment.behavior));
+    if (due.length > 0) emit({ type: "pending" });
     for (const { id, text, order, skill } of due) {
       writer.append({ type: "delivered", run, amendment: id });
       const delivered: HistoryMessage = { role: "user", content: text, timestamp: Date.now() };
@@ -1155,6 +1165,7 @@ export function createLoop(options: LoopOptions): LoopSession {
     writer.append({ type: "amendment", run, id, behavior, origin, text, at: new Date().toISOString(), ...skill === undefined ? {} : { skill } });
     writer.sync();
     queue.push({ id, behavior, text, order: nextInputOrder++, ...skill === undefined ? {} : { skill } });
+    emit({ type: "pending" });
     changed();
     const handlers = () => host.input({ type: "input", text, source: origin, streamingBehavior: behavior }, signal);
     if (settling) { waiting.push(handlers); return; }
@@ -1248,6 +1259,16 @@ export function createLoop(options: LoopOptions): LoopSession {
     skills: () => available.filter((skill) => startable(skill, "operator")),
     messages: () => history.map(conversationMessage),
     history: () => history,
+    pendingMessages: () => queue.map(({ id, behavior, text }) => ({ id, behavior, text })),
+    withdrawPendingMessages: () => {
+      const withdrawn = queue;
+      for (const { id } of withdrawn) writer.append({ type: "withdrawn", run: runs, amendment: id });
+      if (withdrawn.length > 0) writer.sync();
+      queue = [];
+      emit({ type: "pending" });
+      changed();
+      return withdrawn.map(({ id, behavior, text }) => ({ id, behavior, text }));
+    },
     subscribe: (listener) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
     lastAssistantText: () => {
       const last = history.findLast((message): message is AssistantMessage => message.role === "assistant");

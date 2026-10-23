@@ -17,10 +17,11 @@ import type { PromptOptions, RunOutcome, SessionOutcome } from "../../../src/con
  * (#520) records submitted native questions as attributed request input.
  * Version 4 (#541) records each call's declared access and keeps an interrupted call's output.
  * Version 5 (#525) records the jobs a run starts and how each ended, and a
- * child session names its parent in its header.
+ * child session names its parent in its header. Version 6 (#606) records
+ * withdrawal of pending amendments without erasing the original input.
  */
 export const sessionFormat = "tesota-session";
-export const sessionVersion = 5;
+export const sessionVersion = 6;
 
 export interface SessionHeader {
   readonly type: "session";
@@ -67,6 +68,8 @@ export type SessionEntry =
   | { readonly type: "clarification"; readonly run: number; readonly clarification: Clarification }
   /** An amendment entered the conversation. */
   | { readonly type: "delivered"; readonly run: number; readonly amendment: number }
+  /** Pending input returned to the operator, no longer part of the request. */
+  | { readonly type: "withdrawn"; readonly run: number; readonly amendment: number }
   | { readonly type: "assistant"; readonly run: number; readonly message: AssistantMessage }
   /** A call is about to run; recorded, and synced, first. */
   | { readonly type: "call_intent"; readonly run: number; readonly callId: string; readonly access: "read" | "write" | "run" }
@@ -158,6 +161,7 @@ const shapes: Record<SessionEntry["type"], (entry: Record<string, unknown>) => b
     && isText(entry["clarification"]["callId"]) && isText(entry["clarification"]["at"])
     && Array.isArray(entry["clarification"]["questions"]) && Array.isArray(entry["clarification"]["answers"]),
   delivered: (entry) => isCount(entry["amendment"]),
+  withdrawn: (entry) => isCount(entry["amendment"]),
   assistant: (entry) => isObject(entry["message"]) && entry["message"]["role"] === "assistant" && Array.isArray(entry["message"]["content"]),
   call_intent: (entry) => isText(entry["callId"]) && ["read", "write", "run"].includes(entry["access"] as string),
   tool_result: (entry) => isObject(entry["message"]) && entry["message"]["role"] === "toolResult",
@@ -297,6 +301,10 @@ function wholeLines(path: string, bytes: Buffer): { header: SessionHeader; entri
   const take = (line: string): boolean => {
     const entry = entryAt(parsed(line), runs, entries.at(-1));
     if (entry === undefined || (entry.type === "clarification" && !linkedClarification(entry, entries))) return false;
+    if (entry.type === "withdrawn") {
+      if (!entries.some((prior) => prior.type === "amendment" && prior.run === entry.run && prior.id === entry.amendment)
+        || entries.some((prior) => (prior.type === "delivered" || prior.type === "withdrawn") && prior.amendment === entry.amendment)) return false;
+    }
     if (entry.type === "request") runs = entry.run;
     entries.push(entry);
     return true;

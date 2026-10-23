@@ -10,6 +10,7 @@ import { type Shell, startShell } from "../src/shell/shell.ts";
 import { createSurface, type Surface } from "../src/shell/surface.ts";
 import type { ClarificationQuestion } from "../../../src/clarification.ts";
 import { shellTheme } from "../../../src/theme.ts";
+import { readSessionFile } from "../src/session-file.ts";
 import type { ScriptStep } from "./engine.ts";
 import { accepts, scriptedReply } from "./scripted.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
@@ -274,19 +275,60 @@ describe("the shell", () => {
       "fullscreen", [100, 40], { tokensPerSecond: 20 });
     terminal.type("go");
     terminal.type(enter);
-    await terminal.until("Working");
+    await terminal.until("a first answer");
     terminal.type("also this");
     terminal.type(enter);
+    expect(await terminal.until("Steer (next model turn): also this")).toContain("to edit all queued messages");
     terminal.type("then that");
     // Alt+Enter, as a terminal with the kitty keyboard protocol sends it.
     terminal.type("\x1b[13;3u");
+    await terminal.until("Follow-up (when the run ends): then that");
     await settled(session);
     const screen = await terminal.until("answering both");
+    expect(screen).not.toContain("Steer (next model turn)");
+    expect(screen).not.toContain("Follow-up (when the run ends)");
     expect(screen.indexOf("also this")).toBeLessThan(screen.indexOf("answering both"));
     expect(screen.indexOf("then that")).toBeLessThan(screen.indexOf("answering both"));
     expect(session.ledger()[0]?.amendments.map(({ behavior, delivered }) => [behavior, delivered]))
       .toEqual([["steer", true], ["followUp", true]]);
   });
+
+  for (const mode of ["fullscreen", "inline"] as const) {
+    for (const action of ["edit", "abort"] as const) test(`${action} restores queued messages and the unsent draft without delivering them (${mode})`, async () => {
+      const { terminal, session } = shellOn(["a first answer that streams slowly enough to withdraw pending messages", "a new answer"],
+        mode, [100, 40], { tokensPerSecond: 20 });
+      terminal.type("go");
+      terminal.type(enter);
+      await terminal.until("a first answer");
+      terminal.type("withdraw steer");
+      terminal.type(enter);
+      await terminal.until("Steer (next model turn): withdraw steer");
+      terminal.type("withdraw follow-up");
+      terminal.type("\x1b[13;3u");
+      await terminal.until("Follow-up (when the run ends): withdraw follow-up");
+      terminal.type("unsent draft");
+      const ended = settled(session);
+      terminal.type(action === "abort" ? "\x1b" : process.platform === "win32" ? "\x1bq" : "\x1b[1;3A");
+      const restored = await terminal.untilGone("to edit all queued messages");
+      expect(restored).toContain("withdraw steer");
+      expect(restored).toContain("withdraw follow-up");
+      expect(restored).toContain("unsent draft");
+      await ended;
+      expect(session.history().filter((message) => message.role === "user").map((message) => message.content)).toEqual(["go"]);
+      expect(session.ledger()[0]?.amendments.map(({ delivered, withdrawn }) => [delivered, withdrawn])).toEqual([[false, true], [false, true]]);
+      expect(session.ledger()[0]?.inputs).toEqual([]);
+      expect(readSessionFile(session.file).entries.filter((entry) => entry.type === "withdrawn").map(({ amendment }) => amendment)).toEqual([1, 2]);
+      if (action === "edit") {
+        // Clearing the editor withdraws the restored text; the next request must not requeue it.
+        terminal.type("\x03");
+        terminal.type("new request");
+      } else terminal.type(" revised");
+      terminal.type(enter);
+      await settled(session);
+      expect(session.ledger().map(({ text }) => text)).toEqual(["go", action === "edit" ? "new request"
+        : "withdraw steer\n\nwithdraw follow-up\n\nunsent draft revised"]);
+    });
+  }
 
   test("a resized terminal is drawn again, the editor and footer still at the bottom", async () => {
     const { terminal, session } = shellOn(["An answer that has to wrap when the terminal grows narrower than it is."], "fullscreen", [100, 24]);

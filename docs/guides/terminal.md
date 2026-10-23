@@ -21,7 +21,10 @@ terminal selects and copies as usual.
 - **The header:** the palo fierro, Tesota's name, the folder and its
   purpose. A click on the resting tree plays the scene again.
 - **The input:** a filled block. Enter sends; while the agent works, Enter
-  steers the run and Alt+Enter queues a follow-up.
+  steers the run and Alt+Enter queues a follow-up. Pending messages show
+  above it, labeled with when they will be delivered. Alt+Up (Alt+Q on
+  Windows) returns them to the input to edit or withdraw; stopping the run
+  restores them too. See [Commands and keys](../reference/commands.md#keys).
 - **The footer:**
   - first, what Tesota knows about the request (`● ready · tests only`,
     the gate's step and timer while it verifies, or the receipt in brief),
