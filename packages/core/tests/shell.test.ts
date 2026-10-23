@@ -492,6 +492,27 @@ describe("the shell", () => {
     expect(gate.listeners.size).toBe(0);
   });
 
+  test("while the gate verifies, its block is the conversation's last, live and expanded by ctrl+o, and gone when it ends (#591)", async () => {
+    const surface = createSurface(shellTheme("dark", "truecolor"));
+    const gate = detailOf("Proving · src/a.ts · 0:01");
+    const ledger = { block: "test-ledger", ...gate.detail };
+    surface.registerMessageRenderer("test-ledger", (message, options) => message.details === ledger
+      ? { render: () => [`LEDGER ${options.expanded ? "all" : "recent"} ${gate.state.line ?? "idle"}`], invalidate: () => undefined } : undefined);
+    const { terminal, shell } = shellOn([], "fullscreen", [100, 24], { surface });
+    surface.ui.setWorkingDetail(ledger);
+    shell.busy("working");
+    expect(await terminal.until("Working…")).not.toContain("LEDGER");
+    shell.busy("settling");
+    await terminal.until("LEDGER recent Proving · src/a.ts · 0:01");
+    gate.set("Running project check · bun run check · 6:02");
+    await terminal.until("LEDGER recent Running project check");
+    terminal.type("\x0f");
+    await terminal.until("LEDGER all Running project check");
+    shell.busy(undefined);
+    await terminal.untilGone("LEDGER");
+    expect(gate.listeners.size).toBe(0);
+  });
+
   test("nothing stays subscribed to the gate after a session switch or the shell stopping (#590)", async () => {
     const surface = createSurface(shellTheme("dark", "truecolor"));
     const gate = detailOf("Proving · src/a.ts · 0:01");

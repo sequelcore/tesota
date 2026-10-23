@@ -62,14 +62,18 @@ The run ends with Tesota's receipt:
   <img alt="A verified turn: the request, the agent's two file writes and its answer, then Tesota's receipt saying nothing needs you, the tests pass and the new test notices the change." src="../assets/tesota-turn-dark.svg">
 </picture>
 
-- The first row says whether anything needs you: `✓ Nothing needs you`,
-  `○ Nothing needs you · 1 unverified` in amber when something is left
-  unverified, or `! 2 things need you`.
-- Then what is unverified, and one row of what holds: here, the tests pass
-  and the new test notices the change, since it fails without it. It
-  notices it by what the agent expects, so the receipt says the test was
-  added in this request.
-- Press Ctrl+O for each finding's details; again to fold them.
+- While Tesota verifies, the same block shows what it is checking and
+  how each check ended; the receipt takes its place when it's done.
+- The receipt's first row counts what needs you: `No review flags · 1
+  verification limit` in amber when something is left unverified.
+- Then one row per method, saying only what ran: here, `✓ Tested` with
+  the command and its time, and `✓ Exercised`, since the new test failed
+  on the base and passed with the change. The details say the agent added
+  that test in this request, so it checks what the agent expects.
+- Then the review flags and limits, grouped by reason, and the models'
+  opinions on their own, never counted.
+- Press Ctrl+O for the details: every path, output and assumption; again
+  to fold them.
 
 The footer keeps the receipt in brief, in the same color: `○ receipt · tests
 pass · 1 file not proved`.

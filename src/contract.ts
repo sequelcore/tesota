@@ -184,9 +184,12 @@ export interface ToolDrawing<Args = unknown, Details = unknown> {
 /**
  * What the working indicator's label says while the gate verifies (#590): `line` gives the work running at
  * `now`, on the clock of `performance.now()`, or undefined when none runs; `subscribe` calls the listener when it
- * changes and returns the function that stops it. The shell listens only while it shows the label.
+ * changes and returns the function that stops it. The shell listens only while it shows the label. `block`, when
+ * given, names the message renderer that draws the detail itself as the conversation's last block while the gate
+ * verifies (#591), its details the detail; the shell lets it go when verification ends, where the receipt follows.
  */
 export interface WorkingDetail {
+  readonly block?: string;
   line(now: number): string | undefined;
   subscribe(listener: () => void): () => void;
 }

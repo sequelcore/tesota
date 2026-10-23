@@ -3,9 +3,9 @@ import { host } from "./host.js";
 import { Box, type Component, sliceByColumn, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { terminalText } from "./terminal-text.js";
 import type { SentBack } from "./gate.js";
-import { allEvidence, commandFinding, contractFinding, type Finding, holdsWords, modelFinding, isNote, isReceipt, plainName, proofFinding, type Receipt,
-  receiptChildLines, receiptClarificationLines, receiptFindings, receiptTone, type UnitEvidence, verified } from "./receipt.js";
-import { decisions } from "./verification/verdict-rule.js";
+import type { LedgerRow } from "./operations.js";
+import { ACCEPTANCE, commandFinding, contractFinding, DETAILS, type Finding, isReceipt, methodWidth, modelFinding, OPINIONS, proofFinding,
+  type Receipt, receiptChildLines, receiptClarificationLines, receiptDetailLines, receiptSummary, type SummaryGroup } from "./receipt.js";
 
 /** How the shell asks a message to be drawn: expanded or not, and how far in. */
 type RenderOptions = Parameters<MessageRenderer>[1];
@@ -82,10 +82,6 @@ function color(finding: Finding): ThemeColor {
   return finding.standing === "gap" ? "muted" : "success";
 }
 
-/** Within a section, what most changes whether the evidence can be trusted comes first. */
-const ORDER: readonly Finding["check"][] = ["proof", "tests", "weakening", "contract", "exercise", "request", "coverage"];
-const byCheck = (a: Finding, b: Finding): number => ORDER.indexOf(a.check) - ORDER.indexOf(b.check);
-
 /** The fewest columns the text beside the labels keeps; with fewer, expanded rows wrap under the glyph instead. */
 const TEXT_COLUMNS = 30;
 
@@ -109,100 +105,74 @@ function labelWidth(findings: readonly Finding[]): number {
   return Math.max(0, ...findings.map(({ label }) => label.length)) + 2;
 }
 
-function section(theme: Theme, title: string, findings: readonly Finding[], label: number, width: number, expanded: boolean): string[] {
-  if (findings.length === 0) return [];
-  return ["", theme.fg("dim", bold(title)), ...findings.flatMap((finding) => findingRows(theme, finding, label, width, expanded))];
-}
-
 function card(theme: Theme, options: RenderOptions, draw: (width: number) => readonly string[]): Component {
   const box = new Box(options.outputPad, 1, (text) => theme.bg("customMessageBg", text));
   box.addChild(new Rows(draw));
   return box;
 }
 
-function plural(count: number, one: string, many: string): string {
-  return `${count} ${count === 1 ? one : many}`;
+/** A summary row's glyph in the color of what it says: a pass green, a failure red, a flag or a partial result amber. */
+function tinted(theme: Theme, glyph: string): string {
+  const tone: ThemeColor = glyph === "✓" ? "success" : glyph === "✗" ? "error" : glyph === "!" || glyph === "◐" || glyph === "↺" ? "warning"
+    : glyph === "◇" || glyph === "›" ? "accent" : glyph === "·" ? "dim" : "muted";
+  return theme.fg(tone, glyph);
 }
 
-const isMatch = (finding: Finding): boolean => finding.standing === "opinion" && finding.label === "Model: matches";
-
-/** An opinion only the expanded card shows: a model's agreement, or why no model listed open cases, which a card without OpenAI would always repeat. */
-const isQuiet = (finding: Finding): boolean => isMatch(finding) || (finding.standing === "opinion" && finding.label === "Not listed");
-
-/** What holds among `findings`, in one row (`holdsWords`), and the model's agreement as a note. */
-function holdsRow(theme: Theme, findings: readonly Finding[], matches: number): string {
-  return `${theme.fg("success", "✓")}  ${theme.fg("muted", holdsWords(findings).join(" · "))}` +
-    (matches === 0 ? "" : `${theme.fg("dim", " · ")}${theme.fg("accent", `◇ model: ${matches === 1 ? "matches" : `${matches} match`} the request`)}`);
+/** Groups of the summary: a glyph and title, the reason they share under it. */
+function groupRows(theme: Theme, groups: readonly SummaryGroup[], width: number): string[] {
+  return groups.flatMap(({ glyph, title, note }) => [...wrapUnder(`${tinted(theme, glyph)} ${theme.fg("text", terminalText(title))}`, width, 2),
+    ...note === "" ? [] : wrapUnder(theme.fg("muted", `  ${terminalText(note)}`), width, 2)]);
 }
 
 /**
- * The receipt as a card: the verdict first, then what needs the operator,
- * the model's notes, what is not proved, and in one row what holds. Only what
- * the checks established counts toward the verdict (`decisions`); a model's
- * opinion is a note beside it. A receipt with nothing to decide, no gap and
- * no note is two rows. Expanded, every finding shows its details and what
- * holds is listed.
+ * The receipt as the request's one block (#591), drawn from its details as
+ * the plain text is: the counts and the acceptance line, each method, what
+ * needs review and the limits grouped by reason, the models' opinions apart
+ * and never counted, then the request's context and the details. Ctrl+O
+ * expands the context and the details, where every path is.
  */
 function receiptCard(theme: Theme, receipt: Receipt, options: RenderOptions): Component {
-  const clarificationRows = (width: number): string[] => {
-    const count = receipt.clarifications?.length ?? 0;
-    if (count === 0) return [];
-    return options.expanded ? receiptClarificationLines(receipt)
-      .flatMap((line) => wrapUnder(theme.fg("dim", terminalText(line)), width, 0))
-      : wrapUnder(theme.fg("dim", `◦ ${plural(count, "request clarification", "request clarifications")} · operator input`), width, 2);
-  };
-  // The subagents it started (#525): who did what, never this receipt's evidence.
-  const childRows = (width: number): string[] => {
-    const count = receipt.children?.length ?? 0;
-    if (count === 0) return [];
-    return options.expanded ? receiptChildLines(receipt).flatMap((line) => wrapUnder(theme.fg("dim", terminalText(line)), width, 0))
-      : wrapUnder(theme.fg("dim", `◦ ${plural(count, "subagent", "subagents")} · each with its own receipt`), width, 2);
-  };
-  const inherited = allEvidence(receipt).inherited;
-  const inheritedRows = (width: number): string[] => inherited.length === 0 ? []
-    : [...wrapUnder(theme.fg("muted", `○ ${plural(inherited.length, "file", "files")} already uncommitted, not this request's`), width, 2),
-      ...options.expanded ? [...inherited.flatMap((path) => wrapUnder(theme.fg("dim", `  ${path}`), width, 2)),
-        ...wrapUnder(theme.fg("dim", "  The tests ran with them; an exercise test relying on them may be misjudged against the base."), width, 2)] : []];
-  const findings = receiptFindings(receipt).sort(byCheck);
-  const decide = findings.filter(({ standing }) => standing === "decide");
-  const opinions = findings.filter(({ standing }) => standing === "opinion");
-  const notes = opinions.filter(isNote);
-  const matches = opinions.filter(isMatch).length;
-  const gaps = findings.filter(({ standing }) => standing === "gap");
-  const holds = findings.filter(({ standing }) => standing === "holds");
-  const count = decisions(findings.map(({ standing }) => standing));
-  // Green only with no gap either: a gap is amber and counted, so the verdict never reads as wholly verified (`verdictTone`).
-  const verdict = theme.fg(receiptTone(findings), bold(count > 0 ? `! ${plural(count, "thing needs", "things need")} you`
-    : gaps.length === 0 ? "✓ Nothing needs you" : `○ Nothing needs you · ${gaps.length} unverified`));
-  const noted = notes.length === 0 ? "" : `${theme.fg("dim", " · ")}${theme.fg("accent", `◇ ${plural(notes.length, "model note", "model notes")}`)}`;
-  const label = labelWidth(findings);
-  // Each unit's base: a commit, or Tesota's snapshot of a folder in no repository, which no one else can fetch.
-  const based = ({ snapshot, base }: UnitEvidence, first: string): string =>
-    `${snapshot === true ? "Tesota's snapshot " : ""}${base?.slice(0, 12) ?? first}`;
-  const from = receipt.units === undefined ? based(receipt, "the first commit")
-    : receipt.units.filter(verified).map((unit) => `${plainName(unit.folder)} ${based(unit, "its first commit")}`).join(", ");
+  const summary = receiptSummary(receipt);
+  const method = methodWidth(summary.methods);
+  const opinions = options.expanded ? summary.opinions : summary.opinions.filter(({ quiet }) => quiet !== true);
+  const context = [...receiptClarificationLines(receipt), ...receiptChildLines(receipt)];
+  const dim = (lines: readonly string[], width: number): string[] =>
+    lines.flatMap((line) => hang(terminalText(line), width, line.length - line.trimStart().length + 2)).map((row) => theme.fg("dim", row));
   return card(theme, options, (width) => {
-    const title = spread(verdict + noted, theme.fg("customMessageLabel", bold("Tesota receipt")), width);
-    if (!options.expanded && decide.length === 0 && gaps.length === 0 && opinions.every(isQuiet)) {
-      return [title, ...inheritedRows(width), ...clarificationRows(width), ...childRows(width),
-        spread(holdsRow(theme, findings, matches), expandHint(theme, "for details"), width)];
-    }
-    const shown = options.expanded ? opinions : opinions.filter((finding) => !isQuiet(finding));
-    return [title,
-      ...inheritedRows(width),
-      ...clarificationRows(width),
-      ...childRows(width),
-      ...section(theme, "NEEDS YOU", decide, label, width, options.expanded),
-      ...section(theme, "MODEL'S OPINION, NOT A PROOF", shown, label, width, options.expanded),
-      ...section(theme, `UNVERIFIED (${gaps.length})`, gaps, label, width, options.expanded),
-      ...options.expanded ? section(theme, "VERIFIED", holds, label, width, true)
-        : holds.length + matches === 0 ? [] : ["", holdsRow(theme, findings, matches)],
-      "", ...options.expanded ? wrapUnder(theme.fg("dim", `From ${from} · Tesota ${receipt.engine}` +
-        `${receipt.model === undefined ? "" : ` · ${receipt.model}`} · check evidence, not a reviewer's acceptance`), width, 0)
-        : [expandHint(theme, "for details")]];
+    const found = groupRows(theme, [...summary.notes, ...summary.flags, ...summary.limits], width);
+    return [theme.fg("customMessageLabel", bold("Tesota receipt")),
+      ...wrapUnder(theme.fg(summary.tone, bold(summary.counts)), width, 0), theme.fg("muted", ACCEPTANCE), "",
+      ...summary.methods.flatMap(({ glyph, method: name, text }) =>
+        wrapUnder(`${tinted(theme, glyph)} ${theme.fg("text", name.padEnd(method))}${theme.fg("muted", terminalText(text))}`, width, method + 2)),
+      ...found.length === 0 ? [] : ["", ...found],
+      ...opinions.length === 0 ? [] : ["", ...wrapUnder(theme.fg("dim", bold(OPINIONS)), width, 0), ...groupRows(theme, opinions, width)],
+      "",
+      ...options.expanded ? [theme.fg("dim", bold("▾ Details")), ...dim(receiptDetailLines(receipt), width)]
+        : wrapUnder(theme.fg("dim", `▸ ${DETAILS}`), width, 2),
+      ...summary.context === "" ? [] : options.expanded ? ["", theme.fg("dim", bold("▾ Context")), ...dim(context, width)]
+        : wrapUnder(theme.fg("dim", `▸ Context · ${summary.context}`), width, 2)];
   });
 }
 
+/** What the live ledger reads: the gate's operations as rows, all of them or the latest (`GateOperations.ledger`). */
+interface Ledger { ledger(now: number, all: boolean): readonly LedgerRow[] }
+
+const isLedger = (value: unknown): value is Ledger =>
+  typeof value === "object" && value !== null && typeof Reflect.get(value, "ledger") === "function";
+
+/**
+ * The request's block while the gate verifies (#591): what runs, what ended
+ * and how, each attempt that went back folded into a row; every check when
+ * expanded. It reads the ledger each time it is drawn, so it stays live; the
+ * receipt takes its place when the run settles.
+ */
+function ledgerCard(theme: Theme, ledger: Ledger, options: RenderOptions): Component {
+  return card(theme, options, (width) => [
+    spread(theme.fg("accent", bold("Verifying")), theme.fg("customMessageLabel", bold("Tesota receipt")), width),
+    ...ledger.ledger(performance.now(), options.expanded).flatMap(({ glyph, text, depth }) =>
+      wrapUnder(`${"  ".repeat(depth)}${tinted(theme, glyph)} ${theme.fg(glyph === "›" ? "text" : "muted", terminalText(text))}`, width, 2 * depth + 2)),
+  ]);
+}
 /** What a send-back round asks the agent to fix, as findings; a weak contract names the changes to its code that still prove. */
 function sentBackFindings(sent: SentBack): Finding[] {
   if (sent.round === "proofs") return sent.proofs.map(({ path, evidence }) => proofFinding({ path, verdict: "send_back", evidence }));
@@ -253,6 +223,8 @@ function text(content: string | readonly { type: string; text?: string }[]): str
 export function registerMessages(pi: ExtensionAPI): void {
   pi.registerMessageRenderer("tesota-receipt", (message, options, theme) =>
     isReceipt(message.details) ? receiptCard(theme, message.details, options) : undefined);
+  pi.registerMessageRenderer("tesota-ledger", (message, options, theme) =>
+    isLedger(message.details) ? ledgerCard(theme, message.details, options) : undefined);
   pi.registerMessageRenderer("tesota-gate", (message, options, theme) =>
     message.details === undefined ? undefined : sentBackCard(theme, message.details as SentBack, text(message.content), options));
 }

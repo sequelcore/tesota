@@ -13,23 +13,30 @@ it("says a receipt in one word: verified when clean, failed when a check failed,
     tests: [failing] }] })).toBe("failed");
 });
 
+const methods = "- ○ **Tested** — none recorded\n- ○ **Proved** — none recorded\n- ○ **Models** — none recorded";
+
 it("makes the chat receipt readable without hiding unchecked changes or interpreting their names as Markdown", () => {
   expect(renderReceiptMessage({ ...emptyReceipt, unverified: ["src/[rule]*.ts"] })).toBe(
-    "## Tesota receipt\n\n- **not verified** — src/\\[rule\\]\\*.ts: no verifier covers it\n\n" +
-    "This is check evidence, not your acceptance.");
+    "## Tesota receipt\n\n**No review flags · 1 verification limit**  \nCheck evidence, not your acceptance.\n\n" +
+    `${methods}\n\n- ○ No proof covers 1 changed file — Not checked by anything else.\n\n` +
+    "**Details**\n\n```text\n  not verified  src/[rule]*.ts: no verifier covers it\nFrom the first commit · Tesota 0.1.0\n```");
 });
 
-it("keeps multiline names inside their evidence item instead of creating a heading or HTML", () => {
-  expect(renderReceiptMessage({ ...emptyReceipt, unverified: ["src/<rule>\n# heading.md"] })).toBe(
-    "## Tesota receipt\n\n- **not verified** — src/\\<rule\\>\n  \\# heading.md: no verifier covers it\n\n" +
-    "This is check evidence, not your acceptance.");
+it("keeps multiline names and fences inside the fenced details instead of creating a heading or HTML", () => {
+  const message = renderReceiptMessage({ ...emptyReceipt, unverified: ["src/<rule>\n# heading.md", "a```b.md"] });
+  expect(message).toContain("````text\n  not verified  src/<rule>\n# heading.md: no verifier covers it\n");
+  expect(message).toContain("  not verified  a```b.md: no verifier covers it\n");
+  expect(message.endsWith("\n````")).toBe(true);
 });
 
 it("says nothing was verified when the run stopped, and why", () => {
   const receipt = { ...emptyReceipt, stopped: "quota exhausted" };
   expect(receiptFindings(receipt)).toEqual([{ standing: "decide", check: "coverage", label: "Not verified",
     subject: "this request's changes", detail: "quota exhausted", more: [] }]);
-  expect(renderReceipt(receipt)).toBe("Tesota receipt\n  not verified  this request's changes: quota exhausted");
-  expect(renderReceiptMessage(receipt)).toBe("## Tesota receipt\n\n" +
-    "- **not verified** — this request's changes: quota exhausted\n\nThis is check evidence, not your acceptance.");
+  expect(renderReceipt(receipt)).toBe("Tesota receipt\n1 review flag · no verification limits\nCheck evidence, not your acceptance.\n\n" +
+    "○ Tested   none recorded\n○ Proved   none recorded\n○ Models   none recorded\n\n! Not verified · this request's changes\n" +
+    "  quota exhausted\n\nDetails\n  not verified  this request's changes: quota exhausted\nFrom the first commit · Tesota 0.1.0");
+  expect(renderReceiptMessage(receipt)).toBe("## Tesota receipt\n\n**1 review flag · no verification limits**  \n" +
+    `Check evidence, not your acceptance.\n\n${methods}\n\n- ! Not verified · this request's changes — quota exhausted\n\n` +
+    "**Details**\n\n```text\n  not verified  this request's changes: quota exhausted\nFrom the first commit · Tesota 0.1.0\n```");
 });

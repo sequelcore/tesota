@@ -10,7 +10,8 @@ import type { CommandRun, TestExercise } from "./test-rung.js";
 import type { Weakening } from "./verification-changes.js";
 import type { StartState, UnmeasuredPath } from "./request-fingerprint.js";
 import type { GateVerdict } from "./verification/gate-rule.js";
-import { decisions, partlyHolds, type Standing, verdictTone } from "./verification/verdict-rule.js";
+import { clock } from "./operations.js";
+import { decisions, methodStanding, partlyHolds, type Standing, verdictTone } from "./verification/verdict-rule.js";
 
 /**
  * What a run that changed files leaves the operator when it settles: each
@@ -288,7 +289,7 @@ function testLine({ command, verdict, evidence, failingTests }: Receipt["tests"]
 
 /** What was observed of a test against the base, never more: one that notices the change may still expect the wrong thing. */
 const sensitivityText: Readonly<Record<TestExercise["sensitivity"], string>> = {
-  fails_then_passes: "notices change", passes_on_base: "passes on base", unknown: "not checked   ",
+  fails_then_passes: "notices change", passes_on_base: "passes on base", unknown: "not checked  ",
 };
 
 /** Who set what a test expects: this request, when it added the test or changed it. */
@@ -438,6 +439,21 @@ export interface Finding {
   readonly subject: string;
   readonly detail: string;
   readonly more: readonly string[];
+  /** How the receipt's summary groups it with findings of the same reason (#591); without one, by its label and detail. */
+  readonly group?: FindingGroup;
+}
+
+/**
+ * A group of the summary (#591): its title, with `%` for how many of `noun`
+ * when it counts them, or else followed by the one finding's subject or the
+ * count; the note under it, the reason its findings share; and what the
+ * finding adds to the group's list of paths.
+ */
+export interface FindingGroup {
+  readonly title: string;
+  readonly noun?: readonly [string, string];
+  readonly note: string;
+  readonly item?: string;
 }
 
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
@@ -613,14 +629,16 @@ function opinionFindings(run: ClaimCheckRun | undefined, contracts: readonly Con
   if (run === undefined) return [];
   if (run.status === "not_judged") {
     return [{ standing: "opinion", check: "request", label: "Not compared", subject: "the contracts with the request",
-      detail: `ClaimCheck ${run.reason}`, more: [] }];
+      detail: `ClaimCheck ${run.reason}`, more: [],
+      group: { title: "ClaimCheck did not compare the contracts with the request", note: `ClaimCheck ${run.reason}` } }];
   }
   const by = run.restatedBy === run.comparedBy ? `${run.comparedBy} restated and compared`
     : `${run.restatedBy} restated, ${run.comparedBy} compared`;
   return contracts.flatMap(({ path, name, judgment }): Finding[] => judgment === undefined ? [] : [{ standing: "opinion",
     check: "request", label: judgment.verdict === "justified" ? "Model: matches" : "Model: partial match",
     subject: `${name} · ${path}`, detail: judgmentWords[judgment.verdict],
-    more: [judgment.explanation, `A model's opinion, not a proof: ${by}.`] }]);
+    more: [judgment.explanation, `A model's opinion, not a proof: ${by}.`],
+    group: { title: `ClaimCheck: ${judgmentWords[judgment.verdict]}`, note: "", item: `${name} · ${path}` } }]);
 }
 
 /** The results someone could expect from an open case, as one phrase: models end each with a full stop. */
@@ -632,10 +650,13 @@ function either(outcomes: readonly string[]): string {
 function openCaseFindings(listed: OpenCases | undefined): Finding[] {
   if (listed === undefined) return [];
   if (listed.status === "not_listed") {
-    return [{ standing: "opinion", check: "request", label: "Not listed", subject: "the cases the request leaves open", detail: listed.reason, more: [] }];
+    return [{ standing: "opinion", check: "request", label: "Not listed", subject: "the cases the request leaves open", detail: listed.reason, more: [],
+      group: { title: "Open cases not listed", note: listed.reason } }];
   }
   return listed.cases.map(({ input, outcomes }) => ({ standing: "opinion", check: "request", label: "Model: open case", subject: input,
-    detail: either(outcomes), more: [`A model's list for you to settle, not a check: ${listed.model}.`] }));
+    detail: either(outcomes), more: [`A model's list for you to settle, not a check: ${listed.model}.`],
+    group: { title: `% for you to settle, listed by ${listed.model}`, noun: ["open case", "open cases"], note: "",
+      item: `${input}: ${either(outcomes)}` } }));
 }
 
 /** The receipt's lines for the open cases a model listed, labelled a model's opinion. */
@@ -658,6 +679,22 @@ const weakeningWords: Readonly<Record<Weakening["kind"], string>> = {
   deleted_test: "deletes a test file", edited_test: "edits a test",
   changed_check_script: "changes the command or selection of check script",
 };
+
+/** What the summary asks the operator to review for each kind of change that may weaken the evidence: a heuristic, never a confirmed weakening. */
+const reviewTitles: Readonly<Record<Weakening["kind"], string>> = {
+  removed_contract: "Review removed or changed contracts", added_requires: "Review added preconditions",
+  added_assume: "Review added assumptions", added_skip: "Review parts left out of proofs",
+  deleted_test: "Review deleted tests", edited_test: "Review test edits", changed_check_script: "Review check script changes",
+};
+
+/** A test's reason against the base (`exercise` in test-rung.ts) in fewer words, for the summary; the details keep it whole. */
+const shortReasons: Readonly<Record<string, string>> = {
+  "on the base it failed, but so does the base without it, and no test report says which tests fail": "Base fails too; no per-test failure report.",
+};
+
+/** A reason in fewer words when it starts with one `shortReasons` knows, whatever it adds after, such as which check ran it. */
+const shortReason = (reason: string): string =>
+  Object.entries(shortReasons).find(([long]) => reason.startsWith(long))?.[1] ?? reason;
 
 /**
  * The receipt's findings for people: everything it records, each with what
@@ -691,33 +728,45 @@ function unitFindings(receipt: UnitEvidence): Finding[] {
     ...typeof receipt.weakened === "string"
       ? [{ standing: "decide" as const, check: "weakening" as const, label: "Weakening not checked", subject: "the change",
         detail: receipt.weakened === "too_large" ? "it is too large to check for weakening" : "Git could not show it", more: [] }]
-      : receipt.weakened.map((change): Finding => ({ standing: "decide", check: "weakening", label: "May weaken the evidence",
-        subject: change.path, detail: change.kind === "added_assume" ? trustedWords(change)
+      : receipt.weakened.map((change): Finding => {
+        const detail = change.kind === "added_assume" ? trustedWords(change)
           : change.kind === "added_skip" ? skippedWords(change)
-          : change.kind === "changed_check_script" ? `${weakeningWords[change.kind]} ${change.script}` : weakeningWords[change.kind],
-        more: "annotation" in change ? [change.annotation] : [] })),
+          : change.kind === "changed_check_script" ? `${weakeningWords[change.kind]} ${change.script}` : weakeningWords[change.kind];
+        return { standing: "decide", check: "weakening", label: "May weaken the evidence", subject: change.path, detail,
+          more: "annotation" in change ? [change.annotation] : [], group: { title: `${reviewTitles[change.kind]} · %`,
+            noun: ["heuristic flag", "heuristic flags"], note: "May weaken evidence; not confirmed weakening.", item: `${change.path}: ${detail}` } };
+      }),
     ...receipt.contracts.map(contractFinding),
     ...receipt.exercises.map((exercise): Finding => {
-      const { path, sensitivity } = exercise;
+      const { path, sensitivity, reason } = exercise;
       const detail = exerciseDetail(exercise);
+      const testFiles = ["test file", "test files"] as const;
       return sensitivity === "fails_then_passes"
         ? { standing: "holds", check: "exercise", label: "Test notices the change", subject: path, detail, more: [] }
         : sensitivity === "passes_on_base"
-          ? { standing: "decide", check: "exercise", label: "Test passes on base", subject: path, detail, more: [] }
-          : { standing: "gap", check: "exercise", label: "Test not checked", subject: path, detail, more: [] };
+          ? { standing: "decide", check: "exercise", label: "Test passes on base", subject: path, detail, more: [],
+            group: { title: "Test passes without the change · %", noun: testFiles, note: reason, item: path } }
+          : { standing: "gap", check: "exercise", label: "Test not checked", subject: path, detail, more: [],
+            group: { title: "Change sensitivity unknown · %", noun: testFiles, note: shortReason(reason), item: path } };
     }),
     ...opinionFindings(receipt.claimcheck, receipt.contracts),
     ...unread && receipt.proofs.length > 0
       ? [{ standing: "gap" as const, check: "coverage" as const, label: "Coverage not checked", subject: "the changed lines",
         detail: "for the same reason", more: [] }] : [],
-    ...receipt.uncovered.filter(({ lines }) => lines.length > 0).map(({ path, lines }): Finding => ({ standing: "gap",
-      check: "coverage", label: unproved, subject: `${path} ${lines.length === 1 && lines[0]?.[0] === lines[0]?.[1] ? "line" : "lines"} ` +
-        lines.map(([start, end]) => start === end ? `${start}` : `${start}–${end}`).join(", "),
-      detail: tested ? "outside any contract; the tests pass with them" : "outside any contract, and nothing checked them", more: [] })),
+    ...receipt.uncovered.filter(({ lines }) => lines.length > 0).map(({ path, lines }): Finding => {
+      const subject = `${path} ${lines.length === 1 && lines[0]?.[0] === lines[0]?.[1] ? "line" : "lines"} ` +
+        lines.map(([start, end]) => start === end ? `${start}` : `${start}–${end}`).join(", ");
+      return { standing: "gap", check: "coverage", label: unproved, subject,
+        detail: tested ? "outside any contract; the tests pass with them" : "outside any contract, and nothing checked them", more: [],
+        group: { title: "No proof covers changed lines in %", noun: ["file", "files"], note: tested ? "" : "Not checked by anything else.", item: subject } };
+    }),
     ...receipt.unverified.map((path): Finding => ({ standing: "gap", check: "coverage", label: unproved, subject: path,
-      detail: tested ? "no contract; the tests pass with it" : "nothing checked it", more: [] })),
+      detail: tested ? "no contract; the tests pass with it" : "nothing checked it", more: [],
+      group: { title: "No proof covers %", noun: ["changed file", "changed files"], note: tested ? "" : "Not checked by anything else.", item: path } })),
     ...(receipt.tooLarge ?? []).map((path): Finding => ({ standing: "gap", check: "coverage", label: "Not verified", subject: path,
-      detail: "too large for Tesota's snapshot, which left it out", more: [] })),
+      detail: "too large for Tesota's snapshot, which left it out", more: [],
+      group: { title: "Left out of Tesota's snapshot · %", noun: ["file too large", "files too large"], note: "Not verified by anything.",
+        item: path } })),
   ];
   // A change of comments alone leaves nothing to list; the receipt says so rather than ending empty.
   return found.length === 0 && receipt.commentsOnly === true ? [{ standing: "holds", check: "coverage",
@@ -777,9 +826,182 @@ export function receiptStanding(receipt: Receipt): "verified" | "incomplete" | "
     ? "failed" : "incomplete";
 }
 
-/** The receipt as the operator reads it; `details` of its session entry carries the receipt itself. */
+/** One row of the summary that names a method (#591): what it ran on and how each run ended, never more. */
+export interface SummaryMethod { readonly glyph: string; readonly method: string; readonly text: string }
+
+/** Findings of one reason as one row of the summary, every path they name kept in `items`. */
+export interface SummaryGroup {
+  readonly glyph: string;
+  readonly title: string;
+  readonly note: string;
+  readonly items: readonly string[];
+  /** A model's agreement, which only the expanded card shows. */
+  readonly quiet?: true;
+}
+
+/**
+ * The receipt's summary (#591), from its `details`: the counts, each method's
+ * runs, then what needs review (`flags`, failed checks first among them),
+ * the verification limits, and apart from both the models' opinions and the
+ * request's context, which are neither evidence nor counted.
+ */
+export interface ReceiptSummary {
+  readonly counts: string;
+  readonly tone: ReturnType<typeof verdictTone>;
+  readonly methods: readonly SummaryMethod[];
+  /** What holds that no method row says, such as a change of comments only. */
+  readonly notes: readonly SummaryGroup[];
+  readonly flags: readonly SummaryGroup[];
+  readonly limits: readonly SummaryGroup[];
+  readonly opinions: readonly SummaryGroup[];
+  readonly context: string;
+}
+
+export const ACCEPTANCE = "Check evidence, not your acceptance.";
+export const OPINIONS = "Model opinions · not evidence, not counted";
+export const DETAILS = "Details · paths, output, assumptions, model opinions";
+
+/** Within each group of the summary, what most changes whether the evidence can be trusted comes first. */
+const ORDER: readonly Check[] = ["proof", "tests", "model", "weakening", "contract", "exercise", "request", "coverage"];
+
+/** How a run of a method ended, for its row's glyph. */
+type Ran = "holds" | "partly" | "failed" | "none";
+
+/** Each way a method's row sums up its runs (`methodStanding`, proved), as its glyph. */
+const standingGlyphs: Readonly<Record<ReturnType<typeof methodStanding>, string>> = { holds: "✓", partly: "◐", fails: "✗", none: "○" };
+
+/** A method's row: ✓ only when every run of it holds outright, ◐ when some do, ✗ when one failed and none holds. */
+function methodRow(method: string, runs: readonly { readonly ran: Ran; readonly text: string }[]): SummaryMethod {
+  if (runs.length === 0) return { glyph: "○", method, text: "none recorded" };
+  const count = (ran: Ran): number => runs.filter((run) => run.ran === ran).length;
+  return { glyph: standingGlyphs[methodStanding(count("holds"), count("partly"), count("failed"), runs.length)], method,
+    text: runs.map(({ text }) => text).join("; ") };
+}
+
+/** How a proof, command or model that did not hold ended, in a word or two. */
+function notHeld(verdict: GateVerdict, outcome: Evidence["outcome"]): { readonly ran: Ran; readonly words: string } {
+  return verdict === "operator" ? { ran: "none", words: "did not run" }
+    : { ran: "failed", words: outcome === "vacuous" ? "verified nothing" : "fails" };
+}
+
+/** A count of `of` in which `held` hold, said as all of them or as how many of them. */
+const outOf = (held: number, of: number, one: string, many: string): string =>
+  held === of ? plural(of, one, many) : `${held} of ${plural(of, one, many)}`;
+
+function methodRows(evidence: Pick<UnitEvidence, "proofs" | "tests" | "models" | "exercises" | "contracts" | "weakened">): SummaryMethod[] {
+  const proofs = evidence.proofs.map(({ path, verdict, evidence: run }) => {
+    const assumed = addedAssumptions(run.files, evidence.weakened);
+    const ended = verdict === "proved" ? { ran: assumed === 0 ? "holds" as const : "partly" as const,
+      words: assumed === 0 ? "" : trusting(assumed) } : notHeld(verdict, run.outcome);
+    return { ran: ended.ran, text: [path, ended.words, clock(run.durationMs)].filter((part) => part !== "").join(" · ") };
+  });
+  const tests = evidence.tests.map(({ command, verdict, evidence: run }) => {
+    const ended = verdict === "proved" ? { ran: "holds" as const, words: "" } : notHeld(verdict, run.outcome);
+    return { ran: ended.ran, text: [command, ended.words, clock(run.durationMs)].filter((part) => part !== "").join(" · ") };
+  });
+  // A passing model is model-checked, about the model: never proved, and its row says whether anything links it to the code.
+  // Model-checked holds outright only when every planted fault ran, the request did not write the model with its code,
+  // and nothing says it may be stale; otherwise its limits say why it holds less (`modelFindings`).
+  const outright = (model: ModelResult): boolean => !model.writtenWithCode && stalenessFindings(model).length === 0 &&
+    model.faults.every(({ verdict }) => verdict !== "unrun");
+  const models = (evidence.models ?? []).map((model) => {
+    const { path, verdict, link, writtenWithCode, evidence: run } = model;
+    const ended = verdict === "proved" ? { ran: outright(model) ? "holds" as const : "partly" as const,
+      words: `model-checked, ${linkWords[link]}${writtenWithCode ? ", written with the code" : ""}` } : notHeld(verdict, run.outcome);
+    return { ran: ended.ran, text: [path, ended.ran === "none" ? "not checked" : ended.words, clock(run.durationMs)].join(" · ") };
+  });
+  const noticing = evidence.exercises.filter(({ sensitivity }) => sensitivity === "fails_then_passes").length;
+  const strong = evidence.contracts.filter((contract) => contractFinding(contract).standing === "holds").length;
+  const partly = (held: number, of: number): string => standingGlyphs[methodStanding(held, 0, 0, of)];
+  return [methodRow("Tested", tests), methodRow("Proved", proofs), methodRow("Models", models),
+    ...noticing === 0 ? [] : [{ glyph: partly(noticing, evidence.exercises.length), method: "Exercised",
+      text: `${outOf(noticing, evidence.exercises.length, "test file", "test files")} failed on the base and passed with the change` }],
+    ...strong === 0 ? [] : [{ glyph: partly(strong, evidence.contracts.length), method: "Contracts",
+      text: `${outOf(strong, evidence.contracts.length, "contract", "contracts")}: every decided change broke its proof` }]];
+}
+
+function findingGlyph({ standing, failed }: Finding): string {
+  if (standing === "opinion") return "◇";
+  if (standing === "decide") return failed === true ? "✗" : "!";
+  return standing === "gap" ? "○" : "✓";
+}
+
+/** Findings of the same reason as one group each, in the order of `ORDER`, then as found. */
+function grouped(findings: readonly Finding[]): SummaryGroup[] {
+  const groups = new Map<string, Finding[]>();
+  for (const finding of [...findings].sort((a, b) => ORDER.indexOf(a.check) - ORDER.indexOf(b.check))) {
+    const key = finding.group === undefined ? `${finding.label}\n${finding.detail}` : `${finding.group.title}\n${finding.group.note}`;
+    groups.set(key, [...groups.get(key) ?? [], finding]);
+  }
+  return [...groups.values()].map((members) => {
+    const [first] = members as [Finding, ...Finding[]];
+    const { group } = first;
+    const n = members.length;
+    const named = (title: string): string => n > 1 ? `${title} · ${n}` : first.subject === "" ? title : `${title} · ${first.subject}`;
+    const title = group === undefined ? named(first.label)
+      : group.noun !== undefined ? group.title.replace("%", plural(n, ...group.noun)) : group.item === undefined ? group.title : named(group.title);
+    const items = group === undefined ? members.map(({ subject }) => subject).filter((subject) => subject !== "")
+      : members.flatMap((member) => member.group?.item === undefined ? [] : [member.group.item]);
+    return { glyph: findingGlyph(first), title, note: group?.note ?? first.detail, items,
+      ...first.standing === "opinion" && first.label === "Model: matches" ? { quiet: true as const } : {} };
+  });
+}
+
+const counted = (n: number, one: string, many: string, none: string): string => n === 0 ? none : plural(n, one, many);
+
+/** The receipt's summary (`ReceiptSummary`). */
+export function receiptSummary(receipt: Receipt): ReceiptSummary {
+  const findings = receiptFindings(receipt);
+  const of = (standing: Standing): Finding[] => findings.filter((finding) => finding.standing === standing);
+  const failed = of("decide").filter((finding) => finding.failed === true).length;
+  const flags = of("decide").length - failed;
+  const inherited = allEvidence(receipt).inherited.length;
+  return {
+    counts: [...failed === 0 ? [] : [plural(failed, "failed check", "failed checks")],
+      counted(flags, "review flag", "review flags", "no review flags"),
+      counted(of("gap").length, "verification limit", "verification limits", "no verification limits")].join(" · ")
+      .replace(/^n/u, "N"),
+    tone: receiptTone(findings),
+    methods: receipt.stopped === undefined ? methodRows(allEvidence(receipt)) : methodRows(noEvidence),
+    notes: grouped(of("holds").filter(({ check }) => check === "coverage")),
+    flags: grouped(of("decide")), limits: grouped(of("gap")), opinions: grouped(of("opinion")),
+    context: [...(receipt.clarifications?.length ?? 0) === 0 ? [] : [plural(receipt.clarifications?.length ?? 0, "answer", "answers")],
+      ...(receipt.children?.length ?? 0) === 0 ? [] : [plural(receipt.children?.length ?? 0, "subagent", "subagents")],
+      ...inherited === 0 ? [] : [`${plural(inherited, "file", "files")} already uncommitted, not this request's`]].join(" · "),
+  };
+}
+
+/** A method's rows with their names in one column, as wide as the longest name and three more. */
+export function methodWidth(methods: readonly SummaryMethod[]): number {
+  return Math.max(...methods.map(({ method }) => method.length)) + 3;
+}
+
+/** Every fact the receipt records, one per line, as its details show them: each method's runs, each path, each reason. */
+export function receiptDetailLines(receipt: Receipt): string[] {
+  // Each unit's base: a commit, or Tesota's snapshot of a folder in no repository, which no one else can fetch.
+  const based = ({ snapshot, base }: UnitEvidence, first: string): string =>
+    `${snapshot === true ? "Tesota's snapshot " : ""}${base?.slice(0, 12) ?? first}`;
+  const from = receipt.units === undefined ? based(receipt, "the first commit")
+    : receipt.units.filter(verified).map((unit) => `${plainName(unit.folder)} ${based(unit, "its first commit")}`).join(", ");
+  return [...receiptLines(receipt), `From ${from} · Tesota ${receipt.engine}${receipt.model === undefined ? "" : ` · ${receipt.model}`}`];
+}
+
+/**
+ * The receipt as the operator reads it in plain text (#591): the summary,
+ * then every fact under Details, then the request's context. Built from
+ * `details`, apart from the Markdown, so no Markdown escape is in it.
+ */
 export function renderReceipt(receipt: Receipt): string {
-  return ["Tesota receipt", ...receiptLines(receipt), ...receiptClarificationLines(receipt), ...receiptChildLines(receipt)].join("\n");
+  const summary = receiptSummary(receipt);
+  const width = methodWidth(summary.methods);
+  const groups = (list: readonly SummaryGroup[]): string[] =>
+    list.flatMap(({ glyph, title, note }) => [`${glyph} ${title}`, ...note === "" ? [] : [`  ${note}`]]);
+  const found = groups([...summary.notes, ...summary.flags, ...summary.limits]);
+  return ["Tesota receipt", summary.counts, ACCEPTANCE, "",
+    ...summary.methods.map(({ glyph, method, text }) => `${glyph} ${method.padEnd(width)}${text}`),
+    ...found.length === 0 ? [] : ["", ...found],
+    ...summary.opinions.length === 0 ? [] : ["", OPINIONS, ...groups(summary.opinions)],
+    "", "Details", ...receiptDetailLines(receipt), ...receiptClarificationLines(receipt), ...receiptChildLines(receipt)].join("\n");
 }
 
 /** Each subagent the run started (#525), in one line; their ends are neither this receipt's evidence nor acceptance. */
@@ -806,19 +1028,30 @@ export function receiptClarificationLines(receipt: Pick<Receipt, "clarifications
 
 const markdownText = (text: string): string => text.replace(/[\\`*_{}[\]()#+!|<>~-]/gu, "\\$&");
 
-/** The same evidence as wrapping Markdown for chat hosts; the TUI reads structured details. */
+/**
+ * The same receipt as Markdown for chat hosts, built from `details` as the
+ * plain text is (#591): the summary as lists, its words escaped so none
+ * renders, and the details fenced, so their paths and output are shown as
+ * written. The TUI reads the structured details.
+ */
 export function renderReceiptMessage(receipt: Receipt): string {
-  const rows = receiptLines(receipt).map((row) => {
-    const label = row.slice(2, 16).trim();
-    const text = markdownText(row.slice(16)).replace(/\n/gu, "\n  ");
-    return label === "" ? `  - ${text}` : `- **${label}** — ${text}`;
-  });
+  const summary = receiptSummary(receipt);
+  const inline = (text: string): string => markdownText(text).replace(/\r?\n/gu, " ");
+  const groups = (list: readonly SummaryGroup[]): string => list.map(({ glyph, title, note }) =>
+    `- ${glyph} ${inline(title)}${note === "" ? "" : ` — ${inline(note)}`}`).join("\n");
+  const found = [...summary.notes, ...summary.flags, ...summary.limits];
+  const details = receiptDetailLines(receipt).join("\n");
+  const fence = "`".repeat(Math.max(3, ...[...details.matchAll(/`+/gu)].map(([run]) => run.length + 1)));
   const clarifications = receiptClarificationLines(receipt);
   const children = childLines(receipt);
-  return ["## Tesota receipt", rows.join("\n"),
+  return ["## Tesota receipt", `**${inline(summary.counts)}**  \n${ACCEPTANCE}`,
+    summary.methods.map(({ glyph, method, text }) => `- ${glyph} **${method}** — ${inline(text)}`).join("\n"),
+    ...found.length === 0 ? [] : [groups(found)],
+    ...summary.opinions.length === 0 ? [] : [`**${OPINIONS}**\n\n${groups(summary.opinions)}`],
+    `**Details**\n\n${fence}text\n${details}\n${fence}`,
     ...clarifications.length === 0 ? [] : [clarifications.map((line) => `> ${markdownText(line)}`).join("\n")],
     ...children.length === 0 ? [] : [[markdownText(childrenHeading), ...children.map((line) => `- ${markdownText(line)}`)].join("\n")],
-    "This is check evidence, not your acceptance."].join("\n\n");
+  ].join("\n\n");
 }
 
 /** Shared evidence wording for terminal text and chat Markdown. */
@@ -849,7 +1082,7 @@ function unitLines(receipt: UnitEvidence): string[] {
     ...receipt.tests.map(testLine),
     ...(receipt.models ?? []).flatMap(modelLines),
     ...(receipt.unheaded ?? []).map((path) => `  not checked   ${path}: it declares no tesota-model header, so no model check ran`),
-    ...receipt.exercises.map((exercise) => `  ${sensitivityText[exercise.sensitivity]}${exercise.path}: ${exerciseDetail(exercise)}`),
+    ...receipt.exercises.map((exercise) => `  ${sensitivityText[exercise.sensitivity]} ${exercise.path}: ${exerciseDetail(exercise)}`),
     ...receipt.weakened === "too_large"
       ? ["  not checked   weakened evidence: the change is too large to check for weakening"]
       : receipt.weakened === "unreadable"

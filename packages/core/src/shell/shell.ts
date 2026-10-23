@@ -166,6 +166,9 @@ export function startShell(options: ShellOptions): Shell {
   // A blank row between the header and the conversation's first entry.
   document.addChild(new Spacer(1));
   document.addChild(transcript);
+  /** The gate's live block while it verifies (#591), after the conversation and apart from it, so a reload keeps it. */
+  const block = new Container();
+  document.addChild(block);
   // Pi uses Alt+Q on Windows, where Alt+Up is not reliably passed through by consoles.
   const dequeueKey = process.platform === "win32" ? "alt+q" : "alt+up";
   const dequeueHint = process.platform === "win32" ? "Alt+Q" : "Alt+Up";
@@ -338,19 +341,29 @@ export function startShell(options: ShellOptions): Shell {
   /**
    * While the gate verifies, the label names the work running and for how long (#590), from the shown session's
    * surface. The listener and the clock tick last only as long as the label does: a state without verification, a
-   * session switch to another surface and the shell stopping all let go of them.
+   * session switch to another surface and the shell stopping all let go of them. A detail with a block also draws
+   * it as the conversation's last block (#591), redrawn on the same changes and ticks, and gone when the label is.
    */
   let unwatchDetail: () => void = () => undefined;
   let watched: WorkingDetail | undefined;
+  const drawBlock = (): void => {
+    block.clear();
+    const type = watched?.block;
+    const drawn = type === undefined ? undefined
+      : surface?.renderers.get(type)?.({ customType: type, content: "", details: watched }, { expanded, outputPad: 1 }, theme);
+    if (drawn !== undefined) block.addChild(drawn);
+  };
   const watchDetail = (settling: boolean): void => {
     const detail = settling ? surface?.detail : undefined;
     if (detail === watched) return;
     unwatchDetail();
     unwatchDetail = () => undefined;
     watched = detail;
+    drawBlock();
     if (detail === undefined) return;
     const show = (): void => {
       loader.setMessage(detail.line(performance.now()) ?? "Verifying…");
+      drawBlock();
       tui.requestRender();
     };
     const off = detail.subscribe(show);
@@ -492,6 +505,7 @@ export function startShell(options: ShellOptions): Shell {
     if (matchesKey(data, expandKey)) {
       expanded = !expanded;
       transcript.load(session.history());
+      drawBlock();
       tui.requestRender();
       return { consume: true };
     }
