@@ -143,11 +143,15 @@ method modelOutcome(main: ModelRun, faults: seq<FaultVerdict>) returns (res: Pro
   return ProofOutcome.passed;
 }
 
-method staleness(confirmedFound: bool, changed: seq<bool>) returns (res: Staleness)
-  ensures (!(confirmedFound) ==> res.unknown?)
-  ensures (res.possibly_stale? <==> (confirmedFound && exists k: nat :: ((k < |changed|) && changed[k])))
-  ensures (res.current? <==> (confirmedFound && forall k: nat :: ((k < |changed|) ==> !(changed[k]))))
+method staleness(withCode: bool, outcome: ProofOutcome, confirmedFound: bool, changed: seq<bool>) returns (res: Staleness)
+  ensures (withCode ==> outcome.passed? ==> res.current?)
+  ensures (!((withCode && outcome.passed?)) ==> !(confirmedFound) ==> res.unknown?)
+  ensures (res.possibly_stale? <==> ((!((withCode && outcome.passed?)) && confirmedFound) && exists k: nat :: ((k < |changed|) && changed[k])))
+  ensures (res.current? <==> ((withCode && outcome.passed?) || (confirmedFound && forall k: nat :: ((k < |changed|) ==> !(changed[k])))))
 {
+  if (withCode && outcome.passed?) {
+    return Staleness.current;
+  }
   if !(confirmedFound) {
     return Staleness.unknown;
   }

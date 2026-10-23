@@ -187,6 +187,19 @@ it.skipIf(!withTlc)("model-checks a model whose planted fault breaks its invaria
   expect(check.evidence.files).toEqual(["models/Counter.tla", "models/Counter.cfg", "models/CounterNoLock.cfg", "src/counter.ts"]);
 }, 120_000);
 
+it.skipIf(!withTlc)("never calls a model stale when the request wrote it with its code and it passed against the code as left", async () => {
+  // #555: the model was confirmed against the commit at that point, then the code it covers was fixed in the same request.
+  const { root } = repository((commit) => ({ "models/Counter.tla": spec("Counter", header(commit)), "models/Counter.cfg": config(true),
+    "models/CounterNoLock.cfg": config(false) }));
+  write(root, { "src/counter.ts": "export async function increment(): Promise<void> { await Promise.resolve(); }\n" });
+  const changed = ["models/Counter.tla", "models/Counter.cfg", "models/CounterNoLock.cfg", "src/counter.ts"];
+  const check = await checkModel(root, "models/Counter.tla", changed, new AbortController().signal, jar);
+  expect(check.evidence.outcome).toBe("passed");
+  expect(check.writtenWithCode).toBe(true);
+  expect(check.stale).toEqual(["src/counter.ts"]);
+  expect(check.staleness).toBe("current");
+}, 120_000);
+
 it.skipIf(!withTlc)("sends back a model whose planted fault passes, and one that breaks, with its counterexample", async () => {
   const { root } = repository((base) => ({ "models/Counter.tla": spec("Counter", header(base, "models/StillLocked.cfg the lock kept")),
     "models/Counter.cfg": config(true), "models/StillLocked.cfg": config(true),
