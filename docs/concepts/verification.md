@@ -228,7 +228,8 @@ the failing tests from JUnit XML reports written under the project while
 the command ran.
 
 **Exercise.** When every command passes and the request has a base, each
-changed or added test file runs alone over the base, in a Git worktree in
+changed or added test file in a programming language runs alone over the
+base (a snapshot or a JSON fixture is no test a runner runs), in a Git worktree in
 the temporary folder with the checkout's `node_modules` linked in. What
 runs it there (#603): when the project's `test` script directly runs Bun,
 Vitest or Jest with plain arguments, that script on the file alone, with
@@ -238,7 +239,12 @@ JUnit XML, Jest its native JSON report. Otherwise the project's whole
 commands run. Each reason names the command that judged it.
 
 - a test that passes there passes on the base: it doesn't depend on the
-  change, though it may still guard against a regression;
+  change, though it may still guard against a regression. For the runner
+  on the file alone, a pass counts only when its report, read whole, holds
+  a test from that file, named by its path, that ran and passed: a filter
+  that selects nothing passes with no tests, so an exit alone shows no
+  test ran (#615). A report holding fewer or more tests than its root
+  counts gives nothing;
 - a test that fails there, while the base passes without it, notices the
   change: it fails, then passes (`checkOrigin`, proved). Without it means
   the base's own version of the file, or none, for the runner on the file
@@ -248,7 +254,7 @@ commands run. Each reason names the command that judged it.
   test notices the change when tests fail with it that pass, or are
   missing, without it, as SWE-bench grades fail-to-pass;
 - the runner on the files alone must also pass on the change, run once per
-  project folder, before it credits any file;
+  project folder, and run a test from each file it credits that passed;
 - anything else stays unknown, with the reason.
 
 The runner on one file sees what the test asserts, not the project's

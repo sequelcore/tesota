@@ -1114,12 +1114,13 @@ it("runs the project's tests, and runs each changed test on the request's base e
   await run.tool("write");
   write(root, { "src/price.mjs": "export const total = (n) => Math.max(n, 0);\n",
     "test/negative.test.mjs": priceTest(-1, 0), "test/positive.test.mjs": priceTest(2, 2),
-    "test/__snapshots__/price.test.mjs.snap": "exports[`total 1`] = `1`;\n" });
+    "test/__snapshots__/price.test.mjs.snap": "exports[`total 1`] = `1`;\n", "test/fixtures/prices.json": "[1, 2]\n" });
   commit(root, "the agent's change");
   const settled = await run.settle();
   expect(settled?.continue).toBeUndefined();
-  const changed = ["src/price.mjs", "test/__snapshots__/price.test.mjs.snap", "test/negative.test.mjs", "test/positive.test.mjs"];
-  // The snapshot is no test a runner runs alone, so it gets no line of its own on the base.
+  const changed = ["src/price.mjs", "test/__snapshots__/price.test.mjs.snap", "test/fixtures/prices.json", "test/negative.test.mjs",
+    "test/positive.test.mjs"];
+  // The snapshot and the fixture are no tests a runner runs alone, so they get no line of their own on the base (#615).
   expect(facts(entry(settled).content)).toBe([
     "  passed        bun run test",
     "  notices change test/negative.test.mjs: fails on the base, passes with the change; " +
@@ -1127,7 +1128,8 @@ it("runs the project's tests, and runs each changed test on the request's base e
     "  passes on base test/positive.test.mjs: it passes without the change too; " +
     "by the whole check, `bun run test`; added in this request",
     "  not proved    src/price.mjs: no proof covers it; the project's commands pass with it",
-    "  changed lines implementation +1 -1 · tests +9 -0"].join("\n"));
+    "  changed lines implementation +1 -1 · tests +10 -0"].join("
+"));
   const receipt = entry(settled).details as Receipt;
   expect(receipt.tests.map(({ command, evidence }) => [command, evidence.verifier, evidence.files]))
     .toEqual([["bun run test", "command", changed]]);

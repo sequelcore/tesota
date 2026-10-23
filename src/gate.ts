@@ -190,8 +190,8 @@ async function testRung(root: string, base: string | null, changed: readonly str
   const tests = (await checks().runCommands(root, projects, changed, signal, ops)).map((run) =>
     ({ ...run, verdict: gateVerdict(run.evidence.outcome, testFailure(run), sentBack.get(run.command) ?? []) }));
   const passed = tests.every(({ evidence }) => evidence.outcome === "passed");
-  // A snapshot counts as a test for weakened evidence, but is not one a runner can run alone.
-  const runnable = changed.filter((path) => checks().isTestPath(path) && !path.endsWith(".snap"));
+  // A snapshot or a fixture counts as a test for weakened evidence, but is not one a runner can run alone (#615).
+  const runnable = changed.filter((path) => checks().isTestPath(path) && checks().isSourcePath(path));
   const present = (await Promise.all(runnable.map(async (path) => await readIfPresent(join(root, path)) === undefined ? [] : [path]))).flat();
   const exercises = passed && base !== null ? await checks().exerciseTests(root, base, present, changed, projects, signal, ops) : [];
   return { tests, exercises };

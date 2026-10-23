@@ -219,6 +219,33 @@ function exercise(path: string, provenance: TestExercise["provenance"], withTest
     : `on the base it ${ended}, but so does the base without it, and no test fails there that passes without it` };
 }
 
+/**
+ * Why a runner's pass shows nothing about `file`, relative to the runner's
+ * folder, from the report it wrote: none, or no test from that file ran and
+ * passed. A filter that selects nothing passes with no tests, so an exit
+ * alone is not a test that ran (#615). Undefined when one did.
+ */
+function unobserved(results: TestResults | undefined, file: string): string | undefined {
+  if (results === undefined) return "the runner wrote no test report Tesota could read whole";
+  const statuses = [...results.tests].filter(([name]) => name.startsWith(`${file} > `)).map(([, status]) => status);
+  if (statuses.length === 0) return `the runner ran no test from ${file}`;
+  return statuses.includes("passed") ? undefined : `every test from ${file} was skipped`;
+}
+
+/**
+ * A file that fails on the base `by` its runner alone, credited only when
+ * that runner on the change, `onChange`, passed and ran a test from it that
+ * passed (#615).
+ */
+function credited(verdict: TestExercise, file: string, by: string, onChange: string, change: BaseRun): TestExercise {
+  if (change.outcome !== "passed") {
+    return { ...verdict, sensitivity: "unknown", reason: `it fails on the base ${by}, but on the change ${onChange} ${change.outcome.replaceAll("_", " ")}` };
+  }
+  const missing = unobserved(change.results, file);
+  return missing === undefined ? { ...verdict, reason: `${verdict.reason}, ${by}` }
+    : { ...verdict, sensitivity: "unknown", reason: `it fails on the base ${by}, but on the change ${onChange} passed and ${missing}` };
+}
+
 /** A path as one word for the POSIX shell the project's checks run in. */
 const quoted = (path: string): string => `'${path.replaceAll("'", "'\\''")}'`;
 
@@ -227,7 +254,7 @@ const quoted = (path: string): string => `'${path.replaceAll("'", "'\\''")}'`;
  * with per-test reporting and empty-suite success. Plain runner scripts only:
  * shell composites cannot safely receive runner flags.
  */
-function testProbe(project: string, folder: string, files: readonly string[]): { command: string; report: string } | undefined {
+function testProbe(project: string, folder: string, files: readonly string[]): Probe | undefined {
   const test = packageTest(project, folder);
   if (test === undefined) return undefined;
   const match = /^(bun test|vitest(?: run)?|jest)(?:\s+[\w./=-]+)*$/u.exec(test.script.trim());
@@ -237,16 +264,28 @@ function testProbe(project: string, folder: string, files: readonly string[]): {
   const flags = runner === "bun test" ? `--pass-with-no-tests --reporter=junit --reporter-outfile=${name}`
     : runner === "jest" ? `--passWithNoTests --runInBand --json --outputFile=${name}`
       : `--run --passWithNoTests --reporter=junit --outputFile=${name}`;
-  return { command: [test.command, flags, ...files.map(quoted)].join(" "), report: posix.join(folder, name) };
+  return { command: [test.command, flags, ...files.map(quoted)].join(" "), folder, report: name };
 }
 
-/** Read only this invocation's report, never an earlier or linked report. */
-async function probeRun(probe: { command: string; report: string }, project: string, signal: AbortSignal): Promise<BaseRun> {
-  if (clearTestReports(project, [probe.report]).length > 0) return { outcome: "not_started", results: undefined };
+/** The runner on some files alone, and the report it writes, relative to its folder. */
+interface Probe {
+  readonly command: string;
+  readonly folder: string;
+  readonly report: string;
+}
+
+/**
+ * Read only this invocation's report, never an earlier or linked report,
+ * from the runner's folder, so that the tests it names are named by their
+ * file there, as the runner was given them.
+ */
+async function probeRun(probe: Probe, project: string, signal: AbortSignal): Promise<BaseRun> {
+  const report = posix.join(probe.folder, probe.report);
+  if (clearTestReports(project, [report]).length > 0) return { outcome: "not_started", results: undefined };
   try {
     const outcome = await runAll([probe.command], project, signal);
-    return { outcome, results: readTestResults(project, [probe.report]) };
-  } finally { clearTestReports(project, [probe.report]); }
+    return { outcome, results: readTestResults(join(project, probe.folder), [probe.report]) };
+  } finally { clearTestReports(project, [report]); }
 }
 
 /**
@@ -307,15 +346,20 @@ async function againstBase(project: string, root: string, tests: readonly string
         continue;
       }
       const withTest = await holding(path, () => ops.run(exercising, () => probeRun(probe, project, signal), ended, planned.get(path)));
+      const by = `by \`${probe.command}\``;
+      const file = posix.relative(folder, path);
+      const unseen = withTest.outcome === "passed" ? unobserved(withTest.results, file) : undefined;
+      if (unseen !== undefined) {
+        found.set(path, { path, provenance: origin, sensitivity: "unknown", reason: `on the base it passed, but ${unseen}; ${by}` });
+        continue;
+      }
       const verdict = exercise(path, origin, withTest, withTest.outcome === "passed" ? undefined
         : await ops.run(control, () => probeRun(probe, project, signal), ended));
-      const by = `by \`${probe.command}\``;
       if (verdict.sensitivity !== "fails_then_passes") { found.set(path, { ...verdict, reason: `${verdict.reason}; ${by}` }); continue; }
       const onChange = alone(paths);
       change ??= onChange === undefined ? { outcome: "not_started", results: undefined }
         : await ops.run({ method: "command", unit: "", target: onChange.command }, () => probeRun(onChange, root, signal), ended);
-      found.set(path, change.outcome === "passed" ? { ...verdict, reason: `${verdict.reason}, ${by}` } : { ...verdict, sensitivity: "unknown",
-        reason: `it fails on the base ${by}, but on the change \`${onChange?.command ?? probe.command}\` ${change.outcome.replaceAll("_", " ")}` });
+      found.set(path, credited(verdict, file, by, `\`${onChange?.command ?? probe.command}\``, change));
     }
   }
   return tests.flatMap((path) => found.get(path) ?? []);
