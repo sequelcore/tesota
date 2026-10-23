@@ -212,8 +212,15 @@ function exercise(path: string, provenance: TestExercise["provenance"], withTest
     : `on the base it ${ended}, but so does the base without it, and no test fails there that passes without it` };
 }
 
-/** Plain runner scripts only: shell composites cannot safely receive runner flags. */
-function testProbe(project: string, folder: string): { command: string; report: string } | undefined {
+/** A path as one word for the POSIX shell the project's checks run in. */
+const quoted = (path: string): string => `'${path.replaceAll("'", "'\\''")}'`;
+
+/**
+ * The project's own test runner on `files` alone, relative to its folder,
+ * with per-test reporting and empty-suite success. Plain runner scripts only:
+ * shell composites cannot safely receive runner flags.
+ */
+function testProbe(project: string, folder: string, files: readonly string[]): { command: string; report: string } | undefined {
   const test = packageTest(project, folder);
   if (test === undefined) return undefined;
   const match = /^(bun test|vitest(?: run)?|jest)(?:\s+[\w./=-]+)*$/u.exec(test.script.trim());
@@ -223,7 +230,7 @@ function testProbe(project: string, folder: string): { command: string; report: 
   const flags = runner === "bun test" ? `--pass-with-no-tests --reporter=junit --reporter-outfile=${name}`
     : runner === "jest" ? `--passWithNoTests --runInBand --json --outputFile=${name}`
       : `--run --passWithNoTests --reporter=junit --outputFile=${name}`;
-  return { command: `${test.command} ${flags}`, report: posix.join(folder, name) };
+  return { command: [test.command, flags, ...files.map(quoted)].join(" "), report: posix.join(folder, name) };
 }
 
 /** Read only this invocation's report, never an earlier or linked report. */
@@ -236,54 +243,63 @@ async function probeRun(probe: { command: string; report: string }, project: str
 }
 
 /**
- * Each test file's run over the base with its project's commands, then that
- * project's own run on the base, once, when some of its tests fail there.
- * When the base fails without the file too and its reports cannot decide,
- * probe the project's own runner with per-test reporting and empty-suite
- * success. The base without the file and the change run once per folder;
- * the change must pass before a probe can credit any file.
+ * Each test file over the base, by what runs it there (#603): the project's
+ * own test runner on that file alone, with per-test reporting, when its test
+ * script is one (`testProbe`), else the project's whole commands. A file
+ * that fails there runs once more on the base without it: alone, the base's
+ * own version of the file, or none; whole, the base as it is, once per
+ * folder. A runner on the files alone also runs them on the change, once per
+ * folder, which must pass before it credits any file. Each reason names the
+ * command that judged it.
  */
 async function againstBase(project: string, root: string, tests: readonly string[], provenance: ReadonlyMap<string, TestExercise["provenance"]>,
   projects: readonly ProjectChecks[], signal: AbortSignal): Promise<TestExercise[]> {
-  const found: TestExercise[] = [];
-  const without = new Map<string, BaseRun>();
-  const probeWithout = new Map<string, BaseRun>();
-  const probeChange = new Map<string, BaseRun>();
-  const probes = new Map<string, ReturnType<typeof testProbe>>();
+  const found = new Map<string, TestExercise>();
+  const folders = new Map<string, { owning: ProjectChecks; paths: string[] }>();
   for (const path of tests) {
     const owning = owningProjects(projects, [path])[0];
-    const origin = provenance.get(path) ?? "added";
     if (owning === undefined) {
-      found.push({ path, provenance: origin, sensitivity: "unknown", reason: "no project's commands run it" });
-      continue;
+      found.set(path, { path, provenance: provenance.get(path) ?? "added", sensitivity: "unknown", reason: "no project's commands run it" });
+    } else {
+      const folder = folders.get(owning.folder) ?? { owning, paths: [] };
+      folder.paths.push(path);
+      folders.set(owning.folder, folder);
     }
-    const holding = async (commands: readonly string[], probe?: { command: string; report: string }): Promise<BaseRun> => {
-      mkdirSync(dirname(join(project, path)), { recursive: true });
-      writeFileSync(join(project, path), read(root, path) ?? "");
-      const run = probe === undefined ? await baseRun(commands, project, owning.folder, signal) : await probeRun(probe, project, signal);
-      await git(project, ["reset", "--quiet", "--hard"]);
-      await git(project, ["clean", "-qfdx", "-e", "node_modules"]);
-      return run;
-    };
-    const withTest = await holding(owning.commands);
-    if (withTest.outcome !== "passed" && !without.has(owning.folder)) {
-      without.set(owning.folder, await baseRun(owning.commands, project, owning.folder, signal));
-    }
-    const verdict = exercise(path, origin, withTest, without.get(owning.folder));
-    if (verdict.sensitivity !== "unknown") { found.push(verdict); continue; }
-    if (!probes.has(owning.folder)) probes.set(owning.folder, testProbe(project, owning.folder));
-    const probe = probes.get(owning.folder);
-    if (probe === undefined) { found.push(verdict); continue; }
-    const withProbe = await holding([probe.command], probe);
-    if (!probeWithout.has(owning.folder)) probeWithout.set(owning.folder, await probeRun(probe, project, signal));
-    if (!probeChange.has(owning.folder)) probeChange.set(owning.folder, await probeRun(probe, root, signal));
-    const result = exercise(path, origin, withProbe, probeWithout.get(owning.folder));
-    const credited = result.sensitivity === "fails_then_passes" && probeChange.get(owning.folder)?.outcome === "passed";
-    found.push(credited ? { ...result,
-      reason: `fails on the base, passes with the change, by \`${probe.command}\`, since the base fails without it too` }
-      : { ...verdict, reason: `${verdict.reason}; runner probe: ${result.reason}; on the change it ${probeChange.get(owning.folder)?.outcome.replaceAll("_", " ")}` });
   }
-  return found;
+  const holding = async (path: string, run: () => Promise<BaseRun>): Promise<BaseRun> => {
+    mkdirSync(dirname(join(project, path)), { recursive: true });
+    writeFileSync(join(project, path), read(root, path) ?? "");
+    const ran = await run();
+    await git(project, ["reset", "--quiet", "--hard"]);
+    await git(project, ["clean", "-qfdx", "-e", "node_modules"]);
+    return ran;
+  };
+  for (const { owning: { folder, commands }, paths } of folders.values()) {
+    const alone = (files: readonly string[]): ReturnType<typeof testProbe> =>
+      testProbe(project, folder, files.map((path) => posix.relative(folder, path)));
+    let without: BaseRun | undefined;
+    let change: BaseRun | undefined;
+    for (const path of paths) {
+      const origin = provenance.get(path) ?? "added";
+      const probe = alone([path]);
+      if (probe === undefined) {
+        const withTest = await holding(path, () => baseRun(commands, project, folder, signal));
+        if (withTest.outcome !== "passed") without ??= await baseRun(commands, project, folder, signal);
+        const verdict = exercise(path, origin, withTest, without);
+        found.set(path, { ...verdict, reason: `${verdict.reason}; by the whole check, ${commands.map((command) => `\`${command}\``).join(", ")}` });
+        continue;
+      }
+      const withTest = await holding(path, () => probeRun(probe, project, signal));
+      const verdict = exercise(path, origin, withTest, withTest.outcome === "passed" ? undefined : await probeRun(probe, project, signal));
+      const by = `by \`${probe.command}\``;
+      if (verdict.sensitivity !== "fails_then_passes") { found.set(path, { ...verdict, reason: `${verdict.reason}; ${by}` }); continue; }
+      const onChange = alone(paths);
+      change ??= onChange === undefined ? { outcome: "not_started", results: undefined } : await probeRun(onChange, root, signal);
+      found.set(path, change.outcome === "passed" ? { ...verdict, reason: `${verdict.reason}, ${by}` } : { ...verdict, sensitivity: "unknown",
+        reason: `it fails on the base ${by}, but on the change \`${onChange?.command ?? probe.command}\` ${change.outcome.replaceAll("_", " ")}` });
+    }
+  }
+  return tests.flatMap((path) => found.get(path) ?? []);
 }
 
 /** Files that decide a JavaScript project's dependencies, which the base takes from the checkout. */
@@ -292,8 +308,9 @@ const dependencyFiles: ReadonlySet<string> = new Set(["package.json", "package-l
 
 /**
  * Each changed or added test file, as the change leaves it, run alone over
- * the base: its project's commands run in a worktree of `base` holding only
- * that file from the change, and once more holding none of it when the file
+ * the base: its project's test runner on that file, or else its project's
+ * commands (`againstBase`), run in a worktree of `base` holding only that
+ * file from the change, and once more holding none of it when the file
  * fails there, to tell a test that fails because the change is missing from
  * a base that fails anyway. The base runs with the checkout's dependencies,
  * so when the change touches what decides them, no run there is faithful

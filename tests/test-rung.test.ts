@@ -55,6 +55,24 @@ it("credits a test added to a project with no tests that fails on the base and p
   expect(exercise).toMatchObject({ path: "math.test.ts", provenance: "added", sensitivity: "fails_then_passes" });
 }, 60_000);
 
+it("judges a test on the base by the project's runner on that file alone, never by its whole check (#603)", async () => {
+  const { root } = noTests();
+  const marker = join(root, "checked").replaceAll("\\", "/");
+  writeFileSync(join(root, "package.json"), JSON.stringify({ scripts: {
+    check: `node -e "require('fs').appendFileSync('${marker}', 'x')" && bun run test`, test: "bun test",
+  } }));
+  const git = (...args: string[]): string => execFileSync("git", args, { cwd: root, encoding: "utf8" });
+  git("add", "package.json");
+  git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "--quiet", "-m", "check script");
+  const base = git("rev-parse", "HEAD").trim();
+  writeFileSync(join(root, "math.test.ts"), addTest);
+  const [exercise] = await exerciseTests(root, base, ["math.test.ts"], ["math.ts", "math.test.ts"], suggestChecks(root),
+    new AbortController().signal);
+  expect(exercise).toMatchObject({ sensitivity: "fails_then_passes" });
+  expect(exercise?.reason).toMatch(/by `\w+ run test (-- )?--pass-with-no-tests .* 'math\.test\.ts'`$/u);
+  expect(existsSync(marker)).toBe(false);
+}, 60_000);
+
 it("does not credit a test added to a project with no tests when the test itself cannot run", async () => {
   const { root, base } = noTests();
   writeFileSync(join(root, "math.test.ts"), `${addTest}test("broken", () => {\n`);
