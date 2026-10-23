@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { ProofOutcome } from "./verification/proof-outcome-rule.js";
 
 /**
@@ -44,6 +46,13 @@ export function proofSummary(evidence: Evidence): { readonly words: string; read
 export function quietOutput(output: string): string[] {
   return output.split(/\r?\n/u).map((line) => line.trimEnd()).filter((line) => !/^(?:Generated|Created): |^Running dafny verify/u.test(line))
     .filter((line, k, all) => line !== "" || (k > 0 && all[k - 1] !== ""));
+}
+
+/** Whether the current files still hold the content a verifier checked, independent of Git's index or HEAD. */
+export async function currentContent(root: string, evidence: Evidence): Promise<boolean> {
+  const files = await Promise.all(evidence.files.map(async (path) => ({ path,
+    content: await readFile(join(root, path), "utf8").catch(() => undefined) })));
+  return contentHash(files) === evidence.contentHash;
 }
 
 /** The SHA-256 of files' paths and content, in order; an unreadable file counts as absent. */

@@ -44,6 +44,24 @@ doesn't, how it ended, the end of its output, its duration, the files it
 checked and a SHA-256 of their paths and content. Evidence describes those
 files only while their content still has that hash.
 
+Before publishing the receipt, after the rungs and open-cases listing, the
+gate compares each proof, command and model's evidence hash with its current
+files. A mismatch keeps the checked hash and output, but records
+`not_started` with a stale-evidence reason and the `operator` verdict: the
+current content was not checked. It never retains a pass for that content.
+Stale proofs no longer count as proof coverage. The receipt's changed-path
+blobs still record what the run leaves, not what an earlier check read.
+
+There is no automatic re-check: formatting changes to a checked file also
+invalidate its evidence, but cannot cause a retry loop. Generated outputs
+outside the evidence's file list do not invalidate it. Commands bind only
+the request's changed paths, not every dependency they might read.
+The reads, blob capture and receipt publication are not an atomic filesystem
+snapshot: another writer can change a file after its last read, and a
+change restored before that read is not detected. `tesota receipt` checks
+the hashes again on export and also compares the receipt's blobs with the
+commit, catching later edits.
+
 Outcomes are `passed`, `failed`, `vacuous`, `timed_out`, `cancelled` and
 `not_started`. A proof passes only when LemmaScript regenerated and checked
 it cleanly and Dafny verified at least one obligation; a clean run that
