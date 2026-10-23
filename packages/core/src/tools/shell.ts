@@ -32,12 +32,25 @@ export function bash(executable: string): Shell {
 }
 
 /**
+ * Bash where `find` locates it; otherwise POSIX sh, which every Unix has at
+ * `/bin/sh`, as Alpine's BusyBox ash without bash (#547). The tool keeps its
+ * name, which permission rules and hooks match; its label tells the model
+ * the shell is not bash.
+ */
+export function unixShell(find: (program: string) => string | null): Shell {
+  const found = find("bash");
+  if (found !== null) return bash(found);
+  const sh = find("sh") ?? "/bin/sh";
+  return { tool: "bash", executable: sh, label: `POSIX sh (${sh})`, args: (command) => ["-c", command] };
+}
+
+/**
  * The platform's own shell: PowerShell 7 on Windows when installed, otherwise
- * Windows PowerShell 5.1, which Windows always has; bash elsewhere. Git Bash
- * is not used: its paths are not the paths Windows tools take.
+ * Windows PowerShell 5.1, which Windows always has; `unixShell` elsewhere.
+ * Git Bash is not used: its paths are not the paths Windows tools take.
  */
 export function platformShell(): Shell {
-  if (process.platform !== "win32") return bash(Bun.which("bash") ?? "/bin/bash");
+  if (process.platform !== "win32") return unixShell((program) => Bun.which(program));
   const pwsh = Bun.which("pwsh");
   return pwsh !== null ? powershell(pwsh, 7)
     : powershell(join(process.env["SystemRoot"] ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe"), 5);
@@ -133,7 +146,9 @@ export function shellTool(cwd: string, shell: Shell, spool: () => string): Engin
     description: `Run a command in ${shell.label} from the session's folder. Returns stdout and stderr together and fails `
       + `when the command exits with a non-zero code. Long output keeps its end; the rest is saved to a file.`
       + (shell.label === "Windows PowerShell 5.1" ? " Windows PowerShell 5.1 has no && or ||: separate commands with ; "
-        + "and check $? or $LASTEXITCODE." : ""),
+        + "and check $? or $LASTEXITCODE."
+        : shell.label.startsWith("POSIX sh") ? " It is not bash: no arrays, [[ ]], <(...) or pipefail; "
+          + "bash is not installed (on Alpine: apk add bash)." : ""),
     parameters,
     async execute({ command, timeout }, signal, callId): Promise<ToolOutput> {
       const capture = new Capture(() => join(spool(), `${outputPrefix(callId)}${randomUUID().slice(0, 8)}.txt`));
