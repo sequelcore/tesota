@@ -10,6 +10,21 @@ import { baseTestStatus, checkOrigin, type CheckOutcome, type ReportedTest, test
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
+it("keeps Jest assertions in different files distinct and refuses malformed native reports", () => {
+  const root = mkdtempSync(join(tmpdir(), "tesota-jest-report-"));
+  roots.push(root);
+  const report = { testResults: [
+    { name: join(root, "first.test.js"), assertionResults: [{ fullName: "adds", status: "passed" }] },
+    { name: join(root, "second.test.js"), assertionResults: [{ fullName: "adds", status: "failed" }] },
+  ] };
+  writeFileSync(join(root, "results.json"), JSON.stringify(report));
+  expect([...readTestResults(root, ["results.json"])?.tests ?? []]).toEqual([
+    ["first.test.js > adds", "passed"], ["second.test.js > adds", "failed"],
+  ]);
+  writeFileSync(join(root, "results.json"), JSON.stringify({ testResults: [{ name: join(root, "first.test.js"), assertionResults: [{ fullName: "adds", status: "unknown" }] }] }));
+  expect(readTestResults(root, ["results.json"])).toBeUndefined();
+});
+
 const outcomes: readonly CheckOutcome[] = ["passed", "failed", "timed_out", "cancelled", "not_started", "unconfirmed", "changed_files"];
 const statuses: readonly TestStatus[] = ["passed", "failed", "skipped", "absent", "unread"];
 
