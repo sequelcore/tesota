@@ -9,6 +9,7 @@ import { counterexampleSteps } from "./receipt.js";
 import { pathBlobs } from "./request-fingerprint.js";
 import { runShell } from "./test-rung.js";
 import { projectFiles } from "./verification/lemmascript-verifier.js";
+import type { ProofOutcome } from "./verification/proof-outcome-rule.js";
 import { type FaultVerdict, type ModelRun, type Staleness, faultVerdict, modelOutcome, staleness, tlcRun,
   writtenWithCode } from "./verification/model-rule.js";
 
@@ -408,8 +409,11 @@ export async function checkModel(root: string, path: string, changed: readonly s
   const covered = header.covers.map((cover) => cover.path);
   const since = await changedSince(root, header.confirmed, covered.filter(inProject));
   const own = modelOwnFiles(path, header);
-  const facts = { path, language: language(path), header, staleness: staleness(since !== undefined, covered.map((file) => since?.includes(file) ?? true)),
-    stale: since ?? [], writtenWithCode: writtenWithCode(own.some((file) => changed.includes(file)), covered.some((file) => changed.includes(file))) };
+  const withCode = writtenWithCode(own.some((file) => changed.includes(file)), covered.some((file) => changed.includes(file)));
+  const facts = { path, language: language(path), header, stale: since ?? [], writtenWithCode: withCode };
+  // Judged once the check ends: a model written with its code that passed is measured against the code as the request leaves it.
+  const stalenessOf = (outcome: ProofOutcome): Staleness =>
+    staleness(withCode, outcome, since !== undefined, covered.map((file) => since?.includes(file) ?? true));
   const claim = `TLC checks that ${header.invariants.join(", ") || "the model's invariants"} hold in every reachable state of ${path}` +
     `${header.faults.length === 0 ? "" : `, and that each of its ${header.faults.length} planted faults breaks one`}.`;
   const evidence = (main: CheckerRun, faults: readonly FaultCheck[]): Evidence => ({ verifier: "tlc", claim, limits,
@@ -418,7 +422,8 @@ export async function checkModel(root: string, path: string, changed: readonly s
   const problems = headerProblems(path, header, source, facts.language);
   if (problems.length > 0) {
     const main: CheckerRun = { run: "malformed", output: problems.join("\n"), trace: "", durationMs: 0 };
-    return { ...facts, problems, evidence: evidence(main, []), run: main.run, states: 0, faults: [], link: "no_replay" };
+    const failed = evidence(main, []);
+    return { ...facts, staleness: stalenessOf(failed.outcome), problems, evidence: failed, run: main.run, states: 0, faults: [], link: "no_replay" };
   }
   const main = await check(root, path, path, header.invariants, jar, signal);
   const faults: FaultCheck[] = [];
@@ -432,7 +437,7 @@ export async function checkModel(root: string, path: string, changed: readonly s
   const result = evidence(main, faults);
   const link: ModelLink = header.replay === undefined || result.outcome !== "passed" ? "no_replay"
     : (await runShell(header.replay, root, signal, timeoutMs)).outcome === "passed" ? "linked" : "replay_failed";
-  return { ...facts, problems, evidence: result, run: main.run, states: distinctStates(main.output), faults, ...counterexample === undefined ? {} : { counterexample }, link };
+  return { ...facts, staleness: stalenessOf(result.outcome), problems, evidence: result, run: main.run, states: distinctStates(main.output), faults, ...counterexample === undefined ? {} : { counterexample }, link };
 }
 
 /** The header format, as the gate tells an agent that wrote a model without one. */

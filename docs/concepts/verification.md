@@ -358,7 +358,10 @@ judged TLC unavailable and wrote an interleaving test instead of a model
   the repository: a hint, never a guarantee, since a change outside the
   covered files can break what the model assumes;
 - "written with the code", which counts as weaker, when the request changed
-  both the model and the code it covers (`writtenWithCode`, proved).
+  both the model and the code it covers (`writtenWithCode`, proved). Such a
+  model that passed was checked against the code as the request leaves it,
+  so it is never called stale; a later request that changes the covered
+  code without the model gets the hint again.
 
 A model checks the properties it's given. Open cases still apply after a
 pass.
