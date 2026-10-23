@@ -113,6 +113,18 @@ export function packageCheckScripts(content: string | undefined): ReadonlyMap<st
   } catch { return new Map(); }
 }
 
+/** The project's test script and command prefix for forwarding runner flags, even under a composite `check`. */
+export function packageTest(checkout: string, folder: string): { script: string; command: string } | undefined {
+  try {
+    const directory = join(checkout, folder);
+    const manifest: unknown = parseJson(readFileSync(join(directory, "package.json"), "utf8"));
+    const scripts: unknown = typeof manifest === "object" && manifest !== null ? Reflect.get(manifest, "scripts") : undefined;
+    const script: unknown = typeof scripts === "object" && scripts !== null ? Reflect.get(scripts, "test") : undefined;
+    const runner = packageRunner(directory);
+    return typeof script === "string" ? { script, command: inFolder(folder, `${runner} test${runner === "npm run" ? " --" : ""}`) } : undefined;
+  } catch { return undefined; }
+}
+
 /** A package's `check` script, or its `typecheck`, `lint` and `test` scripts, with the package manager its lockfile names. */
 function packageChecks(directory: string): string[] {
   const runner = packageRunner(directory);

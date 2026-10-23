@@ -238,11 +238,14 @@ the temporary folder with the checkout's `node_modules` linked in:
 - when the base fails without it too, the JUnit reports of both runs
   decide: the test notices the change when tests fail with it that pass,
   or are missing, without it, as SWE-bench grades fail-to-pass;
-- when neither decides and the project's `test` script is `bun test`, its
-  test command runs again with `-- --pass-with-no-tests`, so a base with no
-  tests passes without the file (#575): the test notices the change when
-  that run fails on the base with it, passes there without it, and passes
-  on the change;
+- when neither decides and the project's `test` script directly runs Bun,
+  Vitest or Jest with plain arguments, that script runs again with per-test
+  reporting and the runner's empty-suite success flag. This works even when
+  a composite `check` is the project's normal command. Bun and Vitest write
+  JUnit XML; Jest writes its native JSON report. The test notices the change
+  when that run fails on the base with it, and either passes there without
+  it or reports newly failing tests. The runner must also pass on the change.
+  The base without the file and the change each run once per project folder;
 - anything else stays unknown, with the reason.
 
 The receipt keeps that apart from the test's provenance (#527): whether the

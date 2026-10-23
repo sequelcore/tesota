@@ -1,12 +1,13 @@
-import { lstatSync, readFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { lstatSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { join, relative } from "node:path";
+import { parseJson } from "./json.js";
 import { baseTestStatus, testOrigin } from "./verification/check-origin-rule.js";
 
-/** A test's result in a JUnit XML report. */
+/** A test's result in a runner's report. */
 export type ReportedStatus = "passed" | "failed" | "skipped";
 
 /**
- * The tests a check's JUnit XML reports name, merged by name
+ * The tests a check's JUnit XML or Jest JSON reports name, merged by name
  * (docs/concepts/verification.md, "Tests"), with the reports each test appears
  * in and the reports that were read.
  */
@@ -172,13 +173,47 @@ function confined(checkout: string, path: string): boolean {
   return true;
 }
 
+function jestAssertion(tests: Map<string, ReportedStatus>, file: string, assertion: unknown): boolean {
+  if (typeof assertion !== "object" || assertion === null || !("fullName" in assertion) || typeof assertion.fullName !== "string" ||
+    !("status" in assertion)) return false;
+  const status = assertion.status;
+  if (status !== "passed" && status !== "failed" && status !== "pending" && status !== "todo" && status !== "disabled") return false;
+  record(tests, `${file} > ${assertion.fullName}`, status === "passed" || status === "failed" ? status : "skipped");
+  return true;
+}
+
+/**
+ * Jest's native JSON report; incomplete or malformed reports give no evidence.
+ * Jest names suites by real path, so the checkout is resolved too: a temp
+ * folder behind a symlink (macOS /var) or a short name (Windows) would
+ * otherwise put every suite outside it.
+ */
+function parseJestReport(text: string, checkout: string): Map<string, ReportedStatus> | undefined {
+  try {
+    const report: unknown = parseJson(text);
+    if (typeof report !== "object" || report === null || !("testResults" in report) || !Array.isArray(report.testResults)) return undefined;
+    const tests = new Map<string, ReportedStatus>();
+    for (const suite of report.testResults as unknown[]) {
+      if (typeof suite !== "object" || suite === null || !("name" in suite) || typeof suite.name !== "string" ||
+        !("assertionResults" in suite) || !Array.isArray(suite.assertionResults)) return undefined;
+      const file = normalizeReportPath(relative(realpathSync.native(checkout), suite.name));
+      if (file === undefined) return undefined;
+      for (const assertion of suite.assertionResults as unknown[]) {
+        if (!jestAssertion(tests, file, assertion)) return undefined;
+      }
+    }
+    return tests;
+  } catch { return undefined; }
+}
+
 function readReport(checkout: string, path: string): Map<string, ReportedStatus> | undefined {
   try {
     const file = join(checkout, path);
     if (!confined(checkout, path)) return undefined;
     const stats = lstatSync(file);
     if (!stats.isFile() || stats.size > reportLimit) return undefined;
-    return parseJUnitReport(readFileSync(file, "utf8"));
+    const text = readFileSync(file, "utf8");
+    return path.endsWith(".json") ? parseJestReport(text, checkout) : parseJUnitReport(text);
   } catch { return undefined; }
 }
 
