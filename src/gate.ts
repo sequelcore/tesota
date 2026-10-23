@@ -47,18 +47,18 @@ function step<A>(work: (signal: AbortSignal) => Promise<A>): Effect.Effect<A> {
  * (`gate-checks.ts`): settling loads them before anything uses them, so
  * neither weighs on a session that has not settled yet.
  */
-let loaded: { checks: typeof import("./gate-checks.js"); effect: typeof Effect } | undefined;
+let loaded: typeof import("./gate-checks.js") | undefined;
 async function loadChecks(): Promise<void> {
-  loaded ??= { checks: await import("./gate-checks.js"), effect: await import("effect/Effect") };
+  loaded ??= await import("./gate-checks.js");
 }
 function checks(): typeof import("./gate-checks.js") {
   if (loaded === undefined) throw new Error("The gate used its checks before settling loaded them.");
-  return loaded.checks;
+  return loaded;
 }
 /** Effect's functions, loaded with the checks. */
-function effect(): typeof Effect {
+function effect(): typeof import("./gate-checks.js")["gateEffect"] {
   if (loaded === undefined) throw new Error("The gate used Effect before settling loaded it.");
-  return loaded.effect;
+  return loaded.gateEffect;
 }
 
 async function gitPaths(root: string, args: readonly string[]): Promise<string[] | undefined> {

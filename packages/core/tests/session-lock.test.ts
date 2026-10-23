@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { lockSession, SessionLockedError, withLockWhile } from "../src/session-lock.ts";
+import { type Kernel32, lockOnWindows, lockSession, SessionLockedError, withLockWhile } from "../src/session-lock.ts";
 
 const path = (): string => join(mkdtempSync(join(tmpdir(), "tesota-core-lock-")), "writer.lock");
 
@@ -19,6 +19,49 @@ test("an async writer waits for the holder, then runs and releases its lock", as
   }
   expect(await waiting).toBe(42);
   lockSession(file).release();
+});
+
+test.skipIf(process.platform !== "win32")("a held lock is always refused as contention, never with an unknown Windows error (#550)", async () => {
+  const file = path();
+  const lock = lockSession(file);
+  const refusals: unknown[] = [];
+  try {
+    await Promise.all(Array.from({ length: 8 }, async () => {
+      for (let attempt = 0; attempt < 2_000; attempt++) {
+        try { lockSession(file).release(); refusals.push(new Error("took a held lock")); } catch (error) {
+          if (!(error instanceof SessionLockedError)) refusals.push(error);
+        }
+        if (attempt % 50 === 0) await Bun.sleep(0);
+      }
+    }));
+  } finally {
+    lock.release();
+  }
+  expect(refusals).toEqual([]);
+});
+
+/** kernel32 whose `CreateFileW` fails and whose `GetLastError` then answers `error`. */
+const failing = (error: number): Kernel32 => ({
+  CreateFileW: () => 0xffffffffffffffffn, CloseHandle: () => 1, GetLastError: () => error,
+});
+
+test("a failed CreateFileW with no error code on a lock file that exists is contention (#550)", () => {
+  const file = path();
+  writeFileSync(file, "");
+  expect(() => lockOnWindows(file, failing(0))).toThrow(SessionLockedError);
+});
+
+test("a failed CreateFileW with a sharing violation is contention, and any other coded error is thrown as it is", () => {
+  const file = path();
+  writeFileSync(file, "");
+  expect(() => lockOnWindows(file, failing(32))).toThrow(SessionLockedError);
+  expect(() => lockOnWindows(file, failing(5))).toThrow("Windows error 5.");
+});
+
+test("a failed CreateFileW with no error code and no lock file is not contention", () => {
+  const error = (() => { try { lockOnWindows(path(), failing(0)); } catch (caught) { return caught; } })();
+  expect(error).toBeInstanceOf(Error);
+  expect(error).not.toBeInstanceOf(SessionLockedError);
 });
 
 for (const [waitMs, seconds] of [[0, "0"], [60, "0.06"]] as const) {
