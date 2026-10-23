@@ -405,6 +405,63 @@ describe("tesota-core", () => {
     await running;
   });
 
+  test("/resume closes the shell's idle session that was asked something, keeps it resumable, and opens the picked one (#595)", async () => {
+    const { terminal, sessions, running } = await app(["first answer"], { earlier: "the earlier request" });
+    send(terminal, "/model");
+    await terminal.until("Model");
+    terminal.type(enter);
+    await terminal.until("Model: ");
+    send(terminal, "the shell request");
+    await terminal.until("first answer");
+    await terminal.untilGone("Verifying");
+    const files = (): string[] => readdirSync(sessions).filter((name) => name.endsWith(".jsonl"));
+    expect(files().length).toBe(2);
+    send(terminal, "/resume");
+    await terminal.until("the earlier request");
+    terminal.type(enter);
+    const screen = await terminal.until("earlier answer");
+    expect(screen).not.toContain("Another session is working");
+    // The closed session's file stays, so it can be resumed in turn.
+    expect(files().length).toBe(2);
+    send(terminal, "/resume");
+    await terminal.until("the shell request");
+    terminal.type("\x1b");
+    send(terminal, "/quit");
+    await running;
+  });
+
+  test("/resume while the shell's session runs offers to resume when it is idle, and makes no worktree (#595)", async () => {
+    const { terminal, cwd, running } = await app([{ tool: "write", args: { path: "asked.md", content: "x" } }, "written"],
+      { repository: true, earlier: "the earlier request" });
+    const worktrees = (): number => spawnSync("git", ["worktree", "list"], { cwd, encoding: "utf8" }).stdout.trim().split("\n").length;
+    send(terminal, "/model");
+    await terminal.until("Model");
+    terminal.type(enter);
+    await terminal.until("Model: ");
+    // The first session holds the checkout and waits on a question; /new shows another, in its own worktree.
+    send(terminal, "write it");
+    send(terminal, "/new");
+    await terminal.until("1 session waits for you");
+    const before = worktrees();
+    send(terminal, "/resume");
+    await terminal.until("the earlier request");
+    terminal.type(enter);
+    await terminal.until("Resume when it is idle");
+    terminal.type(enter);
+    await terminal.until("Will resume the session when");
+    // Answer the question in the first session: when its run ends, the earlier one opens.
+    terminal.type("\x14");
+    await terminal.until("waiting");
+    terminal.type("\x1b[A");
+    terminal.type(enter);
+    await terminal.until("Write asked.md?");
+    terminal.type(enter);
+    await terminal.until("earlier answer");
+    expect(worktrees()).toBe(before);
+    send(terminal, "/quit");
+    await running;
+  });
+
   test("outside Git /new says why a second session cannot start, and the first stays (#455)", async () => {
     const { terminal, running } = await app();
     send(terminal, "/new");
