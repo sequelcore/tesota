@@ -1399,3 +1399,91 @@ it("asks once for a header on a TLA+ model the request wrote without one, then l
   expect(receipt.unheaded).toEqual(["spec/Race.tla"]);
   expect(receiptFindings(receipt).find(({ check }) => check === "model")).toMatchObject({ standing: "gap", subject: "spec/Race.tla" });
 });
+
+
+/** What the gate published of its operations, as the status line and the timeline read them. */
+const shape = (run: ReturnType<typeof gate>): (string | undefined)[][] =>
+  run.progress.operations.operations().map(({ method, target, state, result }) => [method, target, state, result]);
+
+it("publishes each proof and closes a send-back attempt as returned to the agent, the next as settled (#590)", async () => {
+  const root = project();
+  const run = gate(root);
+  await run.input();
+  await run.tool("write");
+  writeFileSync(join(root, "src", "rule.ts"), contract.replace(">= 0", ">= 1").replace("return 0;", "return 1;"));
+  scripted.set("src/rule.ts", { outcome: "failed", output: "boom" });
+  expect((await run.settle())?.continue).toBe(true);
+  const ops = run.progress.operations;
+  expect(ops.operations()).toMatchObject([{ method: "proof", unit: "", state: "ended", result: "failed", generation: 1,
+    target: expect.stringContaining("src/rule.ts") }]);
+  expect(ops.attempts()).toEqual([{ generation: 1, closedAs: "returned_to_agent" }]);
+  scripted.set("src/rule.ts", { outcome: "passed", output: "1 verified, 0 errors" });
+  run.agentStart();
+  expect((await run.settle())?.continue).toBeUndefined();
+  const second = ops.operations().filter(({ generation }) => generation === 2);
+  expect(second.map(({ method, result }) => [method, result])).toEqual([["proof", "passed"], ["mutation", "done"], ["claimcheck", "done"],
+    ["receipt", "done"]]);
+  expect(ops.attempts()).toEqual([{ generation: 1, closedAs: "returned_to_agent" }, { generation: 2, closedAs: "settled" }]);
+  expect(ops.operations().every(({ state }) => state === "ended")).toBe(true);
+  expect(ops.line(performance.now())).toBeUndefined();
+});
+
+it("publishes the test rung's commands, each test on the base and its base control, with the exact command (#590)", async () => {
+  const root = testedProject();
+  const run = gate(root);
+  await run.input();
+  await run.tool("write");
+  write(root, { "src/price.mjs": "export const total = (n) => Math.max(n, 0);\n", "test/negative.test.mjs": priceTest(-1, 0) });
+  await run.settle();
+  expect(shape(run)).toEqual([["command", "bun run test", "ended", "passed"], ["exercise", "bun run test", "ended", "failed"],
+    ["base_control", "bun run test", "ended", "passed"], ["receipt", "receipt", "ended", "done"]]);
+  const [, exercise, control] = run.progress.operations.operations();
+  expect(control?.parent).toBe(exercise?.id);
+  for (const { startedAt, endedAt, durationMs } of run.progress.operations.operations()) {
+    expect(endedAt).toBeGreaterThanOrEqual(startedAt ?? Infinity);
+    expect(durationMs).toBe((endedAt ?? 0) - (startedAt ?? 0));
+  }
+}, 60_000);
+
+it("shows a command that prints nothing with its exact command and growing time, and a stop marks the rest as not started (#590)", async () => {
+  const root = repository({ "package.json": JSON.stringify({ scripts: { typecheck: "node -e \"setTimeout(function(){}, 60000)\"",
+    lint: "node -e 0", test: "node -e 0" } }), "bun.lock": "", "src/a.mjs": "export const a = 1;\n" });
+  const controller = new AbortController();
+  const run = gate(root, undefined, { signal: controller.signal });
+  await run.input();
+  await run.tool("write");
+  write(root, { "src/a.mjs": "export const a = 2;\n" });
+  const settling = run.settle();
+  const ops = run.progress.operations;
+  await vi.waitFor(() => expect(ops.line(performance.now())).toMatch(/^Running project check · bun run typecheck · 0:01$/u),
+    { timeout: 20_000, interval: 50 });
+  expect(ops.line(performance.now())).not.toMatch(/%|remaining|estimat/iu);
+  expect(ops.operations().filter(({ state }) => state === "planned").map(({ target }) => target)).toEqual(["bun run lint", "bun run test"]);
+  controller.abort();
+  expect(entry(await settling).details).toMatchObject({ stopped: "the operator stopped the run while Tesota verified it" });
+  expect(shape(run)).toEqual([["command", "bun run typecheck", "ended", "cancelled"], ["command", "bun run lint", "ended", "not_started"],
+    ["command", "bun run test", "ended", "not_started"]]);
+  expect(ops.operations().slice(1).map(({ startedAt }) => startedAt)).toEqual([undefined, undefined]);
+  expect(ops.attempts()).toEqual([{ generation: 1, closedAs: "stopped" }]);
+  expect(ops.line(performance.now())).toBeUndefined();
+}, 60_000);
+
+it("publishes the open-case listing, and a model check kept from an earlier check as reused (#590)", async () => {
+  const root = repository({ "src/counter.ts": "export const n = 0;\n", ...counterModel() });
+  const run = gate(root, undefined, { flags: { "open-cases-model": "test/lister" }, modelRegistry: {
+    find: () => ({ provider: "test", id: "lister" }), complete: () => Promise.resolve({ stopReason: "toolUse",
+      content: [{ type: "toolCall", id: "result", name: "record_open_cases", arguments: { status: "listed", cases: [] } }] }) } });
+  await run.input();
+  await run.tool("write");
+  writeFileSync(join(root, "src", "counter.ts"), "export const n = 1;\n");
+  await run.settle();
+  // The scripted model check publishes nothing of its own, as TLC's runner does.
+  expect(shape(run).map(([method]) => method)).toEqual(["receipt", "open_cases"]);
+  expect(run.progress.operations.operations().find(({ method }) => method === "open_cases")).toMatchObject({ target: "test/lister", result: "done" });
+  run.agentStart();
+  await run.tool("write");
+  writeFileSync(join(root, "notes.md"), "# Notes\n");
+  await run.settle();
+  const reused = run.progress.operations.operations().filter(({ reused: kept }) => kept);
+  expect(reused).toMatchObject([{ method: "model_main", target: "models/Counter.tla", result: "passed", durationMs: 0 }]);
+});

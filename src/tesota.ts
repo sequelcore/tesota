@@ -44,6 +44,8 @@ export default function tesota(pi: ExtensionAPI, recorded?: () => RecordedReques
       model: () => ctx.model === undefined ? "no model"
         : ctx.model.reasoning ? `${ctx.model.id} ${pi.getThinkingLevel()}` : ctx.model.id,
       context: () => ctx.getContextUsage() }, () => tui.requestRender()));
+    // The label beside the orb names the gate's running work; the shell listens only while it shows the label (#590).
+    ctx.ui.setWorkingDetail(progress.operations);
     if (contracts) offer(proveTool.name);
     if (hasTlc()) offer(modelTool.name);
   });

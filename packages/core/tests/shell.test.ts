@@ -462,6 +462,54 @@ describe("the shell", () => {
     several();
   });
 
+  /** A gate's detail with a line the test sets, and how many listen. */
+  function detailOf(first: string | undefined) {
+    const listeners = new Set<() => void>();
+    const state = { line: first };
+    return { state, listeners, detail: { line: () => state.line, subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => { listeners.delete(listener); };
+    } }, set: (line: string | undefined) => { state.line = line; for (const listener of listeners) listener(); } };
+  }
+
+  test("while the gate verifies, the label names the running command and its elapsed time, and plain words when none runs (#590)", async () => {
+    const surface = createSurface(shellTheme("dark", "truecolor"));
+    const gate = detailOf("Checking test sensitivity · bun test tests/rule.test.ts · 0:19");
+    const { terminal, shell } = shellOn([], "fullscreen", [100, 24], { surface });
+    surface.ui.setWorkingDetail(gate.detail);
+    shell.busy("working");
+    expect(await terminal.until("Working…")).not.toContain("bun test");
+    expect(gate.listeners.size).toBe(0);
+    shell.busy("settling");
+    const screen = await terminal.until("Checking test sensitivity · bun test tests/rule.test.ts · 0:19");
+    expect(screen).not.toContain("Verifying…");
+    expect(gate.listeners.size).toBe(1);
+    gate.set("Running project check · bun run check · 6:02");
+    await terminal.until("Running project check · bun run check · 6:02");
+    gate.set(undefined);
+    await terminal.until("Verifying…");
+    shell.busy(undefined);
+    expect(gate.listeners.size).toBe(0);
+  });
+
+  test("nothing stays subscribed to the gate after a session switch or the shell stopping (#590)", async () => {
+    const surface = createSurface(shellTheme("dark", "truecolor"));
+    const gate = detailOf("Proving · src/a.ts · 0:01");
+    const first = shellOn([], "fullscreen", [100, 24], { surface });
+    const second = shellOn([]);
+    surface.ui.setWorkingDetail(gate.detail);
+    first.shell.busy("settling");
+    await first.terminal.until("Proving · src/a.ts · 0:01");
+    expect(gate.listeners.size).toBe(1);
+    first.shell.show(second.session, createSurface(shellTheme("dark", "truecolor")), "settling");
+    expect(gate.listeners.size).toBe(0);
+    first.shell.show(first.session, surface, "settling");
+    await first.terminal.until("Proving · src/a.ts · 0:01");
+    expect(gate.listeners.size).toBe(1);
+    first.shell.stop();
+    expect(gate.listeners.size).toBe(0);
+  });
+
   test("everything in the input's place has one frame: a bar whose color says what it asks, one title style, one marker", async () => {
     const theme = shellTheme("dark", "truecolor");
     const approve = theme.fg("warning", "▌");

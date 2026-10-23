@@ -4,6 +4,7 @@ import { join, posix } from "node:path";
 import { type Evidence, contentHash } from "./evidence.js";
 import { git } from "./git.js";
 import { tesotaHome } from "./home.js";
+import { noOperations, type OperationResult, type OperationSink, type OperationSpec } from "./operations.js";
 import { runProcess } from "./process.js";
 import { counterexampleSteps } from "./receipt.js";
 import { pathBlobs } from "./request-fingerprint.js";
@@ -141,6 +142,18 @@ export async function findModels(root: string): Promise<string[]> {
     if (source !== undefined && modelHeader(source) !== undefined) models.push(path);
   }
   return models;
+}
+
+/** The command a run of `file` for the model at `model` launches (`check`), as the operations name it. */
+function checkTarget(model: string, file: string): string {
+  if (language(model) === "quint") return `quint verify --backend=tlc ${file}`;
+  const [spec, config] = file.endsWith(".cfg") ? [model, file] : [file, configOf(file)];
+  return `java tlc2.TLC -config ${config} ${spec}`;
+}
+
+/** How a model run ended, as an operation's result: a violation is a failed run. */
+function modelRunResult(run: ModelRun): OperationResult {
+  return run === "violated" || run === "malformed" ? "failed" : run;
 }
 
 /** A TLA+ specification's configuration, which TLC reads beside it by default. */
@@ -401,7 +414,7 @@ export async function modelContent(root: string, path: string, header: ModelHead
  * faults and its covered files as they were before the check.
  */
 export async function checkModel(root: string, path: string, changed: readonly string[], signal: AbortSignal,
-  jar: string = tlaToolsJar()): Promise<ModelCheck> {
+  jar: string = tlaToolsJar(), ops: OperationSink = noOperations): Promise<ModelCheck> {
   const started = Date.now();
   const source = await readIfPresent(join(root, path)) ?? "";
   const header = modelHeader(source) ?? { covers: [], invariants: [], atomic: [], omits: [], faults: [] };
@@ -425,18 +438,28 @@ export async function checkModel(root: string, path: string, changed: readonly s
     const failed = evidence(main, []);
     return { ...facts, staleness: stalenessOf(failed.outcome), problems, evidence: failed, run: main.run, states: 0, faults: [], link: "no_replay" };
   }
-  const main = await check(root, path, path, header.invariants, jar, signal);
+  // Each run is announced before the first starts, so a stop leaves the later ones as not started; the faults and the replay follow the main run.
+  const mainSpec: OperationSpec = { method: "model_main", unit: "", target: checkTarget(path, path) };
+  const mainId = ops.plan(mainSpec);
+  const faultSpecs = header.faults.map((fault): OperationSpec => ({ method: "model_fault", unit: "", target: checkTarget(path, fault.path), parent: mainId }));
+  const faultIds = faultSpecs.map((spec) => ops.plan(spec));
+  const replaySpec: OperationSpec | undefined = header.replay === undefined ? undefined
+    : { method: "model_replay", unit: "", target: header.replay, parent: mainId };
+  const replayId = replaySpec === undefined ? undefined : ops.plan(replaySpec);
+  const main = await ops.run(mainSpec, () => check(root, path, path, header.invariants, jar, signal), ({ run }) => modelRunResult(run), mainId);
   const faults: FaultCheck[] = [];
   if (main.run === "passed") {
-    for (const fault of header.faults) {
-      const ran = await check(root, path, fault.path, header.invariants, jar, signal);
+    for (const [k, fault] of header.faults.entries()) {
+      const ran = await ops.run(faultSpecs[k] ?? mainSpec, () => check(root, path, fault.path, header.invariants, jar, signal),
+        ({ run }) => modelRunResult(run), faultIds[k]);
       faults.push({ ...fault, verdict: faultVerdict(ran.run), output: ran.output, durationMs: ran.durationMs });
     }
   }
   const counterexample = main.run === "violated" ? tlcCounterexample(main.trace) : undefined;
   const result = evidence(main, faults);
   const link: ModelLink = header.replay === undefined || result.outcome !== "passed" ? "no_replay"
-    : (await runShell(header.replay, root, signal, timeoutMs)).outcome === "passed" ? "linked" : "replay_failed";
+    : (await ops.run(replaySpec ?? mainSpec, () => runShell(header.replay ?? "", root, signal, timeoutMs), ({ outcome }) => outcome, replayId))
+      .outcome === "passed" ? "linked" : "replay_failed";
   return { ...facts, staleness: stalenessOf(result.outcome), problems, evidence: result, run: main.run, states: distinctStates(main.output), faults, ...counterexample === undefined ? {} : { counterexample }, link };
 }
 

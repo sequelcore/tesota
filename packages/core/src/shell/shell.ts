@@ -3,7 +3,7 @@ import {
   type SlashCommand,
   Spacer, type Terminal, type TerminalColors, Text, TruncatedText, TuiAltScreen, type TuiAltScreenOptions, TuiMainScreen, VStack,
 } from "@earendil-works/pi-tui";
-import { type FooterData, QUESTION_STATUS } from "../../../../src/contract.ts";
+import { type FooterData, QUESTION_STATUS, type WorkingDetail } from "../../../../src/contract.ts";
 import type { SessionEvent } from "../loop.ts";
 import type { EngineSession } from "../session.ts";
 import type { TuiMode } from "../settings.ts";
@@ -335,13 +335,38 @@ export function startShell(options: ShellOptions): Shell {
     transcript.addChild(new Text(theme.fg(tone, text), 1, 1));
     tui.requestRender();
   };
+  /**
+   * While the gate verifies, the label names the work running and for how long (#590), from the shown session's
+   * surface. The listener and the clock tick last only as long as the label does: a state without verification, a
+   * session switch to another surface and the shell stopping all let go of them.
+   */
+  let unwatchDetail: () => void = () => undefined;
+  let watched: WorkingDetail | undefined;
+  const watchDetail = (settling: boolean): void => {
+    const detail = settling ? surface?.detail : undefined;
+    if (detail === watched) return;
+    unwatchDetail();
+    unwatchDetail = () => undefined;
+    watched = detail;
+    if (detail === undefined) return;
+    const show = (): void => {
+      loader.setMessage(detail.line(performance.now()) ?? "Verifying…");
+      tui.requestRender();
+    };
+    const off = detail.subscribe(show);
+    const tick = setInterval(show, 1000);
+    unwatchDetail = () => { off(); clearInterval(tick); };
+    show();
+  };
   const working = (state: "working" | "settling" | undefined): void => {
     status.clear();
+    watchDetail(false);
     if (state === undefined) { loader.stop(); busy = false; } else {
       busy = true;
       loader.setMessage(state === "working" ? "Working…" : "Verifying…");
       status.addChild(loader);
       loader.start();
+      watchDetail(state === "settling");
     }
   };
   const restorePending = (): void => {
@@ -424,6 +449,7 @@ export function startShell(options: ShellOptions): Shell {
     unsubscribe();
     unwatch();
     unfollow();
+    watchDetail(false);
     for (const dispose of disposers.splice(0)) dispose();
     loader.stop();
     tui.stop({ preserveScreen: false });

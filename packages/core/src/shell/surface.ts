@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, watch } from "node:fs";
 import { dirname, join } from "node:path";
-import type { FooterData, MessageRenderer, ShellAPI, ShellUI, ToolDrawing } from "../../../../src/contract.ts";
+import type { FooterData, MessageRenderer, ShellAPI, ShellUI, ToolDrawing, WorkingDetail } from "../../../../src/contract.ts";
 import type { HostParts } from "../../../../src/host.ts";
 import manifest from "../../package.json" with { type: "json" };
 import { platformShell } from "../tools/shell.ts";
@@ -30,6 +30,8 @@ export interface Surface {
   footer: Parameters<ShellUI["setFooter"]>[0];
   editor: Parameters<ShellUI["setEditorComponent"]>[0];
   indicator: { frames?: string[]; intervalMs?: number } | undefined;
+  /** What the label says while the gate verifies (#590). */
+  detail: WorkingDetail | undefined;
   readonly statuses: Map<string, string>;
   readonly renderers: Map<string, MessageRenderer>;
   readonly tools: Map<string, ToolDrawing>;
@@ -46,6 +48,7 @@ export function createSurface(theme: ShellTheme): Surface {
       setFooter: (factory) => { surface.footer = factory; changed(); },
       setEditorComponent: (factory) => { surface.editor = factory; changed(); },
       setWorkingIndicator: (options) => { surface.indicator = options; changed(); },
+      setWorkingDetail: (detail) => { surface.detail = detail; changed(); },
       setStatus: (key, text) => {
         if (text === undefined) surface.statuses.delete(key);
         else surface.statuses.set(key, text);
@@ -64,7 +67,7 @@ export function createSurface(theme: ShellTheme): Surface {
       }
     },
     theme,
-    header: undefined, footer: undefined, editor: undefined, indicator: undefined,
+    header: undefined, footer: undefined, editor: undefined, indicator: undefined, detail: undefined,
     statuses: new Map(), renderers: new Map(), tools: new Map(),
     onChange: (listener) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
   };

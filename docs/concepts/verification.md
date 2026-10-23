@@ -425,6 +425,19 @@ request.
 - **The footer** shows what the project lets Tesota verify before a
   request (`readiness`, proved), that it waits while the agent works, the
   gate's step and timer while it verifies, and the receipt in brief after.
+  It names no file or command: the status line does.
+- **The status line beside the orb** says `Working…` while the agent works.
+  While the gate verifies it names the operation running, its exact
+  launched command or target, and the time it has run, such as
+  `Running project check · bun run check · 6:02`. Operations the gate and
+  its runners publish from the code that runs them (`src/operations.ts`)
+  feed it: each has a start and an end the runner reports, never an
+  estimate, so it shows no percentage or time remaining. Concurrent work
+  (mutation with ClaimCheck) shows as concurrent, a reused check as reused,
+  a stop marks unlaunched work as not started, and an operation with no
+  end reads as interrupted, never passed. When none runs it says
+  `Verifying…`. It listens only while shown, and lets go when the session
+  switches or the shell stops.
   It leads with `!` when anything needs you, by the same count as the
   receipt, `○` when nothing does but something is unverified, and `✓`
   otherwise, in the receipt's color. It is one row: at the right the
