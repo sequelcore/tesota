@@ -871,7 +871,8 @@ it("verifies a folder in no repository against Tesota's snapshot of it, whatever
   expect(entry(settled).content).toBe([
     "## Tesota receipt\n",
     "- **passed** — bun run test",
-    "- **notices change** — test/negative.test.mjs: fails on the base, passes with the change; added in this request",
+    "- **notices change** — test/negative.test.mjs: fails on the base, passes with the change; " +
+    "by the whole check, \\`bun run test\\`; added in this request",
     "- **not proved** — src/price.mjs: no proof covers it; the project's commands pass with it",
     "- **changed lines** — implementation \\+1 \\-1 · tests \\+4 \\-0", "\nThis is check evidence, not your acceptance."].join("\n"));
   const receipt = entry(settled).details as Receipt;
@@ -1088,8 +1089,10 @@ it("runs the project's tests, and runs each changed test on the request's base e
   expect(entry(settled).content).toBe([
     "## Tesota receipt\n",
     "- **passed** — bun run test",
-    "- **notices change** — test/negative.test.mjs: fails on the base, passes with the change; added in this request",
-    "- **passes on base** — test/positive.test.mjs: it passes without the change too; added in this request",
+    "- **notices change** — test/negative.test.mjs: fails on the base, passes with the change; " +
+    "by the whole check, \\`bun run test\\`; added in this request",
+    "- **passes on base** — test/positive.test.mjs: it passes without the change too; " +
+    "by the whole check, \\`bun run test\\`; added in this request",
     "- **not proved** — src/price.mjs: no proof covers it; the project's commands pass with it",
     "- **changed lines** — implementation \\+1 \\-1 · tests \\+9 \\-0", "\nThis is check evidence, not your acceptance."].join("\n"));
   const receipt = entry(settled).details as Receipt;
@@ -1113,7 +1116,8 @@ it("neither flags nor lists as not proved a test file that only gains a test", a
   expect(settled.content).toBe([
     "## Tesota receipt\n",
     "- **passed** — bun run test",
-    "- **notices change** — test/price.test.mjs: fails on the base, passes with the change; changed in this request",
+    "- **notices change** — test/price.test.mjs: fails on the base, passes with the change; " +
+    "by the whole check, \\`bun run test\\`; changed in this request",
     "- **not proved** — src/price.mjs: no proof covers it; the project's commands pass with it",
     "- **changed lines** — implementation \\+1 \\-1 · tests \\+1 \\-0", "\nThis is check evidence, not your acceptance."].join("\n"));
   const receipt = settled.details as Receipt;
@@ -1182,13 +1186,15 @@ async function newTestOverFailingBase(test: string): Promise<Settled | undefined
 
 it("counts a new test as exercising the change when its tests newly fail on a base that fails anyway", async () => {
   const settled = await newTestOverFailingBase("node --test --test-reporter=junit --test-reporter-destination=report.xml");
-  expect(entry(settled).content).toContain("- **notices change** — test/discount.test.mjs: fails on the base, passes with the change; added in this request");
+  expect(entry(settled).content).toContain("- **notices change** — test/discount.test.mjs: fails on the base, passes with the change; " +
+    "by the whole check, \\`bun run test\\`; added in this request");
 }, 60_000);
 
 it("says a test report would tell, when the base fails with and without a new test and writes none", async () => {
   const settled = await newTestOverFailingBase("node --test");
   expect(entry(settled).content).toContain("- **not checked** — test/discount.test.mjs: on the base it failed, but so does the " +
-    "base without it, and no test report says which tests fail; added in this request");
+    "base without it, and no test report says which tests fail; by the whole check, \\`bun run test\\`; " +
+    "added in this request");
 }, 60_000);
 
 it("gives no verdict on the base when the change touches what decides the dependencies", async () => {
@@ -1213,7 +1219,8 @@ it("runs only the commands of the projects that own the changed files, there and
   await run.tool("write");
   write(root, { "a/test/y.test.mjs": passing });
   expect(entry(await run.settle()).content).toBe(["## Tesota receipt\n", "- **passed** — cd a && bun run test",
-    "- **passes on base** — a/test/y.test.mjs: it passes without the change too; added in this request",
+    "- **passes on base** — a/test/y.test.mjs: it passes without the change too; " +
+    "by the whole check, \\`cd a && bun run test\\`; added in this request",
     "- **changed lines** — tests \\+2 \\-0", "\nThis is check evidence, not your acceptance."].join("\n"));
 }, 60_000);
 

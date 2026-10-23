@@ -229,24 +229,30 @@ the command ran.
 
 **Exercise.** When every command passes and the request has a base, each
 changed or added test file runs alone over the base, in a Git worktree in
-the temporary folder with the checkout's `node_modules` linked in:
+the temporary folder with the checkout's `node_modules` linked in. What
+runs it there (#603): when the project's `test` script directly runs Bun,
+Vitest or Jest with plain arguments, that script on the file alone, with
+per-test reporting and the runner's empty-suite success flag, even when a
+composite `check` is the project's normal command; Bun and Vitest write
+JUnit XML, Jest its native JSON report. Otherwise the project's whole
+commands run. Each reason names the command that judged it.
 
 - a test that passes there passes on the base: it doesn't depend on the
   change, though it may still guard against a regression;
 - a test that fails there, while the base passes without it, notices the
-  change: it fails, then passes (`checkOrigin`, proved);
-- when the base fails without it too, the JUnit reports of both runs
-  decide: the test notices the change when tests fail with it that pass,
-  or are missing, without it, as SWE-bench grades fail-to-pass;
-- when neither decides and the project's `test` script directly runs Bun,
-  Vitest or Jest with plain arguments, that script runs again with per-test
-  reporting and the runner's empty-suite success flag. This works even when
-  a composite `check` is the project's normal command. Bun and Vitest write
-  JUnit XML; Jest writes its native JSON report. The test notices the change
-  when that run fails on the base with it, and either passes there without
-  it or reports newly failing tests. The runner must also pass on the change.
-  The base without the file and the change each run once per project folder;
+  change: it fails, then passes (`checkOrigin`, proved). Without it means
+  the base's own version of the file, or none, for the runner on the file
+  alone, and the base as it is, once per project folder, for the whole
+  commands;
+- when the base fails without it too, the reports of both runs decide: the
+  test notices the change when tests fail with it that pass, or are
+  missing, without it, as SWE-bench grades fail-to-pass;
+- the runner on the files alone must also pass on the change, run once per
+  project folder, before it credits any file;
 - anything else stays unknown, with the reason.
+
+The runner on one file sees what the test asserts, not the project's
+typecheck or lint of it, which the change's own commands already passed.
 
 The receipt keeps that apart from the test's provenance (#527): whether the
 base held the file, so the request changed it, or the request added it. A
