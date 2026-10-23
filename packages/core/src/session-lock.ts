@@ -1,5 +1,5 @@
 import { dlopen, FFIType, ptr } from "bun:ffi";
-import { closeSync, openSync } from "node:fs";
+import { closeSync, existsSync, openSync } from "node:fs";
 import * as Effect from "effect/Effect";
 import * as Schedule from "effect/Schedule";
 
@@ -52,17 +52,28 @@ function openLibc() {
 /** Whether `CreateFileW` failed: Bun gives its `INVALID_HANDLE_VALUE` as the unsigned 64-bit `0xFFFFFFFFFFFFFFFF`, a bigint. */
 const invalid = (handle: unknown): boolean => handle === null || handle === 0xffffffffffffffffn || handle === -1 || handle === 0;
 
-function lockOnWindows(path: string): SessionLock {
-  kernel32 ??= openKernel32();
+/** The three kernel32 calls the Windows lock makes, so a test can supply their answers. */
+export interface Kernel32 {
+  CreateFileW(...args: unknown[]): unknown;
+  CloseHandle(handle: unknown): unknown;
+  GetLastError(): number;
+}
+
+/**
+ * Windows' lock through `kernel32`. A sharing violation is contention. So is a failure with no error code
+ * (`GetLastError` read 0, #550) while the lock file exists: something between the two FFI calls reset the thread's
+ * last error, and a held file is the only way this call fails on a file that is there. A missing folder or any
+ * other coded error is still thrown.
+ */
+export function lockOnWindows(path: string, symbols: Kernel32 = (kernel32 ??= openKernel32())): SessionLock {
   const name = Buffer.from(`${path}\0`, "utf16le");
   const genericWrite = 0x40000000, openAlways = 4, normal = 0x80;
-  const handle = kernel32.CreateFileW(ptr(name), genericWrite, 0, null, openAlways, normal, null);
+  const handle = symbols.CreateFileW(ptr(name), genericWrite, 0, null, openAlways, normal, null);
   if (invalid(handle)) {
-    const error = kernel32.GetLastError();
-    if (error === sharingViolation) throw new SessionLockedError(path);
+    const error = symbols.GetLastError();
+    if (error === sharingViolation || (error === 0 && existsSync(path))) throw new SessionLockedError(path);
     throw new Error(`Could not lock ${path}: Windows error ${error}.`);
   }
-  const symbols = kernel32;
   return { release: () => { symbols.CloseHandle(handle); } };
 }
 
