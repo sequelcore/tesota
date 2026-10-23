@@ -233,6 +233,18 @@ function unobserved(results: TestResults | undefined, file: string): string | un
 }
 
 /**
+ * The files besides `file` that a runner given only it ran tests from, by
+ * its report, as a clause for the reason; empty when none. A filter selects
+ * every path that ends the same way, and Bun and Vitest have none that is
+ * exact and keeps the project's own selection (#620).
+ */
+function others(results: TestResults | undefined, file: string): string {
+  const ran = [...results?.tests.keys() ?? []].flatMap((name) => name.includes(" > ") ? [name.slice(0, name.indexOf(" > "))] : []);
+  const besides = [...new Set(ran)].filter((each) => each !== file).sort();
+  return besides.length === 0 ? "" : `, which also ran tests from ${besides.join(", ")}`;
+}
+
+/**
  * A file that fails on the base `by` its runner alone, credited only when
  * that runner on the change, `onChange`, passed and ran a test from it that
  * passed (#615).
@@ -252,7 +264,10 @@ const quoted = (path: string): string => `'${path.replaceAll("'", "'\\''")}'`;
 /**
  * The project's own test runner on `files` alone, relative to its folder,
  * with per-test reporting and empty-suite success. Plain runner scripts only:
- * shell composites cannot safely receive runner flags.
+ * shell composites cannot safely receive runner flags. Jest takes the files
+ * as exact paths and still keeps the project's selection; Bun's exact form,
+ * `./`, runs files the project excludes, so Bun and Vitest take them as
+ * filters, and what else they ran is said (`others`, #620).
  */
 function testProbe(project: string, folder: string, files: readonly string[]): Probe | undefined {
   const test = packageTest(project, folder);
@@ -262,7 +277,7 @@ function testProbe(project: string, folder: string, files: readonly string[]): P
   const runner = match[1];
   const name = `.tesota-exercise-${randomUUID()}.${runner === "jest" ? "json" : "xml"}`;
   const flags = runner === "bun test" ? `--pass-with-no-tests --reporter=junit --reporter-outfile=${name}`
-    : runner === "jest" ? `--passWithNoTests --runInBand --json --outputFile=${name}`
+    : runner === "jest" ? `--passWithNoTests --runInBand --runTestsByPath --json --outputFile=${name}`
       : `--run --passWithNoTests --reporter=junit --outputFile=${name}`;
   return { command: [test.command, flags, ...files.map(quoted)].join(" "), folder, report: name };
 }
@@ -346,8 +361,8 @@ async function againstBase(project: string, root: string, tests: readonly string
         continue;
       }
       const withTest = await holding(path, () => ops.run(exercising, () => probeRun(probe, project, signal), ended, planned.get(path)));
-      const by = `by \`${probe.command}\``;
       const file = posix.relative(folder, path);
+      const by = `by \`${probe.command}\`${others(withTest.results, file)}`;
       const unseen = withTest.outcome === "passed" ? unobserved(withTest.results, file) : undefined;
       if (unseen !== undefined) {
         found.set(path, { path, provenance: origin, sensitivity: "unknown", reason: `on the base it passed, but ${unseen}; ${by}` });
