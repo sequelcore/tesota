@@ -7,7 +7,8 @@ import { contentHash, type Evidence } from "../src/evidence.js";
 import type { ModelCheck } from "../src/model-check.js";
 import type { Clarification, RequestInput } from "../src/clarification.js";
 import { evidenceParts, evidenceText } from "../src/footer.js";
-import { changedFiles, GateProgress, type GateStatus, type RecordedRequest, registerGate, type SentBack } from "../src/gate.js";
+import { changedFiles, GateProgress, type GateStatus, type RecordedRequest, registerGate, type SentBack,
+  STOP_INVENTORY_TIME_LIMIT_MS } from "../src/gate.js";
 import { headCommit } from "../src/git.js";
 import { attributionResolved } from "../src/request-fingerprint.js";
 import { openCasesSystemPrompt } from "../src/open-cases.js";
@@ -946,6 +947,34 @@ it("says what changed could not be read when a stopped run's capture fails, neve
     reason: expect.stringContaining("Git could not") });
   expect(receiptStanding(receipt)).toBe("incomplete");
   expect(renderReceipt(receipt)).toContain("Git could not");
+});
+
+it("settles a stop whose inventory Git never answers, saying the inventory ran past its time limit", async () => {
+  const root = project();
+  const run = gate(root);
+  await run.input();
+  await run.tool("write");
+  write(root, { "notes.md": "# Changed\n" });
+  const module = await import("../src/git.js");
+  const never = (): Promise<never> => new Promise(() => undefined);
+  const gitCalls = vi.spyOn(module, "git").mockImplementation(never);
+  const outputCalls = vi.spyOn(module, "gitOutput").mockImplementation(never);
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  try {
+    let settled: Settled | undefined;
+    let done = false;
+    void run.settle("aborted").then((result) => { settled = result; done = true; });
+    // The clock moves past the limit once the inventory waits on Git; real time moves only for what the gate loads.
+    for (const begun = performance.now(); !done && performance.now() - begun < 20_000;) {
+      await vi.advanceTimersByTimeAsync(STOP_INVENTORY_TIME_LIMIT_MS);
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    expect(gitCalls.mock.calls.length + outputCalls.mock.calls.length).toBeGreaterThan(0);
+    const receipt = entry(settled).details as Receipt;
+    expect(receipt).toMatchObject({ stopped: "the operator stopped the run before Tesota verified it", changed: "unreadable",
+      lines: "unreadable", reason: "the inventory ran past its time limit", proofs: [], tests: [] });
+    expect(receiptStanding(receipt)).toBe("incomplete");
+  } finally { vi.useRealTimers(); gitCalls.mockRestore(); outputCalls.mockRestore(); }
 });
 
 it("leaves no receipt when an aborted run only started a read", async () => {

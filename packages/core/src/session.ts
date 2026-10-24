@@ -4,6 +4,7 @@ import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, rea
 import { basename, dirname, join, resolve } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
 import { type FloorRefusal, interruptedReceipt, type ReceiptChild, receiptEntry } from "../../../src/receipt.ts";
+import { toolMayChangeFiles } from "../../../src/verification/gate-rule.ts";
 import manifest from "../package.json" with { type: "json" };
 import type { Base } from "./base.ts";
 import type { ExtensionAPI } from "../../../src/contract.ts";
@@ -243,14 +244,17 @@ export function recovery(entries: readonly SessionEntry[], output: (callId: stri
 
 /**
  * The receipt of run `run`, which the process left without one (#599): once
- * a call that may change files was about to run, a receipt that says nothing
- * verified it and what changed is unknown, since no inventory was saved.
- * Nothing when it settled with a receipt, or only read.
+ * a call that may change files was about to run, as the gate decides it
+ * (`toolMayChangeFiles`), a receipt that says nothing verified it and what
+ * changed is unknown, since no inventory was saved. A call an older file
+ * recorded without its tool may have. Nothing when the run settled with a
+ * receipt, or every call it started only read.
  */
 function unsettledReceipt(entries: readonly SessionEntry[], run: number): SessionEntry | undefined {
   const mine = entries.filter((entry) => "run" in entry && entry.run === run);
   const request = ledgerOf(entries).find((entry) => entry.run === run);
-  if (request === undefined || !mine.some((entry) => entry.type === "call_intent" && entry.access !== "read")
+  if (request === undefined || !mine.some((entry) => entry.type === "call_intent"
+    && (entry.tool === undefined || toolMayChangeFiles(entry.tool.name, entry.tool.nativeQuestion, entry.tool.readOnly)))
     || mine.some((entry) => (entry.type === "custom" || entry.type === "custom_message") && entry.customType === "tesota-receipt")) {
     return undefined;
   }

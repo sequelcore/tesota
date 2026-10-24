@@ -73,8 +73,13 @@ export type SessionEntry =
   /** Pending input returned to the operator, no longer part of the request. */
   | { readonly type: "withdrawn"; readonly run: number; readonly amendment: number }
   | { readonly type: "assistant"; readonly run: number; readonly message: AssistantMessage }
-  /** A call is about to run; recorded, and synced, first. */
-  | { readonly type: "call_intent"; readonly run: number; readonly callId: string; readonly access: "read" | "write" | "run" }
+  /**
+   * A call is about to run; recorded, and synced, first. `tool` is what the
+   * gate is told as it starts, from which recovery decides, by the gate's
+   * rule, whether it may have changed files (#599); an older file has none.
+   */
+  | { readonly type: "call_intent"; readonly run: number; readonly callId: string; readonly access: "read" | "write" | "run";
+    readonly tool?: { readonly name: string; readonly nativeQuestion: boolean; readonly readOnly: boolean } }
   /** A call's result: the one the model saw, of a call that ran or was refused. */
   | { readonly type: "tool_result"; readonly run: number; readonly message: ToolResultMessage }
   /** Recovery's repair of call `callId` of reply `reply` (counted from 0 in its run), which has no result. */
@@ -167,7 +172,9 @@ const shapes: Record<SessionEntry["type"], (entry: Record<string, unknown>) => b
   delivered: (entry) => isCount(entry["amendment"]),
   withdrawn: (entry) => isCount(entry["amendment"]),
   assistant: (entry) => isObject(entry["message"]) && entry["message"]["role"] === "assistant" && Array.isArray(entry["message"]["content"]),
-  call_intent: (entry) => isText(entry["callId"]) && ["read", "write", "run"].includes(entry["access"] as string),
+  call_intent: (entry) => isText(entry["callId"]) && ["read", "write", "run"].includes(entry["access"] as string)
+    && (entry["tool"] === undefined || isObject(entry["tool"]) && isText(entry["tool"]["name"]) && isFlag(entry["tool"]["nativeQuestion"])
+      && isFlag(entry["tool"]["readOnly"])),
   tool_result: (entry) => isObject(entry["message"]) && entry["message"]["role"] === "toolResult",
   reconciliation: (entry) => Number.isInteger(entry["reply"]) && isText(entry["callId"]) && isText(entry["toolName"])
     && ["outcome_unknown", "not_run", "no_effect"].includes(entry["repair"] as string)

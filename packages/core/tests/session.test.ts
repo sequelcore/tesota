@@ -6,9 +6,11 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { Type } from "typebox";
 import type { Session } from "../../../src/contract.ts";
-import { createSession, type EngineSession, openSession, type SessionOptions } from "../src/session.ts";
+import { createSession, type EngineSession, openSession, recovery, type SessionOptions } from "../src/session.ts";
+import { entryReceipt } from "../../../src/receipt.ts";
+import { toolMayChangeFiles } from "../../../src/verification/gate-rule.ts";
 import { captureBase } from "../src/base.ts";
-import { readSessionFile, SessionFileError } from "../src/session-file.ts";
+import { readSessionFile, SessionFileError, type SessionEntry } from "../src/session-file.ts";
 import { SessionLockedError } from "../src/session-lock.ts";
 import type { EngineTool } from "../src/tool.ts";
 import { tesotaEngine } from "./adapters/tesota.ts";
@@ -83,7 +85,8 @@ describe("the request ledger", () => {
     const lines = seen.trimEnd().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
     expect(lines.map((line) => line["type"])).toEqual(["session", "request", "active_tools", "assistant", "permission", "call_intent"]);
     expect(lines[1]).toMatchObject({ text: "the exact request", origin: "rpc", run: 1 });
-    expect(lines.at(-1)).toMatchObject({ type: "call_intent", access: "run" });
+    expect(lines.at(-1)).toMatchObject({ type: "call_intent", access: "run",
+      tool: { name: "probe", nativeQuestion: false, readOnly: false } });
     expect(created.ledger()).toMatchObject([{ run: 1, text: "the exact request", origin: "rpc", amendments: [] }]);
   });
 
@@ -318,8 +321,8 @@ describe("recovery after the process was killed", () => {
       expect(existsSync(join(cwd, "never.txt"))).toBe(false);
       expect(resumed.ledger()).toMatchObject([{ run: 1, text: "go" }]);
       const once = entriesOf(file);
-      // A call that may change files was about to run, so the run gets a receipt that verified nothing (#599); a read gets none.
-      const tail = ["reconciliation", "reconciliation", ...mode === "tool" ? ["custom_message"] : [], "run_end"];
+      // `wait` may change files as the gate decides it, whatever access it declares, so the run gets a receipt that verified nothing (#599).
+      const tail = ["reconciliation", "reconciliation", "custom_message", "run_end"];
       expect(once.slice(-tail.length).map((entry) => entry.type)).toEqual(tail);
       await resumed.dispose();
       const again = openSession(file, scriptless());
@@ -327,6 +330,29 @@ describe("recovery after the process was killed", () => {
       expect(entriesOf(file)).toEqual(once);
     });
   }
+
+  // One rule decides, on both sides, whether a started call may have changed files (#599): the gate's `toolMayChangeFiles`.
+  test.each([
+    ["a read", "read", "read", { name: "read", nativeQuestion: false, readOnly: false }],
+    ["a question", "ask_user", "read", { name: "ask_user", nativeQuestion: true, readOnly: false }],
+    ["a subagent in a read-only session", "agent", "read", { name: "agent", nativeQuestion: false, readOnly: true }],
+    ["a subagent", "agent", "read", { name: "agent", nativeQuestion: false, readOnly: false }],
+    ["a write", "write", "write", { name: "write", nativeQuestion: false, readOnly: false }],
+    ["a read an older file recorded", "read", "read", undefined],
+  ] as const)("a dead run whose only started call is %s gets the receipt the gate's rule gives it", (_name, name, access, tool) => {
+    const call = { type: "toolCall", id: "c1", name, arguments: {} };
+    const entries = [
+      { type: "request", run: 1, text: "go", origin: "interactive", at: new Date(0).toISOString(),
+        base: { units: [{ folder: "", kind: "commit", commit: "0".repeat(40) }] } },
+      { type: "assistant", run: 1, message: { role: "assistant", content: [call] } },
+      { type: "call_intent", run: 1, callId: "c1", access, ...tool === undefined ? {} : { tool } },
+    ] as unknown as SessionEntry[];
+    const receipts = recovery(entries, () => undefined).flatMap((entry) => entryReceipt(entry) ?? []);
+    // An entry without the call's tool can't be judged, so it counts as one that may have changed files.
+    const mayChange = tool === undefined || toolMayChangeFiles(tool.name, tool.nativeQuestion, tool.readOnly);
+    expect(receipts).toHaveLength(mayChange ? 1 : 0);
+    if (mayChange) expect(receipts[0]).toMatchObject({ changed: "unreadable", proofs: [], tests: [], stopped: expect.stringContaining("no check ran") });
+  });
 
   test("a reply cut off mid-stream leaves the request in the ledger and the run interrupted", async () => {
     const cwd = folder();
@@ -517,6 +543,14 @@ describe("the session file", () => {
   test("a call intent without declared access is refused without changing the file", async () => {
     const file = await finished();
     appendFileSync(file, `${JSON.stringify({ type: "call_intent", run: 1, callId: "x" })}\n`);
+    const before = readFileSync(file, "utf8");
+    expect(() => openSession(file, scriptless())).toThrow(SessionFileError);
+    expect(readFileSync(file, "utf8")).toBe(before);
+  });
+
+  test("a call intent whose tool is recorded in part is refused without changing the file", async () => {
+    const file = await finished();
+    appendFileSync(file, `${JSON.stringify({ type: "call_intent", run: 1, callId: "x", access: "read", tool: { name: "agent" } })}\n`);
     const before = readFileSync(file, "utf8");
     expect(() => openSession(file, scriptless())).toThrow(SessionFileError);
     expect(readFileSync(file, "utf8")).toBe(before);

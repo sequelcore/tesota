@@ -8,9 +8,10 @@ import * as Effect from "effect/Effect";
 
 // Export only what the gate runs. A dynamic import of Effect's namespace retains every export,
 // including code shared with the loop that Bun would otherwise remove from the startup chunks.
-export const gateEffect: Pick<typeof Effect, "all" | "callback" | "die" | "gen" | "map" | "promise" | "runPromise" | "succeed"> = {
+export const gateEffect: Pick<typeof Effect, "all" | "callback" | "die" | "gen" | "map" | "promise" | "runPromise" | "succeed"
+  | "timeoutOption"> = {
   all: Effect.all, callback: Effect.callback, die: Effect.die, gen: Effect.gen, map: Effect.map, promise: Effect.promise,
-  runPromise: Effect.runPromise, succeed: Effect.succeed,
+  runPromise: Effect.runPromise, succeed: Effect.succeed, timeoutOption: Effect.timeoutOption,
 };
 
 export { changeLines } from "./change-lines.js";

@@ -193,14 +193,19 @@ once a tool that may change files ran, whether you stopped it, it failed, or
 the shell ended. The receipt reads incomplete, never verified. It lists what
 the run left: each changed, deleted or untracked path with its final blob,
 and the captures' limits, read from Git without running anything. When Git
-can't tell, it says `unreadable` and why, never an empty list. Submitted
-answers to the agent's questions are kept; an answer that wasn't saved
-before the stop isn't. A question waiting for an answer has no time limit:
+can't tell, it says `unreadable` and why, never an empty list. Reading has
+30 seconds, so a stuck Git or a slow drive can't hold the stop: past that,
+it says `unreadable` because the inventory ran past its time limit.
+Submitted answers to the agent's questions are kept; an answer that wasn't
+saved before the stop isn't. A question waiting for an answer has no time limit:
 it stays pending until you answer it or stop the run.
 
 When the process itself dies, nothing can verify the run then. Opening the
-session again records the run as interrupted, once, with a receipt that
-verified nothing and says what changed is unknown: no inventory was saved,
+session again records the run as interrupted, once. If a call it started may
+have changed files, by the same rule the gate uses (`toolMayChangeFiles`),
+the run gets a receipt that verified nothing and says what changed is
+unknown; a session file older than this rule counts every started call as
+one that may have. No inventory was saved,
 and what's on disk now need not be what the run left. Nothing is replayed,
 neither writes nor unsaved answers. A new request verifies the current
 content. A session that is never opened again after a power loss or a

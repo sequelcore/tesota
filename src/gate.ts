@@ -546,11 +546,16 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     const begun = await start;
     const workspace = begun?.units.some(({ folder }) => folder !== "") ?? false;
     const at = startedAt ?? new Date().toISOString();
+    // A stuck Git or a slow drive must not hold the stop: past the limit the inventory is abandoned, and says so.
+    const inventory = await effect().runPromise(effect().map(effect().timeoutOption(
+      effect().promise(async () => stoppedInventory(ctx.cwd, begun, await fingerprints, at)), STOP_INVENTORY_TIME_LIMIT_MS),
+    (read) => read._tag === "Some" ? read.value
+      : { changed: "unreadable" as const, lines: "unreadable" as const, reason: "the inventory ran past its time limit" }));
     const receipt: Receipt = { version: 2,
       repository: begun?.units.some(({ folder, repository }) => repository && begun.bases.has(folder)) ?? false,
       base: workspace ? null : begun?.bases.get("") ?? null, startedAt: at,
       settledAt: new Date().toISOString(), engine: host().version, ...sessionModel(ctx), ...noEvidence,
-      ...await stoppedInventory(ctx.cwd, begun, await fingerprints, at), stopped: reason,
+      ...inventory, stopped: reason,
       ...clarifications.length === 0 ? {} : { clarifications }, ...children.length === 0 ? {} : { children },
       ...floorRefusals.length === 0 ? {} : { floorRefusals } };
     progress.publish({ step: "settled", receipt });
@@ -866,6 +871,9 @@ async function changesFromBase(root: string, base: string | null): Promise<{
   const paths = await pathsFromBase(root, base);
   return paths === undefined ? undefined : { paths: paths.all, changes: await fileChanges(root, base, paths.present) };
 }
+
+/** How long a stopped run's inventory may read Git (#599) before the receipt says it ran past its limit. */
+export const STOP_INVENTORY_TIME_LIMIT_MS: number = 30_000;
 
 /** What a stopped run left in one unit, or why it could not be read. */
 type Inventory = Pick<UnitEvidence, "changed" | "lines" | "reason"> & Partial<Pick<UnitEvidence, "inherited" | "unmeasured" | "startState" | "endState">>;
