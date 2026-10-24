@@ -1,7 +1,23 @@
 import { expect, test } from "bun:test";
 import type { ClarificationAnswer, ClarificationQuestion } from "../../../src/clarification.ts";
-import { askQuestions } from "../src/questions.ts";
+import { askQuestions, blockingProseQuestion } from "../src/questions.ts";
 import { validateAnswers, validateQuestions } from "../src/questions-schema.ts";
+
+test.each([
+  "Done. Let me know if you want anything else.",
+  "All 12 tests pass. Which tests failed? None.",
+  "Listo. Confirma el resultado en la receta.",
+  "Listo. Avísame si quieres algo más.",
+])("a finished report is not a blocking decision: %s", (text) => {
+  expect(blockingProseQuestion(text)).toBeUndefined();
+});
+
+test.each([
+  "Do you want me to re-run it then, or do you have another sign-in or an API key to use?",
+  "Done. ¿Quieres que lo intente otra vez?", "Which option should I use?", "Please choose an account.",
+])("a final direct decision still blocks: %s", (text) => {
+  expect(blockingProseQuestion(text)).toBe(text);
+});
 
 const questions: readonly ClarificationQuestion[] = [{ question: "Which?", options: [
   { label: "A", description: "first" }, { label: "B", description: "second" },

@@ -118,7 +118,11 @@ none of them is snapshotted.
 
 ## The gate
 
-The gate runs when a run completes. It verifies only when a tool that may
+The gate runs when generation ends, including when an unresolved question
+ends it incomplete. Such a question stops generation and further
+continuations, not verification: the gate settles the changes and the
+receipt names the unresolved question alongside the evidence.
+It verifies only when a tool that may
 change files started during the request: any tool except the built-in
 readers `read`, `grep`, `find` and `ls`. `prove` counts because it regenerates
 proof files. Nothing counts in a read-only session, such as a subagent that

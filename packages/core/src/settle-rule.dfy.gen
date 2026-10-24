@@ -10,24 +10,31 @@ function afterExtensions(run: RunOutcome, cancelled: bool, threw: bool, continue
   requires (continuations >= 0)
   requires (limit >= 0)
 {
-  if (((finalizing || cancelled) || (!run.completed?)) || threw) then
+  if (cancelled || (!run.completed?)) then
     AfterExtensions.finalize
   else
-    if !(continued) then
+    if finalizing then
       AfterExtensions.verify
     else
-      if (continuations < limit) then
-        AfterExtensions.continue_
-      else
+      if threw then
         AfterExtensions.finalize
+      else
+        if !(continued) then
+          AfterExtensions.verify
+        else
+          if (continuations < limit) then
+            AfterExtensions.continue_
+          else
+            AfterExtensions.finalize
 }
 
 lemma afterExtensions_ensures(run: RunOutcome, cancelled: bool, threw: bool, continued: bool, continuations: int, limit: int, finalizing: bool)
   requires (continuations >= 0)
   requires (limit >= 0)
   ensures (afterExtensions(run, cancelled, threw, continued, continuations, limit, finalizing).continue_? <==> (((((run.completed? && !(finalizing)) && !(cancelled)) && !(threw)) && continued) && (continuations < limit)))
-  ensures (afterExtensions(run, cancelled, threw, continued, continuations, limit, finalizing).verify? <==> ((((run.completed? && !(finalizing)) && !(cancelled)) && !(threw)) && !(continued)))
-  ensures (afterExtensions(run, cancelled, threw, continued, continuations, limit, finalizing).finalize? <==> ((((finalizing || cancelled) || (!run.completed?)) || threw) || (continued && (continuations >= limit))))
+  ensures (afterExtensions(run, cancelled, threw, continued, continuations, limit, finalizing).verify? <==> ((run.completed? && !(cancelled)) && (finalizing || (!(threw) && !(continued)))))
+  ensures (afterExtensions(run, cancelled, threw, continued, continuations, limit, finalizing).finalize? <==> ((cancelled || (!run.completed?)) || (!(finalizing) && (threw || (continued && (continuations >= limit))))))
+  ensures (finalizing ==> run.completed? ==> !(cancelled) ==> afterExtensions(run, cancelled, threw, continued, continuations, limit, finalizing).verify?)
 {
 }
 

@@ -7,8 +7,10 @@ test("a run allows 32 automatic continuations", () => {
 });
 
 const extensionCases: readonly [string, Parameters<typeof afterExtensions>, AfterExtensions][] = [
-  ["an unresolved question finalizes despite an extension continuation", ["completed", false, false, true, 0, 32, true], "finalize"],
-  ["an unresolved question cannot enter full verification", ["completed", false, false, false, 0, 32, true], "finalize"],
+  ["an unresolved question verifies despite an extension continuation", ["completed", false, false, true, 0, 32, true], "verify"],
+  ["an unresolved question enters full verification", ["completed", false, false, false, 0, 32, true], "verify"],
+  ["an unresolved question verifies despite an ordinary handler throw", ["completed", false, true, false, 0, 32, true], "verify"],
+  ["an unresolved question verifies even with an exhausted budget", ["completed", false, false, true, 32, 32, true], "verify"],
   ["a completed loop reaches verification", ["completed", false, false, false, 0, 32], "verify"],
   ["a handler continues below the limit", ["completed", false, false, true, 31, 32], "continue"],
   ["a continuation at the limit finalizes", ["completed", false, false, true, 32, 32], "finalize"],

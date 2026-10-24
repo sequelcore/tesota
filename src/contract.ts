@@ -104,6 +104,8 @@ export interface SettleEvent {
    * Why the run did not complete, in plain words, when the engine knows:
    * the operator stopped it, the provider failed, a handler threw. Pi does
    * not say; the receipt of a run that was not verified states it (#439).
+   * With outcome `completed`, an unresolved question ended generation:
+   * verify normally, but settle with a receipt rather than sending it back.
    */
   readonly reason?: string;
 }

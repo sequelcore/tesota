@@ -385,7 +385,7 @@ const blockingQuestions = [
   "Do you want me to re-run it then, or do you have another sign-in or an API key to use?",
   "Which account should I use?", "Should I continue?", "Let me know which option to use.",
   "Please choose an account.", "¿Quieres que lo intente otra vez?", "¿Qué cuenta debo usar?",
-  "¿Cuál prefieres?", "¿Debo continuar?", "Dime cuál prefieres.", "Avísame si quieres que continúe.",
+  "¿Cuál prefieres?", "¿Debo continuar?", "Dime cuál prefieres.",
   "Avísame qué cuenta debo usar.", "¿Lo intento de nuevo?", "¿Tienes otra cuenta?",
 ];
 test.each(blockingQuestions)("one blocking prose decision gets one repair: %s", async (text) => {
@@ -405,6 +405,10 @@ test.each(["?", '> Should I continue?', '"Which account should I use?"',
   "The report covers the question ‘Which account should I use?’ and is complete.",
   "## Which account?\n\nImplemented and tested the account selector.",
   "The sign-in flow is implemented. Tests passed.",
+  "Avísame si quieres que continúe.",
+  "Done. Let me know if you want anything else.",
+  "All 12 tests pass. Which tests failed? None.",
+  "Listo. Confirma el resultado en la receta.",
 ])("completed prose, code and quotes do not request repair: %s", async (text) => {
   let generated = 0;
   const session = start([text, { seen: () => { generated++; }, reply: "must not run" }], { questions: () => () => undefined });
@@ -444,7 +448,7 @@ test("question exhaustion cannot be restarted by either settlement phase", async
   });
   await session.prompt("Ask.");
   expect(generated).toBe(0);
-  expect(told).toEqual(["error"]);
+  expect(told).toEqual(["completed"]);
   expect(session.outcome()).toBe("incomplete");
   const end = readSessionFile(session.file).entries.find((entry) => entry.type === "run_end");
   expect(end).toMatchObject({ reason: expect.stringContaining("three times") });

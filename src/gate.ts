@@ -522,7 +522,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     }
     // Verification is an Effect the operator's stop interrupts (#408): no later step starts, and the receipt says it stopped.
     try {
-      return await effect().runPromise(settle(ctx), ctx.signal === undefined ? {} : { signal: ctx.signal });
+      return await effect().runPromise(settle(ctx, event.reason === undefined ? {} : { unresolvedQuestion: event.reason }), ctx.signal === undefined ? {} : { signal: ctx.signal });
     } catch (error) {
       if (ctx.signal?.aborted === true) return stopped(ctx, "the operator stopped the run while Tesota verified it");
       progress.reset();
@@ -586,7 +586,8 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     return proofs;
   });
   /** The proofs that go back, named from the folder Pi runs in. */
-  const proofsBack = (proofs: ReadonlyMap<string, Receipt["proofs"]>): SettleResult => {
+  const proofsBack = (proofs: ReadonlyMap<string, Receipt["proofs"]>, finalizing: boolean): SettleResult | undefined => {
+    if (finalizing || !keepsWorking([...proofs.values()].flat().map(({ verdict }) => verdict))) return undefined;
     progress.publish({ step: "sent_back", tally: tally([...proofs.values()].flat()) });
     const back = [...proofs].flatMap(([folder, judged]) => judged.filter(({ verdict }) => verdict === "send_back")
       .map(({ path, evidence }) => ({ path: inUnit(folder, path), evidence })));
@@ -596,7 +597,8 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
       `Tesota: ${path} does not prove yet.\n\n${proofReport(path, evidence, proveActive)}`).join("\n\n"), { round: "proofs", proofs: back });
   };
   /** The failing commands that go back, each run from its repository's folder. */
-  const testsBack = (failing: readonly { folder: string; run: CommandRun }[], tallied: Tally): SettleResult => {
+  const testsBack = (failing: readonly { folder: string; run: CommandRun }[], tallied: Tally, finalizing: boolean): SettleResult | undefined => {
+    if (finalizing || failing.length === 0) return undefined;
     progress.publish({ step: "sent_back", tally: tallied });
     for (const { folder, run } of failing) {
       const sent = commandsSentBack.get(folder) ?? new Map<string, string[]>();
@@ -658,7 +660,8 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     return rungs;
   });
   /** The models that go back, and the files without a header not yet sent back in this request, named from the folder Pi runs in. */
-  const modelsBack = (rungs: ReadonlyMap<string, ModelRung>, tallied: Tally): SettleResult | undefined => {
+  const modelsBack = (rungs: ReadonlyMap<string, ModelRung>, tallied: Tally, finalizing: boolean): SettleResult | undefined => {
+    if (finalizing) return undefined;
     const back = [...rungs].flatMap(([folder, { models }]) => models.filter(({ verdict }) => verdict === "send_back")
       .map((model) => ({ ...model, path: inUnit(folder, model.path) })));
     const unheaded = [...rungs].flatMap(([folder, rung]) => rung.unheaded.map((path) => inUnit(folder, path)))
@@ -670,12 +673,22 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     return sendBack([...back.map(checks().modelReport), ...unheaded.length === 0 ? [] : [checks().unheadedReport(unheaded)]].join("\n\n"),
       { round: "models", models: back, unheaded });
   };
+  /** Weak contracts go back only while generation can continue. */
+  const contractsBack = (contracts: readonly ContractStrength[], tallied: Tally, finalizing: boolean): SettleResult | undefined => {
+    if (finalizing) return undefined;
+    const weak = sendBackWeak(contracts, weakSentBack);
+    if (weak.length === 0) return undefined;
+    progress.publish({ step: "sent_back", tally: tallied });
+    return sendBack(weak.map(weakContractReport).join("\n\n"), { round: "contracts", contracts: weak });
+  };
   /** Verification once the run completed: each step is where the operator's stop takes effect. */
-  const settle = (ctx: ExtensionContext): Effect.Effect<SettleResult | undefined> => effect().gen(function* () {
+  const settle = (ctx: ExtensionContext, question: Pick<Receipt, "unresolvedQuestion">): Effect.Effect<SettleResult | undefined> => effect().gen(function* () {
+    const { unresolvedQuestion } = question;
     const { units, bases, tooLarge, refused } = yield* step(() => start ??= begin(ctx.cwd));
     startedAt ??= new Date().toISOString();
     const workspace = units.some(({ folder }) => folder !== "");
     const run = { base: workspace ? null : bases.get("") ?? null, startedAt, engine: host().version, ...sessionModel(ctx),
+      ...question,
       ...clarifications.length === 0 ? {} : { clarifications }, ...children.length === 0 ? {} : { children },
       ...floorRefusals.length === 0 ? {} : { floorRefusals } };
     // Each repository and each folder Tesota snapshotted, measured from its base.
@@ -691,7 +704,8 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     if (changed.length === 0 && plain.length === 0) { progress.reset(); return undefined; }
     const proofs = yield* prove(changed);
     const allProofs = [...proofs.values()].flat();
-    if (keepsWorking(allProofs.map(({ verdict }) => verdict))) return proofsBack(proofs);
+    const proofsSent = proofsBack(proofs, unresolvedQuestion !== undefined);
+    if (proofsSent !== undefined) return proofsSent;
     progress.publish({ step: "testing", startedAt: performance.now(), tally: tally(allProofs) });
     const rungs = new Map<string, Pick<Receipt, "tests" | "exercises">>();
     for (const unit of changed) {
@@ -702,17 +716,15 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     const allTests = [...rungs.values()].flatMap(({ tests }) => tests);
     const failing = [...rungs].flatMap(([folder, { tests }]) =>
       tests.filter(({ verdict }) => verdict === "send_back").map((test) => ({ folder, run: test })));
-    if (failing.length > 0) return testsBack(failing, tally(allProofs, allTests));
+    const testsSent = testsBack(failing, tally(allProofs, allTests), unresolvedQuestion !== undefined);
+    if (testsSent !== undefined) return testsSent;
     const measured = yield* measure(ctx, changed, proofs, tally(allProofs, allTests));
     const contracts = [...measured].flatMap(([folder, { strength }]) =>
       strength.contracts.map((contract) => ({ ...contract, path: inUnit(folder, contract.path) })));
-    const weak = sendBackWeak(contracts, weakSentBack);
-    if (weak.length > 0) {
-      progress.publish({ step: "sent_back", tally: tally(allProofs, allTests, contracts) });
-      return sendBack(weak.map(weakContractReport).join("\n\n"), { round: "contracts", contracts: weak });
-    }
+    const contractsSent = contractsBack(contracts, tally(allProofs, allTests, contracts), unresolvedQuestion !== undefined);
+    if (contractsSent !== undefined) return contractsSent;
     const modelRungs = yield* checkModels(changed, tally(allProofs, allTests, contracts), ctx.env);
-    const modelsSent = modelsBack(modelRungs, tally(allProofs, allTests, contracts));
+    const modelsSent = modelsBack(modelRungs, tally(allProofs, allTests, contracts), unresolvedQuestion !== undefined);
     if (modelsSent !== undefined) return modelsSent;
     const open = yield* listOpen(ctx);
     const evidence = yield* step(() => progress.operations.run(

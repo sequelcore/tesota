@@ -32,7 +32,7 @@ mock.module("../../../src/verification/lemmascript-verifier.ts", () => ({
 const { registerGate } = await import("../../../src/gate.ts");
 // The gate runs here as the engine's shell runs it, with the shell's editor, key names, version and shell (#446).
 provideHost(shellHost());
-const { entryReceipt, isReceipt } = await import("../../../src/receipt.ts");
+const { entryReceipt, isReceipt, receiptDetailLines, receiptFindings } = await import("../../../src/receipt.ts");
 type Receipt = import("../../../src/receipt.ts").Receipt;
 
 /**
@@ -79,6 +79,56 @@ test("an answered question without project changes does not manufacture verifica
   expect(receiptOf(session)).toBeUndefined();
   expect(session.ledger()[0]?.inputs).toHaveLength(1);
 });
+test.each(["headless", "used repair", "fourth question"] as const)("an unresolved %s question settles changed files with evidence and its decision", async (scenario) => {
+  const cwd = repository();
+  writeFileSync(join(cwd, "package.json"), JSON.stringify({ scripts: { check: "bun -e \"process.exit(1)\"" } }));
+  git(cwd, "add", "package.json");
+  git(cwd, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "check");
+  const questions = [{ question: "Which option should I use?", options: [
+    { label: "A", description: "Use A." }, { label: "B", description: "Use B." },
+  ] }];
+  const ask = { tool: "ask_user", args: { questions } };
+  let generated = 0;
+  const session = gated(cwd, [{ tool: "write", args: { path: "notes.txt", content: "hi" } },
+    ...scenario === "fourth question" ? [ask, ask, ask, ask]
+      : scenario === "used repair" ? ["Should I continue?", "Which option should I use?"] : ["Which option should I use?"],
+    { seen: () => { generated++; }, reply: "must not generate" }], {
+    mode: "print",
+    ...scenario === "headless" ? {} : { questions: (_batch, submit) => {
+      submit([{ selected: [0] }]); return () => undefined;
+    } } satisfies Partial<SessionOptions>,
+    extensions: [(pi) => { pi.on("agent_before_settle", () => ({ entries: [], continue: true })); }],
+  });
+  await session.prompt("Write notes, then ask.");
+  expect(readFileSync(join(cwd, "notes.txt"), "utf8")).toBe("hi");
+  const receipt = receiptOf(session);
+  expect(receipt).toBeDefined();
+  expect(receipt?.tests).toMatchObject([{ evidence: { outcome: "failed" } }]);
+  expect(JSON.stringify(receipt)).toContain("Which option should I use?");
+  expect(receiptDetailLines(receipt!).join("\n")).toContain("Which option should I use?");
+  expect(receiptDetailLines(receipt!).join("\n")).not.toContain("after its failure went back");
+  expect(receiptFindings(receipt!)).toContainEqual(expect.objectContaining({
+    standing: "decide", label: "Incomplete", detail: expect.stringContaining("Which option should I use?"),
+  }));
+  expect(entriesOf(session.file).find((entry) => entry.type === "run_end")).toMatchObject({
+    outcome: "incomplete", reason: expect.stringContaining("Which option should I use?"),
+  });
+  expect(session.outcome()).toBe("incomplete");
+  expect(generated).toBe(0);
+});
+
+test("an unresolved question still verifies and remains named if an ordinary settle handler throws", async () => {
+  const session = gated(repository(), [edit(changed), "Which option should I use?"], {
+    mode: "print", extensions: [(pi) => { pi.on("agent_before_settle", () => { throw new Error("settlement failed"); }); }],
+  });
+  await session.prompt("Edit, then ask.");
+  expect(receiptOf(session)?.proofs).toMatchObject([{ evidence: { outcome: "passed" } }]);
+  expect(JSON.stringify(receiptOf(session))).toContain("Which option should I use?");
+  expect(entriesOf(session.file).find((entry) => entry.type === "run_end")).toMatchObject({ outcome: "incomplete",
+    reason: expect.stringContaining("Which option should I use?"),
+  });
+});
+
 beforeEach(() => { proofs.clear(); });
 afterEach(async () => { await Promise.all(open.splice(0).map((session) => session.dispose())); });
 

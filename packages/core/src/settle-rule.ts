@@ -10,15 +10,20 @@ export const continuationLimit = 32;
  * What follows ordinary settle handlers (#439): a completed loop continues
  * when a handler asks and the budget allows, or reaches verification when
  * none asks. Cancellation, a loop failure, a throw or an exhausted budget
- * only finalizes. An unresolved question (`finalizing`) also only finalizes,
- * regardless of send-backs. Requests to continue accumulate across handlers.
+ * only finalizes. An unresolved question (`finalizing`) stops generation,
+ * but still reaches verification regardless of send-backs, their budget or
+ * an ordinary handler's throw.
+ * Requests to continue accumulate across handlers.
  */
 //@ requires continuations >= 0 && limit >= 0
 //@ ensures \result === "continue" <==> run === "completed" && !finalizing && !cancelled && !threw && continued && continuations < limit
-//@ ensures \result === "verify" <==> run === "completed" && !finalizing && !cancelled && !threw && !continued
-//@ ensures \result === "finalize" <==> finalizing || cancelled || run !== "completed" || threw || (continued && continuations >= limit)
+//@ ensures \result === "verify" <==> run === "completed" && !cancelled && (finalizing || (!threw && !continued))
+//@ ensures \result === "finalize" <==> cancelled || run !== "completed" || (!finalizing && (threw || (continued && continuations >= limit)))
+//@ ensures finalizing && run === "completed" && !cancelled ==> \result === "verify"
 export function afterExtensions(run: RunOutcome, cancelled: boolean, threw: boolean, continued: boolean, continuations: number, limit: number, finalizing = false): AfterExtensions {
-  if (finalizing || cancelled || run !== "completed" || threw) return "finalize";
+  if (cancelled || run !== "completed") return "finalize";
+  if (finalizing) return "verify";
+  if (threw) return "finalize";
   if (!continued) return "verify";
   return continuations < limit ? "continue" : "finalize";
 }

@@ -1175,17 +1175,18 @@ export function createLoop(options: LoopOptions): LoopSession {
       continuationLimit, ended.incomplete === true);
     if (first === "continue") return { next: "continue", automatic: true };
     const verifying = first === "verify";
-    const why = signal.aborted ? stoppedReason : ordinary.errors.length > 0 ? `a settle handler failed: ${ordinary.errors.join("; ")}`
+    const question = ended.incomplete === true ? `; ${ended.reason}` : "";
+    const why = signal.aborted ? stoppedReason : ordinary.errors.length > 0 ? `a settle handler failed: ${ordinary.errors.join("; ")}${question}`
       : ended.incomplete === true ? ended.reason : ordinary.continued ? `settlement sent the run back ${continuationLimit} times` : ended.reason;
     const told: RunOutcome = signal.aborted ? "aborted" : verifying ? "completed" : ended.outcome === "completed" ? "error" : ended.outcome;
-    const returned = await phase(run, generation, "verifier", told, signal, verifying ? undefined : why);
+    const returned = await phase(run, generation, "verifier", told, signal, verifying ? ended.reason : why);
     const verdict = settled(run, generation, "verifier", returned);
     const errors = [...ordinary.errors, ...verdict.errors];
     const next = afterVerifier(ended.outcome, verifying, signal.aborted, errors.length > 0, verdict.registered, verdict.continued,
       queue.length > 0 || finishedJobs.length > 0, jobs.size > 0, continuations, continuationLimit, ended.incomplete === true);
     if (next === "continue") return { next: "continue", automatic: verdict.continued };
     const reason = next === "completed" ? undefined : next === "aborted" ? stoppedReason
-      : errors.length > 0 ? `a settle handler failed: ${errors.join("; ")}`
+      : errors.length > 0 ? `a settle handler failed: ${errors.join("; ")}${question}`
         : !verdict.registered ? "the verifier has no settle handler"
           : ended.incomplete === true ? why : verdict.continued ? `settlement sent the run back ${continuationLimit} times` : why;
     writer.append({ type: "run_end", run, outcome: next, ...reason === undefined ? {} : { reason } });

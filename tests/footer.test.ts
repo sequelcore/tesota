@@ -95,6 +95,8 @@ it("names the model being checked, then sums up the models: checked, still faili
   expect(words({ step: "settled", receipt: { ...emptyReceipt, models: [model] } })).toBe("○ receipt · 1 model checked · 1 model possibly stale");
   expect(words({ step: "settled", receipt: { ...emptyReceipt, models: [{ ...model, verdict: "no_progress", staleness: "current" }] } }))
     .toBe("! receipt · 1 model fails");
+  expect(words({ step: "settled", receipt: { ...emptyReceipt, unresolvedQuestion: "Which option?",
+    models: [{ ...model, verdict: "send_back", staleness: "current" }] } })).toContain("1 model fails");
   expect(words({ step: "settled", receipt: { ...emptyReceipt, models: [{ ...model, verdict: "operator", staleness: "current" }] } }))
     .toBe("○ receipt · 1 not checked");
 });
