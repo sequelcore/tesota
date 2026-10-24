@@ -1,18 +1,21 @@
 import { join } from "node:path";
 import { git } from "../../../src/git.ts";
+import { refTips } from "../../../src/request-fingerprint.ts";
 import { takeSnapshot } from "../../../src/snapshot.ts";
 import { workspaceUnits } from "../../../src/workspace.ts";
 import { withLockWhile } from "./session-lock.ts";
 
 /**
  * One unit of the session's folder as a request found it: a repository's
- * commit `HEAD` named, null before its first commit; a snapshot of a folder
+ * commit `HEAD` named, null before its first commit, with every local
+ * branch's, remote-tracking ref's and tag's tip then that the commit does not
+ * reach (`refTips`, #599), absent when Git could not list them; a snapshot of a folder
  * in no repository, with the files left out for their size; or why there is
  * neither. `folder` is relative to the session's folder, as in
  * `workspaceUnits`.
  */
 export type BaseUnit =
-  | { readonly folder: string; readonly kind: "commit"; readonly commit: string | null }
+  | { readonly folder: string; readonly kind: "commit"; readonly commit: string | null; readonly refs?: readonly string[] }
   | { readonly folder: string; readonly kind: "snapshot"; readonly commit: string; readonly tooLarge: readonly string[] }
   | { readonly folder: string; readonly kind: "refused"; readonly reason: string };
 
@@ -21,11 +24,13 @@ export interface Base {
   readonly units: readonly BaseUnit[];
 }
 
-/** A repository's base: its commit, null before the first one, or refused when Git cannot read it. */
+/** A repository's base: its commit, null before the first one, and its ref tips; or refused when Git cannot read it. */
 async function repositoryBase(folder: string, root: string): Promise<BaseUnit> {
   const commit = (await git(root, ["rev-parse", "--verify", "--quiet", "HEAD"]))?.trim();
-  if (commit !== undefined && commit !== "") return { folder, kind: "commit", commit };
-  if (await git(root, ["rev-parse", "--git-dir"]) !== undefined) return { folder, kind: "commit", commit: null };
+  const refs = await refTips(root, commit === undefined || commit === "" ? null : commit);
+  const tips = refs === undefined ? {} : { refs };
+  if (commit !== undefined && commit !== "") return { folder, kind: "commit", commit, ...tips };
+  if (await git(root, ["rev-parse", "--git-dir"]) !== undefined) return { folder, kind: "commit", commit: null, ...tips };
   return { folder, kind: "refused", reason: "Git could not read the repository" };
 }
 

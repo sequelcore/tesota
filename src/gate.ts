@@ -15,7 +15,7 @@ import { inFolder, owningProjects, suggestChecks } from "./projects.js";
 import { proofReport } from "./prove-tool.js";
 import { entryReceipt, type FloorRefusal, inUnit, isReceipt, type ModelResult, noEvidence, type Receipt, type ReceiptChild, receiptEntry,
   type UnitEvidence } from "./receipt.js";
-import { captureFingerprint, compareFingerprints, type Fingerprint, pathBlobs } from "./request-fingerprint.js";
+import { attributionResolved, captureFingerprint, compareFingerprints, type Fingerprint, historyFacts, pathBlobs, refTips } from "./request-fingerprint.js";
 import { takeSnapshot } from "./snapshot.js";
 import type { CommandRun } from "./test-rung.js";
 import type { FileChange } from "./verification-changes.js";
@@ -186,7 +186,7 @@ function testFailure({ command, failingTests }: CommandRun): string {
  */
 async function testRung(root: string, base: string | null, changed: readonly string[],
   sentBack: ReadonlyMap<string, readonly string[]>, signal: AbortSignal, ops: OperationSink,
-  env: Readonly<Record<string, string>> | undefined): Promise<Pick<Receipt, "tests" | "exercises">> {
+  env: Readonly<Record<string, string>> | undefined, attributable: boolean): Promise<Pick<Receipt, "tests" | "exercises">> {
   const projects = owningProjects(suggestChecks(root), changed);
   const tests = (await checks().runCommands(root, projects, changed, signal, ops, env)).map((run) =>
     ({ ...run, verdict: gateVerdict(run.evidence.outcome, testFailure(run), sentBack.get(run.command) ?? []) }));
@@ -194,7 +194,7 @@ async function testRung(root: string, base: string | null, changed: readonly str
   // A snapshot or a fixture counts as a test for weakened evidence, but is not one a runner can run alone (#615).
   const runnable = changed.filter((path) => checks().isTestPath(path) && checks().isSourcePath(path));
   const present = (await Promise.all(runnable.map(async (path) => await readIfPresent(join(root, path)) === undefined ? [] : [path]))).flat();
-  const exercises = passed && base !== null ? await checks().exerciseTests(root, base, present, changed, projects, signal, ops, env) : [];
+  const exercises = attributable && passed && base !== null ? await checks().exerciseTests(root, base, present, changed, projects, signal, ops, env) : [];
   return { tests, exercises };
 }
 
@@ -405,8 +405,10 @@ export class GateProgress {
  * on `agent_start`, which every continuation fires too. When nothing goes back, the run settles with
  * a receipt for the operator. The first non-reader tool fingerprints each
  * repository; paths changed since then and commits since admission are the
- * request's change. Weakening and exercise keep the admission base H, so a
- * commit hides nothing; a steer or follow-up sent while the agent works belongs to
+ * observed comparison set. Weakening keeps admission H; history movement the
+ * request cannot be shown to own withholds exercise and contract-intent credit,
+ * never current-checkout checks.
+ * A commit hides nothing; a steer or follow-up sent while the agent works belongs to
  * the request already running. Outside a Git repository the base is
  * Tesota's snapshot of the folder (`takeSnapshot`, #384); where it takes
  * none, a request that ran a tool that may change files ends with a receipt
@@ -617,8 +619,9 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
       const judged = proofs.get(unit.folder) ?? [];
       const sources = yield* step(() => provedSources(unit.root, unit.base, judged));
       if (sources.length > 0) progress.publish({ step: "measuring", startedAt: performance.now(), tally: tallied });
-      const strength = yield* step((signal) => checks().contractStrength(ctx, requests, sources, signal, restateWith(pi),
-        progress.operations.forUnit(unit.folder)));
+      const strength = attributionResolved(unit.base, unit.startState, unit.endState, unit.snapshot === undefined)
+        ? yield* step((signal) => checks().contractStrength(ctx, requests, sources, signal, restateWith(pi),
+          progress.operations.forUnit(unit.folder))) : { contracts: [] };
       measured.set(unit.folder, { sources, strength });
     }
     return measured;
@@ -684,7 +687,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
   /** Verification once the run completed: each step is where the operator's stop takes effect. */
   const settle = (ctx: ExtensionContext, question: Pick<Receipt, "unresolvedQuestion">): Effect.Effect<SettleResult | undefined> => effect().gen(function* () {
     const { unresolvedQuestion } = question;
-    const { units, bases, tooLarge, refused } = yield* step(() => start ??= begin(ctx.cwd));
+    const { units, bases, refs, tooLarge, refused } = yield* step(() => start ??= begin(ctx.cwd));
     startedAt ??= new Date().toISOString();
     const workspace = units.some(({ folder }) => folder !== "");
     const run = { base: workspace ? null : bases.get("") ?? null, startedAt, engine: host().version, ...sessionModel(ctx),
@@ -695,7 +698,8 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     const measurable = units.filter(({ folder }) => bases.has(folder));
     const initial = yield* step(async () => fingerprints);
     const read = yield* step(() => Promise.all(measurable.map(({ folder, repository }) =>
-      changedUnit(ctx.cwd, folder, bases.get(folder) ?? null, repository ? undefined : tooLarge.get(folder) ?? [], initial?.get(folder)))));
+      changedUnit(ctx.cwd, folder, bases.get(folder) ?? null, repository ? undefined : tooLarge.get(folder) ?? [], initial?.get(folder), run.startedAt,
+        refs.get(folder)))));
     if (!workspace && read[0] === undefined) return outsideGit(ctx, run, refused.get(""));
     const changed = read.filter((unit): unit is ChangedUnit => typeof unit === "object");
     // A folder with no snapshot, or a repository Git could not read, is not verified; it is listed once it may have changed.
@@ -711,7 +715,8 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     for (const unit of changed) {
       rungs.set(unit.folder, yield* step((signal) =>
         testRung(unit.root, unit.base, unit.changed, commandsSentBack.get(unit.folder) ?? new Map(), signal,
-          progress.operations.forUnit(unit.folder), ctx.env)));
+          progress.operations.forUnit(unit.folder), ctx.env,
+          attributionResolved(unit.base, unit.startState, unit.endState, unit.snapshot === undefined))));
     }
     const allTests = [...rungs.values()].flatMap(({ tests }) => tests);
     const failing = [...rungs].flatMap(([folder, { tests }]) =>
@@ -754,6 +759,8 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
 interface Start {
   readonly units: readonly Unit[];
   readonly bases: ReadonlyMap<string, string | null>;
+  /** Each repository's ref tips at admission (`refTips`); absent when they could not be recorded. */
+  readonly refs: ReadonlyMap<string, readonly string[]>;
   readonly tooLarge: ReadonlyMap<string, readonly string[]>;
   readonly refused: ReadonlyMap<string, string>;
 }
@@ -775,21 +782,23 @@ export interface RecordedRequest {
 }
 
 type RecordedUnit =
-  | { readonly folder: string; readonly kind: "commit"; readonly commit: string | null }
+  | { readonly folder: string; readonly kind: "commit"; readonly commit: string | null; readonly refs?: readonly string[] }
   | { readonly folder: string; readonly kind: "snapshot"; readonly commit: string; readonly tooLarge: readonly string[] }
   | { readonly folder: string; readonly kind: "refused"; readonly reason: string };
 
 /** The start `begin` would have built, from the bases the ledger recorded; a refused unit is verified by nothing, with its reason. */
 function recordedStart(base: RecordedRequest["base"]): Start {
   const bases = new Map<string, string | null>();
+  const refs = new Map<string, readonly string[]>();
   const tooLarge = new Map<string, readonly string[]>();
   const refused = new Map<string, string>();
   for (const unit of base.units) {
     if (unit.kind === "refused") refused.set(unit.folder, unit.reason);
     else bases.set(unit.folder, unit.commit);
+    if (unit.kind === "commit" && unit.refs !== undefined) refs.set(unit.folder, unit.refs);
     if (unit.kind === "snapshot") tooLarge.set(unit.folder, unit.tooLarge);
   }
-  return { units: base.units.map(({ folder, kind }) => ({ folder, repository: kind === "commit" })), bases, tooLarge, refused };
+  return { units: base.units.map(({ folder, kind }) => ({ folder, repository: kind === "commit" })), bases, refs, tooLarge, refused };
 }
 
 /** The request's start in `cwd`; in a folder of repositories, its own files are snapshotted without the folders below. */
@@ -797,15 +806,22 @@ async function begin(cwd: string): Promise<Start> {
   const units = workspaceUnits(cwd);
   const workspace = units.some(({ folder }) => folder !== "");
   const bases = new Map<string, string | null>();
+  const refs = new Map<string, readonly string[]>();
   const tooLarge = new Map<string, readonly string[]>();
   const refused = new Map<string, string>();
   for (const { folder, repository } of units) {
-    if (repository) { bases.set(folder, await headCommit(join(cwd, folder))); continue; }
+    if (repository) {
+      const commit = await headCommit(join(cwd, folder));
+      bases.set(folder, commit);
+      const tips = await refTips(join(cwd, folder), commit);
+      if (tips !== undefined) refs.set(folder, tips);
+      continue;
+    }
     const snapshot = await takeSnapshot(join(cwd, folder), workspace && folder === "", host().withLockWhile);
     if ("refused" in snapshot) refused.set(folder, snapshot.refused);
     else { bases.set(folder, snapshot.base); tooLarge.set(folder, snapshot.tooLarge); }
   }
-  return { units, bases, tooLarge, refused };
+  return { units, bases, refs, tooLarge, refused };
 }
 
 /**
@@ -839,7 +855,8 @@ async function changesFromBase(root: string, base: string | null): Promise<{
 }
 
 /** Each capture's facts and the committed paths since H; an unknown capture keeps verification against H. */
-async function fingerprintedUnit(root: string, base: string | null, start: Fingerprint): Promise<{
+async function fingerprintedUnit(root: string, base: string | null, start: Fingerprint, startedAt: string,
+  refs: readonly string[] | undefined): Promise<{
   attribution: ReturnType<typeof compareFingerprints>;
   facts: Pick<ChangedUnit, "startState" | "endState">;
 }> {
@@ -848,9 +865,11 @@ async function fingerprintedUnit(root: string, base: string | null, start: Finge
     : base === null ? await gitPaths(root, ["ls-tree", "-r", "--name-only", end.head])
       : await gitPaths(root, [...diffFrom(base, "--name-only"), end.head]);
   if (committed === undefined) end = { status: "unknown", reason: "Git could not read the files committed since the admission base" };
-  return { attribution: compareFingerprints(start, end, committed ?? []),
-    facts: { startState: start.status === "unknown" ? start : { status: "known", head: start.head },
-      endState: end.status === "unknown" ? end : { status: "known", head: end.head } } };
+  const compared = compareFingerprints(start, end, committed ?? []);
+  const history = end.status === "known" && end.head !== base ? await historyFacts(root, base, start, end, startedAt, refs) : undefined;
+  const facts = { startState: start.status === "unknown" ? start : { status: "known" as const, head: start.head },
+    endState: end.status === "unknown" ? end : { status: "known" as const, head: end.head, ...history === undefined ? {} : { history } } };
+  return { attribution: { ...compared, eligible: compared.eligible || !attributionResolved(base, facts.startState, facts.endState, true) }, facts };
 }
 
 /**
@@ -859,10 +878,10 @@ async function fingerprintedUnit(root: string, base: string | null, start: Finge
  * changed nothing, and nothing when Git cannot read it.
  */
 async function changedUnit(cwd: string, folder: string, base: string | null, tooLarge: readonly string[] | undefined,
-  fingerprint: Fingerprint | undefined):
+  fingerprint: Fingerprint | undefined, startedAt: string, refs: readonly string[] | undefined):
   Promise<ChangedUnit | "unchanged" | undefined> {
   const root = join(cwd, folder);
-  const captured = fingerprint === undefined ? undefined : await fingerprintedUnit(root, base, fingerprint);
+  const captured = fingerprint === undefined ? undefined : await fingerprintedUnit(root, base, fingerprint, startedAt, refs);
   const attribution = captured?.attribution ?? { eligible: true, changed: undefined, inherited: [], unmeasured: [] };
   if (!attribution.eligible) return "unchanged";
   const whole = await changesFromBase(root, base);

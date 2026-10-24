@@ -92,14 +92,23 @@ describe("the request ledger", () => {
     git(repository, "init", "-q");
     const unborn = session(["done"], { cwd: repository });
     await unborn.prompt("go");
-    expect(unborn.ledger()[0]?.base.units).toEqual([{ folder: "", kind: "commit", commit: null }]);
+    expect(unborn.ledger()[0]?.base.units).toEqual([{ folder: "", kind: "commit", commit: null, refs: [] }]);
     writeFileSync(join(repository, "a.txt"), "a");
     git(repository, "add", "a.txt");
     git(repository, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "a");
     const head = git(repository, "rev-parse", "HEAD");
+    // Each ref's tip at admission that the base does not reach, whatever the remote is called (#599):
+    // a tag and a remote-tracking ref on the base's parent are left out, a branch and a remote-tracking ref beside it are kept.
+    git(repository, "tag", "older", "HEAD");
+    git(repository, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "b", "--allow-empty");
+    git(repository, "update-ref", "refs/remotes/somewhere/main", head);
+    const next = git(repository, "rev-parse", "HEAD");
+    const side = git(repository, "-c", "user.name=t", "-c", "user.email=t@t", "commit-tree", "HEAD^{tree}", "-p", head, "-m", "side");
+    git(repository, "branch", "side", side);
+    git(repository, "update-ref", "refs/remotes/somewhere/side", side);
     const committed = session(["done"], { cwd: repository });
     await committed.prompt("go");
-    expect(committed.ledger()[0]?.base.units).toEqual([{ folder: "", kind: "commit", commit: head }]);
+    expect(committed.ledger()[0]?.base.units).toEqual([{ folder: "", kind: "commit", commit: next, refs: [side] }]);
     const plain = session(["done"]);
     await plain.prompt("go");
     expect(plain.ledger()[0]?.base.units[0]).toMatchObject({ folder: "", kind: "snapshot", tooLarge: [] });

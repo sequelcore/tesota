@@ -4,7 +4,17 @@ export function fingerprintEligible(known: boolean, headMoved: boolean, pathChan
   return !known || headMoved || pathChanged || unmeasured;
 }
 
-/** Unmeasured paths cannot be called unchanged; commits since H remain part of the request's change. */
+/**
+ * Credit needs unchanged history or a same-branch descent of timely commits that no ref's tip at admission
+ * reached (`exclusive`); unrecorded or unreadable starting refs leave `exclusive` false.
+ */
+//@ ensures \result <==> (!repository || (startKnown && endKnown && startAtBase && (endAtBase || (sameBranch && descends && exclusive && timely))))
+export function historyAttributable(repository: boolean, startKnown: boolean, endKnown: boolean,
+  startAtBase: boolean, endAtBase: boolean, sameBranch: boolean, descends: boolean, exclusive: boolean, timely: boolean): boolean {
+  return !repository || (startKnown && endKnown && startAtBase && (endAtBase || (sameBranch && descends && exclusive && timely)));
+}
+
+/** Unmeasured paths cannot be called unchanged; commits since H remain part of the observed change. */
 export type PathAttribution = "request" | "inherited" | "unmeasured" | "unchanged";
 
 //@ ensures \result === "unmeasured" <==> !measured

@@ -5,11 +5,11 @@ exports[`receipts beyond the four > as a pull request's Markdown, bound to its c
 
 Commit \`6734e933830e\`, changes from \`700f9a9d4a0b\`; Tesota 0.1.0-alpha.1, model \`openai/gpt-6.1-sol\`; session \`session-584\`, 2026-10-22T22:13:49.609Z to 2026-10-22T22:50:14.441Z.
 
-The receipt attributes files changed during the request (by anyone). Weakening and exercise compare against the admission base.
+The receipt records observed differences. Its attribution limits and measurements are stated below; comparisons keep the request's admission base.
 
 \`\`\`text
 Tesota receipt
-2 review flags · 6 verification limits
+2 review flags · 7 verification limits
 Check evidence, not your acceptance.
 
 ✓ Tested   bun run check · 5:58
@@ -20,13 +20,15 @@ Check evidence, not your acceptance.
   May weaken evidence; not confirmed weakening.
 ○ Change sensitivity unknown · 3 test files
   Base fails too; no per-test failure report.
+○ Attribution unresolved
+  history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish request attribution. Changes are compared with the request's start, not attributed to this request
 ○ No proof covers 3 changed files
 
 Details
   passed        bun run check
-  not checked   packages/core/tests/interface.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; changed in this request
-  not checked   tests/welcome-header.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; changed in this request
-  not checked   tests/working-orb.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; added in this request
+  not checked   packages/core/tests/interface.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  not checked   tests/welcome-header.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  not checked   tests/working-orb.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
   may weaken    packages/core/tests/interface.test.ts: edits a test file
   may weaken    tests/welcome-header.test.ts: edits a test file
   not proved    NOTICE: no proof covers it; the project's commands pass with it
@@ -50,7 +52,7 @@ This is check evidence, not a reviewer's acceptance."
 exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a card > collapsed 40 1`] = `
 "
  Tesota receipt
- 3 review flags · 6 verification limits
+ 3 review flags · 7 verification limits
  Check evidence, not your acceptance.
 
  ✓ Tested   cd api && bun run check ·
@@ -69,6 +71,14 @@ exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a ca
    files
    Base fails too; no per-test failure
    report.
+ ○ Attribution unresolved · api
+   api: history moved, could not be
+   read, or was not captured; recorded
+   exercise and contract measurements
+   do not establish request
+   attribution. Changes are compared
+   with the request's start, not
+   attributed to this request
  ○ No proof covers 3 changed files
 
  ▸ Details · paths, output,
@@ -79,7 +89,7 @@ exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a ca
 exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a card > collapsed 80 1`] = `
 "
  Tesota receipt
- 3 review flags · 6 verification limits
+ 3 review flags · 7 verification limits
  Check evidence, not your acceptance.
 
  ✓ Tested   cd api && bun run check · 5:58
@@ -92,6 +102,11 @@ exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a ca
    it is in no Git repository, so Tesota cannot tell what changed
  ○ Change sensitivity unknown · 3 test files
    Base fails too; no per-test failure report.
+ ○ Attribution unresolved · api
+   api: history moved, could not be read, or was not captured; recorded
+   exercise and contract measurements do not establish request attribution.
+   Changes are compared with the request's start, not attributed to this
+   request
  ○ No proof covers 3 changed files
 
  ▸ Details · paths, output, assumptions, model opinions
@@ -101,7 +116,7 @@ exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a ca
 exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a card > collapsed 120 1`] = `
 "
  Tesota receipt
- 3 review flags · 6 verification limits
+ 3 review flags · 7 verification limits
  Check evidence, not your acceptance.
 
  ✓ Tested   cd api && bun run check · 5:58
@@ -114,6 +129,9 @@ exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a ca
    it is in no Git repository, so Tesota cannot tell what changed
  ○ Change sensitivity unknown · 3 test files
    Base fails too; no per-test failure report.
+ ○ Attribution unresolved · api
+   api: history moved, could not be read, or was not captured; recorded exercise and contract measurements do not
+   establish request attribution. Changes are compared with the request's start, not attributed to this request
  ○ No proof covers 3 changed files
 
  ▸ Details · paths, output, assumptions, model opinions
@@ -123,7 +141,7 @@ exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a ca
 exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a card > expanded 40 1`] = `
 "
  Tesota receipt
- 3 review flags · 6 verification limits
+ 3 review flags · 7 verification limits
  Check evidence, not your acceptance.
 
  ✓ Tested   cd api && bun run check ·
@@ -142,6 +160,14 @@ exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a ca
    files
    Base fails too; no per-test failure
    report.
+ ○ Attribution unresolved · api
+   api: history moved, could not be
+   read, or was not captured; recorded
+   exercise and contract measurements
+   do not establish request
+   attribution. Changes are compared
+   with the request's start, not
+   attributed to this request
  ○ No proof covers 3 changed files
 
  ▾ Details
@@ -152,20 +178,20 @@ exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a ca
      test.ts: on the base it failed,
      but so does the base without it,
      and no test report says which
-     tests fail; changed in this
-     request
+     tests fail; contribution
+     unresolved
    not checked
      api/tests/welcome-header.test.ts:
      on the base it failed, but so does
      the base without it, and no test
      report says which tests fail;
-     changed in this request
+     contribution unresolved
    not checked
      api/tests/working-orb.test.ts: on
      the base it failed, but so does
      the base without it, and no test
      report says which tests fail;
-     added in this request
+     contribution unresolved
    may weaken
      api/packages/core/tests/interface.
      test.ts: edits a test file
@@ -194,7 +220,7 @@ exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a ca
 exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a card > expanded 80 1`] = `
 "
  Tesota receipt
- 3 review flags · 6 verification limits
+ 3 review flags · 7 verification limits
  Check evidence, not your acceptance.
 
  ✓ Tested   cd api && bun run check · 5:58
@@ -207,19 +233,24 @@ exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a ca
    it is in no Git repository, so Tesota cannot tell what changed
  ○ Change sensitivity unknown · 3 test files
    Base fails too; no per-test failure report.
+ ○ Attribution unresolved · api
+   api: history moved, could not be read, or was not captured; recorded
+   exercise and contract measurements do not establish request attribution.
+   Changes are compared with the request's start, not attributed to this
+   request
  ○ No proof covers 3 changed files
 
  ▾ Details
    passed        cd api && bun run check
    not checked   api/packages/core/tests/interface.test.ts: on the base it
      failed, but so does the base without it, and no test report says which
-     tests fail; changed in this request
+     tests fail; contribution unresolved
    not checked   api/tests/welcome-header.test.ts: on the base it failed, but
      so does the base without it, and no test report says which tests fail;
-     changed in this request
+     contribution unresolved
    not checked   api/tests/working-orb.test.ts: on the base it failed, but so
-     does the base without it, and no test report says which tests fail; added
-     in this request
+     does the base without it, and no test report says which tests fail;
+     contribution unresolved
    may weaken    api/packages/core/tests/interface.test.ts: edits a test file
    may weaken    api/tests/welcome-header.test.ts: edits a test file
    not proved    api/NOTICE: no proof covers it; the project's commands pass
@@ -238,7 +269,7 @@ exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a ca
 exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a card > expanded 120 1`] = `
 "
  Tesota receipt
- 3 review flags · 6 verification limits
+ 3 review flags · 7 verification limits
  Check evidence, not your acceptance.
 
  ✓ Tested   cd api && bun run check · 5:58
@@ -251,16 +282,19 @@ exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a ca
    it is in no Git repository, so Tesota cannot tell what changed
  ○ Change sensitivity unknown · 3 test files
    Base fails too; no per-test failure report.
+ ○ Attribution unresolved · api
+   api: history moved, could not be read, or was not captured; recorded exercise and contract measurements do not
+   establish request attribution. Changes are compared with the request's start, not attributed to this request
  ○ No proof covers 3 changed files
 
  ▾ Details
    passed        cd api && bun run check
    not checked   api/packages/core/tests/interface.test.ts: on the base it failed, but so does the base without it, and
-     no test report says which tests fail; changed in this request
+     no test report says which tests fail; contribution unresolved
    not checked   api/tests/welcome-header.test.ts: on the base it failed, but so does the base without it, and no test
-     report says which tests fail; changed in this request
+     report says which tests fail; contribution unresolved
    not checked   api/tests/working-orb.test.ts: on the base it failed, but so does the base without it, and no test
-     report says which tests fail; added in this request
+     report says which tests fail; contribution unresolved
    may weaken    api/packages/core/tests/interface.test.ts: edits a test file
    may weaken    api/tests/welcome-header.test.ts: edits a test file
    not proved    api/NOTICE: no proof covers it; the project's commands pass with it
@@ -275,7 +309,7 @@ exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a ca
 exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a card > markdown 1`] = `
 "## Tesota receipt
 
-**3 review flags · 6 verification limits**  
+**3 review flags · 7 verification limits**  
 Check evidence, not your acceptance.
 
 - ✓ **Tested** — cd api && bun run check · 5:58
@@ -285,15 +319,16 @@ Check evidence, not your acceptance.
 - ! Review test edits · 2 heuristic flags — May weaken evidence; not confirmed weakening.
 - ! Not verified · notes — it is in no Git repository, so Tesota cannot tell what changed
 - ○ Change sensitivity unknown · 3 test files — Base fails too; no per\\-test failure report.
+- ○ Attribution unresolved · api — api: history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish request attribution. Changes are compared with the request's start, not attributed to this request
 - ○ No proof covers 3 changed files
 
 **Details**
 
 \`\`\`text
   passed        cd api && bun run check
-  not checked   api/packages/core/tests/interface.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; changed in this request
-  not checked   api/tests/welcome-header.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; changed in this request
-  not checked   api/tests/working-orb.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; added in this request
+  not checked   api/packages/core/tests/interface.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  not checked   api/tests/welcome-header.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  not checked   api/tests/working-orb.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
   may weaken    api/packages/core/tests/interface.test.ts: edits a test file
   may weaken    api/tests/welcome-header.test.ts: edits a test file
   not proved    api/NOTICE: no proof covers it; the project's commands pass with it
@@ -307,7 +342,7 @@ From api 700f9a9d4a0b · Tesota 0.1.0
 
 exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a card > plain 1`] = `
 "Tesota receipt
-3 review flags · 6 verification limits
+3 review flags · 7 verification limits
 Check evidence, not your acceptance.
 
 ✓ Tested   cd api && bun run check · 5:58
@@ -320,13 +355,15 @@ Check evidence, not your acceptance.
   it is in no Git repository, so Tesota cannot tell what changed
 ○ Change sensitivity unknown · 3 test files
   Base fails too; no per-test failure report.
+○ Attribution unresolved · api
+  api: history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish request attribution. Changes are compared with the request's start, not attributed to this request
 ○ No proof covers 3 changed files
 
 Details
   passed        cd api && bun run check
-  not checked   api/packages/core/tests/interface.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; changed in this request
-  not checked   api/tests/welcome-header.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; changed in this request
-  not checked   api/tests/working-orb.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; added in this request
+  not checked   api/packages/core/tests/interface.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  not checked   api/tests/welcome-header.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  not checked   api/tests/working-orb.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
   may weaken    api/packages/core/tests/interface.test.ts: edits a test file
   may weaken    api/tests/welcome-header.test.ts: edits a test file
   not proved    api/NOTICE: no proof covers it; the project's commands pass with it
@@ -649,7 +686,7 @@ From the first commit · Tesota 0.1.0"
 exports[`the real receipt of #574 > as a card 40 columns wide, the same words in both themes > collapsed 40 1`] = `
 "
  Tesota receipt
- 1 review flag · 3 verification limits
+ 1 review flag · 4 verification limits
  Check evidence, not your acceptance.
 
  ✓ Tested   bun run check · 7:41
@@ -663,6 +700,14 @@ exports[`the real receipt of #574 > as a card 40 columns wide, the same words in
    files
    Base fails too; no per-test failure
    report.
+ ○ Attribution unresolved
+   history moved, could not be read, or
+   was not captured; recorded exercise
+   and contract measurements do not
+   establish request attribution.
+   Changes are compared with the
+   request's start, not attributed to
+   this request
  ○ No proof covers 1 changed file
 
  ▸ Details · paths, output,
@@ -673,7 +718,7 @@ exports[`the real receipt of #574 > as a card 40 columns wide, the same words in
 exports[`the real receipt of #574 > as a card 40 columns wide, the same words in both themes > expanded 40 1`] = `
 "
  Tesota receipt
- 1 review flag · 3 verification limits
+ 1 review flag · 4 verification limits
  Check evidence, not your acceptance.
 
  ✓ Tested   bun run check · 7:41
@@ -687,6 +732,14 @@ exports[`the real receipt of #574 > as a card 40 columns wide, the same words in
    files
    Base fails too; no per-test failure
    report.
+ ○ Attribution unresolved
+   history moved, could not be read, or
+   was not captured; recorded exercise
+   and contract measurements do not
+   establish request attribution.
+   Changes are compared with the
+   request's start, not attributed to
+   this request
  ○ No proof covers 1 changed file
 
  ▾ Details
@@ -696,13 +749,13 @@ exports[`the real receipt of #574 > as a card 40 columns wide, the same words in
      on the base it failed, but so does
      the base without it, and no test
      report says which tests fail;
-     changed in this request
+     contribution unresolved
    not checked
      packages/core/tests/virtual-termin
      al.ts: on the base it failed, but
      so does the base without it, and
      no test report says which tests
-     fail; changed in this request
+     fail; contribution unresolved
    may weaken
      packages/core/tests/shell.test.ts:
      edits a test file
@@ -724,7 +777,7 @@ exports[`the real receipt of #574 > as a card 40 columns wide, the same words in
 exports[`the real receipt of #574 > as a card 80 columns wide, the same words in both themes > collapsed 80 1`] = `
 "
  Tesota receipt
- 1 review flag · 3 verification limits
+ 1 review flag · 4 verification limits
  Check evidence, not your acceptance.
 
  ✓ Tested   bun run check · 7:41
@@ -735,6 +788,10 @@ exports[`the real receipt of #574 > as a card 80 columns wide, the same words in
    May weaken evidence; not confirmed weakening.
  ○ Change sensitivity unknown · 2 test files
    Base fails too; no per-test failure report.
+ ○ Attribution unresolved
+   history moved, could not be read, or was not captured; recorded exercise and
+   contract measurements do not establish request attribution. Changes are
+   compared with the request's start, not attributed to this request
  ○ No proof covers 1 changed file
 
  ▸ Details · paths, output, assumptions, model opinions
@@ -744,7 +801,7 @@ exports[`the real receipt of #574 > as a card 80 columns wide, the same words in
 exports[`the real receipt of #574 > as a card 80 columns wide, the same words in both themes > expanded 80 1`] = `
 "
  Tesota receipt
- 1 review flag · 3 verification limits
+ 1 review flag · 4 verification limits
  Check evidence, not your acceptance.
 
  ✓ Tested   bun run check · 7:41
@@ -755,16 +812,20 @@ exports[`the real receipt of #574 > as a card 80 columns wide, the same words in
    May weaken evidence; not confirmed weakening.
  ○ Change sensitivity unknown · 2 test files
    Base fails too; no per-test failure report.
+ ○ Attribution unresolved
+   history moved, could not be read, or was not captured; recorded exercise and
+   contract measurements do not establish request attribution. Changes are
+   compared with the request's start, not attributed to this request
  ○ No proof covers 1 changed file
 
  ▾ Details
    passed        bun run check
    not checked   packages/core/tests/shell.test.ts: on the base it failed, but
      so does the base without it, and no test report says which tests fail;
-     changed in this request
+     contribution unresolved
    not checked   packages/core/tests/virtual-terminal.ts: on the base it
      failed, but so does the base without it, and no test report says which
-     tests fail; changed in this request
+     tests fail; contribution unresolved
    may weaken    packages/core/tests/shell.test.ts: edits a test file
    not proved    packages/core/src/shell/shell.ts: no proof covers it; the
      project's commands pass with it
@@ -778,7 +839,7 @@ exports[`the real receipt of #574 > as a card 80 columns wide, the same words in
 exports[`the real receipt of #574 > as a card 120 columns wide, the same words in both themes > collapsed 120 1`] = `
 "
  Tesota receipt
- 1 review flag · 3 verification limits
+ 1 review flag · 4 verification limits
  Check evidence, not your acceptance.
 
  ✓ Tested   bun run check · 7:41
@@ -789,6 +850,9 @@ exports[`the real receipt of #574 > as a card 120 columns wide, the same words i
    May weaken evidence; not confirmed weakening.
  ○ Change sensitivity unknown · 2 test files
    Base fails too; no per-test failure report.
+ ○ Attribution unresolved
+   history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish
+   request attribution. Changes are compared with the request's start, not attributed to this request
  ○ No proof covers 1 changed file
 
  ▸ Details · paths, output, assumptions, model opinions
@@ -798,7 +862,7 @@ exports[`the real receipt of #574 > as a card 120 columns wide, the same words i
 exports[`the real receipt of #574 > as a card 120 columns wide, the same words in both themes > expanded 120 1`] = `
 "
  Tesota receipt
- 1 review flag · 3 verification limits
+ 1 review flag · 4 verification limits
  Check evidence, not your acceptance.
 
  ✓ Tested   bun run check · 7:41
@@ -809,14 +873,17 @@ exports[`the real receipt of #574 > as a card 120 columns wide, the same words i
    May weaken evidence; not confirmed weakening.
  ○ Change sensitivity unknown · 2 test files
    Base fails too; no per-test failure report.
+ ○ Attribution unresolved
+   history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish
+   request attribution. Changes are compared with the request's start, not attributed to this request
  ○ No proof covers 1 changed file
 
  ▾ Details
    passed        bun run check
    not checked   packages/core/tests/shell.test.ts: on the base it failed, but so does the base without it, and no test
-     report says which tests fail; changed in this request
+     report says which tests fail; contribution unresolved
    not checked   packages/core/tests/virtual-terminal.ts: on the base it failed, but so does the base without it, and
-     no test report says which tests fail; changed in this request
+     no test report says which tests fail; contribution unresolved
    may weaken    packages/core/tests/shell.test.ts: edits a test file
    not proved    packages/core/src/shell/shell.ts: no proof covers it; the project's commands pass with it
    changed lines implementation +3 -3 · tests +31 -2
@@ -828,7 +895,7 @@ exports[`the real receipt of #574 > as a card 120 columns wide, the same words i
 exports[`the real receipt of #574 > as plain text and as Markdown > markdown 1`] = `
 "## Tesota receipt
 
-**1 review flag · 3 verification limits**  
+**1 review flag · 4 verification limits**  
 Check evidence, not your acceptance.
 
 - ✓ **Tested** — bun run check · 7:41
@@ -837,14 +904,15 @@ Check evidence, not your acceptance.
 
 - ! Review test edits · 1 heuristic flag — May weaken evidence; not confirmed weakening.
 - ○ Change sensitivity unknown · 2 test files — Base fails too; no per\\-test failure report.
+- ○ Attribution unresolved — history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish request attribution. Changes are compared with the request's start, not attributed to this request
 - ○ No proof covers 1 changed file
 
 **Details**
 
 \`\`\`text
   passed        bun run check
-  not checked   packages/core/tests/shell.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; changed in this request
-  not checked   packages/core/tests/virtual-terminal.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; changed in this request
+  not checked   packages/core/tests/shell.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  not checked   packages/core/tests/virtual-terminal.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
   may weaken    packages/core/tests/shell.test.ts: edits a test file
   not proved    packages/core/src/shell/shell.ts: no proof covers it; the project's commands pass with it
   changed lines implementation +3 -3 · tests +31 -2
@@ -855,7 +923,7 @@ From 39d91577bad9 · Tesota 0.1.0-alpha.1 · claude-code/claude-opus-5-5
 
 exports[`the real receipt of #574 > as plain text and as Markdown > plain 1`] = `
 "Tesota receipt
-1 review flag · 3 verification limits
+1 review flag · 4 verification limits
 Check evidence, not your acceptance.
 
 ✓ Tested   bun run check · 7:41
@@ -866,12 +934,14 @@ Check evidence, not your acceptance.
   May weaken evidence; not confirmed weakening.
 ○ Change sensitivity unknown · 2 test files
   Base fails too; no per-test failure report.
+○ Attribution unresolved
+  history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish request attribution. Changes are compared with the request's start, not attributed to this request
 ○ No proof covers 1 changed file
 
 Details
   passed        bun run check
-  not checked   packages/core/tests/shell.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; changed in this request
-  not checked   packages/core/tests/virtual-terminal.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; changed in this request
+  not checked   packages/core/tests/shell.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  not checked   packages/core/tests/virtual-terminal.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
   may weaken    packages/core/tests/shell.test.ts: edits a test file
   not proved    packages/core/src/shell/shell.ts: no proof covers it; the project's commands pass with it
   changed lines implementation +3 -3 · tests +31 -2
@@ -883,7 +953,7 @@ exports[`the real receipt of #574 > in each theme's colors > dark collapsed 80 1
 "[
  "\\u001b[48;2;49;43;56m                                                                                \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;198;168;210m\\u001b[1mTesota receipt\\u001b[22m\\u001b[39m                                                                 \\u001b[49m",
- "\\u001b[48;2;49;43;56m \\u001b[38;2;213;179;106m\\u001b[1m1 review flag · 3 verification limits\\u001b[22m\\u001b[39m                                          \\u001b[49m",
+ "\\u001b[48;2;49;43;56m \\u001b[38;2;213;179;106m\\u001b[1m1 review flag · 4 verification limits\\u001b[22m\\u001b[39m                                          \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170mCheck evidence, not your acceptance.\\u001b[39m                                           \\u001b[49m",
  "\\u001b[48;2;49;43;56m                                                                                \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;154;176;143m✓\\u001b[39m \\u001b[38;2;242;238;230mTested   \\u001b[39m\\u001b[38;2;185;183;170mbun run check · 7:41\\u001b[39m                                                \\u001b[49m",
@@ -894,6 +964,10 @@ exports[`the real receipt of #574 > in each theme's colors > dark collapsed 80 1
  "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m  May weaken evidence; not confirmed weakening.\\u001b[39m                                \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m○\\u001b[39m \\u001b[38;2;242;238;230mChange sensitivity unknown · 2 test files\\u001b[39m                                    \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m  Base fails too; no per-test failure report.\\u001b[39m                                  \\u001b[49m",
+ "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m○\\u001b[39m \\u001b[38;2;242;238;230mAttribution unresolved\\u001b[39m                                                       \\u001b[49m",
+ "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m  history moved, could not be read, or was not captured; recorded exercise and \\u001b[49m",
+ "\\u001b[48;2;49;43;56m   \\u001b[38;2;185;183;170mcontract measurements do not establish request attribution. Changes are      \\u001b[49m",
+ "\\u001b[48;2;49;43;56m   \\u001b[38;2;185;183;170m\\u001b[38;2;185;183;170mcompared with the request's start, not attributed to this request\\u001b[39m            \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m○\\u001b[39m \\u001b[38;2;242;238;230mNo proof covers 1 changed file\\u001b[39m                                               \\u001b[49m",
  "\\u001b[48;2;49;43;56m                                                                                \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;143;141;132m▸ Details · paths, output, assumptions, model opinions\\u001b[39m                         \\u001b[49m",
@@ -905,7 +979,7 @@ exports[`the real receipt of #574 > in each theme's colors > light collapsed 80 
 "[
  "\\u001b[48;2;250;247;251m                                                                                \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;109;75;120m\\u001b[1mTesota receipt\\u001b[22m\\u001b[39m                                                                 \\u001b[49m",
- "\\u001b[48;2;250;247;251m \\u001b[38;2;110;96;44m\\u001b[1m1 review flag · 3 verification limits\\u001b[22m\\u001b[39m                                          \\u001b[49m",
+ "\\u001b[48;2;250;247;251m \\u001b[38;2;110;96;44m\\u001b[1m1 review flag · 4 verification limits\\u001b[22m\\u001b[39m                                          \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88mCheck evidence, not your acceptance.\\u001b[39m                                           \\u001b[49m",
  "\\u001b[48;2;250;247;251m                                                                                \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;79;98;74m✓\\u001b[39m \\u001b[38;2;36;33;31mTested   \\u001b[39m\\u001b[38;2;95;98;88mbun run check · 7:41\\u001b[39m                                                \\u001b[49m",
@@ -916,6 +990,10 @@ exports[`the real receipt of #574 > in each theme's colors > light collapsed 80 
  "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m  May weaken evidence; not confirmed weakening.\\u001b[39m                                \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m○\\u001b[39m \\u001b[38;2;36;33;31mChange sensitivity unknown · 2 test files\\u001b[39m                                    \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m  Base fails too; no per-test failure report.\\u001b[39m                                  \\u001b[49m",
+ "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m○\\u001b[39m \\u001b[38;2;36;33;31mAttribution unresolved\\u001b[39m                                                       \\u001b[49m",
+ "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m  history moved, could not be read, or was not captured; recorded exercise and \\u001b[49m",
+ "\\u001b[48;2;250;247;251m   \\u001b[38;2;95;98;88mcontract measurements do not establish request attribution. Changes are      \\u001b[49m",
+ "\\u001b[48;2;250;247;251m   \\u001b[38;2;95;98;88m\\u001b[38;2;95;98;88mcompared with the request's start, not attributed to this request\\u001b[39m            \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m○\\u001b[39m \\u001b[38;2;36;33;31mNo proof covers 1 changed file\\u001b[39m                                               \\u001b[49m",
  "\\u001b[48;2;250;247;251m                                                                                \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;134;136;126m▸ Details · paths, output, assumptions, model opinions\\u001b[39m                         \\u001b[49m",
@@ -926,7 +1004,7 @@ exports[`the real receipt of #574 > in each theme's colors > light collapsed 80 
 exports[`the real receipt of #575 > as a card 40 columns wide, the same words in both themes > collapsed 40 1`] = `
 "
  Tesota receipt
- No review flags · 4 verification
+ No review flags · 5 verification
  limits
  Check evidence, not your acceptance.
 
@@ -938,6 +1016,14 @@ exports[`the real receipt of #575 > as a card 40 columns wide, the same words in
    file
    Base fails too; no per-test failure
    report.
+ ○ Attribution unresolved
+   history moved, could not be read, or
+   was not captured; recorded exercise
+   and contract measurements do not
+   establish request attribution.
+   Changes are compared with the
+   request's start, not attributed to
+   this request
  ○ No proof covers 3 changed files
 
  Model opinions · not evidence, not
@@ -954,7 +1040,7 @@ exports[`the real receipt of #575 > as a card 40 columns wide, the same words in
 exports[`the real receipt of #575 > as a card 40 columns wide, the same words in both themes > expanded 40 1`] = `
 "
  Tesota receipt
- No review flags · 4 verification
+ No review flags · 5 verification
  limits
  Check evidence, not your acceptance.
 
@@ -966,6 +1052,14 @@ exports[`the real receipt of #575 > as a card 40 columns wide, the same words in
    file
    Base fails too; no per-test failure
    report.
+ ○ Attribution unresolved
+   history moved, could not be read, or
+   was not captured; recorded exercise
+   and contract measurements do not
+   establish request attribution.
+   Changes are compared with the
+   request's start, not attributed to
+   this request
  ○ No proof covers 3 changed files
 
  Model opinions · not evidence, not
@@ -980,7 +1074,7 @@ exports[`the real receipt of #575 > as a card 40 columns wide, the same words in
      base it failed, but so does the
      base without it, and no test
      report says which tests fail;
-     changed in this request
+     contribution unresolved
    not proved
      docs/concepts/verification.md: no
      proof covers it; the project's
@@ -1031,7 +1125,7 @@ exports[`the real receipt of #575 > as a card 40 columns wide, the same words in
 exports[`the real receipt of #575 > as a card 80 columns wide, the same words in both themes > collapsed 80 1`] = `
 "
  Tesota receipt
- No review flags · 4 verification limits
+ No review flags · 5 verification limits
  Check evidence, not your acceptance.
 
  ✓ Tested   bun run check · 7:37
@@ -1040,6 +1134,10 @@ exports[`the real receipt of #575 > as a card 80 columns wide, the same words in
 
  ○ Change sensitivity unknown · 1 test file
    Base fails too; no per-test failure report.
+ ○ Attribution unresolved
+   history moved, could not be read, or was not captured; recorded exercise and
+   contract measurements do not establish request attribution. Changes are
+   compared with the request's start, not attributed to this request
  ○ No proof covers 3 changed files
 
  Model opinions · not evidence, not counted
@@ -1053,7 +1151,7 @@ exports[`the real receipt of #575 > as a card 80 columns wide, the same words in
 exports[`the real receipt of #575 > as a card 80 columns wide, the same words in both themes > expanded 80 1`] = `
 "
  Tesota receipt
- No review flags · 4 verification limits
+ No review flags · 5 verification limits
  Check evidence, not your acceptance.
 
  ✓ Tested   bun run check · 7:37
@@ -1062,6 +1160,10 @@ exports[`the real receipt of #575 > as a card 80 columns wide, the same words in
 
  ○ Change sensitivity unknown · 1 test file
    Base fails too; no per-test failure report.
+ ○ Attribution unresolved
+   history moved, could not be read, or was not captured; recorded exercise and
+   contract measurements do not establish request attribution. Changes are
+   compared with the request's start, not attributed to this request
  ○ No proof covers 3 changed files
 
  Model opinions · not evidence, not counted
@@ -1070,8 +1172,8 @@ exports[`the real receipt of #575 > as a card 80 columns wide, the same words in
  ▾ Details
    passed        bun run check
    not checked   tests/test-rung.test.ts: on the base it failed, but so does
-     the base without it, and no test report says which tests fail; changed in
-     this request
+     the base without it, and no test report says which tests fail;
+     contribution unresolved
    not proved    docs/concepts/verification.md: no proof covers it; the
      project's commands pass with it
    not proved    docs/receipt-v2.md: no proof covers it; the project's commands
@@ -1098,7 +1200,7 @@ exports[`the real receipt of #575 > as a card 80 columns wide, the same words in
 exports[`the real receipt of #575 > as a card 120 columns wide, the same words in both themes > collapsed 120 1`] = `
 "
  Tesota receipt
- No review flags · 4 verification limits
+ No review flags · 5 verification limits
  Check evidence, not your acceptance.
 
  ✓ Tested   bun run check · 7:37
@@ -1107,6 +1209,9 @@ exports[`the real receipt of #575 > as a card 120 columns wide, the same words i
 
  ○ Change sensitivity unknown · 1 test file
    Base fails too; no per-test failure report.
+ ○ Attribution unresolved
+   history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish
+   request attribution. Changes are compared with the request's start, not attributed to this request
  ○ No proof covers 3 changed files
 
  Model opinions · not evidence, not counted
@@ -1120,7 +1225,7 @@ exports[`the real receipt of #575 > as a card 120 columns wide, the same words i
 exports[`the real receipt of #575 > as a card 120 columns wide, the same words in both themes > expanded 120 1`] = `
 "
  Tesota receipt
- No review flags · 4 verification limits
+ No review flags · 5 verification limits
  Check evidence, not your acceptance.
 
  ✓ Tested   bun run check · 7:37
@@ -1129,6 +1234,9 @@ exports[`the real receipt of #575 > as a card 120 columns wide, the same words i
 
  ○ Change sensitivity unknown · 1 test file
    Base fails too; no per-test failure report.
+ ○ Attribution unresolved
+   history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish
+   request attribution. Changes are compared with the request's start, not attributed to this request
  ○ No proof covers 3 changed files
 
  Model opinions · not evidence, not counted
@@ -1137,7 +1245,7 @@ exports[`the real receipt of #575 > as a card 120 columns wide, the same words i
  ▾ Details
    passed        bun run check
    not checked   tests/test-rung.test.ts: on the base it failed, but so does the base without it, and no test report
-     says which tests fail; changed in this request
+     says which tests fail; contribution unresolved
    not proved    docs/concepts/verification.md: no proof covers it; the project's commands pass with it
    not proved    docs/receipt-v2.md: no proof covers it; the project's commands pass with it
    not proved    src/test-rung.ts: no proof covers it; the project's commands pass with it
@@ -1159,7 +1267,7 @@ exports[`the real receipt of #575 > as a card 120 columns wide, the same words i
 exports[`the real receipt of #575 > as plain text and as Markdown > markdown 1`] = `
 "## Tesota receipt
 
-**No review flags · 4 verification limits**  
+**No review flags · 5 verification limits**  
 Check evidence, not your acceptance.
 
 - ✓ **Tested** — bun run check · 7:37
@@ -1167,6 +1275,7 @@ Check evidence, not your acceptance.
 - ○ **Models** — none recorded
 
 - ○ Change sensitivity unknown · 1 test file — Base fails too; no per\\-test failure report.
+- ○ Attribution unresolved — history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish request attribution. Changes are compared with the request's start, not attributed to this request
 - ○ No proof covers 3 changed files
 
 **Model opinions · not evidence, not counted**
@@ -1177,7 +1286,7 @@ Check evidence, not your acceptance.
 
 \`\`\`text
   passed        bun run check
-  not checked   tests/test-rung.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; changed in this request
+  not checked   tests/test-rung.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
   not proved    docs/concepts/verification.md: no proof covers it; the project's commands pass with it
   not proved    docs/receipt-v2.md: no proof covers it; the project's commands pass with it
   not proved    src/test-rung.ts: no proof covers it; the project's commands pass with it
@@ -1193,7 +1302,7 @@ Subagents \\(each one's receipt covers its own branch, not this change\\)
 
 exports[`the real receipt of #575 > as plain text and as Markdown > plain 1`] = `
 "Tesota receipt
-No review flags · 4 verification limits
+No review flags · 5 verification limits
 Check evidence, not your acceptance.
 
 ✓ Tested   bun run check · 7:37
@@ -1202,6 +1311,8 @@ Check evidence, not your acceptance.
 
 ○ Change sensitivity unknown · 1 test file
   Base fails too; no per-test failure report.
+○ Attribution unresolved
+  history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish request attribution. Changes are compared with the request's start, not attributed to this request
 ○ No proof covers 3 changed files
 
 Model opinions · not evidence, not counted
@@ -1209,7 +1320,7 @@ Model opinions · not evidence, not counted
 
 Details
   passed        bun run check
-  not checked   tests/test-rung.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; changed in this request
+  not checked   tests/test-rung.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
   not proved    docs/concepts/verification.md: no proof covers it; the project's commands pass with it
   not proved    docs/receipt-v2.md: no proof covers it; the project's commands pass with it
   not proved    src/test-rung.ts: no proof covers it; the project's commands pass with it
@@ -1226,7 +1337,7 @@ exports[`the real receipt of #575 > in each theme's colors > dark collapsed 80 1
 "[
  "\\u001b[48;2;49;43;56m                                                                                \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;198;168;210m\\u001b[1mTesota receipt\\u001b[22m\\u001b[39m                                                                 \\u001b[49m",
- "\\u001b[48;2;49;43;56m \\u001b[38;2;213;179;106m\\u001b[1mNo review flags · 4 verification limits\\u001b[22m\\u001b[39m                                        \\u001b[49m",
+ "\\u001b[48;2;49;43;56m \\u001b[38;2;213;179;106m\\u001b[1mNo review flags · 5 verification limits\\u001b[22m\\u001b[39m                                        \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170mCheck evidence, not your acceptance.\\u001b[39m                                           \\u001b[49m",
  "\\u001b[48;2;49;43;56m                                                                                \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;154;176;143m✓\\u001b[39m \\u001b[38;2;242;238;230mTested   \\u001b[39m\\u001b[38;2;185;183;170mbun run check · 7:37\\u001b[39m                                                \\u001b[49m",
@@ -1235,6 +1346,10 @@ exports[`the real receipt of #575 > in each theme's colors > dark collapsed 80 1
  "\\u001b[48;2;49;43;56m                                                                                \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m○\\u001b[39m \\u001b[38;2;242;238;230mChange sensitivity unknown · 1 test file\\u001b[39m                                     \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m  Base fails too; no per-test failure report.\\u001b[39m                                  \\u001b[49m",
+ "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m○\\u001b[39m \\u001b[38;2;242;238;230mAttribution unresolved\\u001b[39m                                                       \\u001b[49m",
+ "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m  history moved, could not be read, or was not captured; recorded exercise and \\u001b[49m",
+ "\\u001b[48;2;49;43;56m   \\u001b[38;2;185;183;170mcontract measurements do not establish request attribution. Changes are      \\u001b[49m",
+ "\\u001b[48;2;49;43;56m   \\u001b[38;2;185;183;170m\\u001b[38;2;185;183;170mcompared with the request's start, not attributed to this request\\u001b[39m            \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m○\\u001b[39m \\u001b[38;2;242;238;230mNo proof covers 3 changed files\\u001b[39m                                              \\u001b[49m",
  "\\u001b[48;2;49;43;56m                                                                                \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;143;141;132m\\u001b[1mModel opinions · not evidence, not counted\\u001b[22m\\u001b[39m                                     \\u001b[49m",
@@ -1250,7 +1365,7 @@ exports[`the real receipt of #575 > in each theme's colors > light collapsed 80 
 "[
  "\\u001b[48;2;250;247;251m                                                                                \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;109;75;120m\\u001b[1mTesota receipt\\u001b[22m\\u001b[39m                                                                 \\u001b[49m",
- "\\u001b[48;2;250;247;251m \\u001b[38;2;110;96;44m\\u001b[1mNo review flags · 4 verification limits\\u001b[22m\\u001b[39m                                        \\u001b[49m",
+ "\\u001b[48;2;250;247;251m \\u001b[38;2;110;96;44m\\u001b[1mNo review flags · 5 verification limits\\u001b[22m\\u001b[39m                                        \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88mCheck evidence, not your acceptance.\\u001b[39m                                           \\u001b[49m",
  "\\u001b[48;2;250;247;251m                                                                                \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;79;98;74m✓\\u001b[39m \\u001b[38;2;36;33;31mTested   \\u001b[39m\\u001b[38;2;95;98;88mbun run check · 7:37\\u001b[39m                                                \\u001b[49m",
@@ -1259,6 +1374,10 @@ exports[`the real receipt of #575 > in each theme's colors > light collapsed 80 
  "\\u001b[48;2;250;247;251m                                                                                \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m○\\u001b[39m \\u001b[38;2;36;33;31mChange sensitivity unknown · 1 test file\\u001b[39m                                     \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m  Base fails too; no per-test failure report.\\u001b[39m                                  \\u001b[49m",
+ "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m○\\u001b[39m \\u001b[38;2;36;33;31mAttribution unresolved\\u001b[39m                                                       \\u001b[49m",
+ "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m  history moved, could not be read, or was not captured; recorded exercise and \\u001b[49m",
+ "\\u001b[48;2;250;247;251m   \\u001b[38;2;95;98;88mcontract measurements do not establish request attribution. Changes are      \\u001b[49m",
+ "\\u001b[48;2;250;247;251m   \\u001b[38;2;95;98;88m\\u001b[38;2;95;98;88mcompared with the request's start, not attributed to this request\\u001b[39m            \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m○\\u001b[39m \\u001b[38;2;36;33;31mNo proof covers 3 changed files\\u001b[39m                                              \\u001b[49m",
  "\\u001b[48;2;250;247;251m                                                                                \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;134;136;126m\\u001b[1mModel opinions · not evidence, not counted\\u001b[22m\\u001b[39m                                     \\u001b[49m",
@@ -1273,7 +1392,7 @@ exports[`the real receipt of #575 > in each theme's colors > light collapsed 80 
 exports[`the real receipt of #577 > as a card 40 columns wide, the same words in both themes > collapsed 40 1`] = `
 "
  Tesota receipt
- 2 review flags · 7 verification limits
+ 2 review flags · 8 verification limits
  Check evidence, not your acceptance.
 
  ✓ Tested   bun run check · 6:17
@@ -1288,6 +1407,14 @@ exports[`the real receipt of #577 > as a card 40 columns wide, the same words in
    files
    Base fails too; no per-test failure
    report.
+ ○ Attribution unresolved
+   history moved, could not be read, or
+   was not captured; recorded exercise
+   and contract measurements do not
+   establish request attribution.
+   Changes are compared with the
+   request's start, not attributed to
+   this request
  ○ No proof covers 5 changed files
 
  ▸ Details · paths, output,
@@ -1299,7 +1426,7 @@ exports[`the real receipt of #577 > as a card 40 columns wide, the same words in
 exports[`the real receipt of #577 > as a card 40 columns wide, the same words in both themes > expanded 40 1`] = `
 "
  Tesota receipt
- 2 review flags · 7 verification limits
+ 2 review flags · 8 verification limits
  Check evidence, not your acceptance.
 
  ✓ Tested   bun run check · 6:17
@@ -1314,6 +1441,14 @@ exports[`the real receipt of #577 > as a card 40 columns wide, the same words in
    files
    Base fails too; no per-test failure
    report.
+ ○ Attribution unresolved
+   history moved, could not be read, or
+   was not captured; recorded exercise
+   and contract measurements do not
+   establish request attribution.
+   Changes are compared with the
+   request's start, not attributed to
+   this request
  ○ No proof covers 5 changed files
 
  ▾ Details
@@ -1323,13 +1458,13 @@ exports[`the real receipt of #577 > as a card 40 columns wide, the same words in
      st.ts: on the base it failed, but
      so does the base without it, and
      no test report says which tests
-     fail; changed in this request
+     fail; contribution unresolved
    not checked
      packages/core/tests/compaction.tes
      t.ts: on the base it failed, but
      so does the base without it, and
      no test report says which tests
-     fail; changed in this request
+     fail; contribution unresolved
    may weaken
      packages/core/tests/claude-code.te
      st.ts: edits a test file
@@ -1379,7 +1514,7 @@ exports[`the real receipt of #577 > as a card 40 columns wide, the same words in
 exports[`the real receipt of #577 > as a card 80 columns wide, the same words in both themes > collapsed 80 1`] = `
 "
  Tesota receipt
- 2 review flags · 7 verification limits
+ 2 review flags · 8 verification limits
  Check evidence, not your acceptance.
 
  ✓ Tested   bun run check · 6:17
@@ -1390,6 +1525,10 @@ exports[`the real receipt of #577 > as a card 80 columns wide, the same words in
    May weaken evidence; not confirmed weakening.
  ○ Change sensitivity unknown · 2 test files
    Base fails too; no per-test failure report.
+ ○ Attribution unresolved
+   history moved, could not be read, or was not captured; recorded exercise and
+   contract measurements do not establish request attribution. Changes are
+   compared with the request's start, not attributed to this request
  ○ No proof covers 5 changed files
 
  ▸ Details · paths, output, assumptions, model opinions
@@ -1400,7 +1539,7 @@ exports[`the real receipt of #577 > as a card 80 columns wide, the same words in
 exports[`the real receipt of #577 > as a card 80 columns wide, the same words in both themes > expanded 80 1`] = `
 "
  Tesota receipt
- 2 review flags · 7 verification limits
+ 2 review flags · 8 verification limits
  Check evidence, not your acceptance.
 
  ✓ Tested   bun run check · 6:17
@@ -1411,16 +1550,20 @@ exports[`the real receipt of #577 > as a card 80 columns wide, the same words in
    May weaken evidence; not confirmed weakening.
  ○ Change sensitivity unknown · 2 test files
    Base fails too; no per-test failure report.
+ ○ Attribution unresolved
+   history moved, could not be read, or was not captured; recorded exercise and
+   contract measurements do not establish request attribution. Changes are
+   compared with the request's start, not attributed to this request
  ○ No proof covers 5 changed files
 
  ▾ Details
    passed        bun run check
    not checked   packages/core/tests/claude-code.test.ts: on the base it
      failed, but so does the base without it, and no test report says which
-     tests fail; changed in this request
+     tests fail; contribution unresolved
    not checked   packages/core/tests/compaction.test.ts: on the base it failed,
      but so does the base without it, and no test report says which tests fail;
-     changed in this request
+     contribution unresolved
    may weaken    packages/core/tests/claude-code.test.ts: edits a test file
    may weaken    packages/core/tests/compaction.test.ts: edits a test file
    not proved    docs/guides/models.md: no proof covers it; the project's
@@ -1450,7 +1593,7 @@ exports[`the real receipt of #577 > as a card 80 columns wide, the same words in
 exports[`the real receipt of #577 > as a card 120 columns wide, the same words in both themes > collapsed 120 1`] = `
 "
  Tesota receipt
- 2 review flags · 7 verification limits
+ 2 review flags · 8 verification limits
  Check evidence, not your acceptance.
 
  ✓ Tested   bun run check · 6:17
@@ -1461,6 +1604,9 @@ exports[`the real receipt of #577 > as a card 120 columns wide, the same words i
    May weaken evidence; not confirmed weakening.
  ○ Change sensitivity unknown · 2 test files
    Base fails too; no per-test failure report.
+ ○ Attribution unresolved
+   history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish
+   request attribution. Changes are compared with the request's start, not attributed to this request
  ○ No proof covers 5 changed files
 
  ▸ Details · paths, output, assumptions, model opinions
@@ -1471,7 +1617,7 @@ exports[`the real receipt of #577 > as a card 120 columns wide, the same words i
 exports[`the real receipt of #577 > as a card 120 columns wide, the same words in both themes > expanded 120 1`] = `
 "
  Tesota receipt
- 2 review flags · 7 verification limits
+ 2 review flags · 8 verification limits
  Check evidence, not your acceptance.
 
  ✓ Tested   bun run check · 6:17
@@ -1482,14 +1628,17 @@ exports[`the real receipt of #577 > as a card 120 columns wide, the same words i
    May weaken evidence; not confirmed weakening.
  ○ Change sensitivity unknown · 2 test files
    Base fails too; no per-test failure report.
+ ○ Attribution unresolved
+   history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish
+   request attribution. Changes are compared with the request's start, not attributed to this request
  ○ No proof covers 5 changed files
 
  ▾ Details
    passed        bun run check
    not checked   packages/core/tests/claude-code.test.ts: on the base it failed, but so does the base without it, and
-     no test report says which tests fail; changed in this request
+     no test report says which tests fail; contribution unresolved
    not checked   packages/core/tests/compaction.test.ts: on the base it failed, but so does the base without it, and no
-     test report says which tests fail; changed in this request
+     test report says which tests fail; contribution unresolved
    may weaken    packages/core/tests/claude-code.test.ts: edits a test file
    may weaken    packages/core/tests/compaction.test.ts: edits a test file
    not proved    docs/guides/models.md: no proof covers it; the project's commands pass with it
@@ -1512,7 +1661,7 @@ exports[`the real receipt of #577 > as a card 120 columns wide, the same words i
 exports[`the real receipt of #577 > as plain text and as Markdown > markdown 1`] = `
 "## Tesota receipt
 
-**2 review flags · 7 verification limits**  
+**2 review flags · 8 verification limits**  
 Check evidence, not your acceptance.
 
 - ✓ **Tested** — bun run check · 6:17
@@ -1521,14 +1670,15 @@ Check evidence, not your acceptance.
 
 - ! Review test edits · 2 heuristic flags — May weaken evidence; not confirmed weakening.
 - ○ Change sensitivity unknown · 2 test files — Base fails too; no per\\-test failure report.
+- ○ Attribution unresolved — history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish request attribution. Changes are compared with the request's start, not attributed to this request
 - ○ No proof covers 5 changed files
 
 **Details**
 
 \`\`\`text
   passed        bun run check
-  not checked   packages/core/tests/claude-code.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; changed in this request
-  not checked   packages/core/tests/compaction.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; changed in this request
+  not checked   packages/core/tests/claude-code.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  not checked   packages/core/tests/compaction.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
   may weaken    packages/core/tests/claude-code.test.ts: edits a test file
   may weaken    packages/core/tests/compaction.test.ts: edits a test file
   not proved    docs/guides/models.md: no proof covers it; the project's commands pass with it
@@ -1548,7 +1698,7 @@ Subagents \\(each one's receipt covers its own branch, not this change\\)
 
 exports[`the real receipt of #577 > as plain text and as Markdown > plain 1`] = `
 "Tesota receipt
-2 review flags · 7 verification limits
+2 review flags · 8 verification limits
 Check evidence, not your acceptance.
 
 ✓ Tested   bun run check · 6:17
@@ -1559,12 +1709,14 @@ Check evidence, not your acceptance.
   May weaken evidence; not confirmed weakening.
 ○ Change sensitivity unknown · 2 test files
   Base fails too; no per-test failure report.
+○ Attribution unresolved
+  history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish request attribution. Changes are compared with the request's start, not attributed to this request
 ○ No proof covers 5 changed files
 
 Details
   passed        bun run check
-  not checked   packages/core/tests/claude-code.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; changed in this request
-  not checked   packages/core/tests/compaction.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; changed in this request
+  not checked   packages/core/tests/claude-code.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  not checked   packages/core/tests/compaction.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
   may weaken    packages/core/tests/claude-code.test.ts: edits a test file
   may weaken    packages/core/tests/compaction.test.ts: edits a test file
   not proved    docs/guides/models.md: no proof covers it; the project's commands pass with it
@@ -1585,7 +1737,7 @@ exports[`the real receipt of #577 > in each theme's colors > dark collapsed 80 1
 "[
  "\\u001b[48;2;49;43;56m                                                                                \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;198;168;210m\\u001b[1mTesota receipt\\u001b[22m\\u001b[39m                                                                 \\u001b[49m",
- "\\u001b[48;2;49;43;56m \\u001b[38;2;213;179;106m\\u001b[1m2 review flags · 7 verification limits\\u001b[22m\\u001b[39m                                         \\u001b[49m",
+ "\\u001b[48;2;49;43;56m \\u001b[38;2;213;179;106m\\u001b[1m2 review flags · 8 verification limits\\u001b[22m\\u001b[39m                                         \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170mCheck evidence, not your acceptance.\\u001b[39m                                           \\u001b[49m",
  "\\u001b[48;2;49;43;56m                                                                                \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;154;176;143m✓\\u001b[39m \\u001b[38;2;242;238;230mTested   \\u001b[39m\\u001b[38;2;185;183;170mbun run check · 6:17\\u001b[39m                                                \\u001b[49m",
@@ -1596,6 +1748,10 @@ exports[`the real receipt of #577 > in each theme's colors > dark collapsed 80 1
  "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m  May weaken evidence; not confirmed weakening.\\u001b[39m                                \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m○\\u001b[39m \\u001b[38;2;242;238;230mChange sensitivity unknown · 2 test files\\u001b[39m                                    \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m  Base fails too; no per-test failure report.\\u001b[39m                                  \\u001b[49m",
+ "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m○\\u001b[39m \\u001b[38;2;242;238;230mAttribution unresolved\\u001b[39m                                                       \\u001b[49m",
+ "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m  history moved, could not be read, or was not captured; recorded exercise and \\u001b[49m",
+ "\\u001b[48;2;49;43;56m   \\u001b[38;2;185;183;170mcontract measurements do not establish request attribution. Changes are      \\u001b[49m",
+ "\\u001b[48;2;49;43;56m   \\u001b[38;2;185;183;170m\\u001b[38;2;185;183;170mcompared with the request's start, not attributed to this request\\u001b[39m            \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m○\\u001b[39m \\u001b[38;2;242;238;230mNo proof covers 5 changed files\\u001b[39m                                              \\u001b[49m",
  "\\u001b[48;2;49;43;56m                                                                                \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;143;141;132m▸ Details · paths, output, assumptions, model opinions\\u001b[39m                         \\u001b[49m",
@@ -1608,7 +1764,7 @@ exports[`the real receipt of #577 > in each theme's colors > light collapsed 80 
 "[
  "\\u001b[48;2;250;247;251m                                                                                \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;109;75;120m\\u001b[1mTesota receipt\\u001b[22m\\u001b[39m                                                                 \\u001b[49m",
- "\\u001b[48;2;250;247;251m \\u001b[38;2;110;96;44m\\u001b[1m2 review flags · 7 verification limits\\u001b[22m\\u001b[39m                                         \\u001b[49m",
+ "\\u001b[48;2;250;247;251m \\u001b[38;2;110;96;44m\\u001b[1m2 review flags · 8 verification limits\\u001b[22m\\u001b[39m                                         \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88mCheck evidence, not your acceptance.\\u001b[39m                                           \\u001b[49m",
  "\\u001b[48;2;250;247;251m                                                                                \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;79;98;74m✓\\u001b[39m \\u001b[38;2;36;33;31mTested   \\u001b[39m\\u001b[38;2;95;98;88mbun run check · 6:17\\u001b[39m                                                \\u001b[49m",
@@ -1619,6 +1775,10 @@ exports[`the real receipt of #577 > in each theme's colors > light collapsed 80 
  "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m  May weaken evidence; not confirmed weakening.\\u001b[39m                                \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m○\\u001b[39m \\u001b[38;2;36;33;31mChange sensitivity unknown · 2 test files\\u001b[39m                                    \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m  Base fails too; no per-test failure report.\\u001b[39m                                  \\u001b[49m",
+ "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m○\\u001b[39m \\u001b[38;2;36;33;31mAttribution unresolved\\u001b[39m                                                       \\u001b[49m",
+ "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m  history moved, could not be read, or was not captured; recorded exercise and \\u001b[49m",
+ "\\u001b[48;2;250;247;251m   \\u001b[38;2;95;98;88mcontract measurements do not establish request attribution. Changes are      \\u001b[49m",
+ "\\u001b[48;2;250;247;251m   \\u001b[38;2;95;98;88m\\u001b[38;2;95;98;88mcompared with the request's start, not attributed to this request\\u001b[39m            \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m○\\u001b[39m \\u001b[38;2;36;33;31mNo proof covers 5 changed files\\u001b[39m                                              \\u001b[49m",
  "\\u001b[48;2;250;247;251m                                                                                \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;134;136;126m▸ Details · paths, output, assumptions, model opinions\\u001b[39m                         \\u001b[49m",
@@ -1630,7 +1790,7 @@ exports[`the real receipt of #577 > in each theme's colors > light collapsed 80 
 exports[`the real receipt of #584 > as a card 40 columns wide, the same words in both themes > collapsed 40 1`] = `
 "
  Tesota receipt
- 2 review flags · 6 verification limits
+ 2 review flags · 7 verification limits
  Check evidence, not your acceptance.
 
  ✓ Tested   bun run check · 5:58
@@ -1645,6 +1805,14 @@ exports[`the real receipt of #584 > as a card 40 columns wide, the same words in
    files
    Base fails too; no per-test failure
    report.
+ ○ Attribution unresolved
+   history moved, could not be read, or
+   was not captured; recorded exercise
+   and contract measurements do not
+   establish request attribution.
+   Changes are compared with the
+   request's start, not attributed to
+   this request
  ○ No proof covers 3 changed files
 
  ▸ Details · paths, output,
@@ -1656,7 +1824,7 @@ exports[`the real receipt of #584 > as a card 40 columns wide, the same words in
 exports[`the real receipt of #584 > as a card 40 columns wide, the same words in both themes > expanded 40 1`] = `
 "
  Tesota receipt
- 2 review flags · 6 verification limits
+ 2 review flags · 7 verification limits
  Check evidence, not your acceptance.
 
  ✓ Tested   bun run check · 5:58
@@ -1671,6 +1839,14 @@ exports[`the real receipt of #584 > as a card 40 columns wide, the same words in
    files
    Base fails too; no per-test failure
    report.
+ ○ Attribution unresolved
+   history moved, could not be read, or
+   was not captured; recorded exercise
+   and contract measurements do not
+   establish request attribution.
+   Changes are compared with the
+   request's start, not attributed to
+   this request
  ○ No proof covers 3 changed files
 
  ▾ Details
@@ -1680,19 +1856,19 @@ exports[`the real receipt of #584 > as a card 40 columns wide, the same words in
      .ts: on the base it failed, but so
      does the base without it, and no
      test report says which tests fail;
-     changed in this request
+     contribution unresolved
    not checked
      tests/welcome-header.test.ts: on
      the base it failed, but so does
      the base without it, and no test
      report says which tests fail;
-     changed in this request
+     contribution unresolved
    not checked
      tests/working-orb.test.ts: on the
      base it failed, but so does the
      base without it, and no test
      report says which tests fail;
-     added in this request
+     contribution unresolved
    may weaken
      packages/core/tests/interface.test
      .ts: edits a test file
@@ -1743,7 +1919,7 @@ exports[`the real receipt of #584 > as a card 40 columns wide, the same words in
 exports[`the real receipt of #584 > as a card 80 columns wide, the same words in both themes > collapsed 80 1`] = `
 "
  Tesota receipt
- 2 review flags · 6 verification limits
+ 2 review flags · 7 verification limits
  Check evidence, not your acceptance.
 
  ✓ Tested   bun run check · 5:58
@@ -1754,6 +1930,10 @@ exports[`the real receipt of #584 > as a card 80 columns wide, the same words in
    May weaken evidence; not confirmed weakening.
  ○ Change sensitivity unknown · 3 test files
    Base fails too; no per-test failure report.
+ ○ Attribution unresolved
+   history moved, could not be read, or was not captured; recorded exercise and
+   contract measurements do not establish request attribution. Changes are
+   compared with the request's start, not attributed to this request
  ○ No proof covers 3 changed files
 
  ▸ Details · paths, output, assumptions, model opinions
@@ -1764,7 +1944,7 @@ exports[`the real receipt of #584 > as a card 80 columns wide, the same words in
 exports[`the real receipt of #584 > as a card 80 columns wide, the same words in both themes > expanded 80 1`] = `
 "
  Tesota receipt
- 2 review flags · 6 verification limits
+ 2 review flags · 7 verification limits
  Check evidence, not your acceptance.
 
  ✓ Tested   bun run check · 5:58
@@ -1775,19 +1955,23 @@ exports[`the real receipt of #584 > as a card 80 columns wide, the same words in
    May weaken evidence; not confirmed weakening.
  ○ Change sensitivity unknown · 3 test files
    Base fails too; no per-test failure report.
+ ○ Attribution unresolved
+   history moved, could not be read, or was not captured; recorded exercise and
+   contract measurements do not establish request attribution. Changes are
+   compared with the request's start, not attributed to this request
  ○ No proof covers 3 changed files
 
  ▾ Details
    passed        bun run check
    not checked   packages/core/tests/interface.test.ts: on the base it failed,
      but so does the base without it, and no test report says which tests fail;
-     changed in this request
+     contribution unresolved
    not checked   tests/welcome-header.test.ts: on the base it failed, but so
      does the base without it, and no test report says which tests fail;
-     changed in this request
+     contribution unresolved
    not checked   tests/working-orb.test.ts: on the base it failed, but so does
-     the base without it, and no test report says which tests fail; added in
-     this request
+     the base without it, and no test report says which tests fail;
+     contribution unresolved
    may weaken    packages/core/tests/interface.test.ts: edits a test file
    may weaken    tests/welcome-header.test.ts: edits a test file
    not proved    NOTICE: no proof covers it; the project's commands pass with
@@ -1818,7 +2002,7 @@ exports[`the real receipt of #584 > as a card 80 columns wide, the same words in
 exports[`the real receipt of #584 > as a card 120 columns wide, the same words in both themes > collapsed 120 1`] = `
 "
  Tesota receipt
- 2 review flags · 6 verification limits
+ 2 review flags · 7 verification limits
  Check evidence, not your acceptance.
 
  ✓ Tested   bun run check · 5:58
@@ -1829,6 +2013,9 @@ exports[`the real receipt of #584 > as a card 120 columns wide, the same words i
    May weaken evidence; not confirmed weakening.
  ○ Change sensitivity unknown · 3 test files
    Base fails too; no per-test failure report.
+ ○ Attribution unresolved
+   history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish
+   request attribution. Changes are compared with the request's start, not attributed to this request
  ○ No proof covers 3 changed files
 
  ▸ Details · paths, output, assumptions, model opinions
@@ -1839,7 +2026,7 @@ exports[`the real receipt of #584 > as a card 120 columns wide, the same words i
 exports[`the real receipt of #584 > as a card 120 columns wide, the same words in both themes > expanded 120 1`] = `
 "
  Tesota receipt
- 2 review flags · 6 verification limits
+ 2 review flags · 7 verification limits
  Check evidence, not your acceptance.
 
  ✓ Tested   bun run check · 5:58
@@ -1850,16 +2037,19 @@ exports[`the real receipt of #584 > as a card 120 columns wide, the same words i
    May weaken evidence; not confirmed weakening.
  ○ Change sensitivity unknown · 3 test files
    Base fails too; no per-test failure report.
+ ○ Attribution unresolved
+   history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish
+   request attribution. Changes are compared with the request's start, not attributed to this request
  ○ No proof covers 3 changed files
 
  ▾ Details
    passed        bun run check
    not checked   packages/core/tests/interface.test.ts: on the base it failed, but so does the base without it, and no
-     test report says which tests fail; changed in this request
+     test report says which tests fail; contribution unresolved
    not checked   tests/welcome-header.test.ts: on the base it failed, but so does the base without it, and no test
-     report says which tests fail; changed in this request
+     report says which tests fail; contribution unresolved
    not checked   tests/working-orb.test.ts: on the base it failed, but so does the base without it, and no test report
-     says which tests fail; added in this request
+     says which tests fail; contribution unresolved
    may weaken    packages/core/tests/interface.test.ts: edits a test file
    may weaken    tests/welcome-header.test.ts: edits a test file
    not proved    NOTICE: no proof covers it; the project's commands pass with it
@@ -1884,7 +2074,7 @@ exports[`the real receipt of #584 > as a card 120 columns wide, the same words i
 exports[`the real receipt of #584 > as plain text and as Markdown > markdown 1`] = `
 "## Tesota receipt
 
-**2 review flags · 6 verification limits**  
+**2 review flags · 7 verification limits**  
 Check evidence, not your acceptance.
 
 - ✓ **Tested** — bun run check · 5:58
@@ -1893,15 +2083,16 @@ Check evidence, not your acceptance.
 
 - ! Review test edits · 2 heuristic flags — May weaken evidence; not confirmed weakening.
 - ○ Change sensitivity unknown · 3 test files — Base fails too; no per\\-test failure report.
+- ○ Attribution unresolved — history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish request attribution. Changes are compared with the request's start, not attributed to this request
 - ○ No proof covers 3 changed files
 
 **Details**
 
 \`\`\`text
   passed        bun run check
-  not checked   packages/core/tests/interface.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; changed in this request
-  not checked   tests/welcome-header.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; changed in this request
-  not checked   tests/working-orb.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; added in this request
+  not checked   packages/core/tests/interface.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  not checked   tests/welcome-header.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  not checked   tests/working-orb.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
   may weaken    packages/core/tests/interface.test.ts: edits a test file
   may weaken    tests/welcome-header.test.ts: edits a test file
   not proved    NOTICE: no proof covers it; the project's commands pass with it
@@ -1923,7 +2114,7 @@ Subagents \\(each one's receipt covers its own branch, not this change\\)
 
 exports[`the real receipt of #584 > as plain text and as Markdown > plain 1`] = `
 "Tesota receipt
-2 review flags · 6 verification limits
+2 review flags · 7 verification limits
 Check evidence, not your acceptance.
 
 ✓ Tested   bun run check · 5:58
@@ -1934,13 +2125,15 @@ Check evidence, not your acceptance.
   May weaken evidence; not confirmed weakening.
 ○ Change sensitivity unknown · 3 test files
   Base fails too; no per-test failure report.
+○ Attribution unresolved
+  history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish request attribution. Changes are compared with the request's start, not attributed to this request
 ○ No proof covers 3 changed files
 
 Details
   passed        bun run check
-  not checked   packages/core/tests/interface.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; changed in this request
-  not checked   tests/welcome-header.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; changed in this request
-  not checked   tests/working-orb.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; added in this request
+  not checked   packages/core/tests/interface.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  not checked   tests/welcome-header.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  not checked   tests/working-orb.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
   may weaken    packages/core/tests/interface.test.ts: edits a test file
   may weaken    tests/welcome-header.test.ts: edits a test file
   not proved    NOTICE: no proof covers it; the project's commands pass with it
@@ -1962,7 +2155,7 @@ exports[`the real receipt of #584 > in each theme's colors > dark collapsed 80 1
 "[
  "\\u001b[48;2;49;43;56m                                                                                \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;198;168;210m\\u001b[1mTesota receipt\\u001b[22m\\u001b[39m                                                                 \\u001b[49m",
- "\\u001b[48;2;49;43;56m \\u001b[38;2;213;179;106m\\u001b[1m2 review flags · 6 verification limits\\u001b[22m\\u001b[39m                                         \\u001b[49m",
+ "\\u001b[48;2;49;43;56m \\u001b[38;2;213;179;106m\\u001b[1m2 review flags · 7 verification limits\\u001b[22m\\u001b[39m                                         \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170mCheck evidence, not your acceptance.\\u001b[39m                                           \\u001b[49m",
  "\\u001b[48;2;49;43;56m                                                                                \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;154;176;143m✓\\u001b[39m \\u001b[38;2;242;238;230mTested   \\u001b[39m\\u001b[38;2;185;183;170mbun run check · 5:58\\u001b[39m                                                \\u001b[49m",
@@ -1973,6 +2166,10 @@ exports[`the real receipt of #584 > in each theme's colors > dark collapsed 80 1
  "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m  May weaken evidence; not confirmed weakening.\\u001b[39m                                \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m○\\u001b[39m \\u001b[38;2;242;238;230mChange sensitivity unknown · 3 test files\\u001b[39m                                    \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m  Base fails too; no per-test failure report.\\u001b[39m                                  \\u001b[49m",
+ "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m○\\u001b[39m \\u001b[38;2;242;238;230mAttribution unresolved\\u001b[39m                                                       \\u001b[49m",
+ "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m  history moved, could not be read, or was not captured; recorded exercise and \\u001b[49m",
+ "\\u001b[48;2;49;43;56m   \\u001b[38;2;185;183;170mcontract measurements do not establish request attribution. Changes are      \\u001b[49m",
+ "\\u001b[48;2;49;43;56m   \\u001b[38;2;185;183;170m\\u001b[38;2;185;183;170mcompared with the request's start, not attributed to this request\\u001b[39m            \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m○\\u001b[39m \\u001b[38;2;242;238;230mNo proof covers 3 changed files\\u001b[39m                                              \\u001b[49m",
  "\\u001b[48;2;49;43;56m                                                                                \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;143;141;132m▸ Details · paths, output, assumptions, model opinions\\u001b[39m                         \\u001b[49m",
@@ -1985,7 +2182,7 @@ exports[`the real receipt of #584 > in each theme's colors > light collapsed 80 
 "[
  "\\u001b[48;2;250;247;251m                                                                                \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;109;75;120m\\u001b[1mTesota receipt\\u001b[22m\\u001b[39m                                                                 \\u001b[49m",
- "\\u001b[48;2;250;247;251m \\u001b[38;2;110;96;44m\\u001b[1m2 review flags · 6 verification limits\\u001b[22m\\u001b[39m                                         \\u001b[49m",
+ "\\u001b[48;2;250;247;251m \\u001b[38;2;110;96;44m\\u001b[1m2 review flags · 7 verification limits\\u001b[22m\\u001b[39m                                         \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88mCheck evidence, not your acceptance.\\u001b[39m                                           \\u001b[49m",
  "\\u001b[48;2;250;247;251m                                                                                \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;79;98;74m✓\\u001b[39m \\u001b[38;2;36;33;31mTested   \\u001b[39m\\u001b[38;2;95;98;88mbun run check · 5:58\\u001b[39m                                                \\u001b[49m",
@@ -1996,6 +2193,10 @@ exports[`the real receipt of #584 > in each theme's colors > light collapsed 80 
  "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m  May weaken evidence; not confirmed weakening.\\u001b[39m                                \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m○\\u001b[39m \\u001b[38;2;36;33;31mChange sensitivity unknown · 3 test files\\u001b[39m                                    \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m  Base fails too; no per-test failure report.\\u001b[39m                                  \\u001b[49m",
+ "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m○\\u001b[39m \\u001b[38;2;36;33;31mAttribution unresolved\\u001b[39m                                                       \\u001b[49m",
+ "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m  history moved, could not be read, or was not captured; recorded exercise and \\u001b[49m",
+ "\\u001b[48;2;250;247;251m   \\u001b[38;2;95;98;88mcontract measurements do not establish request attribution. Changes are      \\u001b[49m",
+ "\\u001b[48;2;250;247;251m   \\u001b[38;2;95;98;88m\\u001b[38;2;95;98;88mcompared with the request's start, not attributed to this request\\u001b[39m            \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m○\\u001b[39m \\u001b[38;2;36;33;31mNo proof covers 3 changed files\\u001b[39m                                              \\u001b[49m",
  "\\u001b[48;2;250;247;251m                                                                                \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;134;136;126m▸ Details · paths, output, assumptions, model opinions\\u001b[39m                         \\u001b[49m",

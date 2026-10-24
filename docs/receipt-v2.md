@@ -126,7 +126,7 @@ and the unit's `folder` kept.
 | `lines` | ChangeLines, or `"unreadable"` | The files in `changed` in lines by category. `unreadable` when Git could not show the change |
 | `inherited` | string[] | Paths dirty at the first non-reader tool whose blobs stayed unchanged; not proved or exercised as this request's change. Tests ran with them |
 | `unmeasured` | { path: string, reason: string }[] | Paths not hashed at either capture: a dirty file over 10 MiB or an untracked directory with 200 or more files. These make the unit eligible and are never called unchanged |
-| `startState`, `endState` | CaptureState, optional | Each repository's capture at the first non-reader tool and at settlement. Absent for snapshots and stopped runs |
+| `startState`, `endState` | CaptureState, optional | Each repository's capture at the first non-reader tool and at settlement. Absent for snapshots, stopped runs, older receipts, and when no capture was taken |
 | `units` | Unit[], optional | Present when the session ran in a folder that is in no Git repository and holds repositories directly. Then the fields from `snapshot` to `endState` are empty or absent, `repository` is true and `base` is null |
 | `openCases` | OpenCases, optional | The cases the operator's request leaves open, as a model listed them for the operator to settle. A model's opinion, never evidence, and never one of the receipt's decisions. Absent when the operator ran Tesota with `--open-cases-model off` |
 | `clarifications` | Clarification[], optional | Explicitly submitted answers to the agent's questions, in submission order. Request context, never evidence, execution permission or acceptance. Absent when no batch was submitted |
@@ -192,11 +192,63 @@ compares every changed path against the admission `base`, and the receipt
 shows the reason. Limits keep paths unmeasured even if their names and
 `HEAD` were readable.
 
+For a repository, contribution attribution needs known captures and a start
+`head` equal to the admission `base`. An end `head` still at `base` resolves
+attribution (including null before the first commit). Otherwise the end
+capture's optional `history` records four boolean facts: `sameBranch`,
+`descends`, `exclusive`, and `timely`. All four must be true: the branch is
+unchanged, `base` is an ancestor of the end HEAD, no commit in `base..HEAD`
+is reached by a local branch, remote-tracking ref or tag as each pointed
+when the request was admitted, and every commit's committer date is at or
+after the request's start, at Git's whole-second precision. Admission
+records those tips that `base` does not already reach, with `base`; they are
+not part of the receipt. No branch
+or remote name is assumed. Missing facts, starting refs that were not
+recorded or cannot be read, and other failed reads cannot resolve moved
+history. The same proved pure rule
+governs gate selection and every presentation surface.
+
+An unresolved unit still records all observed `changed` paths and final
+blobs, including imported files and paths touched both locally and upstream.
+It still checks the resulting checkout. It does not run test exercise or
+contract-strength and ClaimCheck selection against the stale base:
+`exercises` and `contracts` are empty, and `claimcheck` is absent. These are
+**not measured**, not successful empty measurements. The receipt shows one
+prominent attribution limit per unit, naming the repository in a workspace.
+It says once that changes are **compared with the request's start**, not
+claims that this request authored or deleted them; individual findings and
+line totals do not repeat it. Resolved receipts show no attribution notice.
+JSON consumers derive this interpretation from `base`, `startState` and
+`endState`, including its `history` facts, using the same rule. Export keeps those facts and does not rewrite stored
+receipts. If a stored receipt has measurements but lacks readable captures,
+its notice qualifies those recorded measurements rather than claiming they
+never ran; its exercise provenance is not presented as request authorship.
+
+Ordinary local commits keep contribution-specific credit, as do pushing
+them during the request and merging a branch the request created, such as a
+subagent's, or tagging them: a ref withholds only the commits its tip
+reached at admission, so one the request moved or created withholds none of
+the request's own. Merging a
+branch that existed at admission, or a fetch of commits made before the
+request, stays unresolved. The remaining ambiguity: commits someone else
+made during the request that no starting tip reached are credited once
+merged, such as a fetch of upstream work committed during the request or
+new commits on a branch that existed at admission; so are a fast-forward to
+a commit no ref reached at admission, made inside the request's time, and
+a URL pull of commits made during the request or dated ahead. Squash
+merges, cherry-picks and applied patches can likewise create new commits
+that satisfy these facts; they do not prove authorship. Making the
+first commit in an unborn repository stays unresolved, since there is no
+admission commit from which to establish ancestry.
+`inherited` is not widened to mean imported work. Retaining imported paths in `changed` also keeps
+`changedAfter` empty when exporting an unchanged settled commit.
+
 The gate observes results, not authors. A stash that removes old dirt is a
 change during the request, including when it restores the admission base's
 content. Inherited paths appear in one collapsed card row, with the paths
 under Ctrl+O. Weakening still compares all paths against the admission base.
-Tests run with inherited files; exercise uses the admission base, so a test
+Tests run with inherited files; when attribution is resolved, exercise uses
+the admission base, so a test
 relying on inherited changes may be misjudged. Folders outside Git retain
 their per-request snapshots and have empty `inherited` and `unmeasured` lists.
 

@@ -12,6 +12,16 @@ lemma fingerprintEligible_ensures(known: bool, headMoved: bool, pathChanged: boo
 {
 }
 
+function historyAttributable(repository: bool, startKnown: bool, endKnown: bool, startAtBase: bool, endAtBase: bool, sameBranch: bool, descends: bool, exclusive: bool, timely: bool): bool
+{
+  (!(repository) || (((startKnown && endKnown) && startAtBase) && (endAtBase || (((sameBranch && descends) && exclusive) && timely))))
+}
+
+lemma historyAttributable_ensures(repository: bool, startKnown: bool, endKnown: bool, startAtBase: bool, endAtBase: bool, sameBranch: bool, descends: bool, exclusive: bool, timely: bool)
+  ensures (historyAttributable(repository, startKnown, endKnown, startAtBase, endAtBase, sameBranch, descends, exclusive, timely) <==> (!(repository) || (((startKnown && endKnown) && startAtBase) && (endAtBase || (((sameBranch && descends) && exclusive) && timely)))))
+{
+}
+
 function attributePath(measured: bool, differs: bool, committed: bool, dirtyAtStart: bool): PathAttribution
 {
   if !(measured) then

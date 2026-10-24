@@ -1,12 +1,28 @@
 import { lstat } from "node:fs/promises";
 import { join, posix } from "node:path";
 import { git } from "./git.js";
-import { attributePath, fingerprintEligible } from "./verification/fingerprint-rule.js";
+import { attributePath, fingerprintEligible, historyAttributable } from "./verification/fingerprint-rule.js";
 
-export type StartState = { readonly status: "known"; readonly head: string | null }
+export interface HistoryFacts {
+  readonly sameBranch: boolean;
+  readonly descends: boolean;
+  /** No commit in H..HEAD is reached by a ref's tip as recorded at admission. */
+  readonly exclusive: boolean;
+  readonly timely: boolean;
+}
+export type StartState = { readonly status: "known"; readonly head: string | null; readonly history?: HistoryFacts }
   | { readonly status: "unknown"; readonly reason: string };
+/** Shared by selection and every receipt surface; missing captures cannot establish contribution. */
+export function attributionResolved(base: string | null, start: StartState | undefined, end: StartState | undefined,
+  repository: boolean): boolean {
+  return historyAttributable(repository, start?.status === "known", end?.status === "known",
+    start?.status === "known" && start.head === base, end?.status === "known" && end.head === base,
+    end?.status === "known" && end.history?.sameBranch === true, end?.status === "known" && end.history?.descends === true,
+    end?.status === "known" && end.history?.exclusive === true, end?.status === "known" && end.history?.timely === true);
+}
+
 export interface UnmeasuredPath { readonly path: string; readonly reason: string }
-export type Fingerprint = { readonly status: "known"; readonly head: string | null;
+export type Fingerprint = { readonly status: "known"; readonly head: string | null; readonly branch: string;
   readonly blobs: ReadonlyMap<string, string | null>; readonly unmeasured: readonly UnmeasuredPath[] }
   | { readonly status: "unknown"; readonly reason: string };
 
@@ -102,7 +118,48 @@ export async function captureFingerprint(root: string): Promise<Fingerprint> {
   }
   const blobs = await pathBlobs(root, measured, prefix.trimEnd());
   return blobs === undefined ? { status: "unknown", reason: "Git could not hash the fingerprint's paths" }
-    : { status: "known", head: oid === "(initial)" ? null : oid, blobs, unmeasured };
+    : { status: "known", head: oid === "(initial)" ? null : oid,
+      branch: status.split("\0").find((field) => field.startsWith("# branch.head "))?.slice(14) ?? "", blobs, unmeasured };
+}
+
+/**
+ * The objects every local branch, remote-tracking ref and tag named at admission H, whatever the remote is
+ * called, deduplicated and sorted; undefined when Git cannot list them. A tip H already reaches cannot reach
+ * a commit in H..HEAD, so it is left out, keeping the ledger small however many tags a repository has.
+ */
+export async function refTips(root: string, base: string | null): Promise<readonly string[] | undefined> {
+  const listed = await git(root, ["for-each-ref", "--format=%(objectname)", ...base === null ? [] : [`--no-merged=${base}`],
+    "refs/heads", "refs/remotes", "refs/tags"]);
+  return listed === undefined ? undefined : [...new Set(listed.split(/\r?\n/u).filter(Boolean))].sort();
+}
+
+/**
+ * Read Git facts only; the proved rule owns the attribution decision. Missing reads never grant credit.
+ * `refs` are the tips `refTips` recorded at admission: a ref the request moved or created withholds nothing.
+ */
+export async function historyFacts(root: string, base: string | null, start: Fingerprint, end: Fingerprint,
+  startedAt: string, refs: readonly string[] | undefined): Promise<HistoryFacts | undefined> {
+  if (base === null || refs === undefined || start.status !== "known" || end.status !== "known" || end.head === null) return undefined;
+  // H descends to HEAD exactly when it is their merge base; no common ancestor at all is a failed read.
+  const ancestor = await git(root, ["merge-base", base, end.head]);
+  const range = await git(root, ["log", "--no-show-signature", "--format=%H %ct", `${base}..${end.head}`]);
+  // Subtract every starting tip in one history walk, read from stdin so no count of refs passes the command line's limit.
+  // A tip whose object is gone fails the walk: starting refs that cannot be read resolve nothing.
+  const unshared = await git(root, ["rev-list", "--stdin", `${base}..${end.head}`], refs.map((tip) => `^${tip}\n`).join(""));
+  if (ancestor === undefined || range === undefined || unshared === undefined) return undefined;
+  const exclusiveIds = new Set(unshared.trim().split(/\r?\n/u).filter(Boolean));
+  let exclusive = true;
+  let timely = true;
+  const startSecond = Math.floor(Date.parse(startedAt) / 1000);
+  if (!Number.isFinite(startSecond)) return undefined;
+  for (const line of range.trim().split(/\r?\n/u).filter(Boolean)) {
+    const match = /^([a-f0-9]+) (\d+)$/u.exec(line);
+    if (match === null) return undefined;
+    exclusive &&= exclusiveIds.has(match[1] ?? "");
+    timely &&= Number(match[2]) >= startSecond;
+  }
+  return { sameBranch: start.branch !== "" && start.branch !== "(detached)" && start.branch === end.branch,
+    descends: ancestor.trim() === base, exclusive, timely };
 }
 
 /** Attribution observes results, not authors. An unreadable end is eligible too, with its reason. */

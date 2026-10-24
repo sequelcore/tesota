@@ -90,6 +90,45 @@ These are **changed during the request (by anyone)**: the gate observes
 results, not authors. A stash removing old dirt counts as a request change,
 even when it restores H's content. A commit hides nothing.
 
+**History movement limits credit, not verification.** A repository's
+contribution attribution needs readable captures, with the start HEAD at
+admission H. Unchanged history keeps credit. Moved history keeps it only
+on the same branch, when H is an ancestor of the end HEAD and every commit
+in `H..HEAD` is reached by no local branch, remote-tracking ref or tag as
+those refs pointed **when the request was admitted**, and has a committer
+date at or after the request's start (at Git's whole-second precision).
+Admission records, with H, each ref's tip that H does not already reach. No remote or branch name is
+assumed. Starting refs that could not be recorded or read, and other failed
+or missing reads, leave attribution unresolved. The gate still
+proves current files, runs project commands and checks models over the
+observed scope. It keeps H and every changed path, including imported files
+and overlapping local/upstream edits.
+
+For an unresolved unit it does not measure test exercise, contract strength
+or ClaimCheck against the stale base. One prominent receipt limit says why;
+weakening, unproved paths and line totals are **compared with the request's
+start**, not attributed to this request. Text, card and export use the same
+proved decision. Empty exercise/contract lists then mean not measured, not
+success. Ordinary local commits keep credit, and so do pushing them during
+the request and merging a branch the request created, such as a writing
+subagent's, or tagging them: a ref withholds only the commits its tip
+reached at admission, so one the request moved or created withholds none
+of the request's own. Merging a
+branch that existed at admission, or a fetch of commits made before the
+request, stays unresolved.
+
+Ambiguity remains, since this is not proof of authorship. Commits someone
+else made during the request are credited once merged, if no starting tip
+reached them: a fetch of upstream work committed during the request, or
+new commits on a branch that existed at admission. So is a fast-forward to
+a commit no ref reached at admission, made inside the request's time, and
+a pull by URL of commits made during the request or dated ahead. Squash
+merges, cherry-picks and applied patches can also create new commits
+satisfying these facts. A request's first commit in
+an unborn repository stays unresolved: there is no admission commit from
+which to establish ancestry.
+See [Receipt v2](../receipt-v2.md#capturestate) for machine interpretation.
+
 Paths dirty at the start whose blob stayed the same are **inherited**.
 They are not proved or exercised as this request's change. Dirty files over
 10 MiB and files in an untracked directory with 200 or more files are
