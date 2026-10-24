@@ -45,13 +45,27 @@ const flat = (text: string): string => text.replace(/\s+/gu, " ");
 /** A Markdown escape: a backslash before a character Markdown would otherwise read. */
 const markdownEscape = /\\[\\`*_{}[\]()#+!|<>~-]/u;
 
+it("names each unresolved workspace repository once without qualifying current model checks (#599)", () => {
+  const receipt: Receipt = { ...emptyReceipt, units: ["api", "rules"].map((folder) => ({ ...emptyReceipt, folder,
+    base: "H", startState: { status: "known", head: "H" }, endState: { status: "known", head: "other" },
+    unheaded: ["models/NoHeader.tla"] })) };
+  for (const text of [renderReceipt(receipt), renderReceiptMessage(receipt), plain(card(receipt, 80, false))]) {
+    const words = flat(text);
+    expect(words).toContain("api: history moved");
+    expect(words).toContain("rules: history moved");
+    expect(words.match(/history moved/gu)).toHaveLength(2);
+  }
+  const modelRow = renderReceipt(receipt).split("\n").find((row) => row.includes("api/models/NoHeader.tla"));
+  expect(modelRow).not.toContain("compared with");
+});
+
 describe("the real receipt of #584, as the issue shows it", () => {
   const receipt = real(584);
 
   it("leads with its counts and the acceptance line, then each method, then grouped reasons", () => {
-    expect(renderReceipt(receipt).split("\n").slice(0, 15)).toEqual([
+    expect(renderReceipt(receipt).split("\n").slice(0, 18)).toEqual([
       "Tesota receipt",
-      "2 review flags · 6 verification limits",
+      "2 review flags · 7 verification limits",
       "Check evidence, not your acceptance.",
       "",
       "✓ Tested   bun run check · 5:58",
@@ -59,10 +73,13 @@ describe("the real receipt of #584, as the issue shows it", () => {
       "○ Models   none recorded",
       "",
       "! Review test edits · 2 heuristic flags",
-      "  May weaken evidence; not confirmed weakening.",
+      "  May weaken evidence; not confirmed weakening; compared with the request's start.",
       "○ Change sensitivity unknown · 3 test files",
       "  Base fails too; no per-test failure report.",
+      "○ Attribution unresolved",
+      "  history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish request attribution. Changes are compared with the request's start, not attributed to this request",
       "○ No proof covers 3 changed files",
+      "  Compared with the request's start.",
       "",
       "Details",
     ]);
@@ -70,7 +87,7 @@ describe("the real receipt of #584, as the issue shows it", () => {
 
   it("collapsed in the transcript, ends with what Ctrl+O shows and the request's context", () => {
     const rows = plain(card(receipt, 120, false)).split("\n").map((row) => row.trim()).filter((row) => row !== "");
-    expect(rows.slice(0, 3)).toEqual(["Tesota receipt", "2 review flags · 6 verification limits", "Check evidence, not your acceptance."]);
+    expect(rows.slice(0, 3)).toEqual(["Tesota receipt", "2 review flags · 7 verification limits", "Check evidence, not your acceptance."]);
     expect(rows.slice(-2)).toEqual(["▸ Details · paths, output, assumptions, model opinions", "▸ Context · 1 answer · 1 subagent"]);
     expect(rows.join("\n")).not.toContain("tests/working-orb.test.ts");
   });

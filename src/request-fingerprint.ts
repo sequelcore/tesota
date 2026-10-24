@@ -1,10 +1,17 @@
 import { lstat } from "node:fs/promises";
 import { join, posix } from "node:path";
 import { git } from "./git.js";
-import { attributePath, fingerprintEligible } from "./verification/fingerprint-rule.js";
+import { attributePath, fingerprintEligible, historyAttributable } from "./verification/fingerprint-rule.js";
 
 export type StartState = { readonly status: "known"; readonly head: string | null }
   | { readonly status: "unknown"; readonly reason: string };
+/** Shared by selection and every receipt surface; missing captures cannot establish contribution. */
+export function attributionResolved(base: string | null, start: StartState | undefined, end: StartState | undefined,
+  repository: boolean): boolean {
+  return historyAttributable(repository, start?.status === "known", end?.status === "known",
+    start?.status === "known" && start.head === base, end?.status === "known" && end.head === base);
+}
+
 export interface UnmeasuredPath { readonly path: string; readonly reason: string }
 export type Fingerprint = { readonly status: "known"; readonly head: string | null;
   readonly blobs: ReadonlyMap<string, string | null>; readonly unmeasured: readonly UnmeasuredPath[] }

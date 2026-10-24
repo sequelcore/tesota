@@ -181,7 +181,7 @@ export function receiptMarkdown(receipt: Receipt, subject: Subject): string {
     `Commit ${short(subject.commit)}${receipt.base === null ? "" : `, changes from ${short(receipt.base)}`}; Tesota ${receipt.engine}${model}; ` +
       `session \`${subject.sessionId}\`, ${receipt.startedAt} to ${receipt.settledAt}.`,
     "",
-    "The receipt attributes files changed during the request (by anyone). Weakening and exercise compare against the admission base.",
+    "The receipt records observed differences. Its attribution limits and measurements are stated below; comparisons keep the request's admission base.",
     "",
     ...subject.stale.length === 0 ? [] : [`**Not this commit's content:** what these checked has changed since they ran: ` +
       `${subject.stale.map((name) => `\`${name}\``).join(", ")}. Their results below describe the earlier content.`, ""],

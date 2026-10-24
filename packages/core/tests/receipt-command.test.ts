@@ -23,7 +23,8 @@ it("explains request attribution, inherited paths and capture limits in pull-req
     startState: { status: "unknown", reason: "the index has unresolved conflicts" },
     unmeasured: [{ path: "large.bin", reason: "file exceeds 10 MiB" }] };
   const markdown = receiptMarkdown(receipt, { commit: "1234567890123456", owner: "operator", sessionId: "session", stale: [], changedAfter: [] });
-  expect(markdown).toContain("changed during the request (by anyone)");
+  expect(markdown).toContain("history moved, could not be read, or was not captured");
+  expect(markdown).toContain("test exercise, contract strength and ClaimCheck were not measured");
   expect(markdown).toContain("old.txt");
   expect(markdown).toContain("the index has unresolved conflicts");
   expect(markdown).toContain("large.bin: file exceeds 10 MiB");
@@ -61,7 +62,8 @@ function repository(root = folder()): string {
 /** A receipt whose one proof checked `src/rule.ts` as `rule` holds it, and whose run left `changed`. */
 function provedReceipt(base: string, changed: Receipt["changed"] = []): Receipt {
   const files = ["src/rule.ts"];
-  return { ...emptyReceipt, base, model: "provider/model", changed, proofs: [{ path: "src/rule.ts", verdict: "proved", evidence: {
+  return { ...emptyReceipt, base, startState: { status: "known", head: base }, endState: { status: "known", head: base },
+    model: "provider/model", changed, proofs: [{ path: "src/rule.ts", verdict: "proved", evidence: {
     verifier: "lemmascript", claim: "", limits: "", outcome: "passed", output: "1 verified, 0 errors", durationMs: 1, files,
     contentHash: contentHash([{ path: "src/rule.ts", content: rule }]) } }],
   uncovered: [{ path: "src/rule.ts", lines: [[4, 6]] }] };

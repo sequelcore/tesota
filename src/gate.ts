@@ -15,7 +15,7 @@ import { inFolder, owningProjects, suggestChecks } from "./projects.js";
 import { proofReport } from "./prove-tool.js";
 import { entryReceipt, type FloorRefusal, inUnit, isReceipt, type ModelResult, noEvidence, type Receipt, type ReceiptChild, receiptEntry,
   type UnitEvidence } from "./receipt.js";
-import { captureFingerprint, compareFingerprints, type Fingerprint, pathBlobs } from "./request-fingerprint.js";
+import { attributionResolved, captureFingerprint, compareFingerprints, type Fingerprint, pathBlobs } from "./request-fingerprint.js";
 import { takeSnapshot } from "./snapshot.js";
 import type { CommandRun } from "./test-rung.js";
 import type { FileChange } from "./verification-changes.js";
@@ -186,7 +186,7 @@ function testFailure({ command, failingTests }: CommandRun): string {
  */
 async function testRung(root: string, base: string | null, changed: readonly string[],
   sentBack: ReadonlyMap<string, readonly string[]>, signal: AbortSignal, ops: OperationSink,
-  env: Readonly<Record<string, string>> | undefined): Promise<Pick<Receipt, "tests" | "exercises">> {
+  env: Readonly<Record<string, string>> | undefined, attributable: boolean): Promise<Pick<Receipt, "tests" | "exercises">> {
   const projects = owningProjects(suggestChecks(root), changed);
   const tests = (await checks().runCommands(root, projects, changed, signal, ops, env)).map((run) =>
     ({ ...run, verdict: gateVerdict(run.evidence.outcome, testFailure(run), sentBack.get(run.command) ?? []) }));
@@ -194,7 +194,7 @@ async function testRung(root: string, base: string | null, changed: readonly str
   // A snapshot or a fixture counts as a test for weakened evidence, but is not one a runner can run alone (#615).
   const runnable = changed.filter((path) => checks().isTestPath(path) && checks().isSourcePath(path));
   const present = (await Promise.all(runnable.map(async (path) => await readIfPresent(join(root, path)) === undefined ? [] : [path]))).flat();
-  const exercises = passed && base !== null ? await checks().exerciseTests(root, base, present, changed, projects, signal, ops, env) : [];
+  const exercises = attributable && passed && base !== null ? await checks().exerciseTests(root, base, present, changed, projects, signal, ops, env) : [];
   return { tests, exercises };
 }
 
@@ -405,8 +405,9 @@ export class GateProgress {
  * on `agent_start`, which every continuation fires too. When nothing goes back, the run settles with
  * a receipt for the operator. The first non-reader tool fingerprints each
  * repository; paths changed since then and commits since admission are the
- * request's change. Weakening and exercise keep the admission base H, so a
- * commit hides nothing; a steer or follow-up sent while the agent works belongs to
+ * observed comparison set. Weakening keeps admission H; history movement
+ * withholds exercise and contract-intent credit, never current-checkout checks.
+ * A commit hides nothing; a steer or follow-up sent while the agent works belongs to
  * the request already running. Outside a Git repository the base is
  * Tesota's snapshot of the folder (`takeSnapshot`, #384); where it takes
  * none, a request that ran a tool that may change files ends with a receipt
@@ -617,8 +618,9 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
       const judged = proofs.get(unit.folder) ?? [];
       const sources = yield* step(() => provedSources(unit.root, unit.base, judged));
       if (sources.length > 0) progress.publish({ step: "measuring", startedAt: performance.now(), tally: tallied });
-      const strength = yield* step((signal) => checks().contractStrength(ctx, requests, sources, signal, restateWith(pi),
-        progress.operations.forUnit(unit.folder)));
+      const strength = attributionResolved(unit.base, unit.startState, unit.endState, unit.snapshot === undefined)
+        ? yield* step((signal) => checks().contractStrength(ctx, requests, sources, signal, restateWith(pi),
+          progress.operations.forUnit(unit.folder))) : { contracts: [] };
       measured.set(unit.folder, { sources, strength });
     }
     return measured;
@@ -711,7 +713,8 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     for (const unit of changed) {
       rungs.set(unit.folder, yield* step((signal) =>
         testRung(unit.root, unit.base, unit.changed, commandsSentBack.get(unit.folder) ?? new Map(), signal,
-          progress.operations.forUnit(unit.folder), ctx.env)));
+          progress.operations.forUnit(unit.folder), ctx.env,
+          attributionResolved(unit.base, unit.startState, unit.endState, unit.snapshot === undefined))));
     }
     const allTests = [...rungs.values()].flatMap(({ tests }) => tests);
     const failing = [...rungs].flatMap(([folder, { tests }]) =>
@@ -848,7 +851,8 @@ async function fingerprintedUnit(root: string, base: string | null, start: Finge
     : base === null ? await gitPaths(root, ["ls-tree", "-r", "--name-only", end.head])
       : await gitPaths(root, [...diffFrom(base, "--name-only"), end.head]);
   if (committed === undefined) end = { status: "unknown", reason: "Git could not read the files committed since the admission base" };
-  return { attribution: compareFingerprints(start, end, committed ?? []),
+  const compared = compareFingerprints(start, end, committed ?? []);
+  return { attribution: { ...compared, eligible: compared.eligible || !attributionResolved(base, start, end, true) },
     facts: { startState: start.status === "unknown" ? start : { status: "known", head: start.head },
       endState: end.status === "unknown" ? end : { status: "known", head: end.head } } };
 }

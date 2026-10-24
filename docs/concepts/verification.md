@@ -90,6 +90,23 @@ These are **changed during the request (by anyone)**: the gate observes
 results, not authors. A stash removing old dirt counts as a request change,
 even when it restores H's content. A commit hides nothing.
 
+**History movement limits credit, not verification.** A repository's
+contribution attribution is resolved only if both captured HEADs are known
+and equal the admission H. A merge, rebase, branch switch, ordinary local
+commit, or unreadable/missing capture makes it unresolved. The gate still
+proves current files, runs project commands and checks models over the
+observed scope. It keeps H and every changed path, including imported files
+and overlapping local/upstream edits.
+
+For an unresolved unit it does not measure test exercise, contract strength
+or ClaimCheck against the stale base. One prominent receipt limit says why;
+weakening, unproved paths and line totals are **compared with the request's
+start**, not attributed to this request. Text, card and export use the same
+proved decision. Empty exercise/contract lists then mean not measured, not
+success. The deliberate cost: even an ordinary local commit loses that
+credit. These captures cannot tell imported commits from local work.
+See [Receipt v2](../receipt-v2.md#capturestate) for machine interpretation.
+
 Paths dirty at the start whose blob stayed the same are **inherited**.
 They are not proved or exercised as this request's change. Dirty files over
 10 MiB and files in an untracked directory with 200 or more files are

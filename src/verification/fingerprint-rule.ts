@@ -4,7 +4,14 @@ export function fingerprintEligible(known: boolean, headMoved: boolean, pathChan
   return !known || headMoved || pathChanged || unmeasured;
 }
 
-/** Unmeasured paths cannot be called unchanged; commits since H remain part of the request's change. */
+/** Contribution credit needs readable captures whose HEADs both equal the admission HEAD. Snapshots have no Git history. */
+//@ ensures \result <==> (!repository || (startKnown && endKnown && startAtBase && endAtBase))
+export function historyAttributable(repository: boolean, startKnown: boolean, endKnown: boolean,
+  startAtBase: boolean, endAtBase: boolean): boolean {
+  return !repository || (startKnown && endKnown && startAtBase && endAtBase);
+}
+
+/** Unmeasured paths cannot be called unchanged; commits since H remain part of the observed change. */
 export type PathAttribution = "request" | "inherited" | "unmeasured" | "unchanged";
 
 //@ ensures \result === "unmeasured" <==> !measured

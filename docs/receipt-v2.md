@@ -126,7 +126,7 @@ and the unit's `folder` kept.
 | `lines` | ChangeLines, or `"unreadable"` | The files in `changed` in lines by category. `unreadable` when Git could not show the change |
 | `inherited` | string[] | Paths dirty at the first non-reader tool whose blobs stayed unchanged; not proved or exercised as this request's change. Tests ran with them |
 | `unmeasured` | { path: string, reason: string }[] | Paths not hashed at either capture: a dirty file over 10 MiB or an untracked directory with 200 or more files. These make the unit eligible and are never called unchanged |
-| `startState`, `endState` | CaptureState, optional | Each repository's capture at the first non-reader tool and at settlement. Absent for snapshots and stopped runs |
+| `startState`, `endState` | CaptureState, optional | Each repository's capture at the first non-reader tool and at settlement. Absent for snapshots, stopped runs, older receipts, and when no capture was taken |
 | `units` | Unit[], optional | Present when the session ran in a folder that is in no Git repository and holds repositories directly. Then the fields from `snapshot` to `endState` are empty or absent, `repository` is true and `base` is null |
 | `openCases` | OpenCases, optional | The cases the operator's request leaves open, as a model listed them for the operator to settle. A model's opinion, never evidence, and never one of the receipt's decisions. Absent when the operator ran Tesota with `--open-cases-model off` |
 | `clarifications` | Clarification[], optional | Explicitly submitted answers to the agent's questions, in submission order. Request context, never evidence, execution permission or acceptance. Absent when no batch was submitted |
@@ -192,11 +192,39 @@ compares every changed path against the admission `base`, and the receipt
 shows the reason. Limits keep paths unmeasured even if their names and
 `HEAD` were readable.
 
+For a repository, contribution attribution is resolved only when both
+captures are known and both `head` values equal the admission `base`
+(including null before the first commit). Missing or unknown captures, a
+merge, rebase, branch switch, or ordinary local commit leave attribution
+unresolved. The same pure rule governs gate selection and presentation.
+
+An unresolved unit still records all observed `changed` paths and final
+blobs, including imported files and paths touched both locally and upstream.
+It still checks the resulting checkout. It does not run test exercise or
+contract-strength and ClaimCheck selection against the stale base:
+`exercises` and `contracts` are empty, and `claimcheck` is absent. These are
+**not measured**, not successful empty measurements. The receipt shows one
+prominent attribution limit per unit, naming the repository in a workspace. Weakening, unproved paths and line
+totals are comparisons **with the request's start**, not claims that this
+request authored or deleted them. JSON consumers derive this interpretation
+from `base`, `startState` and `endState`, using the same rule; the format adds
+no attribution field. Export keeps those facts and does not rewrite stored
+receipts. If a stored receipt has measurements but lacks readable captures,
+its notice qualifies those recorded measurements rather than claiming they
+never ran; its exercise provenance is not presented as request authorship.
+
+The accepted conservative cost is that committing ordinary local work also
+loses contribution-specific credit. Endpoint captures cannot reliably
+separate imported history from local commits. `inherited` is not widened to
+mean imported work. Retaining imported paths in `changed` also keeps
+`changedAfter` empty when exporting an unchanged settled commit.
+
 The gate observes results, not authors. A stash that removes old dirt is a
 change during the request, including when it restores the admission base's
 content. Inherited paths appear in one collapsed card row, with the paths
 under Ctrl+O. Weakening still compares all paths against the admission base.
-Tests run with inherited files; exercise uses the admission base, so a test
+Tests run with inherited files; when attribution is resolved, exercise uses
+the admission base, so a test
 relying on inherited changes may be misjudged. Folders outside Git retain
 their per-request snapshots and have empty `inherited` and `unmeasured` lists.
 
