@@ -125,8 +125,10 @@ const inside = (path: string, folder: string): boolean => within(names(path), na
 
 /** Commands that destroy what no request asks to destroy: a disk, the root or home folder, the system's. A net, not a guarantee. */
 const destructive: readonly RegExp[] = [
-  /\brm\s+(-[a-zA-Z]*r[a-zA-Z]*\s+|-[a-zA-Z]*f[a-zA-Z]*\s+|--recursive\s+|--force\s+)+(\/|~|\$HOME|\/\*|\.\.?\/?)(\s|$)/u,
-  /\bremove-item\b[^\n]*-recurse\b[^\n]*\s(['"]?[a-z]:[\\/]?['"]?|~|\$home|\$env:userprofile|\$env:systemroot)(\s|$)/iu,
+  /\brm\s+(-[a-zA-Z]*r[a-zA-Z]*\s+|-[a-zA-Z]*f[a-zA-Z]*\s+|--recursive\s+|--force\s+)+(\/|~|\$HOME|\/\*|\.\.?\/?)(?=\s|$|[;&|)])/u,
+  // Skip flat Join-Path groups: their home argument is not the deletion target.
+  // Other parentheses stay visible; this net does not evaluate expressions or resolve paths.
+  /\bremove-item\b[^\n]*-recurse\b(?:[^\n(]|\((?!\s*join-path\b)|\(\s*join-path\b[^\n()]*\))*\s(['"]?[a-z]:[\\/]?['"]?|~|\$home|\$env:userprofile|\$env:systemroot)(?=\s|$|[;&|)])/iu,
   /\bformat(\.com)?\s+[a-z]:/iu,
   /\bmkfs(\.\w+)?\b/u,
   /\bdd\b[^\n]*\bof=\/dev\/(sd|nvme|disk|hd)/u,

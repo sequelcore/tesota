@@ -78,6 +78,58 @@ describe("the floor, which no mode crosses", () => {
     }
   });
 
+  // These only judge command text; no deletion command is executed.
+  test.each([
+    "Remove-Item (Join-Path $env:USERPROFILE 'sub\\folder') -Recurse",
+    "Remove-Item -Recurse (Join-Path $env:USERPROFILE 'sub\\folder')",
+    "Remove-Item -Recurse -Force (Join-Path $HOME 'sub/folder')",
+    "Remove-Item -Recurse (Join-Path ~ 'sub/folder')",
+    "Remove-Item -Recurse (Join-Path $env:SystemRoot 'Temp')",
+    "Remove-Item -Recurse $env:USERPROFILE\\sub",
+    "Remove-Item -Recurse $env:USERPROFILE/sub",
+    "Remove-Item -Recurse $HOME/sub",
+    "Remove-Item -Recurse $HOME\\sub",
+    "Remove-Item -Recurse ~\\sub",
+    "Remove-Item -Recurse ~/sub",
+    "Remove-Item -Recurse \"$HOME/sub\"",
+    "Remove-Item -Recurse \"$env:USERPROFILE\\sub\"",
+    "rm -rf $HOME/sub",
+    "rm -rf ~/sub",
+    "rm -rf ${HOME}/sub",
+    "rm -rf \"$HOME/sub\"",
+    "rm -rf \"${HOME}/sub\"",
+    "rm -rf \"$HOME\"/sub",
+    "rm -rf $HOME'/sub'",
+  ])("home subpaths are not home itself (#633): %s", (command) => {
+    for (const tool of ["powershell", "bash"]) {
+      expect(floor(tool, { command }, "run")).toMatchObject({ decision: "allow", by: "mode" });
+    }
+  });
+
+  test.each([
+    "Remove-Item -Recurse $env:USERPROFILE",
+    "Remove-Item -Recurse ~",
+    "Remove-Item -Recurse C:\\",
+    "Remove-Item -Recurse $HOME",
+    "Remove-Item -Recurse $env:SystemRoot",
+    "Remove-Item -Recurse -Force (Get-Item $env:USERPROFILE -Force)",
+    "Remove-Item -Recurse (Get-ChildItem $HOME -Force)",
+    "Remove-Item -Recurse (Resolve-Path ~ -Relative)",
+    "Remove-Item -Recurse ( $HOME )",
+    "Remove-Item -Recurse ((Get-Location).Path) $HOME",
+    "rm -rf $HOME",
+    "rm -rf ~",
+    "rm -rf /",
+    // A subpath must not exempt another destructive target in the same command.
+    "Remove-Item -Recurse (Join-Path $HOME 'sub') $env:USERPROFILE",
+    "Remove-Item -Recurse (Join-Path $HOME 'sub'); Remove-Item -Recurse $HOME",
+    "rm -rf $HOME; rm -rf $HOME/sub",
+  ])("whole homes and roots are still refused (#633): %s", (command) => {
+    for (const tool of ["powershell", "bash"]) {
+      expect(floor(tool, { command }, "run")).toMatchObject({ decision: "deny", by: "floor" });
+    }
+  });
+
   test("a root with a forward slash, a secret in capitals, and a shell call that also says a harmless path", () => {
     for (const command of ["Remove-Item -Recurse -Force C:/", "Get-Content .ENV", "type CONFIG\\.Env.local"]) {
       expect(floor(shell, { command }, "run")).toMatchObject({ decision: "deny", by: "floor" });
