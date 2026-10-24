@@ -9,7 +9,16 @@ export interface GraphOptions {
   readonly continue?: boolean;
   readonly limits?: { readonly bytes: number; readonly states: number; readonly edges: number };
 }
-export type GraphCapture = { readonly status: "captured"; readonly manifest: string }
+/** Bounded transcript data prepared at capture time; drawing never reads or lays out the full manifest. */
+export interface GraphPreview {
+  readonly reached: number;
+  readonly violating: number;
+  readonly partial: boolean;
+  readonly kind: "graph" | "trace";
+  readonly entries: readonly string[];
+  readonly omitted: boolean;
+}
+export type GraphCapture = { readonly status: "captured"; readonly manifest: string; readonly preview?: GraphPreview }
   | { readonly status: "failed" | "limited" | "unavailable"; readonly reason: string; readonly manifest?: string };
 interface GraphState { readonly fingerprint: string; readonly valuation: string; }
 interface GraphEdge { readonly from: string; readonly to: string; readonly action: string; }
@@ -128,12 +137,12 @@ export async function captureGraph(dotFile: string, output: string, binding: Gra
     if (reported === undefined || Number(reported.replaceAll(",", "")) !== graph.states.length) throw new Error("DOT / TLC reached-state count mismatch");
     const counts = { kind: complete ? "exact" : "lower_bounds", reached: graph.states.length, edges: graph.edges.length,
       violating: new Set(Object.values(reports.violations).flat()).size };
-    const ids = new Map(graph.states.map((state, index) => [state.fingerprint, `n${index}`]));
-    const texts = { dot, mmd: ["flowchart TD", ...graph.states.map((state) => `  ${ids.get(state.fingerprint)}["${state.fingerprint}"]`),
+    const ids = new Map(graph.states.map((state, index) => [state.fingerprint, `n${index + 1}`]));
+    const texts = { dot, mmd: ["flowchart TD", ...graph.states.map((state) => `  ${ids.get(state.fingerprint)}["${ids.get(state.fingerprint)?.slice(1)}: ${state.fingerprint}"]`),
       ...graph.edges.map((edge) => `  ${ids.get(edge.from)} -->|${JSON.stringify(edge.action)}| ${ids.get(edge.to)}`)].join("\n"),
     txt: [`Exploration: ${complete ? "complete; exact counts" : "partial; counts are lower bounds"}`,
       `Reached: ${counts.reached}; edges: ${counts.edges}; reported violating states: ${counts.violating}`,
-      ...graph.states.map((state) => `${state.fingerprint}\n${state.valuation}\n`),
+      ...graph.states.map((state, index) => `${index + 1}: ${state.fingerprint}\n${state.valuation}\n`),
       ...graph.edges.map((edge) => `${edge.from} -> ${edge.to}: ${edge.action}`), "", "TLC output:", output].join("\n") };
     const artifacts: Record<string, { file: string; sha256: string }> = {};
     for (const [extension, text] of Object.entries(texts)) {
@@ -143,8 +152,24 @@ export async function captureGraph(dotFile: string, output: string, binding: Gra
     }
     await writeFile(manifest, JSON.stringify({ ...metadata, status: "captured",
       exploration: complete ? "complete" : "partial", counts, graph: { ...graph, ...reports }, artifacts }, null, 2), { flag: "wx" });
-    return { status: "captured", manifest };
+    return { status: "captured", manifest, preview: transcriptGraph(graph, reports, counts, !complete) };
   } catch (error) { return failure("failed", String(error)); }
+}
+
+/** Small, presentation-only topology; complete valuations and action labels stay in the artifacts. */
+function transcriptGraph(graph: ReachedGraph, reports: ReturnType<typeof invariantReports>,
+  counts: { reached: number; violating: number }, partial: boolean): GraphPreview {
+  const numbers = new Map(graph.states.map((state, index) => [state.fingerprint, index + 1]));
+  const bad = new Set(Object.values(reports.violations).flat());
+  const name = (id: string): string => `${bad.has(id) ? "!" : ""}${numbers.get(id)}`;
+  const small = graph.states.length <= 24 && graph.edges.length <= 48;
+  const entries = small ? graph.states.map((state) => {
+    const next = [...new Set(graph.edges.filter((edge) => edge.from === state.fingerprint).map((edge) => name(edge.to)))];
+    return `${name(state.fingerprint)}${next.length === 0 ? " (end)" : ` -> ${next.join(",")}`}`;
+  }) : [];
+  const trace = reports.trace.slice(0, 24).map((state) => name(state.fingerprint));
+  return { reached: counts.reached, violating: counts.violating, partial, kind: trace.length > 0 ? "trace" : "graph",
+    entries: trace.length > 0 ? trace : entries, omitted: trace.length > 0 ? reports.trace.length > trace.length : !small };
 }
 
 export const graphContentHash: (text: string) => string = hash;

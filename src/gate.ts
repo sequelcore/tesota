@@ -13,7 +13,7 @@ import { type AttemptEnd, GateOperations, type OperationSink, type OperationSpec
 import type { ContractStrength } from "./proof-guarantees.js";
 import { inFolder, owningProjects, suggestChecks } from "./projects.js";
 import { proofReport } from "./prove-tool.js";
-import { entryReceipt, type FloorRefusal, inUnit, isReceipt, type ModelResult, noEvidence, type Receipt, type ReceiptChild, receiptEntry,
+import { entryReceipt, type FloorRefusal, inUnit, isReceipt, type ModelResult, noEvidence, type Receipt, type ReceiptChild, receiptEntry, receiptGraphEntry,
   type UnitEvidence } from "./receipt.js";
 import { attributionResolved, captureFingerprint, compareFingerprints, type Fingerprint, historyFacts, pathBlobs, refTips } from "./request-fingerprint.js";
 import { takeSnapshot } from "./snapshot.js";
@@ -759,7 +759,9 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
           reason: refused.get(folder) ?? "Git could not read it, so Tesota cannot tell what changed" }))]
         .sort((a, b) => a.folder < b.folder ? -1 : 1) };
     progress.publish({ step: "settled", receipt });
-    return { entries: [receiptEntry(ctx.mode, receipt)] };
+    const graphs = [...modelRungs].flatMap(([folder, rung]) => rung.models.map((model) => ({
+      subject: inUnit(folder, model.path), ...model.capture === undefined ? {} : { capture: model.capture } })));
+    return { entries: [receiptGraphEntry(ctx.mode, receipt, graphs)] };
   });
   return progress;
 }

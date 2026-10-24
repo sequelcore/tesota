@@ -13,7 +13,7 @@ import { headCommit } from "../src/git.js";
 import { attributionResolved } from "../src/request-fingerprint.js";
 import { openCasesSystemPrompt } from "../src/open-cases.js";
 import { receiptMarkdown, subjectOf } from "../src/pull-request-receipt.js";
-import { receiptDecisions, receiptFindings, receiptStanding, receiptSummary, renderReceipt, type Receipt } from "../src/receipt.js";
+import { entryReceipt, receiptDecisions, receiptFindings, receiptStanding, receiptSummary, renderReceipt, type Receipt } from "../src/receipt.js";
 import { gateVerdict, keepsWorking, toolMayChangeFiles } from "../src/verification/gate-rule.js";
 import type { ProofOutcome } from "../src/verification/proof-outcome-rule.js";
 import { emptyReceipt } from "./receipts.js";
@@ -37,20 +37,20 @@ vi.mock("../src/verification/lemmascript-verifier.js", async (original) => ({
 }));
 
 /** Model checks scripted per model, each call counted: the gate's decisions, not TLC, are under test here. */
-const scriptedModels = new Map<string, (calls: number) => Pick<ModelCheck, "run" | "faults"> & { outcome: ProofOutcome }>();
+const scriptedModels = new Map<string, (calls: number) => Pick<ModelCheck, "run" | "faults" | "capture"> & { outcome: ProofOutcome }>();
 const modelCalls = new Map<string, number>();
 vi.mock("../src/model-check.js", async (original) => {
   const real = await original<typeof import("../src/model-check.js")>();
   return { ...real, checkModel: async (root: string, path: string, changed: readonly string[]): Promise<ModelCheck> => {
     const calls = (modelCalls.get(path) ?? 0) + 1;
     modelCalls.set(path, calls);
-    const { outcome, run, faults } = scriptedModels.get(path)?.(calls)
+    const { outcome, run, faults, ...metadata } = scriptedModels.get(path)?.(calls)
       ?? { outcome: "passed", run: "passed", faults: [{ path: "models/Fault.cfg", description: "lock removed", verdict: "caught", output: "", durationMs: 1 }] };
     const header = { covers: [{ path: "src/counter.ts", names: [] }], invariants: ["Safe"], atomic: ["each step"], omits: ["crashes"],
       faults: [{ path: "models/Fault.cfg", description: "lock removed" }] };
     // Bound to the content as the real check binds it, so the gate can tell a check of the same content.
     const content = await real.modelContent(root, path, header);
-    return { path, language: "tla", header, problems: [], evidence: { verifier: "tlc", claim: `claim of ${path}`, limits: "", outcome,
+    return { ...metadata, path, language: "tla", header, problems: [], evidence: { verifier: "tlc", claim: `claim of ${path}`, limits: "", outcome,
       output: "", durationMs: 1, files: content.map((file) => file.path), contentHash: contentHash(content) }, run, states: 9, faults,
     staleness: "possibly_stale", stale: ["src/counter.ts"], writtenWithCode: changed.includes(path) && changed.includes("src/counter.ts"),
     link: "no_replay" };
@@ -290,7 +290,7 @@ function facts(content: string): string {
 function entry(settled: Settled | undefined): { customType: string; content: string; details?: unknown } {
   expect(settled?.entries).toHaveLength(1);
   const found = (settled?.entries ?? [])[0];
-  return found === undefined ? { customType: "", content: "" } : { ...found, details: found.type === "custom" ? found.data : found.details };
+  return found === undefined ? { customType: "", content: "" } : { ...found, details: entryReceipt({ ...found, type: found.type ?? "custom_message" }) ?? (found.type === "custom" ? found.data : found.details) };
 }
 
 it.each(["tui", "print"])("fingerprints inherited dirt without verifying an unchanged shell request in %s", async (mode) => {
@@ -1714,6 +1714,25 @@ const counterModel = (name = "Counter"): Record<string, string> => ({
   [`models/${name}.tla`]: `(* tesota-model\n   covers: src/counter.ts\n   invariant: Safe\n   atomic: each step\n   omits: crashes\n` +
     `   fault: models/Fault.cfg lock removed\n*)\n---- MODULE ${name} ----\n====\n`,
   [`models/${name}.cfg`]: "SPECIFICATION Spec\n", "models/Fault.cfg": "SPECIFICATION Spec\n" });
+
+it("publishes captured previews as transcript metadata without changing receipt v2", async () => {
+  const root = repository({ "src/counter.ts": "export const n = 0;\n", ...counterModel() });
+  scriptedModels.set("models/Counter.tla", () => ({ outcome: "passed", run: "passed", faults: [],
+    capture: { status: "captured", manifest: "/sessions/run.manifest.json", preview: { reached: 9, violating: 0,
+      partial: false, kind: "graph", entries: ["1 -> 2"], omitted: false } } }));
+  const run = gate(root);
+  await run.input();
+  await run.tool("write");
+  writeFileSync(join(root, "src", "counter.ts"), "export const n = 1;\n");
+  const settled = await run.settle();
+  const published = JSON.parse(JSON.stringify(settled?.entries?.[0]));
+  expect(published.customType).toBe("tesota-receipt-graphs");
+  expect(published.details.graphs).toMatchObject([{ subject: "models/Counter.tla", capture: { status: "captured", preview: { reached: 9 } } }]);
+  const receipt = entryReceipt(published) as Receipt;
+  expect(receipt.version).toBe(2);
+  expect(receipt.models?.[0]?.capture).toBeUndefined();
+  expect(receipt.models?.[0]?.verdict).toBe("proved");
+});
 
 it("model-checks a model when the request changes the code it covers, and leaves it alone otherwise", async () => {
   const root = repository({ "src/counter.ts": "export const n = 0;\n", "notes.md": "# Notes\n", ...counterModel() });

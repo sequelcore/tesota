@@ -12,9 +12,11 @@ A receipt exists in two places:
 
 - **In the session:** the `details` of a `custom_message` entry whose
   `customType` is `tesota-receipt`, or the `data` of a `custom` entry of
-  that type in print mode. A message's `content` is the text the operator
-  reads; the shell draws the receipt from `details`, and the presentation
-  does not change the structured receipt or its version.
+  that type in print mode. With model graph previews, the message type is
+  `tesota-receipt-graphs`: `details.receipt` holds the same receipt v2,
+  and `details.graphs` holds bounded transcript metadata, not receipt evidence.
+  A message's `content` is its text; the shell draws from `details`.
+  Presentation does not change the structured receipt or its version.
 - **In a Statement:** inside an unsigned
   [in-toto Statement v1](https://github.com/in-toto/attestation/blob/main/spec/v1/statement.md)
   about a commit. The Statement uses the predicate fields of the agentic

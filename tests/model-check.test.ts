@@ -6,6 +6,7 @@ import { afterEach, expect, it, onTestFinished } from "vitest";
 import { checkModel, inProject, modelContent, modelHeader, modelReport, plannedModels, tlcCounterexample, unheadedReport } from "../src/model-check.js";
 import { GateOperations } from "../src/operations.js";
 import { counterexampleSteps } from "../src/receipt.js";
+import { graphPreviewRows } from "../src/messages.js";
 
 /** The operator's TLC, where Tesota looks for it in their home; the runs that need it are skipped without it, as proofs are without Dafny. */
 const operator = JSON.parse(process.env["TESOTA_TEST_OPERATOR_HOME"] ?? "{}") as { HOME?: string; USERPROFILE?: string };
@@ -253,6 +254,12 @@ it.skipIf(!withTlc)("captures the nine reached states beside the session from th
   expect(check.capture?.status).toBe("captured");
   const manifest = JSON.parse(readFileSync(check.capture?.manifest ?? "", "utf8"));
   expect(manifest.graph.states).toHaveLength(9);
+  const preview = graphPreviewRows(check.capture, 80);
+  expect(preview.join("\n")).toContain("9 reached");
+  expect(preview.filter((row) => row.startsWith("| ")).length).toBeGreaterThan(0);
+  expect(preview.filter((row) => row.startsWith("| ")).length).toBeLessThanOrEqual(6);
+  expect(readFileSync(join(root, manifest.artifacts.txt.file), "utf8")).toContain(`1: ${manifest.graph.states[0].fingerprint}\n`);
+  expect(readFileSync(join(root, manifest.artifacts.mmd.file), "utf8")).toContain(`n1["1: ${manifest.graph.states[0].fingerprint}"]`);
   expect(manifest.exploration).toBe("complete");
   expect(manifest.binding.sessionFile).toBe(sessionFile);
   expect(manifest.binding.tlcVersion).toMatch(/^TLC2 Version/);
@@ -273,6 +280,10 @@ it.skipIf(!withTlc)("labels an early failing exploration and its counts partial"
   expect(manifest.counts.kind).toBe("lower_bounds");
   expect(manifest.counts.reached).toBe(check.states);
   expect(manifest.graph.trace).toHaveLength(5);
+  const preview = graphPreviewRows(check.capture, 80).join("\n");
+  expect(preview).toContain("Counterexample path");
+  expect(preview).toContain("Partial exploration; counts are lower bounds");
+  expect(preview).toContain(">=1 reported violating");
 }, 120_000);
 
 const ring = (base: string): Record<string, string> => ({

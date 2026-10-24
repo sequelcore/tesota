@@ -9,6 +9,25 @@ as request context, separate from evidence and acceptance. The shell shows
 their count; Ctrl+O expands the questions, choices you selected and your
 text. Exported Markdown and JSON retain this context too.
 
+## Model graph previews
+
+The transcript shows a model's captured graph without expanding the receipt:
+up to six diagram rows, using the counterexample path when TLC reported one,
+or the reached graph when it fits. Arrows in the reached graph list concrete
+successors; they do not turn the whole graph into one execution. State numbers
+follow the order of states in the `.txt` artifact. `!` marks a state TLC
+reported as violating an invariant. Full valuations and action labels stay in
+the files.
+
+Reached and reported-violating counts describe the captured exploration.
+Partial exploration labels both counts as lower bounds. Zero reported
+violations is not a safety verdict. A missing or limited capture says so;
+the graph never changes the verification verdict.
+
+**Open graph** names the artifact stem beside the session: open its `.dot`,
+`.mmd` or `.txt` file in a text editor. A preview that does not fit says to
+open those files; it has no scroll region of its own.
+
 ## For a pull request
 
 Commit the change, then, in the folder where the session ran:

@@ -6,7 +6,7 @@ import type { Evidence } from "../src/evidence.js";
 import type { SentBack } from "../src/gate.js";
 import { hang, registerMessages } from "../src/messages.js";
 import { GateOperations } from "../src/operations.js";
-import type { Receipt } from "../src/receipt.js";
+import { modelFinding, receiptGraphEntry, type ModelResult, type Receipt } from "../src/receipt.js";
 import type { Weakening } from "../src/verification-changes.js";
 import { emptyReceipt } from "./receipts.js";
 
@@ -64,6 +64,28 @@ const attention: Receipt = { ...clean,
 /** The card's rows as text, without the box's blank padding rows or the margin. */
 const text = (rows: readonly string[]): string[] => rows.map((row) => row.slice(1)).filter((row, k, all) =>
   !(row === "" && (k === 0 || k === all.length - 1)));
+
+it("keeps the graph preview visible in collapsed and expanded receipts without changing the finding's verdict", () => {
+  const model: ModelResult = { path: "Counter.tla", language: "tla", header: { covers: [], invariants: ["Safe"], atomic: [], omits: [], faults: [] },
+    problems: [], evidence: evidence("passed"), run: "passed", states: 9, faults: [], staleness: "current", stale: [],
+    writtenWithCode: false, link: "no_replay", verdict: "proved",
+    capture: { status: "captured", manifest: "/sessions/run.model-123.manifest.json", preview: { reached: 9, violating: 0,
+      partial: false, kind: "graph", entries: ["1 -> 2", "2 -> 1"], omitted: false } } };
+  const receipt = { ...clean, models: [model] };
+  const published = receiptGraphEntry("tui", receipt, [{ subject: model.path, ...model.capture === undefined ? {} : { capture: model.capture } }]);
+  for (const width of [80, 32]) for (const expanded of [false, true]) {
+    const rows = shown(published.customType, published.type === "custom_message" ? published.details : published.data, width, expanded).join("\n");
+    expect(rows).toContain("9 reached");
+    expect(rows).toContain("Open graph");
+    expect(rows).toContain("1 -> 2");
+  }
+  const { capture: _capture, ...without } = model;
+  expect(modelFinding(model).standing).toBe(modelFinding(without).standing);
+  expect(modelFinding(model).label).toBe(modelFinding(without).label);
+  const absent = receiptGraphEntry("tui", { ...clean, models: [without] }, [{ subject: without.path }]);
+  expect(shown(absent.customType, absent.type === "custom_message" ? absent.details : absent.data, 80).join("\n"))
+    .toContain("Graph unavailable: no capture");
+});
 
 it("keeps clarification context outside evidence and expands its exact submitted text", () => {
   const receipt: Receipt = { ...clean, clarifications: [{ reply: 0, callId: "clarify", at: "2026-10-20T00:00:00.000Z",
