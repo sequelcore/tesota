@@ -5,6 +5,9 @@ import type { ClarificationAnswer, ClarificationQuestion } from "../../../../src
 import type { QuestionSubmit } from "../questions.ts";
 import type { ShellTheme } from "../../../../src/theme.ts";
 
+const PASTE_START = "\x1b[200~";
+const PASTE_END = "\x1b[201~";
+
 type Field = "choices" | "text" | "submit";
 
 export interface QuestionDraft {
@@ -27,6 +30,7 @@ export function createQuestionDraft(questions: readonly ClarificationQuestion[])
 export class QuestionForm extends ScrollView implements Focusable {
   focused = false;
   #submitted = false;
+  #inPaste = false;
   #error: string | undefined;
   #focusRow = 0;
   #revealFocus = true;
@@ -63,6 +67,7 @@ export class QuestionForm extends ScrollView implements Focusable {
 
   handleInput(data: string): void {
     if (this.#submitted || !this.active()) return;
+    data = this.pasteAsOneLine(data);
     if (this.browse(data)) return;
     this.#revealFocus = true;
     if (matchesKey(data, "escape")) { this.cancel(); return; }
@@ -89,6 +94,25 @@ export class QuestionForm extends ScrollView implements Focusable {
     if (/^[1-4]$/u.test(data)) {
       const index = Number(data) - 1;
       if (index < this.currentQuestion().options.length) this.toggle(index);
+    }
+  }
+
+  /**
+   * pi-tui's single-line `Input` deletes the line breaks of a bracketed paste, joining words (#624). The field holds
+   * one line, so each break (`\r\n`, `\n` or `\r`) becomes a space before it gets there. A paste can arrive in
+   * several chunks, so whether one is open is remembered; typed Enter outside a paste is untouched.
+   */
+  private pasteAsOneLine(data: string): string {
+    let out = "";
+    let rest = data;
+    for (;;) {
+      const marker = this.#inPaste ? PASTE_END : PASTE_START;
+      const at = rest.indexOf(marker);
+      const chunk = at < 0 ? rest : rest.slice(0, at + marker.length);
+      out += this.#inPaste ? chunk.replace(/\r\n|\r|\n/gu, " ") : chunk;
+      if (at < 0) return out;
+      this.#inPaste = !this.#inPaste;
+      rest = rest.slice(at + marker.length);
     }
   }
 

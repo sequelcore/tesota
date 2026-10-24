@@ -84,3 +84,27 @@ test.each(["dark", "light"] as const)("%s question ANSI rendering follows the th
   expect(submit.filter((line) => line.includes("<ESC>[7m"))).toEqual([]);
   expect({ choices, text, submit }).toMatchSnapshot();
 });
+
+// pi-tui's single-line Input deletes line breaks from a paste, joining words (#624).
+test.each([["\r\n", "CRLF"], ["\n", "LF"], ["\r", "CR"]])("a bracketed paste with %j breaks reaches the agent with a space for each break (%s)", (separator) => {
+  const answers: unknown[] = [];
+  const draft = createQuestionDraft(questions);
+  const view = new QuestionForm(questions, (given) => { answers.push(given); return undefined; }, () => undefined,
+    shellTheme("dark", "truecolor"), draft, () => true);
+  view.handleInput("\x1b[B");
+  view.handleInput("\x1b[B");
+  view.handleInput(`\x1b[200~Run the${separator}direct bun test${separator}and TESOTA_HOME\x1b[201~`);
+  expect(draft.field).toBe("text");
+  view.handleInput("\x1b[B");
+  view.handleInput("\r");
+  expect(answers).toEqual([[{ selected: [], text: "Run the direct bun test and TESOTA_HOME" }]]);
+});
+
+test("a paste split across inputs does not submit or move on at a break that starts a later chunk", () => {
+  const { view, draft } = form();
+  view.handleInput("\x1b[B");
+  view.handleInput("\x1b[B");
+  view.handleInput("\x1b[200~one");
+  view.handleInput("\ntwo\x1b[201~");
+  expect([draft.field, draft.text[0]]).toEqual(["text", "one two"]);
+});
