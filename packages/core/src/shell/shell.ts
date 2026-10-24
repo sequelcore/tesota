@@ -18,6 +18,10 @@ import { createQuestionDraft, type QuestionDraft, QuestionForm } from "./questio
 import { framed, frameTitle, type FrameTone } from "./frame.ts";
 import { terminalText } from "../../../../src/terminal-text.ts";
 
+const queueReplyKey = { key: "alt+enter", label: "Alt+Enter" } as const;
+const stopRunKey = { key: "escape", label: "Esc" } as const;
+const verifyingLabel = (detail?: string): string => `Verifying… · ${queueReplyKey.label}: queue reply · ${stopRunKey.label}: stop${detail === undefined ? "" : `\n${detail}`}`;
+
 /** The fullscreen renderer that draws every cell on every frame, for terminals that leave stale fragments otherwise. */
 class RepaintingAltScreen extends TuiAltScreen {
   override requestRender(_force?: boolean): void { super.requestRender(true); }
@@ -362,7 +366,7 @@ export function startShell(options: ShellOptions): Shell {
     drawBlock();
     if (detail === undefined) return;
     const show = (): void => {
-      loader.setMessage(detail.line(performance.now()) ?? "Verifying…");
+      loader.setMessage(verifyingLabel(detail.line(performance.now())));
       drawBlock();
       tui.requestRender();
     };
@@ -376,7 +380,7 @@ export function startShell(options: ShellOptions): Shell {
     watchDetail(false);
     if (state === undefined) { loader.stop(); busy = false; } else {
       busy = true;
-      loader.setMessage(state === "working" ? "Working…" : "Verifying…");
+      loader.setMessage(state === "working" ? "Working…" : verifyingLabel());
       status.addChild(loader);
       loader.start();
       watchDetail(state === "settling");
@@ -495,8 +499,8 @@ export function startShell(options: ShellOptions): Shell {
     // A dialog or the dashboard has the keyboard: Esc goes back there, and the shell's own keys wait (#455).
     if (covering !== undefined) return undefined;
     if (matchesKey(data, dequeueKey)) { restorePending(); return { consume: true }; }
-    if (matchesKey(data, "escape") && busy) { restorePending(); void session.abort(); return { consume: true }; }
-    if (matchesKey(data, "alt+enter")) {
+    if (matchesKey(data, stopRunKey.key) && busy) { restorePending(); void session.abort(); return { consume: true }; }
+    if (matchesKey(data, queueReplyKey.key)) {
       const text = editor.getText().trim();
       if (text !== "") { editor.setText(""); send(text, busy ? "followUp" : undefined); }
       return { consume: true };

@@ -15,13 +15,14 @@ export function askTool(host: AskHost): EngineTool {
   const tool: EngineTool<typeof parameters> = {
     name: "ask_user", access: "read", parameters,
     description: "Ask the operator one to three focused questions when the answer materially changes the next action. Offer two to four choices each; the operator may add text. A request may ask at most three times. A choice is not permission to execute consequential actions.",
+    promptGuidelines: ["Use ask_user for a decision, information or permission that blocks the next action. Do not end with a blocking question in plain text. An answer is context, not execution permission."],
     async execute({ questions }, signal, callId) {
       const invalid = validateQuestions(questions);
       if (invalid !== undefined) return { isError: true, text: invalid };
       const outcome = await host.ask(questions, signal, callId);
       if (outcome.status === "answered") return { isError: false,
         text: clarificationText({ questions, answers: outcome.answers }) };
-      return { isError: true, text: outcome.reason };
+      return { isError: true, text: outcome.reason, details: outcome.status };
     },
   };
   const native = tool as EngineTool;

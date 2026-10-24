@@ -93,7 +93,8 @@ The Statement is not signed. Only a receipt with `version` 2 and
 `repository` true is written as a Statement. A receipt with `units` is not:
 run in one of its repositories, `tesota receipt` writes that repository's
 unit as a receipt of its own, with the run's `version`, `startedAt`,
-`settledAt`, `engine`, `model` and `clarifications`, and the unit's `folder` kept.
+`settledAt`, `engine`, `model`, `clarifications` and `unresolvedQuestion`,
+and the unit's `folder` kept.
 
 ## The receipt
 
@@ -104,6 +105,7 @@ unit as a receipt of its own, with the run's `version`, `startedAt`,
 | `snapshot` | `true`, optional | Present when the project has no Git repository and Tesota measured the request against its own snapshot of it. `base` is then that snapshot's commit, which no one else can fetch |
 | `tooLarge` | string[], optional | With `snapshot`, the files the snapshot left out for being over 10 MB, so nothing verified them |
 | `reason` | string, optional | When nothing was verified, why: Tesota does not snapshot a home folder or a drive's root, or the folder is past a snapshot's limits |
+| `unresolvedQuestion` | string, optional | The unresolved question that ended generation. The run is incomplete; the receipt still records verification of its changes |
 | `base` | string or null | The commit `HEAD` named when the operator's request started, or Tesota's snapshot then. Null before the first commit and when nothing was verified |
 | `startedAt` | timestamp | When the operator's request started |
 | `settledAt` | timestamp | When the run settled |
@@ -220,7 +222,7 @@ their per-request snapshots and have empty `inherited` and `unmeasured` lists.
 | Value | Meaning |
 | --- | --- |
 | `proved` | The proof, command or model passed |
-| `send_back` | It failed or was vacuous, and went back to the agent. A settled receipt holds none, since the run continues while one goes back |
+| `send_back` | It failed or was vacuous and needs repair. Normally it goes back to the agent instead of settling. With `unresolvedQuestion`, generation has ended: the receipt records the failure without sending it back |
 | `no_progress` | It failed or was vacuous, repeating a failure the gate already sent back during the request |
 | `operator` | It could not run, ran past its limit, was stopped, or its evidence was invalidated when checked content changed before settlement; the operator's to resolve |
 

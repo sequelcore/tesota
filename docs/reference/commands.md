@@ -45,6 +45,10 @@
 | Ctrl+C | Clear the input; twice on an empty input, end the shell |
 | Ctrl+D | End the shell, on an empty input |
 
+While verifying, the status shows `Verifying… · Alt+Enter: queue reply · Esc: stop`.
+The hint wraps at narrow widths; the active check and elapsed time stay below it.
+A focused question form or dialog owns its keys instead.
+
 Pending messages stay above the input until the loop takes them. Each row
 shows its kind and delivery point: a steer at the next model turn, a
 follow-up when the run would end. The edit key removes all still-pending

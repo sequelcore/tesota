@@ -5,7 +5,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import type { MessageRenderer, Theme } from "../src/contract.js";
 import { registerMessages } from "../src/messages.js";
 import { receiptMarkdown } from "../src/pull-request-receipt.js";
-import { entryReceipt, isReceipt, type Receipt, receiptEntry, receiptSummary, renderReceipt, renderReceiptMessage } from "../src/receipt.js";
+import { entryReceipt, isReceipt, type Receipt, receiptEntry, receiptStanding, receiptSummary, renderReceipt, renderReceiptMessage } from "../src/receipt.js";
 import { shellTheme } from "../src/theme.js";
 import { emptyReceipt } from "./receipts.js";
 
@@ -240,6 +240,19 @@ describe("receipts beyond the four", () => {
         .find(({ method }) => method === "Models");
       expect(row?.glyph).toBe("◐");
     }
+  });
+
+  it("a model failure kept when generation ends is failed, not already sent back", () => {
+    const model = { path: "models/Stock.tla", language: "tla", problems: [], run: "violation", states: 2,
+      faults: [], link: "no_replay", staleness: "current", stale: [], writtenWithCode: false, verdict: "send_back",
+      counterexample: { violation: "NeverNegative", steps: [] },
+      header: { covers: [{ path: "src/stock.ts", names: [] }], invariants: ["NeverNegative"], atomic: [], omits: [], faults: [] },
+      evidence: { verifier: "tlc", claim: "", limits: "", outcome: "failed", output: "NeverNegative", durationMs: 1, files: [], contentHash: "h" },
+    } as unknown as NonNullable<Receipt["models"]>[number];
+    const receipt = { ...emptyReceipt, unresolvedQuestion: "Which option should I use?", models: [model] };
+    expect(receiptStanding(receipt)).toBe("failed");
+    expect(renderReceipt(receipt)).not.toContain("already sent back");
+    expect(renderReceipt(receipt)).toContain("generation ended before repair");
   });
 
   it("never counts ClaimCheck's judgment, or the cases a model listed, as a flag or a limit", () => {

@@ -472,6 +472,16 @@ describe("the shell", () => {
     } }, set: (line: string | undefined) => { state.line = line; for (const listener of listeners) listener(); } };
   }
 
+  test.each(["inline", "fullscreen"] as const)("verification controls stay visible in %s at normal and narrow widths", async (mode) => {
+    for (const width of [100, 40]) {
+      const { terminal, shell } = shellOn([], mode, [width, 24]);
+      shell.busy("settling");
+      const screen = await terminal.until("Esc: stop");
+      expect(screen.replace(/\s+/gu, " ")).toContain("Verifying… · Alt+Enter: queue reply · Esc: stop");
+      shell.busy(undefined);
+    }
+  });
+
   test("while the gate verifies, the label names the running command and its elapsed time, and plain words when none runs (#590)", async () => {
     const surface = createSurface(shellTheme("dark", "truecolor"));
     const gate = detailOf("Checking test sensitivity · bun test tests/rule.test.ts · 0:19");
@@ -482,7 +492,8 @@ describe("the shell", () => {
     expect(gate.listeners.size).toBe(0);
     shell.busy("settling");
     const screen = await terminal.until("Checking test sensitivity · bun test tests/rule.test.ts · 0:19");
-    expect(screen).not.toContain("Verifying…");
+    expect(screen).toContain("Verifying…");
+    expect(screen).toContain("Alt+Enter: queue reply");
     expect(gate.listeners.size).toBe(1);
     gate.set("Running project check · bun run check · 6:02");
     await terminal.until("Running project check · bun run check · 6:02");

@@ -27,8 +27,8 @@ import { type Access, afterRefusal } from "./permission-rule.ts";
 import type { EngineTool, ToolOutput } from "./tool.ts";
 import { codingTools } from "./tools/index.ts";
 import { type AskHost, isNativeAskTool } from "./tools/ask.ts";
-import { askQuestions, type QuestionResponder } from "./questions.ts";
-import { askAccepted } from "./questions-rule.ts";
+import { askQuestions, blockingProseQuestion, type QuestionResponder } from "./questions.ts";
+import { askAccepted, questionRepair } from "./questions-rule.ts";
 import { clarificationText, type Clarification, type ClarificationAnswer, type ClarificationQuestion } from "../../../src/clarification.ts";
 
 /** Who decided whether a call runs, as the session records it (#449, #622). */
@@ -505,6 +505,7 @@ interface Queued extends PendingMessage {
 interface Ended {
   readonly outcome: RunOutcome;
   readonly reason?: string;
+  readonly incomplete?: boolean;
 }
 
 /** What settlement decided: another model turn, sent back by a handler (`automatic`) or for input that came meanwhile, or the run's end. */
@@ -539,20 +540,17 @@ export function createLoop(options: LoopOptions): LoopSession {
   let questionFailure: Error | undefined;
   const spool = (): string => { mkdirSync(options.outputFolder, { recursive: true }); return options.outputFolder; };
   let activeQuestion: { readonly run: number; readonly reply: number; readonly callId: string } | undefined;
-  /** How many times the run asked the operator: a request decides with what it has after three. */
-  let asked = { run: 0, times: 0 };
+  /** Request-scoped attempts and the one shared repair, independent of conversation compaction. */
+  let asked = { run: 0, times: 0, repaired: false, repairing: false,
+    decision: undefined as string | undefined, unresolved: undefined as string | undefined };
+  const questionState = (run: number): typeof asked => {
+    if (asked.run !== run) asked = { run, times: 0, repaired: false, repairing: false, decision: undefined, unresolved: undefined };
+    return asked;
+  };
   const questionHost = {
     ask: async (questions: readonly ClarificationQuestion[], signal: AbortSignal, callId: string) => {
       const active = activeQuestion;
       if (active === undefined || active.callId !== callId) throw new Error("The question call is no longer active.");
-      if (options.questions !== undefined) {
-        const times = asked.run === active.run ? asked.times : 0;
-        if (!askAccepted(times)) {
-          return { status: "unavailable" as const, reason: "Not asked: this request already asked the operator three times. "
-            + "Decide with what you have, say which choice you made and why, or end the turn with the question." };
-        }
-        asked = { run: active.run, times: times + 1 };
-      }
       try {
         return await askQuestions(questions, options.questions, signal, (answers: readonly ClarificationAnswer[]) => {
           if (signal.aborted) throw new Error("The run was stopped before this answer could be saved.");
@@ -864,12 +862,48 @@ export function createLoop(options: LoopOptions): LoopSession {
     return after.blocked === undefined ? output : { ...output, text: `${output.text}\n\nA hook says: ${after.blocked}` };
   }
 
+  /** Rejected native attempts share the prose repair allowance; skipped sibling calls do not. */
+  function questionReturned(run: number, call: ToolCall, output: ToolOutput): ToolOutput {
+    const state = questionState(run);
+    if (!output.isError || output.details === "cancelled") { state.repairing = false; return output; }
+    if (questionRepair(true, options.questions !== undefined, state.repaired, state.times) === "incomplete") {
+      state.unresolved ??= `Unresolved question: ${JSON.stringify(call.arguments)}. ${output.text}`;
+      return output;
+    }
+    state.repaired = true;
+    state.repairing = true;
+    return { ...output, text: `${output.text}\nUse your one question repair to call ask_user with a valid, available question, or clarify that no decision is needed. Unrelated tools will not run.` };
+  }
+
+  /** Counts at the call boundary, even when provider truncation prevents argument validation. */
+  function questionAttempt(run: number, call: ToolCall, question: boolean): ToolOutput | undefined {
+    const state = questionState(run);
+    if (state.repairing && !question) {
+      state.unresolved = `Unresolved question: ${state.decision}. The question repair did not use ask_user.`;
+      return { isError: true, text: "Not run: " + state.unresolved };
+    }
+    if (question) {
+      state.decision = JSON.stringify(call.arguments);
+      if (!askAccepted(state.times)) {
+        state.unresolved = "This request already attempted to ask the operator three times. Unresolved decision: " + JSON.stringify(call.arguments);
+        return { isError: true, text: state.unresolved + " Generation ends incomplete; do not ask in plain text." };
+      }
+      state.times++;
+    }
+    return undefined;
+  }
+
   /** What one allowed or refused call gives, asked about first; a call made after the stop does not run. */
   async function outcomeOf(run: number, call: ToolCall, signal: AbortSignal, left: AbortSignal, offered: readonly EngineTool[],
     reply: number): Promise<ToolOutput> {
     if (signal.aborted) return stoppedCall;
-    if (!await permitted(run, call, offered, signal)) return signal.aborted ? stoppedCall : refusedCall(call);
-    return await hooked(run, call, signal, left, offered, reply);
+    const native = offered.find((tool) => tool.name === call.name);
+    const question = native !== undefined && isNativeAskTool(native);
+    const refused = questionAttempt(run, call, question);
+    if (refused !== undefined) return refused;
+    const output = !await permitted(run, call, offered, signal) ? signal.aborted ? stoppedCall : refusedCall(call)
+      : await hooked(run, call, signal, left, offered, reply);
+    return question ? questionReturned(run, call, output) : output;
   }
 
   /**
@@ -911,8 +945,13 @@ export function createLoop(options: LoopOptions): LoopSession {
         while (next < calls.length) {
           const call = calls[next] as ToolCall;
           if (repeated()) next += 1;
-          else if (message.stopReason === "length") answer(truncatedCall(call));
-          else if (questionBoundary) answer({ isError: true, text: "Not run: reconsider this call after reading the question's outcome." });
+          else if (questionBoundary || questionState(run).unresolved !== undefined) answer({ isError: true, text: "Not run: reconsider this call after reading the question's outcome." });
+          else if (message.stopReason === "length") {
+            const native = offered.find((tool) => tool.name === call.name);
+            const question = native !== undefined && isNativeAskTool(native);
+            const output = questionAttempt(run, call, question) ?? truncatedCall(call);
+            answer(question ? questionReturned(run, call, output) : output);
+          }
           else yield* step((left) => outcomeOf(run, call, signal, left, offered, reply), (given, ms) => { answer(Option.isSome(given) ? given.value : saved(call) ?? stoppedAfter(ms)); });
         }
       });
@@ -1005,6 +1044,33 @@ export function createLoop(options: LoopOptions): LoopSession {
     return true;
   });
 
+  /** One lexical repair at the normal tool-free end, after queued input has had its turn. */
+  function repairQuestion(run: number, message: AssistantMessage, offered: readonly EngineTool[]): Ended | "repair" | undefined {
+    const question = blockingProseQuestion(message.content.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n"));
+    const state = questionState(run);
+    const action = questionRepair(question !== undefined, options.questions !== undefined && offered.some(isNativeAskTool), state.repaired, state.times);
+    if (action === "incomplete") return { outcome: "completed", incomplete: true, reason: `Unresolved question: ${question}` };
+    if (action !== "repair") { state.repairing = false; return undefined; }
+    state.repaired = true;
+    state.repairing = true;
+    state.decision = question;
+    record(run, [{ type: "custom_message", customType: "question-repair", display: false,
+      content: `Put this blocking decision through ask_user, preserving its meaning: ${question}\nOnly call ask_user, or clarify that no decision is needed. Do not change files or answer on the operator's behalf.` }]);
+    return "repair";
+  }
+
+  const toolFreeEnd = (run: number, message: AssistantMessage, offered: readonly EngineTool[]): Effect.Effect<Ended | "continue"> => Effect.gen(function* () {
+    if (yield* awaitInput(run)) { questionState(run).repairing = false; return "continue"; }
+    const repair = repairQuestion(run, message, offered);
+    return repair === "repair" ? "continue" : repair ?? { outcome: "completed" };
+  });
+
+  function afterCalls(run: number, signal: AbortSignal): Ended | undefined {
+    if (signal.aborted) return { outcome: "aborted", reason: stoppedReason };
+    const unresolved = questionState(run).unresolved;
+    return unresolved === undefined ? undefined : { outcome: "completed", incomplete: true, reason: unresolved };
+  }
+
   /**
    * The model's turns, until it answers without calling a tool and no input
    * waits, fails, or is stopped. After settlement sent the run back, the run
@@ -1036,12 +1102,14 @@ export function createLoop(options: LoopOptions): LoopSession {
       if (message.stopReason === "aborted" || signal.aborted) return { outcome: "aborted", reason: stoppedReason };
       const calls = message.content.filter((part): part is ToolCall => part.type === "toolCall");
       if (calls.length === 0) {
-        if (yield* awaitInput(run)) continue;
-        return { outcome: "completed" };
+        const end = yield* toolFreeEnd(run, message, offered);
+        if (end === "continue") continue;
+        return end;
       }
       const replyIndex = (replyIndexes.get(run) ?? 1) - 1;
       yield* runCalls(run, replyIndex, message, calls, signal, offered);
-      if (signal.aborted) return { outcome: "aborted", reason: stoppedReason };
+      const ended = afterCalls(run, signal);
+      if (ended !== undefined) return ended;
     }
   });
 
@@ -1104,22 +1172,23 @@ export function createLoop(options: LoopOptions): LoopSession {
     await Promise.all(handling);
     const ordinary = settled(run, generation, "extensions", await phase(run, generation, "extensions", ended.outcome, signal, ended.reason));
     const first = afterExtensions(ended.outcome, signal.aborted, ordinary.errors.length > 0, ordinary.continued, continuations,
-      continuationLimit);
+      continuationLimit, ended.incomplete === true);
     if (first === "continue") return { next: "continue", automatic: true };
     const verifying = first === "verify";
-    const why = signal.aborted ? stoppedReason : ordinary.errors.length > 0 ? `a settle handler failed: ${ordinary.errors.join("; ")}`
-      : ordinary.continued ? `settlement sent the run back ${continuationLimit} times` : ended.reason;
+    const question = ended.incomplete === true ? `; ${ended.reason}` : "";
+    const why = signal.aborted ? stoppedReason : ordinary.errors.length > 0 ? `a settle handler failed: ${ordinary.errors.join("; ")}${question}`
+      : ended.incomplete === true ? ended.reason : ordinary.continued ? `settlement sent the run back ${continuationLimit} times` : ended.reason;
     const told: RunOutcome = signal.aborted ? "aborted" : verifying ? "completed" : ended.outcome === "completed" ? "error" : ended.outcome;
-    const returned = await phase(run, generation, "verifier", told, signal, verifying ? undefined : why);
+    const returned = await phase(run, generation, "verifier", told, signal, verifying ? ended.reason : why);
     const verdict = settled(run, generation, "verifier", returned);
     const errors = [...ordinary.errors, ...verdict.errors];
     const next = afterVerifier(ended.outcome, verifying, signal.aborted, errors.length > 0, verdict.registered, verdict.continued,
-      queue.length > 0 || finishedJobs.length > 0, jobs.size > 0, continuations, continuationLimit);
+      queue.length > 0 || finishedJobs.length > 0, jobs.size > 0, continuations, continuationLimit, ended.incomplete === true);
     if (next === "continue") return { next: "continue", automatic: verdict.continued };
     const reason = next === "completed" ? undefined : next === "aborted" ? stoppedReason
-      : errors.length > 0 ? `a settle handler failed: ${errors.join("; ")}`
+      : errors.length > 0 ? `a settle handler failed: ${errors.join("; ")}${question}`
         : !verdict.registered ? "the verifier has no settle handler"
-          : verdict.continued ? `settlement sent the run back ${continuationLimit} times` : why;
+          : ended.incomplete === true ? why : verdict.continued ? `settlement sent the run back ${continuationLimit} times` : why;
     writer.append({ type: "run_end", run, outcome: next, ...reason === undefined ? {} : { reason } });
     writer.sync();
     closed = true;

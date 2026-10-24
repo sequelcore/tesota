@@ -1,4 +1,4 @@
-import { createModels, fauxProvider } from "@earendil-works/pi-ai";
+import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import { afterEach, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -68,7 +68,7 @@ test("an invalid question batch is a failed call the model can correct, without 
 test("a request asks the operator at most three times, and the next request may ask again", async () => {
   const ask = { tool: "ask_user", args: { questions } };
   let opened = 0;
-  const session = start([ask, ask, ask, ask, "decided", ask, "asked again"], {
+  const session = start([ask, ask, ask, ask, ask, "asked again"], {
     questions: (_batch, submit) => { opened++; submit([{ selected: [0] }]); return () => undefined; },
   });
   await session.prompt("Ask me.");
@@ -77,6 +77,7 @@ test("a request asks the operator at most three times, and the next request may 
   expect(results.map((result) => result.isError)).toEqual([false, false, false, true]);
   expect(results[3]?.text).toContain("three times");
   expect(session.ledger()[0]?.inputs).toHaveLength(3);
+  expect(session.outcome()).toBe("incomplete");
   await session.prompt("Another request.");
   expect(opened).toBe(4);
 });
@@ -279,7 +280,7 @@ test.each(["cancelled", "unavailable"] as const)("%s questions return a no-answe
     questions: (_batch, _submit, finish) => { finish({ status, reason: "The operator dismissed the questions." }); return () => { released++; }; },
   });
   await session.prompt("Ask me.");
-  expect(session.outcome()).toBe("completed");
+  expect(session.outcome()).toBe(status === "unavailable" ? "incomplete" : "completed");
   expect(session.ledger()[0]?.inputs).toEqual([]);
   expect(session.messages().filter((message) => message.role === "toolResult")).toMatchObject([{ isError: true }]);
   expect(released).toBe(status === "cancelled" ? 1 : 0);
@@ -344,4 +345,225 @@ test("a steer given while the next request starts stays before a later answer wh
   const answer = third.indexOf("The operator answered your question:");
   expect(steer).toBeGreaterThan(-1);
   expect(answer).toBeGreaterThan(steer);
+});
+
+test("repeated malformed native question calls terminate generation incomplete", async () => {
+  let generated = 0;
+  const bad = { tool: "ask_user", args: { questions: [] } };
+  const session = start([bad, bad, { seen: () => { generated++; }, reply: "must not generate" }], {
+    questions: () => { throw new Error("Malformed calls must not open a form."); },
+  });
+  await session.prompt("Ask me.");
+  expect(generated).toBe(0);
+  expect(session.outcome()).toBe("incomplete");
+  expect(session.messages().filter((message) => message.role === "toolResult")).toHaveLength(2);
+});
+
+test("an admitted question keeps the run open without settling until its answer", async () => {
+  let submit: QuestionSubmit = () => "not ready";
+  let ready = (): void => undefined;
+  const waiting = new Promise<void>((resolve) => { ready = resolve; });
+  let settled = 0;
+  const session = start([{ tool: "write", args: { path: "work.txt", content: "work before the question" } },
+    { tool: "ask_user", args: { questions } }, "done"], {
+    questions: (_batch, answer) => { submit = answer; ready(); return () => undefined; },
+    verifier: (pi) => { accepts(pi); pi.on("agent_before_settle", () => { settled++; }); },
+  });
+  const done = session.prompt("Choose.");
+  await waiting;
+  expect(settled).toBe(0);
+  expect(existsSync(join(session.workspace.cwd, "work.txt"))).toBe(true);
+  expect(session.ledger()).toHaveLength(1);
+  expect(readSessionFile(session.file).entries.some((entry) => entry.type === "run_end")).toBe(false);
+  submit([{ selected: [0] }]);
+  await done;
+  expect(settled).toBe(1);
+  expect(session.outcome()).toBe("completed");
+});
+
+const blockingQuestions = [
+  "Do you want me to re-run it then, or do you have another sign-in or an API key to use?",
+  "Which account should I use?", "Should I continue?", "Let me know which option to use.",
+  "Please choose an account.", "¿Quieres que lo intente otra vez?", "¿Qué cuenta debo usar?",
+  "¿Cuál prefieres?", "¿Debo continuar?", "Dime cuál prefieres.",
+  "Avísame qué cuenta debo usar.", "¿Lo intento de nuevo?", "¿Tienes otra cuenta?",
+];
+test.each(blockingQuestions)("one blocking prose decision gets one repair: %s", async (text) => {
+  let opened = 0;
+  const session = start([text, { tool: "ask_user", args: { questions } }, "Done."], {
+    questions: (_batch, submit) => { opened++; submit([{ selected: [0] }]); return () => undefined; },
+  });
+  await session.prompt("Help.");
+  expect(opened).toBe(1);
+  expect(session.outcome()).toBe("completed");
+  expect(session.ledger()).toHaveLength(1);
+});
+
+test.each(["?", '> Should I continue?', '"Which account should I use?"',
+  '```ts\nconst question = "Should I continue?";\n```',
+  '```text\n\nShould I continue?',
+  "The report covers the question ‘Which account should I use?’ and is complete.",
+  "## Which account?\n\nImplemented and tested the account selector.",
+  "The sign-in flow is implemented. Tests passed.",
+  "Avísame si quieres que continúe.",
+  "Done. Let me know if you want anything else.",
+  "All 12 tests pass. Which tests failed? None.",
+  "Listo. Confirma el resultado en la receta.",
+])("completed prose, code and quotes do not request repair: %s", async (text) => {
+  let generated = 0;
+  const session = start([text, { seen: () => { generated++; }, reply: "must not run" }], { questions: () => () => undefined });
+  await session.prompt("Report.");
+  expect(generated).toBe(0);
+  expect(session.outcome()).toBe("completed");
+});
+
+test("a second prose question finalizes incomplete and keeps the unresolved question", async () => {
+  let generated = 0;
+  const session = start(["Should I continue?", "Which account should I use?", {
+    seen: () => { generated++; }, reply: "must not run",
+  }], { questions: () => () => undefined });
+  await session.prompt("Help.");
+  expect(session.outcome()).toBe("incomplete");
+  expect(generated).toBe(0);
+  expect(JSON.stringify(readSessionFile(session.file).entries)).toContain("Unresolved question: Which account should I use?");
+});
+
+test("without a responder prose settles incomplete with no repair generation", async () => {
+  let generated = 0;
+  const session = start(["Should I continue?", { seen: () => { generated++; }, reply: "must not run" }]);
+  await session.prompt("Help.");
+  expect(session.outcome()).toBe("incomplete");
+  expect(generated).toBe(0);
+  expect(session.lastAssistantText()).toBe("Should I continue?");
+});
+
+test("question exhaustion cannot be restarted by either settlement phase", async () => {
+  const ask = { tool: "ask_user", args: { questions } };
+  let generated = 0;
+  const told: string[] = [];
+  const session = start([ask, ask, ask, ask, { seen: () => { generated++; }, reply: "must not run" }], {
+    questions: (_batch, submit) => { submit([{ selected: [0] }]); return () => undefined; },
+    extensions: [(pi) => { pi.on("agent_before_settle", () => ({ entries: [], continue: true })); }],
+    verifier: (pi) => { pi.on("agent_before_settle", (event) => { told.push(event.outcome); return { entries: [], continue: true }; }); },
+  });
+  await session.prompt("Ask.");
+  expect(generated).toBe(0);
+  expect(told).toEqual(["completed"]);
+  expect(session.outcome()).toBe("incomplete");
+  const end = readSessionFile(session.file).entries.find((entry) => entry.type === "run_end");
+  expect(end).toMatchObject({ reason: expect.stringContaining("three times") });
+});
+
+test("question bounds survive a verification continuation", async () => {
+  const ask = { tool: "ask_user", args: { questions } };
+  let opened = 0;
+  let settled = 0;
+  const session = start([ask, ask, ask, "Done.", ask, "must not run"], {
+    questions: (_batch, submit) => { opened++; submit([{ selected: [0] }]); return () => undefined; },
+    verifier: (pi) => { pi.on("agent_before_settle", () => ({ entries: [], continue: ++settled === 1 })); },
+  });
+  await session.prompt("Ask.");
+  expect(opened).toBe(3);
+  expect(settled).toBe(2);
+  expect(session.outcome()).toBe("incomplete");
+  expect(session.lastAssistantText()).not.toBe("must not run");
+});
+
+test("prose repair does not execute unrelated tools", async () => {
+  const session = start(["Should I continue?", { tool: "write", args: { path: "forbidden.txt", content: "bad" } }, "must not run"], {
+    questions: () => () => undefined,
+  });
+  await session.prompt("Help.");
+  expect(existsSync(join(session.workspace.cwd, "forbidden.txt"))).toBe(false);
+  expect(session.outcome()).toBe("incomplete");
+  expect(session.lastAssistantText()).not.toBe("must not run");
+});
+
+test("a skipped sibling question does not consume the shared repair allowance", async () => {
+  let opened = 0;
+  const ask = { tool: "ask_user", args: { questions } };
+  const session = start([{ calls: [ask, ask] }, "Should I continue?", ask, "Done."], {
+    questions: (_batch, submit) => { opened++; submit([{ selected: [0] }]); return () => undefined; },
+  });
+  await session.prompt("Help.");
+  expect(opened).toBe(2);
+  expect(session.outcome()).toBe("completed");
+});
+
+test("question bounds survive compaction and an amendment in the same run", async () => {
+  const provider = fauxProvider({ models: [{ id: "small", contextWindow: 1_000_000 }] });
+  let summaries = 0;
+  let generations = 0;
+  provider.setResponses(Array.from({ length: 20 }, () => (context) => {
+    const last = context.messages.at(-1)?.content;
+    if (typeof last === "string" && /summary contract|Update the previous summary/u.test(last)) {
+      summaries++;
+      return fauxAssistantMessage("## Goal\nAsk the operator.");
+    }
+    if (++generations === 3) return fauxAssistantMessage([], { stopReason: "error", errorMessage: "prompt is too long: 250000 tokens > 200000 maximum" });
+    return fauxAssistantMessage([fauxToolCall("ask_user", { questions })], { stopReason: "toolUse" });
+  }));
+  const registry = createModels();
+  registry.setProvider(provider.provider);
+  let opened = 0;
+  let submit: QuestionSubmit = () => "not ready";
+  let ready = (): void => undefined;
+  const waiting = new Promise<void>((resolve) => { ready = resolve; });
+  const session = start([], { models: registry, model: provider.getModel(), compaction: { reserve: 0, keep: 1 },
+    questions: (_batch, answer) => {
+      opened++;
+      if (opened === 3) { submit = answer; ready(); }
+      else answer([{ selected: [0] }]);
+      return () => undefined;
+    },
+  });
+  const done = session.prompt("Ask me.");
+  await waiting;
+  await session.prompt("Keep the same decision.", { streamingBehavior: "steer" });
+  submit([{ selected: [0] }]);
+  await done;
+  expect(summaries).toBeGreaterThan(0);
+  expect(readSessionFile(session.file).entries.some((entry) => entry.type === "compaction")).toBe(true);
+  expect(opened).toBe(3);
+  expect(session.outcome()).toBe("incomplete");
+  expect(session.ledger()).toHaveLength(1);
+  expect(session.ledger()[0]?.inputs.some((input) => input.kind === "amendment")).toBe(true);
+});
+
+test("dismissing a form is not a malformed-question repair", async () => {
+  let opened = 0;
+  const ask = { tool: "ask_user", args: { questions } };
+  const session = start([ask, "Should I continue?", ask, "Done."], {
+    questions: (_batch, submit, finish) => {
+      if (++opened === 1) finish({ status: "cancelled", reason: "The operator dismissed the question." });
+      else submit([{ selected: [0] }]);
+      return () => undefined;
+    },
+  });
+  await session.prompt("Help.");
+  expect(opened).toBe(2);
+  expect(session.outcome()).toBe("completed");
+  expect(session.messages().find((message) => message.role === "toolResult")?.text).not.toContain("one question repair");
+});
+
+test("an amendment after a text-only repair reply permits ordinary work", async () => {
+  const session = start(["Should I continue?", { seen: () => {
+    void session.prompt("Read the folder instead; no decision is needed.", { streamingBehavior: "steer" });
+  }, reply: "No decision is needed." }, { tool: "ls", args: {} }, "Done."], {
+    questions: () => () => undefined,
+  });
+  await session.prompt("Help.");
+  expect(session.outcome()).toBe("completed");
+  expect(session.messages().find((message) => message.role === "toolResult")).toMatchObject({ toolName: "ls", isError: false });
+});
+
+test("truncated native question attempts cannot evade either bound", async () => {
+  let generated = 0;
+  const cutOff = { calls: [{ tool: "ask_user", args: { questions: [] } }], cutOff: true };
+  const session = start([cutOff, cutOff, { seen: () => { generated++; }, reply: "must not run" }], {
+    questions: () => { throw new Error("Truncated calls must not open a form."); },
+  });
+  await session.prompt("Help.");
+  expect(generated).toBe(0);
+  expect(session.outcome()).toBe("incomplete");
 });

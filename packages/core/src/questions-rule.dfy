@@ -32,6 +32,26 @@ lemma askAccepted_ensures(asked: int)
 {
 }
 
+function questionRepair(blocking: bool, responder: bool, repaired: bool, asked: int): string
+  requires (asked >= 0)
+{
+  if !(blocking) then
+    "proceed"
+  else
+    if ((responder && !(repaired)) && (asked < 3)) then
+      "repair"
+    else
+      "incomplete"
+}
+
+lemma questionRepair_ensures(blocking: bool, responder: bool, repaired: bool, asked: int)
+  requires (asked >= 0)
+  ensures ((questionRepair(blocking, responder, repaired, asked) == "proceed") <==> !(blocking))
+  ensures ((questionRepair(blocking, responder, repaired, asked) == "repair") <==> (((blocking && responder) && !(repaired)) && (asked < 3)))
+  ensures ((questionRepair(blocking, responder, repaired, asked) == "incomplete") <==> (blocking && ((!(responder) || repaired) || (asked >= 3))))
+{
+}
+
 function answerAccepted(multiple: bool, selected: int, hasText: bool): bool
   requires (selected >= 0)
 {

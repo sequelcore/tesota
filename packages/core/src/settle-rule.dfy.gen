@@ -6,32 +6,39 @@ datatype AfterVerifier = continue_ | completed | incomplete | aborted | error
 
 datatype RunOutcome = completed | aborted | error
 
-function afterExtensions(run: RunOutcome, cancelled: bool, threw: bool, continued: bool, continuations: int, limit: int): AfterExtensions
+function afterExtensions(run: RunOutcome, cancelled: bool, threw: bool, continued: bool, continuations: int, limit: int, finalizing: bool): AfterExtensions
   requires (continuations >= 0)
   requires (limit >= 0)
 {
-  if ((cancelled || (!run.completed?)) || threw) then
+  if (cancelled || (!run.completed?)) then
     AfterExtensions.finalize
   else
-    if !(continued) then
+    if finalizing then
       AfterExtensions.verify
     else
-      if (continuations < limit) then
-        AfterExtensions.continue_
-      else
+      if threw then
         AfterExtensions.finalize
+      else
+        if !(continued) then
+          AfterExtensions.verify
+        else
+          if (continuations < limit) then
+            AfterExtensions.continue_
+          else
+            AfterExtensions.finalize
 }
 
-lemma afterExtensions_ensures(run: RunOutcome, cancelled: bool, threw: bool, continued: bool, continuations: int, limit: int)
+lemma afterExtensions_ensures(run: RunOutcome, cancelled: bool, threw: bool, continued: bool, continuations: int, limit: int, finalizing: bool)
   requires (continuations >= 0)
   requires (limit >= 0)
-  ensures (afterExtensions(run, cancelled, threw, continued, continuations, limit).continue_? <==> ((((run.completed? && !(cancelled)) && !(threw)) && continued) && (continuations < limit)))
-  ensures (afterExtensions(run, cancelled, threw, continued, continuations, limit).verify? <==> (((run.completed? && !(cancelled)) && !(threw)) && !(continued)))
-  ensures (afterExtensions(run, cancelled, threw, continued, continuations, limit).finalize? <==> (((cancelled || (!run.completed?)) || threw) || (continued && (continuations >= limit))))
+  ensures (afterExtensions(run, cancelled, threw, continued, continuations, limit, finalizing).continue_? <==> (((((run.completed? && !(finalizing)) && !(cancelled)) && !(threw)) && continued) && (continuations < limit)))
+  ensures (afterExtensions(run, cancelled, threw, continued, continuations, limit, finalizing).verify? <==> ((run.completed? && !(cancelled)) && (finalizing || (!(threw) && !(continued)))))
+  ensures (afterExtensions(run, cancelled, threw, continued, continuations, limit, finalizing).finalize? <==> ((cancelled || (!run.completed?)) || (!(finalizing) && (threw || (continued && (continuations >= limit))))))
+  ensures (finalizing ==> run.completed? ==> !(cancelled) ==> afterExtensions(run, cancelled, threw, continued, continuations, limit, finalizing).verify?)
 {
 }
 
-function afterVerifier(run: RunOutcome, verifying: bool, cancelled: bool, threw: bool, registered: bool, continued: bool, pending: bool, running: bool, continuations: int, limit: int): AfterVerifier
+function afterVerifier(run: RunOutcome, verifying: bool, cancelled: bool, threw: bool, registered: bool, continued: bool, pending: bool, running: bool, continuations: int, limit: int, finalizing: bool): AfterVerifier
   requires (continuations >= 0)
   requires (limit >= 0)
 {
@@ -41,7 +48,7 @@ function afterVerifier(run: RunOutcome, verifying: bool, cancelled: bool, threw:
     if (run.error? && !(threw)) then
       AfterVerifier.error
     else
-      if ((((!run.completed?) || !(verifying)) || threw) || !(registered)) then
+      if ((((finalizing || (!run.completed?)) || !(verifying)) || threw) || !(registered)) then
         AfterVerifier.incomplete
       else
         if continued then
@@ -56,16 +63,16 @@ function afterVerifier(run: RunOutcome, verifying: bool, cancelled: bool, threw:
             AfterVerifier.completed
 }
 
-lemma afterVerifier_ensures(run: RunOutcome, verifying: bool, cancelled: bool, threw: bool, registered: bool, continued: bool, pending: bool, running: bool, continuations: int, limit: int)
+lemma afterVerifier_ensures(run: RunOutcome, verifying: bool, cancelled: bool, threw: bool, registered: bool, continued: bool, pending: bool, running: bool, continuations: int, limit: int, finalizing: bool)
   requires (continuations >= 0)
   requires (limit >= 0)
-  ensures (afterVerifier(run, verifying, cancelled, threw, registered, continued, pending, running, continuations, limit).aborted? <==> (cancelled || run.aborted?))
-  ensures (afterVerifier(run, verifying, cancelled, threw, registered, continued, pending, running, continuations, limit).error? <==> ((!(cancelled) && run.error?) && !(threw)))
-  ensures (afterVerifier(run, verifying, cancelled, threw, registered, continued, pending, running, continuations, limit).continue_? <==> (((((!(cancelled) && run.completed?) && verifying) && !(threw)) && registered) && ((continued && (continuations < limit)) || (!(continued) && (pending || running)))))
-  ensures (afterVerifier(run, verifying, cancelled, threw, registered, continued, pending, running, continuations, limit).completed? <==> (((((((!(cancelled) && run.completed?) && verifying) && !(threw)) && registered) && !(continued)) && !(pending)) && !(running)))
-  ensures (afterVerifier(run, verifying, cancelled, threw, registered, continued, pending, running, continuations, limit).incomplete? <==> ((!(cancelled) && (!run.aborted?)) && ((run.error? && threw) || (run.completed? && (((!(verifying) || threw) || !(registered)) || (continued && (continuations >= limit)))))))
-  ensures (afterVerifier(run, verifying, cancelled, threw, registered, continued, pending, running, continuations, limit).completed? ==> ((((verifying && registered) && !(threw)) && !(cancelled)) && !(running)))
-  ensures (afterVerifier(run, verifying, cancelled, threw, registered, continued, pending, running, continuations, limit).continue_? ==> (run.completed? && !(cancelled)))
+  ensures (afterVerifier(run, verifying, cancelled, threw, registered, continued, pending, running, continuations, limit, finalizing).aborted? <==> (cancelled || run.aborted?))
+  ensures (afterVerifier(run, verifying, cancelled, threw, registered, continued, pending, running, continuations, limit, finalizing).error? <==> ((!(cancelled) && run.error?) && !(threw)))
+  ensures (afterVerifier(run, verifying, cancelled, threw, registered, continued, pending, running, continuations, limit, finalizing).continue_? <==> ((((((!(cancelled) && !(finalizing)) && run.completed?) && verifying) && !(threw)) && registered) && ((continued && (continuations < limit)) || (!(continued) && (pending || running)))))
+  ensures (afterVerifier(run, verifying, cancelled, threw, registered, continued, pending, running, continuations, limit, finalizing).completed? <==> ((((((((!(cancelled) && !(finalizing)) && run.completed?) && verifying) && !(threw)) && registered) && !(continued)) && !(pending)) && !(running)))
+  ensures (afterVerifier(run, verifying, cancelled, threw, registered, continued, pending, running, continuations, limit, finalizing).incomplete? <==> ((!(cancelled) && (!run.aborted?)) && ((run.error? && threw) || (run.completed? && ((((finalizing || !(verifying)) || threw) || !(registered)) || (continued && (continuations >= limit)))))))
+  ensures (afterVerifier(run, verifying, cancelled, threw, registered, continued, pending, running, continuations, limit, finalizing).completed? ==> ((((verifying && registered) && !(threw)) && !(cancelled)) && !(running)))
+  ensures (afterVerifier(run, verifying, cancelled, threw, registered, continued, pending, running, continuations, limit, finalizing).continue_? ==> (run.completed? && !(cancelled)))
 {
 }
 

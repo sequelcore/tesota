@@ -5,6 +5,22 @@ import * as Cause from "effect/Cause";
 import * as Exit from "effect/Exit";
 import { validateAnswers, validateQuestions } from "./questions-schema.ts";
 
+/** Last sentence of the last prose paragraph's direct request, excluding optional offers,
+ * quoted examples, headings and fenced/inline code.
+ * Deliberately a lexical heuristic: implicit decisions and other languages can be missed.
+ */
+export function blockingProseQuestion(text: string): string | undefined {
+  const prose = text.replace(/^[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^[ \t]*\1[^\n]*(?:\n|$)|(?![\s\S]))/gmu, "\n\n")
+    .replace(/^[ \t]*(?:>|#{1,6}\s| {4}|\t).*$/gmu, "")
+    .replace(/`[^`\n]*`|"[^"\n]*"|“[^”]*”|‘[^’]*’|«[^»]*»/gu, "");
+  const last = prose.trim().split(/\n\s*\n/u).at(-1)?.trim();
+  if (!last) return undefined;
+  const sentence = last.match(/[^.!?]+[.!?]*$/u)?.[0]?.trim();
+  if (!sentence) return undefined;
+  const direct = /^(?:(?:do you (?:want|have|prefer|need)|would you|can you|could you|should I|may I|which|what (?:is|are|should|do)|how (?:should|can) I)\b[^?]*\?|¿\p{L}[^?]*\?|(?:please (?:choose|select|provide|confirm)|let me know (?:which|whether)|dime (?:cuál|qué|si)|avísame (?:cuál|qué)|elige)(?=\s).+)[.!?]*$/iu;
+  return direct.test(sentence) ? last : undefined;
+}
+
 export type QuestionOutcome =
   | { readonly status: "answered"; readonly answers: readonly ClarificationAnswer[] }
   | { readonly status: "cancelled"; readonly reason: string }

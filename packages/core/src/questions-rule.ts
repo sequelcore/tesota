@@ -10,11 +10,21 @@ export function optionCountAccepted(count: number): boolean {
   return count >= 2 && count <= 4;
 }
 
-/** Whether a request that already asked the operator `asked` times may ask once more. */
+/** Whether a request that already attempted `asked` batches may try once more. */
 //@ requires asked >= 0
 //@ ensures \result <==> asked < 3
 export function askAccepted(asked: number): boolean {
   return asked < 3;
+}
+
+/** A blocking question gets one repair, only with a responder and a batch left. */
+//@ requires asked >= 0
+//@ ensures \result === "proceed" <==> !blocking
+//@ ensures \result === "repair" <==> blocking && responder && !repaired && asked < 3
+//@ ensures \result === "incomplete" <==> blocking && (!responder || repaired || asked >= 3)
+export function questionRepair(blocking: boolean, responder: boolean, repaired: boolean, asked: number): "proceed" | "repair" | "incomplete" {
+  if (!blocking) return "proceed";
+  return responder && !repaired && asked < 3 ? "repair" : "incomplete";
 }
 
 /** Whether one answer has enough input and obeys a single-choice question. */

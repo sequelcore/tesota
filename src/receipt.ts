@@ -40,6 +40,8 @@ export interface Receipt {
   readonly reason?: string;
   /** Why the run ended before Tesota verified anything; present only then. */
   readonly stopped?: string;
+  /** Generation ended with this unresolved question; verification still settled the changes. */
+  readonly unresolvedQuestion?: string;
   /** The commit `HEAD` named when the operator's request started; null before the first commit and outside Git. */
   readonly base: string | null;
   /** When the operator's request started and when its run settled, in ISO 8601. */
@@ -265,9 +267,10 @@ export function allEvidence(receipt: Receipt): UnitEvidence {
  */
 export function unitReceipt(receipt: Receipt, folder: string): Receipt | undefined {
   const unit = receipt.units?.find((candidate) => candidate.folder === folder && candidate.repository);
-  const { version, startedAt, settledAt, engine, model, clarifications } = receipt;
+  const { version, startedAt, settledAt, engine, model, clarifications, unresolvedQuestion } = receipt;
   return unit === undefined ? undefined : { ...unit, version, startedAt, settledAt, engine, ...model === undefined ? {} : { model },
-    ...clarifications === undefined ? {} : { clarifications } };
+    ...clarifications === undefined ? {} : { clarifications },
+    ...unresolvedQuestion === undefined ? {} : { unresolvedQuestion } };
 }
 
 /** How a folder in no repository is named: the folder the session runs in holds only its own files there. */
@@ -293,13 +296,14 @@ function line(path: string, verdict: GateVerdict, evidence: Evidence, assumed: n
   if (verdict === "proved") return `  proved        ${path}${assumed === 0 ? "" : `, ${trusting(assumed)} the change added`}`;
   if (verdict === "operator") return `  NOT proved    ${path}: the proof ${why(evidence)}`;
   const what = evidence.outcome === "vacuous" ? "Dafny verified nothing" : "an obligation fails";
-  return `  NOT proved    ${path}: ${what}, repeating a failure already sent back`;
+  return `  NOT proved    ${path}: ${what}${verdict === "send_back" ? "; generation ended before repair" : ", repeating a failure already sent back"}`;
 }
 
 function testLine({ command, verdict, evidence, failingTests }: Receipt["tests"][number]): string {
   if (evidence.invalidated === "content_changed") return `  stale         ${command}: ${staleEvidenceWords}`;
   if (verdict === "proved") return `  passed        ${command}`;
   if (verdict === "operator") return `  NOT passed    ${command}: it ${why(evidence)}`;
+  if (verdict === "send_back") return `  NOT passed    ${command}: it fails; generation ended before repair${failingTests === undefined ? "" : `: ${failingTests.join("; ")}`}`;
   if (failingTests === undefined || failingTests.length === 0) {
     return `  NOT passed    ${command}: it still fails after its failure went back`;
   }
@@ -616,12 +620,13 @@ function modelLines(model: ModelResult): string[] {
       ...abstraction, `                content sha256 ${model.evidence.contentHash}`, ...stale];
   }
   if (verdict === "operator") return [`  not checked   ${path}: ${modelWhy(model)}`, ...stale];
+  const unrepaired = "; generation ended before repair";
   if (counterexample !== undefined) {
-    return [`  model fails   ${path}: ${counterexample.violation}, repeating a counterexample already sent back`,
+    return [`  model fails   ${path}: ${counterexample.violation}${verdict === "send_back" ? unrepaired : ", repeating a counterexample already sent back"}`,
       ...counterexampleSteps(counterexample).map((step) => `                ${step}`), ...abstraction, ...stale];
   }
-  return [model.run === "passed" ? `  weak model    ${path}: ${failingFaults(model)}, after they went back`
-    : `  NOT checked   ${path}: ${modelWhy(model)}, repeating a failure already sent back`, ...stale];
+  return [model.run === "passed" ? `  weak model    ${path}: ${failingFaults(model)}${verdict === "send_back" ? unrepaired : ", after they went back"}`
+    : `  NOT checked   ${path}: ${modelWhy(model)}${verdict === "send_back" ? unrepaired : ", repeating a failure already sent back"}`, ...stale];
 }
 
 /**
@@ -728,7 +733,9 @@ export function receiptFindings(receipt: Receipt): Finding[] {
     return [{ standing: "decide", check: "coverage", label: "Not verified", subject: "this request's changes",
       detail: receipt.stopped, more: [] }];
   }
-  return [...receipt.units === undefined ? unitFindings(receipt) : receipt.units.flatMap((unit) => verified(unit)
+  return [...receipt.unresolvedQuestion === undefined ? [] : [{ standing: "decide" as const, check: "request" as const,
+    label: "Incomplete", subject: "unresolved question", detail: receipt.unresolvedQuestion, more: [] }],
+  ...receipt.units === undefined ? unitFindings(receipt) : receipt.units.flatMap((unit) => verified(unit)
     ? unitFindings(fromFolder(unit)) : [{ standing: "decide" as const, check: "coverage" as const, label: "Not verified",
       subject: plainName(unit.folder), detail: plainReason(unit), more: [] }]), ...openCaseFindings(receipt.openCases)];
 }
@@ -844,7 +851,7 @@ export function receiptStanding(receipt: Receipt): "verified" | "incomplete" | "
   if (receipt.stopped === undefined && receiptDecisions(receipt) === 0) return "verified";
   // A folder of repositories keeps its checks in its units, as the footer reads them too.
   const { proofs, tests, models = [] } = allEvidence(receipt);
-  return [...proofs, ...tests].some(({ verdict }) => verdict !== "proved") || models.some(({ verdict }) => verdict === "no_progress")
+  return [...proofs, ...tests].some(({ verdict }) => verdict !== "proved") || models.some(({ verdict }) => verdict === "no_progress" || verdict === "send_back")
     ? "failed" : "incomplete";
 }
 
@@ -1099,7 +1106,8 @@ export function renderReceiptMessage(receipt: Receipt): string {
 /** Shared evidence wording for terminal text and chat Markdown. */
 function receiptLines(receipt: Receipt): string[] {
   if (receipt.stopped !== undefined) return [`  not verified  this request's changes: ${receipt.stopped}`];
-  return [...receipt.units === undefined ? unitLines(receipt) : receipt.units.flatMap((unit) => verified(unit)
+  return [...receipt.unresolvedQuestion === undefined ? [] : [`  incomplete    ${receipt.unresolvedQuestion}`],
+  ...receipt.units === undefined ? unitLines(receipt) : receipt.units.flatMap((unit) => verified(unit)
     ? unitLines(fromFolder(unit)) : [`  not verified  ${plainName(unit.folder)}: ${plainReason(unit)}`]),
   // One row for the whole change, every repository's lines together, last: it sums up the diff, not the evidence.
   ...linesRow(allEvidence(receipt).lines),
