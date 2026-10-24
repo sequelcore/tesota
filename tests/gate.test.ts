@@ -370,28 +370,74 @@ function prepareIncoming(root: string, action: string): void {
     git(root, "checkout", "admission");
     git(root, "branch", "-D", "upstream");
     git(root, "config", "test.source", source);
+  } else if (action === "fetch") {
+    // A remote not called origin, tracked at admission; its newer commit, made before the request, arrives by fetch.
+    git(root, "checkout", "admission");
+    git(root, "branch", "-D", "upstream");
+    const other = folder();
+    git(root, "clone", "-q", root, other);
+    git(root, "remote", "add", "hub", other);
+    git(root, "fetch", "-q", "hub");
+    write(other, { "test/imported.test.mjs": priceTest(1, 1, "imported"), "src/imported.ts": contract });
+    git(other, "add", "-A");
+    expect(spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "older upstream"],
+      { cwd: other, encoding: "utf8", env: { ...process.env, GIT_COMMITTER_DATE: "2000-01-01T00:00:00Z" } }).status).toBe(0);
+  } else if (action === "push") {
+    git(root, "checkout", "admission");
+    const mirror = folder();
+    git(mirror, "init", "-q", "--bare");
+    git(root, "remote", "add", "mirror", mirror);
+  } else if (action === "pruned") {
+    // A tag at admission whose commit is gone by the end: the starting refs cannot be read.
+    const tree = spawnSync("git", ["rev-parse", "HEAD^{tree}"], { cwd: root, encoding: "utf8" }).stdout.trim();
+    const scratch = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit-tree", tree, "-m", "scratch"],
+      { cwd: root, encoding: "utf8" }).stdout.trim();
+    git(root, "tag", "scratch", scratch);
+    git(root, "checkout", "admission");
   } else git(root, "checkout", "admission");
 }
 
 function moveHistory(root: string, action: string): void {
   if (action === "mixed") { write(root, { "local.txt": "during request\n" }); commit(root, "own work"); }
-  if (action === "merge" || action === "mixed" || action === "remote") git(root, "-c", "user.name=t", "-c", "user.email=t@t", "merge", "--no-edit",
+  if (action === "merge" || action === "mixed" || action === "remote" || action === "merge-deleted") git(root, "-c", "user.name=t", "-c", "user.email=t@t", "merge", "--no-edit",
     action === "remote" ? "refs/remotes/elsewhere/topic" : "upstream");
+  // A branch that existed at admission still marks its commits imported after it is deleted.
+  if (action === "merge-deleted") git(root, "branch", "-D", "upstream");
+  if (action === "fetch") { git(root, "fetch", "-q", "hub"); git(root, "merge", "-q", "--ff-only", "hub/admission"); }
+  if (action === "subagent") mergeSubagent(root);
   if (action === "url") {
     const source = spawnSync("git", ["config", "test.source"], { cwd: root, encoding: "utf8" }).stdout.trim();
     git(root, "-c", "user.name=t", "-c", "user.email=t@t", "pull", "--no-rebase", source, "upstream");
   }
   if (action === "switch") git(root, "switch", "upstream");
   if (action === "rebase") git(root, "-c", "user.name=t", "-c", "user.email=t@t", "rebase", "upstream");
-  if (action === "commit" || action === "unchanged" || action === "amend") {
-    write(root, { "test/imported.test.mjs": priceTest(1, 1, "imported"), "src/imported.ts": contract });
-    if (action === "commit") commit(root, "local expectations");
-    // Rewriting the admission commit makes new, timely, unshared commits; only its broken ancestry withholds credit.
-    if (action === "amend") { git(root, "add", "-A"); git(root, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--amend", "--no-edit"); }
-  }
+  if (["commit", "unchanged", "amend", "push", "pruned", "tag"].includes(action)) localWork(root, action);
 }
 
-it.each(["merge", "remote", "url", "switch", "rebase", "amend", "mixed", "commit", "unchanged"])("attributes %s history and exports the settled checkout (#599)", async (action) => {
+/** A writing subagent's worktree branch, created during the request and merged back. */
+function mergeSubagent(root: string): void {
+  const child = folder();
+  git(root, "worktree", "add", "-q", "-b", "child", child);
+  write(child, { "test/imported.test.mjs": priceTest(1, 1, "imported"), "src/imported.ts": contract });
+  commit(child, "subagent expectations");
+  git(root, "-c", "user.name=t", "-c", "user.email=t@t", "merge", "--no-ff", "--no-edit", "child");
+}
+
+/** The request's own edits in the checkout, committed, pushed or amended as `action` names. */
+function localWork(root: string, action: string): void {
+  write(root, { "test/imported.test.mjs": priceTest(1, 1, "imported"), "src/imported.ts": contract });
+  if (action === "commit" || action === "push" || action === "pruned" || action === "tag") commit(root, "local expectations");
+  if (action === "push") git(root, "push", "-q", "mirror", "admission");
+  if (action === "tag") git(root, "tag", "published");
+  if (action === "pruned") { git(root, "tag", "-d", "scratch"); git(root, "reflog", "expire", "--expire=now", "--all"); git(root, "gc", "-q", "--prune=now"); }
+  // Rewriting the admission commit makes new, timely, unshared commits; only its broken ancestry withholds credit.
+  if (action === "amend") { git(root, "add", "-A"); git(root, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--amend", "--no-edit"); }
+}
+
+/** The request's own history: pushing it or merging a branch the request created keeps credit (#599). */
+const credited = new Set(["commit", "unchanged", "push", "subagent", "tag"]);
+
+it.each(["merge", "merge-deleted", "remote", "fetch", "url", "switch", "rebase", "amend", "mixed", "pruned", "commit", "unchanged", "push", "subagent", "tag"])("attributes %s history and exports the settled checkout (#599)", async (action) => {
   const root = testedProject();
   git(root, "branch", "admission");
   git(root, "checkout", "-b", "upstream");
@@ -413,8 +459,8 @@ it.each(["merge", "remote", "url", "switch", "rebase", "amend", "mixed", "commit
   expect(receipt.proofs.map(({ path }) => path)).toContain("src/imported.ts");
   expect(receipt.changed).toEqual(expect.arrayContaining([expect.objectContaining({ path: "test/imported.test.mjs" })]));
   const texts = [renderReceipt(receipt), receiptMarkdown(receipt, { commit: "abc", owner: "t", sessionId: action, stale: [], changedAfter: [] })];
-  for (const text of texts) expect(text.match(/compared with the request's start/giu) ?? []).toHaveLength(action === "commit" || action === "unchanged" ? 0 : 1);
-  if (action === "unchanged" || action === "commit") {
+  for (const text of texts) expect(text.match(/compared with the request's start/giu) ?? []).toHaveLength(credited.has(action) ? 0 : 1);
+  if (credited.has(action)) {
     expect(receiptFindings(receipt).some(({ label }) => label === "Attribution unresolved")).toBe(false);
     expect(await subjectOf(root, receipt, action, "operator")).toMatchObject({ changedAfter: action === "unchanged" ? ["src/imported.ts", "test/imported.test.mjs"] : [] });
     expect(receipt.exercises.length).toBeGreaterThan(0);
@@ -439,6 +485,23 @@ it.each(["merge", "remote", "url", "switch", "rebase", "amend", "mixed", "commit
     commit(root, "edit after settlement");
     expect(await subjectOf(root, receipt, "history", "operator")).toMatchObject({ changedAfter: ["test/imported.test.mjs"] });
   }
+});
+
+it.each([true, false])("credits the request's commits only when the ledger recorded the starting refs (recorded: %s, #599)", async (recordedRefs) => {
+  const root = testedProject();
+  const commitId = spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).stdout.trim();
+  const refs = spawnSync("git", ["for-each-ref", "--format=%(objectname)"], { cwd: root, encoding: "utf8" }).stdout.trim().split("\n");
+  const at = new Date().toISOString();
+  const run = gate(root, undefined, {}, () => ({ text: "fix it", at, inputs: [],
+    base: { units: [{ folder: "", kind: "commit", commit: commitId, ...recordedRefs ? { refs } : {} }] } }));
+  await run.input();
+  await run.tool("bash");
+  write(root, { "test/imported.test.mjs": priceTest(1, 1, "imported") });
+  commit(root, "the request's commit");
+  const receipt = entry(await run.settle()).details as Receipt;
+  expect(receipt.tests[0]?.evidence.outcome).toBe("passed");
+  expect(receiptFindings(receipt).some(({ label }) => label === "Attribution unresolved")).toBe(!recordedRefs);
+  expect(receipt.exercises.length > 0).toBe(recordedRefs);
 });
 
 it("keeps history that moved between admission and the first tool in scope (#599)", async () => {
@@ -1529,13 +1592,18 @@ function workspace(): string {
 it("verifies each repository the request changed in a folder of repositories, from its own base with its own commands", async () => {
   const root = workspace();
   const rulesBase = await headCommit(join(root, "rules"));
+  // A branch that exists at admission, with a commit of its own, that the request merges in (#599).
+  const published = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", "published"],
+    { cwd: join(root, "rules"), encoding: "utf8" }).stdout.trim();
+  git(join(root, "rules"), "branch", "published", published);
   const run = gate(root);
   await run.input();
   await run.tool("edit");
   write(join(root, "api"), { "src/price.mjs": "export const total = (n) => Math.max(n, 0);\n" });
   writeFileSync(join(root, "rules", "src", "rule.ts"), `${contract}// changed\n`);
   commit(join(root, "rules"), "the agent's commit");
-  git(join(root, "rules"), "tag", "published"); // Another ref reaches it: only this unit loses credit.
+  // That branch reaches the merged history: only this unit loses credit.
+  git(join(root, "rules"), "-c", "user.name=t", "-c", "user.email=t@t", "merge", "-q", "--no-edit", "published");
   write(root, { "notes/todo.md": "- one\n- two\n" });
   const settled = await run.settle();
   expect(settled?.continue).toBeUndefined();

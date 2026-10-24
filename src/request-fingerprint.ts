@@ -6,6 +6,7 @@ import { attributePath, fingerprintEligible, historyAttributable } from "./verif
 export interface HistoryFacts {
   readonly sameBranch: boolean;
   readonly descends: boolean;
+  /** No commit in H..HEAD is reached by a ref's tip as recorded at admission. */
   readonly exclusive: boolean;
   readonly timely: boolean;
 }
@@ -121,16 +122,30 @@ export async function captureFingerprint(root: string): Promise<Fingerprint> {
       branch: status.split("\0").find((field) => field.startsWith("# branch.head "))?.slice(14) ?? "", blobs, unmeasured };
 }
 
-/** Read Git facts only; the proved rule owns the attribution decision. Missing reads never grant credit. */
+/**
+ * The objects every local branch, remote-tracking ref and tag named at admission H, whatever the remote is
+ * called, deduplicated and sorted; undefined when Git cannot list them. A tip H already reaches cannot reach
+ * a commit in H..HEAD, so it is left out, keeping the ledger small however many tags a repository has.
+ */
+export async function refTips(root: string, base: string | null): Promise<readonly string[] | undefined> {
+  const listed = await git(root, ["for-each-ref", "--format=%(objectname)", ...base === null ? [] : [`--no-merged=${base}`],
+    "refs/heads", "refs/remotes", "refs/tags"]);
+  return listed === undefined ? undefined : [...new Set(listed.split(/\r?\n/u).filter(Boolean))].sort();
+}
+
+/**
+ * Read Git facts only; the proved rule owns the attribution decision. Missing reads never grant credit.
+ * `refs` are the tips `refTips` recorded at admission: a ref the request moved or created withholds nothing.
+ */
 export async function historyFacts(root: string, base: string | null, start: Fingerprint, end: Fingerprint,
-  startedAt: string): Promise<HistoryFacts | undefined> {
-  if (base === null || start.status !== "known" || end.status !== "known" || end.head === null) return undefined;
+  startedAt: string, refs: readonly string[] | undefined): Promise<HistoryFacts | undefined> {
+  if (base === null || refs === undefined || start.status !== "known" || end.status !== "known" || end.head === null) return undefined;
   // H descends to HEAD exactly when it is their merge base; no common ancestor at all is a failed read.
   const ancestor = await git(root, ["merge-base", base, end.head]);
   const range = await git(root, ["log", "--no-show-signature", "--format=%H %ct", `${base}..${end.head}`]);
-  // Subtract every other branch, remote-tracking ref and tag in one history walk, not one process per commit.
-  const unshared = await git(root, ["rev-list", `${base}..${end.head}`, "--not",
-    `--exclude=${end.branch}`, "--branches", "--remotes", "--tags"]);
+  // Subtract every starting tip in one history walk, read from stdin so no count of refs passes the command line's limit.
+  // A tip whose object is gone fails the walk: starting refs that cannot be read resolve nothing.
+  const unshared = await git(root, ["rev-list", "--stdin", `${base}..${end.head}`], refs.map((tip) => `^${tip}\n`).join(""));
   if (ancestor === undefined || range === undefined || unshared === undefined) return undefined;
   const exclusiveIds = new Set(unshared.trim().split(/\r?\n/u).filter(Boolean));
   let exclusive = true;

@@ -198,10 +198,14 @@ attribution (including null before the first commit). Otherwise the end
 capture's optional `history` records four boolean facts: `sameBranch`,
 `descends`, `exclusive`, and `timely`. All four must be true: the branch is
 unchanged, `base` is an ancestor of the end HEAD, no commit in `base..HEAD`
-is reached by another local branch, any remote-tracking ref or any tag, and
-every commit's committer date is at or after the request's start, at Git's
-whole-second precision. No branch or remote name is assumed. Missing facts
-or failed reads cannot resolve moved history. The same proved pure rule
+is reached by a local branch, remote-tracking ref or tag as each pointed
+when the request was admitted, and every commit's committer date is at or
+after the request's start, at Git's whole-second precision. Admission
+records those tips that `base` does not already reach, with `base`; they are
+not part of the receipt. No branch
+or remote name is assumed. Missing facts, starting refs that were not
+recorded or cannot be read, and other failed reads cannot resolve moved
+history. The same proved pure rule
 governs gate selection and every presentation surface.
 
 An unresolved unit still records all observed `changed` paths and final
@@ -220,14 +224,20 @@ receipts. If a stored receipt has measurements but lacks readable captures,
 its notice qualifies those recorded measurements rather than claiming they
 never ran; its exercise provenance is not presented as request authorship.
 
-Ordinary local commits can keep contribution-specific credit. The remaining
-ambiguity is a fast-forward to a local commit that already existed, made
-inside the request's time and reached by no other ref: it is credited, as
-is a URL pull of commits made during the request or dated ahead. Pushing
-during the request, or merging another local branch such as a subagent's,
-leaves those commits reached by another ref, so attribution stays
-unresolved. Squash merges, cherry-picks and applied patches can likewise create new
-commits that satisfy these facts; they do not prove authorship. Making the
+Ordinary local commits keep contribution-specific credit, as do pushing
+them during the request and merging a branch the request created, such as a
+subagent's, or tagging them: a ref withholds only the commits its tip
+reached at admission, so one the request moved or created withholds none of
+the request's own. Merging a
+branch that existed at admission, or a fetch of commits made before the
+request, stays unresolved. The remaining ambiguity: commits someone else
+made during the request that no starting tip reached are credited once
+merged, such as a fetch of upstream work committed during the request or
+new commits on a branch that existed at admission; so are a fast-forward to
+a commit no ref reached at admission, made inside the request's time, and
+a URL pull of commits made during the request or dated ahead. Squash
+merges, cherry-picks and applied patches can likewise create new commits
+that satisfy these facts; they do not prove authorship. Making the
 first commit in an unborn repository stays unresolved, since there is no
 admission commit from which to establish ancestry.
 `inherited` is not widened to mean imported work. Retaining imported paths in `changed` also keeps

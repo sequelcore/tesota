@@ -548,7 +548,7 @@ describe("the gate on @tesota/core", () => {
     await session.prompt("add notes");
     const [request] = session.ledger();
     expect(receiptOf(session)).toMatchObject({ base: git(cwd, "rev-parse", "HEAD"), startedAt: request?.at });
-    expect(request?.base.units).toEqual([{ folder: "", kind: "commit", commit: git(cwd, "rev-parse", "HEAD") }]);
+    expect(request?.base.units).toEqual([{ folder: "", kind: "commit", commit: git(cwd, "rev-parse", "HEAD"), refs: [] }]);
   });
 });
 

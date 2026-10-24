@@ -4,7 +4,10 @@ export function fingerprintEligible(known: boolean, headMoved: boolean, pathChan
   return !known || headMoved || pathChanged || unmeasured;
 }
 
-/** Credit needs unchanged history or a same-branch descent of exclusively reached, timely commits. */
+/**
+ * Credit needs unchanged history or a same-branch descent of timely commits that no ref's tip at admission
+ * reached (`exclusive`); unrecorded or unreadable starting refs leave `exclusive` false.
+ */
 //@ ensures \result <==> (!repository || (startKnown && endKnown && startAtBase && (endAtBase || (sameBranch && descends && exclusive && timely))))
 export function historyAttributable(repository: boolean, startKnown: boolean, endKnown: boolean,
   startAtBase: boolean, endAtBase: boolean, sameBranch: boolean, descends: boolean, exclusive: boolean, timely: boolean): boolean {
