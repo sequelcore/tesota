@@ -2,7 +2,8 @@ import { expect, it } from "vitest";
 import { type RemovedLine, changedLines } from "../src/diff-lines.js";
 import { bodilessLemmas, commentLines, type FileChange, provedOnTrust, weakenedEvidence, withGrammarComments }
   from "../src/verification-changes.js";
-import { addsItems, removalCounts, testWeakens, type Token, type TokenKind } from "../src/verification/test-weakening-rule.js";
+import { addsItems, assertionChange, removalCounts, testWeakens, type Token, type TokenKind }
+  from "../src/verification/test-weakening-rule.js";
 import { weakens } from "../src/verification/weakening-rule.js";
 
 const numbered = (...lines: string[]): RemovedLine[] => lines.map((text, k) => ({ number: k + 1, base: k + 1, text }));
@@ -26,11 +27,12 @@ it("weakens on a removed requires or ensures, a requires added to an existing fu
 });
 
 it("weakens tests on a deleted file, or an edit that removes a line that counts or changes how tests run", () => {
-  expect(removalCounts(false, false, false, false)).toBe(true);
-  expect(removalCounts(true, false, false, false)).toBe(false);
-  expect(removalCounts(false, true, false, false)).toBe(false);
-  expect(removalCounts(false, false, true, false)).toBe(false);
-  expect(removalCounts(false, false, false, true)).toBe(false);
+  expect(removalCounts(false, false, false, false, false)).toBe(true);
+  expect(removalCounts(true, false, false, false, false)).toBe(false);
+  expect(removalCounts(false, true, false, false, false)).toBe(false);
+  expect(removalCounts(false, false, true, false, false)).toBe(false);
+  expect(removalCounts(false, false, false, true, false)).toBe(false);
+  expect(removalCounts(false, false, false, false, true)).toBe(false);
   expect(testWeakens("deleted", false, false)).toBe(true);
   expect(testWeakens("modified", true, false)).toBe(true);
   expect(testWeakens("modified", false, true)).toBe(true);
@@ -155,7 +157,157 @@ it("flags an in-place edit that changes an assertion, its expected value, a skip
     ["elsewhere", ["-setup(a);", " check(a);", "+setup(a, b);"]],
   ];
   const changes = cases.map(([name, lines]) => hunk(`tests/${name}.test.ts`, lines));
-  expect(weakenedEvidence(changes)).toEqual(cases.map(([name]) => ({ path: `tests/${name}.test.ts`, kind: "edited_test" })));
+  // Each is flagged; what it says of each test is the subject of the tests below (#646).
+  expect(weakenedEvidence(changes).map(({ path, kind }) => ({ path, kind })))
+    .toEqual(cases.map(([name]) => ({ path: `tests/${name}.test.ts`, kind: "edited_test" })));
+});
+
+it("decides how a changed assertion on the same subject changed: kept, tightened, loosened, a not dropped, or changed (#646)", () => {
+  expect(assertionChange(false, false, "same")).toBe("kept");
+  expect(assertionChange(false, false, "stricter")).toBe("tightened");
+  expect(assertionChange(false, false, "weaker")).toBe("loosened");
+  expect(assertionChange(false, false, "ranked_weaker")).toBe("loosened");
+  expect(assertionChange(false, false, "other")).toBe("changed");
+  // Under a not on both sides an implication turns around; a rank alone does not.
+  expect(assertionChange(true, true, "weaker")).toBe("tightened");
+  expect(assertionChange(true, true, "stricter")).toBe("loosened");
+  expect(assertionChange(true, true, "ranked_weaker")).toBe("changed");
+  expect(assertionChange(true, false, "same")).toBe("dropped_not");
+  expect(assertionChange(true, false, "stricter")).toBe("dropped_not");
+  expect(assertionChange(false, true, "weaker")).toBe("changed");
+});
+
+/** A test file's change, from one hunk, as `hunk` reads it, under `path`. */
+const testHunk = (path: string, ...lines: string[]): FileChange => hunk(path, lines);
+
+it("says which assertion a test edit loosened, with the number of tests unchanged (#646)", () => {
+  const loosened = testHunk("tests/add.test.ts",
+    " import { add } from \"../src/add.js\";",
+    " it(\"adds\", () => {",
+    "-  expect(add(1, 2)).toBe(3);",
+    "+  expect(add(1, 2)).toBeTruthy();",
+    " });",
+    " it(\"adds none\", () => {",
+    "   expect(add()).toBe(0);",
+    " });");
+  // The same two tests on each side: a count of tests sees nothing.
+  for (const side of [loosened.baseContent, loosened.content]) expect(side?.match(/\bit\(/gu)).toHaveLength(2);
+  expect(weakenedEvidence([loosened])).toEqual([{ path: "tests/add.test.ts", kind: "edited_test", tests: [
+    { test: "adds", edits: [{ kind: "loosened_assertion", subject: "expect(add(1, 2))", before: "toBe(3)", after: "toBeTruthy()" }] },
+  ] }]);
+});
+
+it("says which expected value a test edit widened, which not it dropped and which assertion it removed (#646)", () => {
+  const edited = testHunk("src/price.spec.ts",
+    " describe(\"price\", () => {",
+    "   test(\"rounds\", () => {",
+    "-    expect(price(1.005)).toBeCloseTo(1.01, 5);",
+    "+    expect(price(1.005)).toBeCloseTo(1.01, 1);",
+    "-    expect(label(1)).toMatch(\"total: 1.00\");",
+    "+    expect(label(1)).toMatch(\"total\");",
+    "   });",
+    "   test(\"never negative\", () => {",
+    "-    expect(price(-1)).not.toBeLessThan(0);",
+    "+    expect(price(-1)).toBeLessThan(0);",
+    "     expect(price(0)).toBe(0);",
+    "-    expect(price(-2)).toBe(0);",
+    "   });",
+    " });");
+  expect(weakenedEvidence([edited])).toEqual([{ path: "src/price.spec.ts", kind: "edited_test", tests: [
+    { test: "price › rounds", edits: [
+      { kind: "loosened_assertion", subject: "expect(price(1.005))", before: "toBeCloseTo(1.01, 5)", after: "toBeCloseTo(1.01, 1)" },
+      { kind: "loosened_assertion", subject: "expect(label(1))", before: "toMatch(\"total: 1.00\")", after: "toMatch(\"total\")" },
+    ] },
+    { test: "price › never negative", edits: [
+      { kind: "dropped_not", subject: "expect(price(-1))", before: "not.toBeLessThan(0)", after: "toBeLessThan(0)" },
+      { kind: "removed_assertion", assertion: "expect(price(-2)).toBe(0)" },
+    ] },
+  ] }]);
+});
+
+it("says which test or case an edit skips or focuses, in Bun's, Vitest's and Jest's words (#646)", () => {
+  const marked = (marker: string, line: string): [string, FileChange] =>
+    [marker, testHunk("tests/clamp.test.ts", `-it("clamps", () => {`, `+${line}`, "   expect(clamp(5)).toBe(2);", " });")];
+  const cases = [
+    marked("it.skip", "it.skip(\"clamps\", () => {"),
+    marked("xit", "xit(\"clamps\", () => {"),
+    marked("it.todo", "it.todo(\"clamps\", () => {"),
+    marked("it.skipIf", "it.skipIf(process.env.CI)(\"clamps\", () => {"),
+    marked("it.if", "it.if(false)(\"clamps\", () => {"),
+    marked("{ skip: true }", "it(\"clamps\", { skip: true }, () => {"),
+  ];
+  for (const [marker, change] of cases) {
+    expect(weakenedEvidence([change]), marker).toEqual([{ path: "tests/clamp.test.ts", kind: "edited_test",
+      tests: [{ test: "clamps", edits: [{ kind: "skipped", marker }] }] }]);
+  }
+  const focused = (marker: string, line: string): FileChange =>
+    testHunk("tests/clamp.test.ts", `-test("clamps", () => {`, `+${line}`, "   expect(clamp(5)).toBe(2);", " });",
+      " test(\"clamps low\", () => {", "   expect(clamp(-5)).toBe(0);", " });");
+  for (const [marker, line] of [["test.only", "test.only(\"clamps\", () => {"], ["fit", "fit(\"clamps\", () => {"]] as const) {
+    expect(weakenedEvidence([focused(marker, line)]), marker).toEqual([{ path: "tests/clamp.test.ts", kind: "edited_test",
+      tests: [{ test: "clamps", edits: [{ kind: "focused", marker }] }] }]);
+  }
+  // A whole group skipped, and a case of a table.
+  expect(weakenedEvidence([testHunk("tests/clamp.test.ts", "-describe(\"clamp\", () => {", "+describe.skip(\"clamp\", () => {",
+    "   it.each([[5, 2]])(\"clamps %i\", (n, m) => expect(clamp(n)).toBe(m));", " });")])).toEqual([{ path: "tests/clamp.test.ts",
+    kind: "edited_test", tests: [{ test: "clamp", edits: [{ kind: "skipped", marker: "describe.skip" }] }] }]);
+  expect(weakenedEvidence([testHunk("tests/clamp.test.ts", "-it.each`n | m`(\"clamps $n\", ({ n, m }) => {",
+    "+it.skip.each`n | m`(\"clamps $n\", ({ n, m }) => {", "   expect(clamp(n)).toBe(m);", " });")])).toEqual([{ path: "tests/clamp.test.ts",
+    kind: "edited_test", tests: [{ test: "clamps $n", edits: [{ kind: "skipped", marker: "it.skip" }] }] }]);
+});
+
+it("says when an edit mocks the module a test imports as its subject, in Bun's, Vitest's and Jest's words (#646)", () => {
+  const mocked = (line: string): FileChange => testHunk("tests/price.test.ts",
+    " import { total } from \"../src/price.js\";", " import { now } from \"../src/clock.js\";", `+${line}`,
+    " it(\"totals\", () => {", "   expect(total([1, 2])).toBe(3);", " });");
+  for (const [line, module] of [["vi.mock(\"../src/price.js\");", "../src/price.js"], ["jest.mock(\"../src/price\");", "../src/price"],
+    ["mock.module(\"../src/price.ts\", () => ({ total: () => 3 }));", "../src/price.ts"]] as const) {
+    expect(weakenedEvidence([mocked(line)]), line).toEqual([{ path: "tests/price.test.ts", kind: "edited_test",
+      tests: [{ edits: [{ kind: "mocked_subject", module }] }] }]);
+  }
+  // Bun's way: the mock, then the module imported after it.
+  expect(weakenedEvidence([testHunk("tests/price.test.ts", "+mock.module(\"../src/price\", () => ({ total: () => 3 }));",
+    " const { total } = await import(\"../src/price\");", " test(\"totals\", () => {", "   expect(total([1, 2])).toBe(3);", " });")]))
+    .toEqual([{ path: "tests/price.test.ts", kind: "edited_test", tests: [{ edits: [{ kind: "mocked_subject", module: "../src/price" }] }] }]);
+  // A mock of another module still changes how the tests run, in today's words.
+  expect(weakenedEvidence([mocked("vi.mock(\"../src/clock.js\");")])).toEqual([{ path: "tests/price.test.ts", kind: "edited_test" }]);
+});
+
+it("names a test the edit deletes while the file stays (#646)", () => {
+  expect(weakenedEvidence([testHunk("tests/add.test.ts",
+    " it(\"adds\", () => {", "   expect(add(1, 2)).toBe(3);", " });",
+    "-it(\"adds negatives\", () => {", "-  expect(add(-1, -2)).toBe(-3);", "-});")]))
+    .toEqual([{ path: "tests/add.test.ts", kind: "edited_test", tests: [{ test: "adds negatives", edits: [{ kind: "deleted_test" }] }] }]);
+});
+
+it("does not flag a test edit that makes a check stricter or only adds arguments (#646, #586)", () => {
+  const stricter = (before: string, after: string): FileChange =>
+    testHunk("tests/add.test.ts", " it(\"adds\", () => {", `-  ${before}`, `+  ${after}`, " });");
+  expect(weakenedEvidence([
+    stricter("expect(add(1, 2)).toBeTruthy();", "expect(add(1, 2)).toBe(3);"),
+    stricter("expect(sum([1])).toMatchObject({ total: 1 });", "expect(sum([1])).toEqual({ total: 1 });"),
+    stricter("expect(near(1)).toBeCloseTo(1, 1);", "expect(near(1)).toBeCloseTo(1, 5);"),
+    stricter("expect(() => add(-1)).toThrow();", "expect(() => add(-1)).toThrow(\"negative\");"),
+    stricter("expect(label(1)).toMatch(\"total\");", "expect(label(1)).toMatch(\"total: 1\");"),
+    stricter("expect(sum([1])).toEqual({ total: 1 });", "expect(sum([1])).toBe({ total: 1 });"),
+    stricter("expect(add(1, 2)).toBeGreaterThan(0);", "expect(add(1, 2)).toBeGreaterThan(2);"),
+    stricter("expect(add(1, 2)).not.toBe(0);", "expect(add(1, 2)).not.toBeFalsy();"),
+    stricter("const total = add(1, 2);", "const total = add(1, 2, 0);"),
+  ])).toEqual([]);
+  // A matcher ranked stricter that checks something else, or less, is no stricter check: each is flagged.
+  const changes = [
+    ["expect(log).toHaveBeenCalledWith(1, 2);", "expect(log).toHaveBeenCalledTimes(1);"],
+    ["expect(sum([1])).toMatchObject({ a: 1, b: 2 });", "expect(sum([1])).toEqual({ a: 1 });"],
+    ["expect(make()).toBeInstanceOf(Order);", "expect(make()).toEqual({});"],
+    ["expect(add(1, 2)).toBeTruthy();", "expect(add(1, 2)).toBe(0);"],
+    ["expect(add(1, 2)).not.toBe(5);", "expect(add(1, 2)).not.toBeFalsy();"],
+    ["expect(list()).toContain(\"ab\");", "expect(list()).toContain(\"abc\");"],
+  ].map(([before = "", after = ""]) => stricter(before, after));
+  expect(weakenedEvidence(changes)).toHaveLength(changes.length);
+  // A stricter check beside a removed one is still flagged, for the removed one.
+  expect(weakenedEvidence([testHunk("tests/add.test.ts", " it(\"adds\", () => {", "-  expect(add(1, 2)).toBeTruthy();",
+    "+  expect(add(1, 2)).toBe(3);", "-  expect(add(0, 0)).toBe(0);", " });")])).toEqual([{ path: "tests/add.test.ts",
+    kind: "edited_test", tests: [{ test: "adds", edits: [{ kind: "removed_assertion", assertion: "expect(add(0, 0)).toBe(0)" }] }] }]);
 });
 
 const edit = (path: string, added: string[], removed: string[] = []): FileChange =>
@@ -475,7 +627,8 @@ it("reads a test file's comment lines from its parsed content, inside a block co
   const templated = "it(\"keeps\", () => expect(`\n// keep\n`).toContain(\"keep\"));\n";
   expect(weakenedEvidence([removedFrom("tests/noted.test.ts", noted, 2)])).toEqual([]);
   expect(weakenedEvidence([removedFrom("tests/templated.test.ts", templated, 2)]))
-    .toEqual([{ path: "tests/templated.test.ts", kind: "edited_test" }]);
+    .toEqual([{ path: "tests/templated.test.ts", kind: "edited_test", tests: [{ test: "keeps", edits: [{ kind: "changed_assertion",
+      before: "expect(` // keep `).toContain(\"keep\")", after: "expect(` `).toContain(\"keep\")" }] }] }]);
   // Without the content, no line is taken for a comment.
   expect(weakenedEvidence([{ ...removedFrom("tests/noted.test.ts", noted, 2), content: undefined, baseContent: undefined }]))
     .toEqual([{ path: "tests/noted.test.ts", kind: "edited_test" }]);

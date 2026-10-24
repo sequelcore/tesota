@@ -2,6 +2,7 @@ import type { ts as TypeScript } from "ts-morph";
 import { posix } from "node:path";
 import type { ChangedFile, DiffLine, RemovedLine } from "./diff-lines.js";
 import { grammarCommentLines, hasGrammar } from "./grammar-source.js";
+import { testEdits, type WeakenedTest } from "./test-edits.js";
 import { packageCheckScripts } from "./projects.js";
 import { contracts, unselectedContracts } from "./proof-guarantees.js";
 import { callLines, commentOnlyLines, isScriptPath, typescript } from "./typescript-source.js";
@@ -19,14 +20,15 @@ import { type AnnotationKind, checkScriptWeakens, weakens } from "./verification
  * the proof (`function` names the unit it leaves out, or the one holding the
  * statement it leaves out, which `statement` marks), and likewise a function
  * the base proved that a `//@ verify` on others now leaves out; and a
- * deleted test file, or an edit to one that may weaken its tests (`testWeakens`); and a command
+ * deleted test file, or an edit to one that may weaken its tests (`testWeakens`), with how it may
+ * weaken each test where Tesota reads that from the diff (`tests`, `testEdits`); and a command
  * or selection changed for a package check script the base selected
  * (`checkScriptWeakens`). The operator decides whether it is legitimate.
  */
 export type Weakening =
   | { readonly path: string; readonly kind: "removed_contract" | "added_requires" | "added_assume" | "added_skip";
     readonly annotation: string; readonly function?: string; readonly statement?: true }
-  | { readonly path: string; readonly kind: "deleted_test" | "edited_test" }
+  | { readonly path: string; readonly kind: "deleted_test" | "edited_test"; readonly tests?: readonly WeakenedTest[] }
   | { readonly path: string; readonly kind: "changed_check_script"; readonly script: string };
 
 /**
@@ -398,16 +400,25 @@ function extended(file: FileChange, line: RemovedLine, asserted: ReturnType<type
   return addsItems(before.map(({ text }) => text), after, alignment(before, after));
 }
 
+/**
+ * A test file's change, flagged when it may weaken its tests (`testWeakens`),
+ * with how it may weaken each one when it is JavaScript or TypeScript edited
+ * and read on both sides (`testEdits`); other frameworks and languages get
+ * the flag alone.
+ */
 function testChange(file: FileChange): Weakening[] {
   if (!isTestPath(file.path)) return [];
   const comments = commentLines(file);
   const asserted = assertionLines(file);
+  const edits = file.status !== "modified" || !isScriptPath(file.path) || file.content === undefined || file.baseContent === undefined
+    ? undefined : testEdits(file.path, file.baseContent, file.content);
   const removes = file.removed.some((line) => removalCounts(line.text.trim() === "", comments.removed(line),
-    widened(line.text, file.added), extended(file, line, asserted)));
+    widened(line.text, file.added), extended(file, line, asserted), edits?.tightened(line) ?? false));
   const changesRuns = file.added.some((line) => !comments.added(line) &&
     runChanges.some((pattern) => pattern.test(line.text)));
-  return !testWeakens(file.status, removes, changesRuns) ? []
-    : [{ path: file.path, kind: file.status === "deleted" ? "deleted_test" : "edited_test" }];
+  if (!testWeakens(file.status, removes, changesRuns)) return [];
+  return [{ path: file.path, kind: file.status === "deleted" ? "deleted_test" : "edited_test",
+    ...edits === undefined || edits.tests.length === 0 ? {} : { tests: edits.tests } }];
 }
 
 /** Manifest edits that alter the commands discovery selected at the request's base, including replacing them with `check`. */

@@ -449,6 +449,7 @@ one row adds every unit's lines together.
 | `function` | string, optional | For an `//@ extern`: the function it trusts without proof; for an `//@ skip`: the function, class, variables or method it leaves out of the proof, or that holds the statement it leaves out; for an `//@ verify`: a function it leaves out. Present when Tesota found it |
 | `statement` | `true`, optional | For an `//@ skip`: it leaves out a statement of `function`, not all of it |
 | `script` | string | For `changed_check_script` only: the package script selected at the request's base |
+| `tests` | WeakenedTest[], optional | For `edited_test` only: how the edit may weaken each test, for a JavaScript or TypeScript test file read on both sides. Present when Tesota recognized at least one |
 
 The kinds are:
 
@@ -465,11 +466,45 @@ The kinds are:
 - `edited_test`: a test file edited so that it may weaken its tests: a
   removed line that is not blank, comment-only, a widened import or an
   extended line (one that only gains list items, such as arguments), or an
-  added focus or skip marker, setup or teardown hook, or module mock;
+  added focus or skip marker, setup or teardown hook, or module mock; a
+  removed line that only holds assertions the edit made stricter, where the
+  new check implies the old one, doesn't count;
 - `changed_check_script`: a package check script selected at the base whose
   command changed or is no longer selected. This includes removing the
   script or its manifest, and adding `check` so discovery no longer selects
   `typecheck`, `lint` or `test`. It does not judge the replacement's strength.
+
+### WeakenedTest
+
+A heuristic reading of the diff, never a verdict: what Tesota recognizes,
+not every change the file has.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `test` | string, optional | The test or group, with the groups around it, `a › b`; absent for code outside every test |
+| `edits` | TestEdit[] | What the edit did to it, in the order found |
+
+The receipt's text names the first ten tests and how many more; the JSON
+keeps them all.
+
+A TestEdit has a `kind` and the fields that kind names:
+
+- `removed_assertion`, `assertion`: an `expect` assertion with no
+  counterpart in the test, as written with its blanks collapsed;
+- `loosened_assertion`, `subject`, `before`, `after`: the assertion on
+  `subject` (`expect(…)`) given a weaker matcher or a wider expected value,
+  `before` and `after` its matchers with their arguments;
+- `dropped_not`, `subject`, `before`, `after`: the same, with its `not`
+  dropped;
+- `changed_assertion`, `before`, `after`: an assertion changed otherwise,
+  whole on each side;
+- `skipped`, `marker`: the test or group skipped, conditionally or as a
+  todo, `marker` as written, such as `it.skip`, `xit` or `{ skip: true }`;
+- `focused`, `marker`: the test or group focused, such as `it.only` or
+  `fit`, so the file's other tests don't run;
+- `mocked_subject`, `module`: a new mock of the module the file is named
+  after and imports, `module` as the mock names it;
+- `deleted_test`: the test deleted while the file stays.
 
 ### UncoveredLines
 

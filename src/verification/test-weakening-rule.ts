@@ -7,12 +7,57 @@ import type { ChangeStatus } from "../diff-lines.js";
  * import from the same module, in the same form, of every name it had and
  * more, or a line the change extended (`extended`): one the added line in
  * its place keeps whole, adding only arguments, properties or parameters
- * that check nothing (`addsItems`). A line that only moved still counts, and
- * so does an assertion commented out, since its original line is removed.
+ * that check nothing (`addsItems`), or a line that only holds assertions the
+ * change made stricter (`tightened`, `assertionChange`). A line that only
+ * moved still counts, and so does an assertion commented out, since its
+ * original line is removed.
  */
-//@ ensures \result <==> !blank && !comment && !widenedImport && !extended
-export function removalCounts(blank: boolean, comment: boolean, widenedImport: boolean, extended: boolean): boolean {
-  return !blank && !comment && !widenedImport && !extended;
+//@ ensures \result <==> !blank && !comment && !widenedImport && !extended && !tightened
+export function removalCounts(blank: boolean, comment: boolean, widenedImport: boolean, extended: boolean, tightened: boolean): boolean {
+  return !blank && !comment && !widenedImport && !extended && !tightened;
+}
+
+/**
+ * How an assertion's check changed, read without its `not`: not at all
+ * (`same`); to one that implies it, so it admits fewer values (`stricter`),
+ * such as `toEqual(x)` to `toBe(x)` or more `toBeCloseTo` digits; to one it
+ * implies, so it admits more (`weaker`), such as `toBe(3)` to `toBeTruthy()`;
+ * to a matcher only ranked weaker, without either implying the other
+ * (`ranked_weaker`), such as `toBe(x)` to `toBeTruthy()` for an `x` not
+ * written as a value; or otherwise.
+ */
+export type CheckChange = "same" | "stricter" | "weaker" | "ranked_weaker" | "other";
+
+/** What a change did to an assertion on the same subject (`assertionChange`). */
+export type AssertionChange = "kept" | "tightened" | "loosened" | "dropped_not" | "changed";
+
+/**
+ * How a test edit changed an assertion on the same subject, from whether
+ * each side is negated with `not` and how its check changed (`check`). A
+ * dropped `not` is named; an added one changes what it checks. Under a `not`
+ * on both sides an implication turns around, so a weaker check makes the
+ * assertion stricter; a rank alone does not, so it changes it. Only an
+ * implication ever makes an assertion stricter (`tightened`), which then
+ * weakens nothing.
+ */
+//@ ensures beforeNot && !afterNot ==> \result === "dropped_not"
+//@ ensures !beforeNot && afterNot ==> \result === "changed"
+//@ ensures beforeNot === afterNot ==> (\result === "kept" <==> check === "same")
+//@ ensures beforeNot === afterNot && check === "other" ==> \result === "changed"
+//@ ensures beforeNot === afterNot && check === "stricter" && !beforeNot ==> \result === "tightened"
+//@ ensures beforeNot === afterNot && check === "stricter" && beforeNot ==> \result === "loosened"
+//@ ensures beforeNot === afterNot && check === "weaker" && !beforeNot ==> \result === "loosened"
+//@ ensures beforeNot === afterNot && check === "weaker" && beforeNot ==> \result === "tightened"
+//@ ensures beforeNot === afterNot && check === "ranked_weaker" && !beforeNot ==> \result === "loosened"
+//@ ensures beforeNot === afterNot && check === "ranked_weaker" && beforeNot ==> \result === "changed"
+//@ ensures \result === "tightened" ==> beforeNot === afterNot && ((check === "stricter" && !beforeNot) || (check === "weaker" && beforeNot))
+export function assertionChange(beforeNot: boolean, afterNot: boolean, check: CheckChange): AssertionChange {
+  if (beforeNot && !afterNot) return "dropped_not";
+  if (beforeNot !== afterNot) return "changed";
+  if (check === "same") return "kept";
+  if (check === "other") return "changed";
+  if (check === "ranked_weaker") return beforeNot ? "changed" : "loosened";
+  return (check === "weaker") !== beforeNot ? "loosened" : "tightened";
 }
 
 /**
