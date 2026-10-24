@@ -888,7 +888,7 @@ function modelEvidence(rung: ModelRung | undefined): Pick<UnitEvidence, "models"
 async function settledCheck<T extends { readonly evidence: Evidence; readonly verdict: Receipt["tests"][number]["verdict"] }>(
   root: string, check: T): Promise<T> {
   if (await currentContent(root, check.evidence)) return check;
-  return { ...check, verdict: "operator", evidence: { ...check.evidence, outcome: "not_started",
+  return { ...check, verdict: "operator", evidence: { ...check.evidence, outcome: "not_started", invalidated: "content_changed",
     output: `${check.evidence.output.trimEnd()}\n\nEvidence is stale: checked content changed before the receipt settled; current content was not checked.` } };
 }
 

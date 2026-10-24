@@ -16,6 +16,8 @@ export interface Evidence {
   /** What a pass does not establish. */
   readonly limits: string;
   readonly outcome: ProofOutcome;
+  /** Settlement found different content; the run's evidence cannot establish the current content. */
+  readonly invalidated?: "content_changed";
   /** The end of what the verifier printed, or why it did not run. */
   readonly output: string;
   readonly durationMs: number;
@@ -24,12 +26,16 @@ export interface Evidence {
   readonly contentHash: string;
 }
 
+/** Why evidence invalidated at settlement cannot establish the current content. */
+export const staleEvidenceWords = "Evidence is stale: checked content changed before the receipt settled; current content was not checked.";
+
 /**
  * A proof's run in a few words for people: how it ended, Dafny's first error
  * and the contract line it points at, and Dafny's tally. Dafny prints CRLF
  * on Windows.
  */
 export function proofSummary(evidence: Evidence): { readonly words: string; readonly at?: string; readonly tally?: string } {
+  if (evidence.invalidated === "content_changed") return { words: staleEvidenceWords };
   const tally = /finished with (\d+ verified, \d+ errors?)/u.exec(evidence.output)?.[1];
   const counted = tally === undefined ? {} : { tally };
   if (evidence.outcome === "passed") return { words: "every contract holds", ...counted };

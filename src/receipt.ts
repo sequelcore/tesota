@@ -1,4 +1,4 @@
-import { type Evidence, proofSummary } from "./evidence.js";
+import { type Evidence, proofSummary, staleEvidenceWords } from "./evidence.js";
 import { clarificationText, type Clarification } from "./clarification.js";
 import type { OpenCases } from "./open-cases.js";
 import { inFolder } from "./projects.js";
@@ -289,6 +289,7 @@ function why(evidence: Evidence): string {
 const trusting = (assumed: number): string => `trusting ${plural(assumed, "unproved part", "unproved parts")}`;
 
 function line(path: string, verdict: GateVerdict, evidence: Evidence, assumed: number): string {
+  if (evidence.invalidated === "content_changed") return `  stale         ${path}: ${staleEvidenceWords}`;
   if (verdict === "proved") return `  proved        ${path}${assumed === 0 ? "" : `, ${trusting(assumed)} the change added`}`;
   if (verdict === "operator") return `  NOT proved    ${path}: the proof ${why(evidence)}`;
   const what = evidence.outcome === "vacuous" ? "Dafny verified nothing" : "an obligation fails";
@@ -296,6 +297,7 @@ function line(path: string, verdict: GateVerdict, evidence: Evidence, assumed: n
 }
 
 function testLine({ command, verdict, evidence, failingTests }: Receipt["tests"][number]): string {
+  if (evidence.invalidated === "content_changed") return `  stale         ${command}: ${staleEvidenceWords}`;
   if (verdict === "proved") return `  passed        ${command}`;
   if (verdict === "operator") return `  NOT passed    ${command}: it ${why(evidence)}`;
   if (failingTests === undefined || failingTests.length === 0) {
@@ -506,6 +508,9 @@ export function contractFinding({ path, name, mutation }: ContractStrength): Fin
 export function commandFinding({ command, verdict, evidence, failingTests }: Pick<Receipt["tests"][number],
   "command" | "verdict" | "evidence" | "failingTests">): Finding {
   const more = [`Ran in ${seconds(evidence.durationMs)} · sha256 ${evidence.contentHash.slice(0, 12)}`];
+  if (evidence.invalidated === "content_changed") {
+    return { standing: "decide", check: "tests", failed: true, label: "Tests stale", subject: command, detail: staleEvidenceWords, more };
+  }
   if (verdict === "proved") return { standing: "holds", check: "tests", label: "Tests pass", subject: command, detail: "", more };
   if (verdict === "operator") {
     return { standing: "decide", check: "tests", failed: true, label: "Tests did not run", subject: command, detail: `it ${why(evidence)}`, more };
@@ -632,7 +637,7 @@ export function proofFinding({ path, verdict, evidence }: Pick<Receipt["proofs"]
       subject: path, detail: assumed === 0 ? summary.words : "its contracts hold only if what the change trusts is right",
       more: [checked(evidence)] };
   }
-  return { standing: "decide", check: "proof", failed: true, label: verdict === "operator" ? "Proof did not run" : "Proof fails",
+  return { standing: "decide", check: "proof", failed: true, label: evidence.invalidated === "content_changed" ? "Proof stale" : verdict === "operator" ? "Proof did not run" : "Proof fails",
     subject: path, detail: summary.words, more: [...summary.at === undefined ? [] : [`at ${summary.at}`], checked(evidence)] };
 }
 
@@ -896,9 +901,10 @@ function methodRow(method: string, runs: readonly { readonly ran: Ran; readonly 
 }
 
 /** How a proof, command or model that did not hold ended, in a word or two. */
-function notHeld(verdict: GateVerdict, outcome: Evidence["outcome"]): { readonly ran: Ran; readonly words: string } {
+function notHeld(verdict: GateVerdict, evidence: Evidence): { readonly ran: Ran; readonly words: string } {
+  if (evidence.invalidated === "content_changed") return { ran: "none", words: "stale" };
   return verdict === "operator" ? { ran: "none", words: "did not run" }
-    : { ran: "failed", words: outcome === "vacuous" ? "verified nothing" : "fails" };
+    : { ran: "failed", words: evidence.outcome === "vacuous" ? "verified nothing" : "fails" };
 }
 
 /** A count of `of` in which `held` hold, said as all of them or as how many of them. */
@@ -909,11 +915,11 @@ function methodRows(evidence: Pick<UnitEvidence, "proofs" | "tests" | "models" |
   const proofs = evidence.proofs.map(({ path, verdict, evidence: run }) => {
     const assumed = addedAssumptions(run.files, evidence.weakened);
     const ended = verdict === "proved" ? { ran: assumed === 0 ? "holds" as const : "partly" as const,
-      words: assumed === 0 ? "" : trusting(assumed) } : notHeld(verdict, run.outcome);
+      words: assumed === 0 ? "" : trusting(assumed) } : notHeld(verdict, run);
     return { ran: ended.ran, text: [path, ended.words, clock(run.durationMs)].filter((part) => part !== "").join(" · ") };
   });
   const tests = evidence.tests.map(({ command, verdict, evidence: run }) => {
-    const ended = verdict === "proved" ? { ran: "holds" as const, words: "" } : notHeld(verdict, run.outcome);
+    const ended = verdict === "proved" ? { ran: "holds" as const, words: "" } : notHeld(verdict, run);
     return { ran: ended.ran, text: [command, ended.words, clock(run.durationMs)].filter((part) => part !== "").join(" · ") };
   });
   // A passing model is model-checked, about the model: never proved, and its row says whether anything links it to the code.
@@ -924,7 +930,7 @@ function methodRows(evidence: Pick<UnitEvidence, "proofs" | "tests" | "models" |
   const models = (evidence.models ?? []).map((model) => {
     const { path, verdict, link, writtenWithCode, evidence: run } = model;
     const ended = verdict === "proved" ? { ran: outright(model) ? "holds" as const : "partly" as const,
-      words: `model-checked, ${linkWords[link]}${writtenWithCode ? ", written with the code" : ""}` } : notHeld(verdict, run.outcome);
+      words: `model-checked, ${linkWords[link]}${writtenWithCode ? ", written with the code" : ""}` } : notHeld(verdict, run);
     return { ran: ended.ran, text: [path, ended.ran === "none" ? "not checked" : ended.words, clock(run.durationMs)].join(" · ") };
   });
   const noticing = evidence.exercises.filter(({ sensitivity }) => sensitivity === "fails_then_passes").length;

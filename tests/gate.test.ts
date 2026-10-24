@@ -10,8 +10,8 @@ import { evidenceParts, evidenceText } from "../src/footer.js";
 import { changedFiles, GateProgress, type GateStatus, type RecordedRequest, registerGate, type SentBack } from "../src/gate.js";
 import { headCommit } from "../src/git.js";
 import { openCasesSystemPrompt } from "../src/open-cases.js";
-import { subjectOf } from "../src/pull-request-receipt.js";
-import { receiptDecisions, receiptFindings, type Receipt } from "../src/receipt.js";
+import { receiptMarkdown, subjectOf } from "../src/pull-request-receipt.js";
+import { receiptDecisions, receiptFindings, receiptSummary, renderReceipt, type Receipt } from "../src/receipt.js";
 import { gateVerdict, keepsWorking, toolMayChangeFiles } from "../src/verification/gate-rule.js";
 import type { ProofOutcome } from "../src/verification/proof-outcome-rule.js";
 import { emptyReceipt } from "./receipts.js";
@@ -57,6 +57,25 @@ vi.mock("../src/model-check.js", async (original) => {
 
 const roots: string[] = [];
 
+function expectStaleReceipt(recorded: Receipt, check: "tests" | "proof", label: string, subject: string): void {
+  // Output is not the source of staleness: presentation must use recorded facts.
+  const receipt = { ...recorded,
+    tests: recorded.tests.map((test) => ({ ...test, evidence: { ...test.evidence, output: "checked successfully" } })),
+    proofs: recorded.proofs.map((proof) => ({ ...proof, evidence: { ...proof.evidence, output: "1 verified, 0 errors" } })),
+  };
+  expect(receiptFindings(receipt)).toContainEqual(expect.objectContaining({ check, label, subject,
+    detail: expect.stringContaining("stale") }));
+  expect(receiptSummary(receipt).methods.find(({ method }) => method === (check === "tests" ? "Tested" : "Proved"))?.text)
+    .toContain(`${subject} · stale`);
+  for (const text of [renderReceipt(receipt), receiptMarkdown(receipt, { commit: "abc123", owner: "operator",
+    sessionId: "stale-evidence", stale: [], changedAfter: [] })]) {
+    expect(text).toContain("stale");
+    expect(text).toContain("current content was not checked");
+    expect(text).not.toMatch(/did not run|could not run/u);
+    expect(text).toContain(`stale         ${subject}`);
+  }
+}
+
 it.each([
   ["checked value 2 → 999", "writeFileSync('value.js', '999\\n');", "not_started"],
   ["second relevant input", "writeFileSync('input.json', '999\\n');", "not_started"],
@@ -82,6 +101,7 @@ it.each([
     evidence: { outcome, files: ["input.json", "value.js"] } }]);
   if (outcome === "not_started") {
     expect(receipt.tests[0]?.evidence.output).toContain("stale");
+    expectStaleReceipt(receipt, "tests", "Tests stale", "bun run check");
     expect(entry(settled).content).not.toContain("  passed        bun run check");
     expect(entry(settled).content).toContain("Evidence is stale: checked content changed before the receipt settled; current content was not checked.");
   }
@@ -104,6 +124,7 @@ it("does not retain proof coverage or contract findings when a command changes t
   expect(receipt.unverified).toContain("src/rule.ts");
   expect(receipt.uncovered).toEqual([]);
   expect(settled.content).toContain("Evidence is stale");
+  expectStaleReceipt(receipt, "proof", "Proof stale", "src/rule.ts");
   expect(settled.content).not.toContain("  proved        src/rule.ts");
 });
 

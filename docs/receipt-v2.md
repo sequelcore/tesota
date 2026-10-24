@@ -222,7 +222,7 @@ their per-request snapshots and have empty `inherited` and `unmeasured` lists.
 | `proved` | The proof, command or model passed |
 | `send_back` | It failed or was vacuous, and went back to the agent. A settled receipt holds none, since the run continues while one goes back |
 | `no_progress` | It failed or was vacuous, repeating a failure the gate already sent back during the request |
-| `operator` | It could not run, ran past its limit or was stopped; the operator's to resolve |
+| `operator` | It could not run, ran past its limit, was stopped, or its evidence was invalidated when checked content changed before settlement; the operator's to resolve |
 
 ### Evidence
 
@@ -231,11 +231,17 @@ their per-request snapshots and have empty `inherited` and `unmeasured` lists.
 | `verifier` | `"lemmascript"`, `"command"` or `"tlc"` | LemmaScript with Dafny, a project command, or TLC on a model |
 | `claim` | string | What a pass establishes, in words a reviewer can confirm |
 | `limits` | string | What a pass does not establish |
-| `outcome` | Outcome | How the run ended |
+| `outcome` | Outcome | How the run ended; `not_started` when invalidated at settlement, since the current content was not checked |
+| `invalidated` | `"content_changed"`, optional | Settlement found that the current `files` no longer matched `contentHash`. The receipt renders this evidence as stale, not as a check that did not run. The verdict is `operator` and outcome is `not_started`; the original hashes, duration and output remain, with a stale note appended to the output |
 | `output` | string | The end of what the verifier printed: at most the last 8,192 characters of a process's output, with a note after a vacuous proof. Or why it did not run |
 | `durationMs` | number | How long the run took, in milliseconds |
 | `files` | string[] | The files the run checked, in the order `contentHash` covers them: for a proof, the TypeScript file and then its `.dfy`; for a command, the changed files; for a model, the model, a TLA+ model's `.cfg`, each fault (with a TLA+ fault's `.cfg`), then each covered file |
 | `contentHash` | string | Lowercase hex SHA-256 of the UTF-8 JSON array `[[path, content], …]` for `files` in order, `content` being the file's text or `null` when unreadable, as `JSON.stringify` writes it |
+
+`invalidated` records the reason settlement rejected existing evidence, not a
+second verification status. The hashes detect the content mismatch; this
+reason lets a saved receipt distinguish it from a verifier that never
+started, without interpreting words in `output`.
 
 The `outcome` values are:
 
@@ -246,7 +252,7 @@ The `outcome` values are:
 | `vacuous` | A proof that checked cleanly but verified nothing, or a model with no reachable state or no planted fault |
 | `timed_out` | It ran past its limit: 5 minutes for each proof process and each TLC run, 15 minutes for a command |
 | `cancelled` | It was stopped |
-| `not_started` | It could not start, for example when Dafny is not installed |
+| `not_started` | It could not start, for example when Dafny is not installed; with `invalidated`, a run checked earlier content but the current content was not checked |
 
 ### ModelResult
 
