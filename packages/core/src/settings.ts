@@ -3,7 +3,7 @@ import type { GuardSetting } from "./agent-rule.ts";
 import type { Mode } from "./permission-rule.ts";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
 import { withLock } from "./session-lock.ts";
 import { parseJson } from "../../../src/json.ts";
@@ -12,8 +12,13 @@ import { writeWholeJson } from "./whole-file.ts";
 /** How the shell draws: on the alternate screen, or into the terminal's scrollback (#432). */
 export type TuiMode = "fullscreen" | "inline";
 
+/** An explicitly chosen provider instance; declared only in the operator's settings. */
+export type Account = { readonly name: string; readonly provider: "claude-code"; readonly folder: string }
+  | { readonly name: string; readonly provider: "openai-codex" };
+
 /** What the operator chose, kept between sessions (#443). */
 export interface Settings {
+  readonly accounts?: readonly Account[];
   /** The model, as `provider/id`. */
   readonly model?: string;
   readonly thinkingLevel?: ModelThinkingLevel;
@@ -40,6 +45,24 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 
 /** Each setting's check; a value that fails it is left out and named. */
 const checks: { readonly [Name in keyof Settings]-?: (value: unknown) => boolean } = {
+  accounts: (value) => {
+    if (!Array.isArray(value)) return false;
+    const ids = new Set<string>();
+    return value.every((item: unknown) => {
+      if (typeof item !== "object" || item === null) return false;
+      const name: unknown = Reflect.get(item, "name");
+      const provider: unknown = Reflect.get(item, "provider");
+      const folder: unknown = Reflect.get(item, "folder");
+      if (typeof name !== "string" || !/^[A-Za-z0-9_-]+$/u.test(name)) return false;
+      if (provider !== "openai-codex" && provider !== "claude-code") return false;
+      if (provider === "claude-code" && (typeof folder !== "string" || !isAbsolute(folder))) return false;
+      if (provider === "openai-codex" && folder !== undefined) return false;
+      const id = `${provider}@${name}`;
+      if (ids.has(id)) return false;
+      ids.add(id);
+      return true;
+    });
+  },
   model: (value) => typeof value === "string" && /^[^/\s]+\/\S+$/u.test(value),
   thinkingLevel: (value) => levels.has(value as string),
   tuiMode: (value) => modes.has(value as string),

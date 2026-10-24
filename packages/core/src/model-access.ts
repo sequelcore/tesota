@@ -3,8 +3,8 @@ import { type Api, type CredentialStore, createModels, type LoginOptions, type M
 import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth";
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
 import { fileCredentialStore } from "./credentials.ts";
-import { claudeCodeProvider } from "./providers/claude-code.ts";
-import { deviceId, type Settings } from "./settings.ts";
+import { claudeCodeProvider, claudeCodeStatus } from "./providers/claude-code.ts";
+import { type Account, deviceId, readSettings, type Settings } from "./settings.ts";
 
 /**
  * The models a Tesota session runs on (#443): pi-ai's built-in providers,
@@ -14,14 +14,61 @@ import { deviceId, type Settings } from "./settings.ts";
  * out is `Models.login` and `Models.logout` with `loginOptions`. Pi's remote
  * catalog refresh is left out until something needs it.
  */
-export function engineModels(credentials: CredentialStore = fileCredentialStore()): MutableModels {
+export function engineModels(credentials: CredentialStore = fileCredentialStore(), accounts: readonly Account[] = readSettings().settings.accounts ?? []): MutableModels {
   // pi-ai imports each sign-in flow by a path a compiled `tesota` does not have, so they are embedded instead (#372).
   // pi-ai registers its flows only all at once; Anthropic's is never reached, since no provider here offers it.
   registerBunOAuthFlows();
   const models = createModels({ credentials });
   for (const provider of builtinProviders()) models.setProvider(provider.id === "anthropic" ? anthropicKeyOnly(provider) : provider);
   models.setProvider(claudeCodeProvider(models.getModels("anthropic")));
+  for (const account of accounts) {
+    const id = `${account.provider}@${account.name}`;
+    if (account.provider === "claude-code") {
+      models.setProvider(claudeCodeProvider(models.getModels("anthropic"), { id, configDir: account.folder }));
+    } else {
+      const provider = models.getProvider("openai-codex");
+      if (provider?.auth.oauth === undefined) throw new Error("pi-ai's Codex provider has no ChatGPT auth");
+      // Same pi-ai transport and OAuth flow, but auth resolves and refreshes under this instance's id only.
+      models.setProvider({ ...provider, id, name: id, auth: { oauth: provider.auth.oauth },
+        getModels: () => provider.getModels().map((model) => ({ ...model, provider: id })),
+        getAllModels: () => (provider.getAllModels?.() ?? provider.getModels()).map((model) => ({ ...model, provider: id })) });
+    }
+  }
   return models;
+}
+
+/** Non-secret labels for account pickers and runs. Identity comes from Claude Code's status or the ChatGPT credential's account id. */
+export async function accountLabels(credentials: CredentialStore, accounts: readonly Account[],
+  status: typeof claudeCodeStatus = claudeCodeStatus): Promise<ReadonlyMap<string, string>> {
+  const labels = new Map<string, string>();
+  const seen = new Map<string, string>();
+  const instances: readonly { readonly id: string; readonly provider: Account["provider"]; readonly folder?: string }[] = [
+    ...accounts.some(({ provider }) => provider === "claude-code") ? [{ id: "claude-code", provider: "claude-code" as const }] : [],
+    ...accounts.some(({ provider }) => provider === "openai-codex") ? [{ id: "openai-codex", provider: "openai-codex" as const }] : [],
+    ...accounts.map((account) => ({ ...account, id: `${account.provider}@${account.name}` })),
+  ];
+  for (const instance of instances) {
+    let identity: string | undefined;
+    let signedIn = false;
+    if (instance.provider === "claude-code") {
+      const info = await status(instance.folder);
+      signedIn = info.loggedIn;
+      if (signedIn) identity = info.email;
+    } else {
+      const credential = await credentials.read(instance.id);
+      signedIn = credential?.type === "oauth";
+      if (credential?.type === "oauth" && typeof credential["accountId"] === "string") identity = credential["accountId"];
+    }
+    let label = signedIn ? identity ?? "signed in · account identity unavailable" : "not signed in";
+    if (identity !== undefined) {
+      const key = `${instance.provider}/${identity.toLowerCase()}`;
+      const previous = seen.get(key);
+      if (previous !== undefined) label += ` · same account as ${previous}`;
+      else seen.set(key, instance.id);
+    }
+    labels.set(instance.id, label);
+  }
+  return labels;
 }
 
 /** A Claude plan's OAuth token, which pi-ai's Anthropic API would send as Claude Code does. */

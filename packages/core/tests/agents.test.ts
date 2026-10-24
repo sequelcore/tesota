@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { noEvidence, type Receipt, receiptEntry } from "../../../src/receipt.ts";
 import { agentTypes, agentTypesIn, unusedModels } from "../src/agents.ts";
+import { engineModels } from "../src/model-access.ts";
 import { childLimits } from "../src/children.ts";
 import { configHooks, installedGit } from "../src/workspace.ts";
 import { createSession, type EngineSession, openSession, type SessionOptions } from "../src/session.ts";
@@ -88,6 +89,39 @@ function repository(): string {
 }
 
 describe("the agent tool", () => {
+  test("a type's ChatGPT account and a call's explicit account reach auth and the child's recorded model", async () => {
+    const cwd = folder();
+    mkdirSync(join(cwd, ".agents", "agents"), { recursive: true });
+    writeFileSync(join(cwd, ".agents", "agents", "worker.md"), "---\nname: worker\ndescription: works\nmodel: openai-codex@work/gpt-6.1-sol\n---\nWork.\n");
+    const credentials = new InMemoryCredentialStore();
+    const models = engineModels(credentials, [{ name: "work", provider: "openai-codex" }, { name: "personal", provider: "openai-codex" }]);
+    const called: (string | undefined)[] = [];
+    for (const name of ["work", "personal"]) {
+      const id = `openai-codex@${name}`;
+      await credentials.modify(id, async () => ({ type: "oauth", access: `${name}-token`, refresh: "refresh", expires: Date.now() + 3_600_000 }));
+      const transport = fauxProvider({ provider: id, api: "openai-codex-responses", models: [{ id: "gpt-6.1-sol" }] });
+      transport.setResponses([(_context, options) => { called.push(options?.apiKey); return { ...fauxAssistantMessage("child answered"), provider: id, model: "gpt-6.1-sol" }; }]);
+      const provider = models.getProvider(id);
+      if (provider === undefined) throw new Error(`Missing ${id}`);
+      models.setProvider({ ...provider, stream: transport.provider.stream, streamSimple: transport.provider.streamSimple });
+    }
+    const scripted = routed({ delegate: [{ calls: [
+      { tool: "agent", args: { prompt: "one", description: "type account", type: "worker", wait: true } },
+      { tool: "agent", args: { prompt: "two", description: "call account", type: "worker", model: "openai-codex@personal/gpt-6.1-sol", wait: true } },
+    ] }, "done"] });
+    for (const provider of scripted.models.getProviders()) models.setProvider(provider);
+    const parent = session({}, { cwd, models, model: scripted.model });
+    await parent.prompt("delegate");
+    expect(called).toEqual(["work-token", "personal-token"]);
+    expect(parent.ledger()[0]?.children.map(({ model }) => model)).toEqual(["openai-codex@work/gpt-6.1-sol", "openai-codex@personal/gpt-6.1-sol"]);
+    const starts = entries(parent.file).filter((entry) => entry.type === "job_start");
+    expect(starts).toHaveLength(2);
+    for (const start of starts) {
+      if (start.type !== "job_start") continue;
+      expect(readSessionFile(start.session).entries.some((entry) => entry.type === "assistant" && entry.message.provider.startsWith("openai-codex@"))).toBe(true);
+    }
+  });
+
   test("a background child reads the parent's folder, and its report comes to the run as input, after its start was recorded", async () => {
     let childTools: string[] = [];
     const parent = session({

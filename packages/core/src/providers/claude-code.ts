@@ -55,6 +55,8 @@ export interface ClaudeQuery extends AsyncIterable<SDKMessage> {
 export type StartQuery = (input: { readonly prompt: AsyncIterable<SDKUserMessage>; readonly options: Options }) => ClaudeQuery;
 
 export interface ClaudeCodeOptions {
+  readonly id?: string;
+  readonly configDir?: string;
   /** Starts a query: the SDK's, loaded when first used, unless a test gives its own. */
   readonly query?: StartQuery;
   /** Whether Claude Code is signed in: `claude auth status`, unless a test gives its own. */
@@ -93,13 +95,25 @@ function sdkClaudeCode(): string | undefined {
   return undefined;
 }
 
-/** Whether Claude Code says it is signed in; only `loggedIn` is read from its answer, which holds no credential. */
-function statusSignedIn(): Promise<boolean> {
+/** A named instance must use its folder's sign-in, not ambient Claude auth or provider overrides. HOME is inherited unchanged. */
+function instanceEnvironment(configDir?: string): NodeJS.ProcessEnv {
+  const inherited = Object.fromEntries(Object.keys(process.env)
+    .filter((name) => configDir === undefined || !/^(?:ANTHROPIC_|CLAUDE_|USE_(?:LOCAL|STAGING)_OAUTH$)/iu.test(name))
+    .map((name) => [name, process.env[name]]));
+  return { ...inherited, ...configDir === undefined ? {} : { CLAUDE_CONFIG_DIR: configDir } };
+}
+
+/** Non-secret account metadata from Claude Code itself; never reads its credential files. */
+export function claudeCodeStatus(configDir?: string, execute: typeof execFile = execFile): Promise<{ readonly loggedIn: boolean; readonly email?: string }> {
   const program = claudeCodeExecutable();
-  if (program === undefined) return Promise.resolve(false);
+  if (program === undefined) return Promise.resolve({ loggedIn: false });
   return new Promise((resolve) => {
-    execFile(program, ["auth", "status", "--json"], { encoding: "utf8", windowsHide: true, timeout: 15_000 }, (_error, stdout) => {
-      try { resolve((JSON.parse(stdout) as { loggedIn?: unknown }).loggedIn === true); } catch { resolve(false); }
+    execute(program, ["auth", "status", "--json"], { encoding: "utf8", windowsHide: true, timeout: 15_000,
+      env: instanceEnvironment(configDir) }, (_error, stdout) => {
+      try {
+        const status = JSON.parse(stdout) as { loggedIn?: unknown; email?: unknown };
+        resolve({ loggedIn: status.loggedIn === true, ...typeof status.email === "string" ? { email: status.email } : {} });
+      } catch { resolve({ loggedIn: false }); }
     });
   });
 }
@@ -135,7 +149,7 @@ function userBlocks(content: string | readonly (TextContent | ImageContent)[]): 
  * cut before anything streamed is left out. Thinking is kept only when
  * Claude Code made it, since Anthropic refuses a signature it did not mint.
  */
-export function anthropicHistory(messages: readonly Message[]): AnthropicMessage[] {
+export function anthropicHistory(messages: readonly Message[], providerId: string = claudeCodeProviderId): AnthropicMessage[] {
   const converted: AnthropicMessage[] = [];
   let results: AnthropicMessage | undefined;
   let reply: number | undefined;
@@ -148,7 +162,7 @@ export function anthropicHistory(messages: readonly Message[]): AnthropicMessage
       const blocks = message.content.flatMap((block): AnthropicBlock[] => {
         if (block.type === "text") return block.text === "" ? [] : [{ type: "text", text: block.text }];
         if (block.type === "thinking") {
-          return message.provider === claudeCodeProviderId && block.thinkingSignature !== undefined && block.thinkingSignature !== ""
+          return message.provider === providerId && block.thinkingSignature !== undefined && block.thinkingSignature !== ""
             ? [{ type: "thinking", thinking: block.thinking, signature: block.thinkingSignature }] : [];
         }
         return [{ type: "tool_use", id: toolId(block.id), name: `${prefix}${block.name}`, input: block.arguments }];
@@ -333,13 +347,15 @@ class Conversation {
   readonly unlisten: (() => void)[] = [];
   readonly key: string | undefined;
   readonly cwd: string;
+  readonly configDir: string | undefined;
   readonly model: Model<Api>;
   /** What the query was opened with, which a step must still match to go on in it. */
   readonly system: string;
   readonly tools: string;
   readonly offered: ReadonlySet<string>;
 
-  constructor(key: string | undefined, cwd: string, model: Model<Api>, system: string, tools: readonly Tool[]) {
+  constructor(key: string | undefined, cwd: string, model: Model<Api>, system: string, tools: readonly Tool[], configDir?: string) {
+    this.configDir = configDir;
     this.key = key;
     this.cwd = cwd;
     this.model = model;
@@ -538,9 +554,9 @@ class Conversation {
     const id = this.sessions.values().next().value;
     if (id === undefined) return;
     const { deleteSession, getSessionPath } = await import("cc-session-io");
-    for (const session of this.sessions) try { deleteSession(session, this.cwd); } catch { /* already gone */ }
+    for (const session of this.sessions) try { deleteSession(session, this.cwd, this.configDir); } catch { /* already gone */ }
     // The project bucket is shared with the operator's Claude Code: remove it only if empty.
-    try { rmdirSync(dirname(getSessionPath(id, this.cwd))); } catch { /* absent, not empty, or not removable */ }
+    try { rmdirSync(dirname(getSessionPath(id, this.cwd, this.configDir))); } catch { /* absent, not empty, or not removable */ }
   }
 
   /** Whether `messages` go on from where the last step stopped: its reply, then every one of its calls' results, then maybe a steer. */
@@ -600,8 +616,10 @@ function failureOf(message: Record<string, unknown>): string | undefined {
  * whose models it offers as `claude-code/<id>` once Claude Code is signed in.
  */
 export function claudeCodeProvider(anthropic: readonly Model<Api>[], options: ClaudeCodeOptions = {}): Provider {
-  const models = claudeCodeModels(anthropic);
-  const signedIn = options.signedIn ?? statusSignedIn;
+  const id = options.id ?? claudeCodeProviderId;
+  const configDir = options.configDir;
+  const models = claudeCodeModels(anthropic).map((model) => ({ ...model, provider: id }));
+  const signedIn = options.signedIn ?? (async () => (await claudeCodeStatus(configDir)).loggedIn);
   const live = new Map<string, Conversation>();
   let start: Promise<StartQuery> | undefined;
   const sdk = (): Promise<StartQuery> => start ??= options.query !== undefined ? Promise.resolve(options.query)
@@ -612,7 +630,7 @@ export function claudeCodeProvider(anthropic: readonly Model<Api>[], options: Cl
     options: SimpleStreamOptions | undefined): Promise<void> {
     const cwd = conversation.cwd;
     const turn = turnStart(messages);
-    const earlier = anthropicHistory(messages.slice(0, turn));
+    const earlier = anthropicHistory(messages.slice(0, turn), id);
     const asked = messages.slice(turn).flatMap((message) => message.role === "user" ? userBlocks(message.content) : []);
     // The query's Claude Code session is named before it starts, so it is removed even when a stop comes before Claude Code says it.
     const session = randomUUID();
@@ -620,7 +638,7 @@ export function claudeCodeProvider(anthropic: readonly Model<Api>[], options: Cl
     let resume: string | undefined;
     if (earlier.length > 0) {
       const { createSession, repairToolPairing } = await import("cc-session-io");
-      const written = createSession({ projectPath: cwd, model: model.id, sessionId: session });
+      const written = createSession({ projectPath: cwd, model: model.id, sessionId: session, ...configDir === undefined ? {} : { claudeDir: configDir } });
       written.importMessages(repairToolPairing(earlier as Parameters<typeof repairToolPairing>[0]));
       written.save();
       resume = session;
@@ -634,7 +652,7 @@ export function claudeCodeProvider(anthropic: readonly Model<Api>[], options: Cl
       strictMcpConfig: true, settingSources: [], skills: [], settings: { autoMemoryEnabled: false },
       canUseTool: async (name, input) => name.startsWith(prefix) ? { behavior: "allow", updatedInput: input }
         : { behavior: "deny", message: "Only Tesota's tools are available." },
-      includePartialMessages: true, env: { ...process.env, ...environment },
+      includePartialMessages: true, env: { ...instanceEnvironment(configDir), ...environment },
       stderr: (data) => { stderr.push(data); if (stderr.length > 20) stderr.shift(); },
       ...effort === undefined ? {} : { effort, extraArgs: { "thinking-display": "summarized" } },
       ...resume === undefined ? { sessionId: session } : { resume },
@@ -685,7 +703,7 @@ export function claudeCodeProvider(anthropic: readonly Model<Api>[], options: Cl
       void conversation.deliver(messages.slice(conversation.answeredAt));
     } else {
       parked?.close();
-      conversation = new Conversation(key, cwd, model, system, tools);
+      conversation = new Conversation(key, cwd, model, system, tools, configDir);
       if (key !== undefined) live.set(key, conversation);
       conversation.begin(stream);
       open(conversation, model, messages, tools, options).catch((error: unknown) => {
@@ -711,8 +729,8 @@ export function claudeCodeProvider(anthropic: readonly Model<Api>[], options: Cl
   }
 
   return {
-    id: claudeCodeProviderId,
-    name: "Claude Code",
+    id,
+    name: id === claudeCodeProviderId ? "Claude Code" : id,
     auth: {
       apiKey: {
         name: "Claude Code sign-in",

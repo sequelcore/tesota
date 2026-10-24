@@ -27,7 +27,7 @@ function readStored(path: string): Stored {
 }
 
 /**
- * The engine's credentials (#443), one per provider, in `~/.tesota/auth.json`
+ * The engine's credentials (#443), one per provider id (including named instances), in `~/.tesota/auth.json`
  * unless given another file; Pi's are never read. Every write is a
  * read-modify-write under an operating-system lock, as pi-ai's store
  * requires, so an OAuth refresh in one process cannot race another's.

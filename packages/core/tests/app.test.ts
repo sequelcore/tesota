@@ -10,7 +10,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
 import { claudeCodeProvider } from "../src/providers/claude-code.ts";
-import { readSettings, writeSettings } from "../src/settings.ts";
+import { engineModels } from "../src/model-access.ts";
+import { type Account, readSettings, writeSettings } from "../src/settings.ts";
 import { runApp } from "../src/shell/app.ts";
 import type { ScriptStep } from "./engine.ts";
 import { scriptedReply, signInWithChatGPT } from "./scripted.ts";
@@ -52,12 +53,12 @@ function scripted(replies: readonly ScriptStep[]): { models: MutableModels; cred
 }
 
 /** The app in a temporary folder, its settings and sessions there too, once it has drawn its first frame. */
-async function app(replies: readonly ScriptStep[] = [], { repository = false, earlier, mcp, projectMcp, skills = {}, served, model, claudeCode }:
+async function app(replies: readonly ScriptStep[] = [], { repository = false, earlier, mcp, projectMcp, skills = {}, served, model, claudeCode, accounts }:
   { repository?: boolean;
     /** An earlier session of the folder that worked in its checkout, asked this and answered "earlier answer" (#595). */
     earlier?: string; mcp?: object; projectMcp?: object; skills?: Record<string, string>;
     /** Signed in to OpenAI with ChatGPT, which serves these models (#566), or whose list cannot be fetched. */
-    served?: readonly string[] | "offline"; model?: string;
+    served?: readonly string[] | "offline"; model?: string; accounts?: readonly Account[];
     /** Claude through Claude Code (#546), signed in there or not. */
     claudeCode?: "signed in" | "signed out" } = {}) {
   const terminal = new VirtualTerminal(100, 30);
@@ -67,7 +68,12 @@ async function app(replies: readonly ScriptStep[] = [], { repository = false, ea
   }
   const signOut = served === undefined ? () => undefined : await signInWithChatGPT(models, credentials, served);
   const settingsPath = join(folder("tesota-core-app-settings-"), "settings.json");
-  if (model !== undefined) writeSettings({ model }, settingsPath);
+  if (model !== undefined || accounts !== undefined) writeSettings({ ...model === undefined ? {} : { model }, ...accounts === undefined ? {} : { accounts } }, settingsPath);
+  if (accounts !== undefined) {
+    for (const provider of engineModels(credentials, accounts).getProviders().filter(({ id }) => id.includes("@"))) models.setProvider(provider);
+    for (const id of ["openai-codex", "openai-codex@work"]) await credentials.modify(id, async () =>
+      ({ type: "oauth", access: "token", refresh: "refresh", expires: Date.now() + 3_600_000, accountId: "account-work" }));
+  }
   const sessions = folder("tesota-core-app-sessions-");
   const cwd = folder("tesota-core-app-");
   // Further sessions need a Git repository with a commit, for their own worktrees (#453).
@@ -216,6 +222,31 @@ describe("tesota-core", () => {
       send(terminal, "/quit");
       await running;
     }
+  });
+
+  test("/model chooses a named account and labels duplicate identities; /login lists that instance", async () => {
+    const { terminal, settingsPath, running } = await app([], { accounts: [{ name: "work", provider: "openai-codex" }] });
+    try {
+      send(terminal, "/model");
+      await terminal.until("Model");
+      for (let down = 0; down < 9; down += 1) terminal.type("\x1b[B");
+      expect(await terminal.until("account-work")).toContain("same account as openai-codex");
+      terminal.type(enter);
+      await terminal.until("Model: openai-codex@work/gpt-6.1-sol");
+      expect(readSettings(settingsPath).settings.model).toBe("openai-codex@work/gpt-6.1-sol");
+      send(terminal, "/login");
+      expect(await terminal.until("Log in to")).toContain("openai-codex@work");
+      terminal.type("\x1b");
+    } finally { send(terminal, "/quit"); await running; }
+  });
+
+  test("/model names an unsigned Claude instance and says how to sign in to its folder", async () => {
+    const { terminal, running } = await app([], { accounts: [{ name: "b", provider: "claude-code", folder: folder("claude-b-") }] });
+    try {
+      send(terminal, "/model");
+      expect(await terminal.until("claude-code@b: not signed in")).toContain("CLAUDE_CONFIG_DIR");
+      terminal.type("\x1b");
+    } finally { terminal.type("\x1b"); send(terminal, "/quit"); await running; }
   });
 
   test("/model lists the available models, and the choice is saved and shown", async () => {

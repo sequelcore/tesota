@@ -4,12 +4,14 @@ import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
 import { getSessionPath, openSession as openClaudeSession } from "cc-session-io";
 import { afterEach, describe, expect, test } from "bun:test";
 import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { type execFile, type ExecFileOptions, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Type } from "typebox";
 import { engineModels, runnableModels } from "../src/model-access.ts";
-import { claudeCodeExecutable, claudeCodeProvider, type StartQuery } from "../src/providers/claude-code.ts";
+import { claudeCodeExecutable, claudeCodeProvider, claudeCodeStatus, type StartQuery } from "../src/providers/claude-code.ts";
+import { runPrint } from "../src/print.ts";
+import { writeSettings } from "../src/settings.ts";
 import { createSession, type EngineSession } from "../src/session.ts";
 import { readSessionFile } from "../src/session-file.ts";
 import { accepts } from "./scripted.ts";
@@ -54,14 +56,15 @@ function replaying(...scripts: (SDKMessage | typeof hang)[][]): { readonly start
   const start: StartQuery = ({ prompt, options }) => {
     const run: Run = { options, prompts: [], events: [], results: [], listed: [], resumed: undefined, closed: false };
     runs.push(run);
+    const configDir = options.env?.["CLAUDE_CONFIG_DIR"];
     if (options.resume !== undefined) {
-      run.resumed = openClaudeSession({ sessionId: options.resume, projectPath: options.cwd ?? process.cwd() }).messages
+      run.resumed = openClaudeSession({ sessionId: options.resume, projectPath: options.cwd ?? process.cwd(), ...configDir === undefined ? {} : { claudeDir: configDir } }).messages
         .map((record) => ({ role: record.message.role, content: record.message.content }));
     }
     // Claude Code writes its transcript as soon as it starts, before it says which session it is.
     const written = options.resume ?? options.sessionId;
     if (written !== undefined) {
-      const path = getSessionPath(written, options.cwd ?? process.cwd());
+      const path = getSessionPath(written, options.cwd ?? process.cwd(), configDir);
       mkdirSync(dirname(path), { recursive: true });
       appendFileSync(path, `${JSON.stringify({ type: "queue-operation", operation: "enqueue", sessionId: written })}\n`);
     }
@@ -135,6 +138,75 @@ const textOf = (message: AssistantMessage): string => message.content.flatMap((b
 const settled = async (run: Run): Promise<void> => { for (let tries = 0; !run.closed && tries < 100; tries += 1) await Bun.sleep(10); };
 
 describe("the claude-code provider", () => {
+  test("a named Claude account ignores ambient credentials for both status and queries", async () => {
+    const names = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_USE_BEDROCK"];
+    const saved = names.map((name) => process.env[name]);
+    const configDir = mkdtempSync(join(tmpdir(), "claude-account-env-"));
+    for (const name of names) process.env[name] = "ambient-credential";
+    try {
+      let statusEnv: NodeJS.ProcessEnv | undefined;
+      const execute = ((_file: string, _args: readonly string[], options: ExecFileOptions,
+        callback: (error: null, stdout: string, stderr: string) => void) => {
+        statusEnv = options.env;
+        callback(null, '{"loggedIn":true,"email":"folder@example.test"}', "");
+      }) as typeof execFile;
+      await claudeCodeStatus(configDir, execute);
+      const { start, runs } = replaying(answerReply);
+      const models = createModels();
+      models.setProvider(claudeCodeProvider(anthropic, { id: "claude-code@b", configDir, query: start, signedIn: async () => true }));
+      const model = models.getModel("claude-code@b", "claude-haiku-4-5");
+      if (model === undefined) throw new Error("Missing model");
+      await models.streamSimple(model, { messages: [user("go")] }, { metadata: { cwd: process.cwd() } }).result();
+      for (const name of names) {
+        expect(statusEnv?.[name]).toBeUndefined();
+        expect(runs[0]?.options.env?.[name]).toBeUndefined();
+      }
+    } finally {
+      for (const [index, name] of names.entries()) {
+        const value = saved[index];
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
+  });
+
+  test("auth status runs with the instance folder and exposes only account metadata", async () => {
+    let seen: ExecFileOptions | undefined;
+    const execute = ((_file: string, args: readonly string[], options: ExecFileOptions,
+      callback: (error: null, stdout: string, stderr: string) => void) => {
+      expect(args).toEqual(["auth", "status", "--json"]);
+      seen = options;
+      callback(null, JSON.stringify({ loggedIn: true, email: "owner@example.test", authMethod: "claude.ai", extra: "not returned" }), "");
+    }) as typeof execFile;
+    const status = await claudeCodeStatus("/claude-b", execute);
+    expect(status).toEqual({ loggedIn: true, email: "owner@example.test" });
+    expect(seen?.env?.["CLAUDE_CONFIG_DIR"]).toBe("/claude-b");
+    expect(seen?.env?.["HOME"]).toBe(process.env["HOME"]);
+  });
+
+  test("a named instance sets only its Claude folder and keeps its identity on a limit, without fallback", async () => {
+    const { start, runs } = replaying([{ type: "result", subtype: "error_during_execution", is_error: true,
+      errors: ["Account limit reached; try again later."] } as unknown as SDKMessage]);
+    const models = createModels();
+    const folder = mkdtempSync(join(tmpdir(), "claude-account-"));
+    models.setProvider(claudeCodeProvider(anthropic, { id: "claude-code@b", configDir: folder, query: start, signedIn: async () => true }));
+    let otherCalls = 0;
+    models.setProvider(claudeCodeProvider(anthropic, { id: "claude-code@other", signedIn: async () => true,
+      query: () => { otherCalls += 1; throw new Error("Must not switch accounts"); } }));
+    const model = models.getModel("claude-code@b", "claude-haiku-4-5");
+    expect(model).toBeDefined();
+    const reply = await models.streamSimple(model!, { messages: [user("go")] }, { metadata: { cwd: process.cwd() } }).result();
+    expect(reply.provider).toBe("claude-code@b");
+    expect(reply.stopReason).toBe("error");
+    expect(reply.errorMessage).toContain("limit");
+    expect(runs).toHaveLength(1);
+    expect(otherCalls).toBe(0);
+    expect(reply.errorMessage).toContain("Account limit reached; try again later.");
+    expect(runs[0]?.options.env?.["CLAUDE_CONFIG_DIR"]).toBe(folder);
+    expect(runs[0]?.options.env?.["HOME"]).toBe(process.env["HOME"]);
+    expect(process.env["CLAUDE_CONFIG_DIR"]).not.toBe(folder);
+  });
+
   test("a tool call ends the step, and the engine's result answers it in the same query", async () => {
     const { start, runs } = replaying(toolCall);
     const { step } = provider(start);
@@ -294,6 +366,25 @@ describe("the claude-code provider", () => {
 });
 
 describe("a session on claude-code", () => {
+  test("print --model and the saved model run the explicitly chosen Claude account", async () => {
+    const configDir = mkdtempSync(join(tmpdir(), "claude-print-account-"));
+    const accounts = [{ name: "b", provider: "claude-code", folder: configDir }] as const;
+    const models = engineModels(new InMemoryCredentialStore(), accounts);
+    expect(models.getModel("claude-code@b", "claude-haiku-4-5")?.provider).toBe("claude-code@b");
+    const { start, runs } = replaying(answerReply, answerReply);
+    models.setProvider(claudeCodeProvider(anthropic, { id: "claude-code@b", configDir, query: start, signedIn: async () => true }));
+    const settingsPath = join(mkdtempSync(join(tmpdir(), "tesota-account-settings-")), "settings.json");
+    writeSettings({ accounts, model: "claude-code@b/claude-haiku-4-5" }, settingsPath);
+    for (const args of [["say done", "--model", "claude-code@b/claude-haiku-4-5"], ["say done"]]) {
+      let output = "";
+      expect(await runPrint(args, mkdtempSync(join(tmpdir(), "tesota-account-print-")),
+        { out: (text) => { output += text; }, error: () => undefined }, { "open-cases-model": "off" }, settingsPath, models)).toBe(0);
+      expect(output.trim()).toBe("done");
+    }
+    expect(runs).toHaveLength(2);
+    for (const run of runs) expect(run.options.env?.["CLAUDE_CONFIG_DIR"]).toBe(configDir);
+  });
+
   const open: EngineSession[] = [];
   afterEach(async () => { await Promise.all(open.splice(0).map((session) => session.dispose())); });
 
@@ -334,6 +425,28 @@ describe("a session on claude-code", () => {
     for (let tries = 0; existsSync(dirname(transcript)) && tries < 100; tries += 1) await Bun.sleep(10);
     expect(existsSync(transcript)).toBe(false);
     expect(existsSync(dirname(transcript))).toBe(false);
+  });
+
+  test("a named account resumes and cleans up transcripts only in its own Claude folder", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "claude-account-cwd-"));
+    const configDir = mkdtempSync(join(tmpdir(), "claude-account-config-"));
+    const other = getSessionPath("operator-session", cwd);
+    mkdirSync(dirname(other), { recursive: true });
+    writeFileSync(other, "operator's default history\n");
+    const { start, runs } = replaying(answerReply, answerReply);
+    const models = createModels();
+    models.setProvider(claudeCodeProvider(anthropic, { id: "claude-code@b", configDir, query: start, signedIn: async () => true }));
+    const model = models.getModel("claude-code@b", "claude-haiku-4-5");
+    if (model === undefined) throw new Error("Missing model");
+    const session = createSession({ cwd, folder: mkdtempSync(join(tmpdir(), "tesota-account-sessions-")), verifier: accepts, models, model });
+    open.push(session);
+    await session.prompt("say done");
+    await session.prompt("say done again");
+    expect(runs[1]?.resumed?.some(({ role }) => role === "assistant")).toBe(true);
+    const transcript = getSessionPath(runs[1]?.options.resume ?? "none", cwd, configDir);
+    for (let tries = 0; existsSync(dirname(transcript)) && tries < 100; tries += 1) await Bun.sleep(10);
+    expect(existsSync(dirname(transcript))).toBe(false);
+    expect(readFileSync(other, "utf8")).toBe("operator's default history\n");
   });
 
   test("transcript cleanup preserves another Claude Code session in the same project folder", async () => {
