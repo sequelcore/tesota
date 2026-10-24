@@ -287,6 +287,34 @@ unverified earlier request remains visible when a later request changes files.
   or times a test or returns early (`toBe…`, `skip`, `only`, `it`, `retry`,
   `timeout`, `return`…), or a comment or open string that could hide the
   lines after it.
+
+  In a JavaScript or TypeScript test file read on both sides, as Bun,
+  Vitest and Jest write tests, the flag also says how the edit may weaken
+  each test, one line per test under it, matching tests by name within
+  their groups and each `expect` assertion with one on the same subject:
+
+  ```text
+  may weaken    tests/price.test.ts: edits a test file; read from the diff, a heuristic flag, not a verdict
+                price › rounds: loosens expect(price(1)).toBe(1) to .toBeTruthy()
+                price › caps: skips it (it.skip)
+  ```
+
+  It names an assertion removed; one loosened, to a weaker matcher
+  (`toBe(3)` to `toBeTruthy()`) or a wider expected value (fewer
+  `toBeCloseTo` digits, a shorter `toMatch` or `toThrow` string, a looser
+  bound); a dropped `not`; an assertion changed otherwise; a test or group skipped
+  (`.skip`, `.todo`, `.skipIf`, `.runIf`, `.if`, `xit`, `{ skip: true }`)
+  or focused (`.only`, `fit`); a new mock (`vi.mock`, `jest.mock`,
+  `mock.module`) of the module the file is named after and imports; and a
+  test deleted by name while the file stays (`assertionChange`, proved). A
+  removed line that only holds assertions made stricter doesn't count:
+  stricter only where the new check implies the old one, such as
+  `toBeTruthy()` becoming `toBe(3)`, `toEqual(x)` becoming `toBe(x)`, or
+  more `toBeCloseTo` digits. A matcher only ranked stricter, such as
+  `toHaveBeenCalledWith(a, b)` becoming `toHaveBeenCalledTimes(1)`, still
+  counts. The lines name what
+  Tesota recognizes, not every change the file has; other frameworks and
+  languages get the flag alone.
 - **Check scripts:** a `package.json` script selected at the base whose
   command changed or is no longer selected.
 
@@ -596,7 +624,7 @@ by `bun run formal:check` on every pull request.
 | `fingerprint-rule.ts` | Whether a repository is eligible and whether each path is a request change, inherited, unmeasured or unchanged |
 | `weakening-rule.ts` | Which annotation changes may weaken the evidence |
 | `selection-rule.ts` | Which functions LemmaScript extracts, `//@ verify` and `//@ skip` included |
-| `test-weakening-rule.ts` | Which changes to a test file may weaken its tests |
+| `test-weakening-rule.ts` | Which changes to a test file may weaken its tests, and how an edit changed an assertion |
 | `project-rule.ts` | Which folders hold projects, and which project owns a path |
 | `check-origin-rule.ts` | Whether a test failure comes from the change |
 | `mutation-rule.ts` | What a mutant's proof means, and when a survivor is equivalent |

@@ -1442,8 +1442,10 @@ it("puts each change that may weaken the evidence in the receipt, committed or n
     "  may weaken    src/rule.ts: leaves g out of the proof (//@ skip)",
     "  may weaken    src/rule.ts: adds //@ requires y > 0 to a function the base had",
     "  may weaken    tests/old.test.ts: deletes a test file",
-    "  may weaken    tests/rule.test.ts: edits a test file",
+    "  may weaken    tests/rule.test.ts: edits a test file; read from the diff, a heuristic flag, not a verdict",
   ].map((line) => `${line}`));
+  // How the edit may weaken each test, under its flag (#646).
+  expect(facts(settled.content)).toContain("read from the diff, a heuristic flag, not a verdict\n                f: skips it (it.skip)\n");
   expect((settled.details as Receipt).weakened).toContainEqual(
     { path: "tests/old.test.ts", kind: "deleted_test" });
   // The proof holds only given the assumptions added to its source and its .dfy, not those of another file (#399).

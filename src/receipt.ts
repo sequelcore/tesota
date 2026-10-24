@@ -6,6 +6,7 @@ import type { UncoveredLines } from "./proof-coverage.js";
 import type { ClaimCheckRun, ContractStrength } from "./proof-guarantees.js";
 import type { Counterexample, ModelCheck, ModelLink } from "./model-check.js";
 import type { ChangeLines, LineCount } from "./change-lines.js";
+import type { TestEdit, WeakenedTest } from "./test-edits.js";
 import type { CommandRun, TestExercise } from "./test-rung.js";
 import type { Weakening } from "./verification-changes.js";
 import { attributionResolved, type StartState, type UnmeasuredPath } from "./request-fingerprint.js";
@@ -410,14 +411,42 @@ export function skippedWords({ function: unit, statement }: { readonly function?
   return statement === true ? `leaves a statement of ${unit} out of the proof` : `leaves ${unit} out of the proof`;
 }
 
-function weakening(change: Weakening): string {
+/** What a test edit may have done to one test (`TestEdit`), in plain words. */
+function testEditWords(edit: TestEdit): string {
+  switch (edit.kind) {
+    case "removed_assertion": return `removes ${edit.assertion}`;
+    case "loosened_assertion": return `loosens ${edit.subject}.${edit.before} to .${edit.after}`;
+    case "dropped_not": return `drops the not of ${edit.subject}.${edit.before}, now .${edit.after}`;
+    case "changed_assertion": return `changes ${edit.before} to ${edit.after}`;
+    case "skipped": return `skips it (${edit.marker})`;
+    case "focused": return `focuses it (${edit.marker}), so the file's other tests do not run`;
+    case "mocked_subject": return `mocks ${edit.module}, the module the file tests`;
+    case "deleted_test": return "deletes it";
+  }
+}
+
+/** How many tests a test edit's flag names, so it reads in seconds; the receipt's JSON keeps them all. */
+const TESTS_SHOWN = 10;
+
+/** One line per test a test edit may weaken, up to `TESTS_SHOWN`: the test, then what the edit did to it. */
+function testLines(tests: readonly WeakenedTest[]): string[] {
+  const rest = tests.length - TESTS_SHOWN;
+  return [...tests.slice(0, TESTS_SHOWN).map(({ test, edits }) => `${test ?? "outside any test"}: ${edits.map(testEditWords).join("; ")}`),
+    ...rest > 0 ? [`and ${plural(rest, "more test", "more tests")}`] : []];
+}
+
+/** What the receipt says a test edit does when it says how it may weaken each test: a heuristic reading, never a verdict. */
+const testEditHead = "edits a test file; read from the diff, a heuristic flag, not a verdict";
+
+function weakening(change: Weakening): string[] {
+  const tests = change.kind === "edited_test" ? change.tests ?? [] : [];
   const what = change.kind === "removed_contract" ? `removes or changes ${change.annotation}`
     : change.kind === "added_requires" ? `adds ${change.annotation} to a function the base had`
     : change.kind === "added_assume" ? `${trustedWords(change)} (${change.annotation})`
     : change.kind === "added_skip" ? `${skippedWords(change)} (${change.annotation})`
     : change.kind === "changed_check_script" ? `${weakeningWords[change.kind]} ${change.script}`
-      : change.kind === "deleted_test" ? "deletes a test file" : "edits a test file";
-  return `  may weaken    ${change.path}: ${what}`;
+      : change.kind === "deleted_test" ? "deletes a test file" : tests.length > 0 ? testEditHead : "edits a test file";
+  return [`  may weaken    ${change.path}: ${what}`, ...testLines(tests).map((line) => `                ${line}`)];
 }
 
 /** Whether a session entry's details hold a receipt this Tesota reads. */
@@ -770,7 +799,8 @@ function unitFindings(receipt: UnitEvidence, folder = ""): Finding[] {
           : change.kind === "added_skip" ? skippedWords(change)
           : change.kind === "changed_check_script" ? `${weakeningWords[change.kind]} ${change.script}` : weakeningWords[change.kind]);
         return { standing: "decide", check: "weakening", label: "May weaken the evidence", subject: change.path, detail,
-          more: "annotation" in change ? [change.annotation] : [], group: { title: `${reviewTitles[change.kind]} · %`,
+          more: "annotation" in change ? [change.annotation] : change.kind === "edited_test" ? testLines(change.tests ?? []) : [],
+          group: { title: `${reviewTitles[change.kind]} · %`,
             noun: ["heuristic flag", "heuristic flags"], note: "May weaken evidence; not confirmed weakening" + ".", item: `${change.path}: ${detail}` } };
       }),
     ...receipt.contracts.map(contractFinding),
@@ -1179,7 +1209,7 @@ function unitLines(receipt: UnitEvidence): string[] {
     ...receipt.weakened === "too_large"
       ? ["  not checked   weakened evidence: the change is too large to check for weakening"]
       : receipt.weakened === "unreadable"
-        ? ["  not checked   weakened evidence: Git could not show the change"] : receipt.weakened.map((change) => weakening(change)),
+        ? ["  not checked   weakened evidence: Git could not show the change"] : receipt.weakened.flatMap((change) => weakening(change)),
     ...typeof receipt.weakened === "string" && receipt.proofs.length > 0
       ? ["  not checked   which changed lines the proofs cover, for the same reason"] : [],
     ...receipt.uncovered.filter(({ lines }) => lines.length > 0).map(({ path, lines }) => {

@@ -219,6 +219,41 @@ it("names what an added //@ skip leaves out of the proof (#404)", () => {
   expect(expanded).toContain("src/range.ts: leaves a statement of lower out of the proof (//@ skip)");
 });
 
+it("says how a test edit may weaken each test, one line per test, as a heuristic, not a verdict (#646)", () => {
+  const receipt: Receipt = { ...clean, weakened: [{ path: "tests/price.test.ts", kind: "edited_test", tests: [
+    { test: "price › rounds", edits: [
+      { kind: "loosened_assertion", subject: "expect(price(1))", before: "toBe(1)", after: "toBeTruthy()" },
+      { kind: "dropped_not", subject: "expect(price(-1))", before: "not.toBeLessThan(0)", after: "toBeLessThan(0)" }] },
+    { test: "price › floors", edits: [{ kind: "removed_assertion", assertion: "expect(price(0)).toBe(0)" },
+      { kind: "changed_assertion", before: "expect(price(2)).toBe(2)", after: "expect(price(2)).toBe(3)" }] },
+    { test: "price › caps", edits: [{ kind: "skipped", marker: "it.skip" }] },
+    { test: "price › sums", edits: [{ kind: "focused", marker: "it.only" }] },
+    { test: "price › old", edits: [{ kind: "deleted_test" }] },
+    { edits: [{ kind: "mocked_subject", module: "../src/price.js" }] },
+  ] }, { path: "tests/tax.test.ts", kind: "edited_test" }] };
+  const expanded = text(shown("tesota-receipt", receipt, 200, true));
+  const at = expanded.indexOf("  may weaken    tests/price.test.ts: edits a test file; read from the diff, a heuristic flag, not a verdict");
+  expect(at).toBeGreaterThan(-1);
+  expect(expanded.slice(at + 1, at + 8)).toEqual([
+    "                price › rounds: loosens expect(price(1)).toBe(1) to .toBeTruthy(); drops the not of " +
+      "expect(price(-1)).not.toBeLessThan(0), now .toBeLessThan(0)",
+    "                price › floors: removes expect(price(0)).toBe(0); changes expect(price(2)).toBe(2) to expect(price(2)).toBe(3)",
+    "                price › caps: skips it (it.skip)",
+    "                price › sums: focuses it (it.only), so the file's other tests do not run",
+    "                price › old: deletes it",
+    "                outside any test: mocks ../src/price.js, the module the file tests",
+    "  may weaken    tests/tax.test.ts: edits a test file",
+  ]);
+  // The summary keeps one heuristic flag per file.
+  expect(text(shown("tesota-receipt", receipt, 200))).toContain("! Review test edits · 2 heuristic flags");
+  // Many tests: the first ten, then how many more.
+  const many: Receipt = { ...clean, weakened: [{ path: "tests/price.test.ts", kind: "edited_test",
+    tests: Array.from({ length: 13 }, (_, k) => ({ test: `t${k}`, edits: [{ kind: "deleted_test" as const }] })) }] };
+  const listed = text(shown("tesota-receipt", many, 200, true));
+  const head = listed.findIndex((row) => row.startsWith("  may weaken    tests/price.test.ts"));
+  expect(listed.slice(head + 10, head + 12)).toEqual(["                t9: deletes it", "                and 3 more tests"]);
+});
+
 it("says how many of a method's results hold when some do not", () => {
   const twoProofs: Receipt = { ...clean, contracts: [], exercises: [],
     proofs: [proved, { path: "src/clamp.ts", verdict: "no_progress", evidence: evidence("failed", dafnyFailure) }] };
