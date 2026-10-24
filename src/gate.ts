@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { BranchEntry, ExtensionAPI, ExtensionContext, SettleEvent, SettleResult } from "./contract.js";
 import { clarificationText, type Clarification, type RequestInput } from "./clarification.js";
 import { type ChangeStatus, type ChangedFile, changedLines } from "./diff-lines.js";
-import type { Evidence } from "./evidence.js";
+import { currentContent, type Evidence } from "./evidence.js";
 import { git, gitOutput, headCommit } from "./git.js";
 import { host } from "./host.js";
 import type { ModelCheck } from "./model-check.js";
@@ -613,14 +613,11 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     const measured = new Map<string, Measured>();
     for (const unit of units) {
       const judged = proofs.get(unit.folder) ?? [];
-      // A proof's `.dfy.gen` is the base `lsc regen` merges against, regenerated from the source the proof covers.
-      const covered = new Set(judged.flatMap(({ evidence }) => evidence.files.flatMap((path) =>
-        path.endsWith(".dfy") ? [path, `${path}.gen`] : [path])));
       const sources = yield* step(() => provedSources(unit.root, unit.base, judged));
       if (sources.length > 0) progress.publish({ step: "measuring", startedAt: performance.now(), tally: tallied });
       const strength = yield* step((signal) => checks().contractStrength(ctx, requests, sources, signal, restateWith(pi),
         progress.operations.forUnit(unit.folder)));
-      measured.set(unit.folder, { covered, sources, strength });
+      measured.set(unit.folder, { sources, strength });
     }
     return measured;
   });
@@ -717,11 +714,11 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     const modelRungs = yield* checkModels(changed, tally(allProofs, allTests, contracts), ctx.env);
     const modelsSent = modelsBack(modelRungs, tally(allProofs, allTests, contracts));
     if (modelsSent !== undefined) return modelsSent;
-    const [evidence, open] = yield* effect().all([step(() => progress.operations.run(
+    const open = yield* listOpen(ctx);
+    const evidence = yield* step(() => progress.operations.run(
       { method: "receipt", unit: "", target: "receipt" }, () => Promise.all(changed.map((unit) =>
         unitEvidence(unit, proofs.get(unit.folder) ?? [], rungs.get(unit.folder), measured.get(unit.folder), modelRungs.get(unit.folder)))),
-      () => "done")),
-    listOpen(ctx)], { concurrency: "unbounded" });
+      () => "done"));
     const settledAt = new Date().toISOString();
     const only = workspace ? undefined : evidence[0];
     const receipt: Receipt = only !== undefined ? { version: 2, ...run, ...only, ...open, settledAt }
@@ -871,7 +868,6 @@ async function changedUnit(cwd: string, folder: string, base: string | null, too
 
 /** What `measure` found in one repository. */
 interface Measured {
-  readonly covered: ReadonlySet<string>;
   readonly sources: readonly ProvedSource[];
   readonly strength: Pick<Receipt, "contracts" | "claimcheck">;
 }
@@ -888,18 +884,34 @@ function modelEvidence(rung: ModelRung | undefined): Pick<UnitEvidence, "models"
     ...rung === undefined || rung.unheaded.length === 0 ? {} : { unheaded: rung.unheaded } };
 }
 
+/** Reconcile a check with the content being published, without retrying commands that may rewrite their own inputs. */
+async function settledCheck<T extends { readonly evidence: Evidence; readonly verdict: Receipt["tests"][number]["verdict"] }>(
+  root: string, check: T): Promise<T> {
+  if (await currentContent(root, check.evidence)) return check;
+  return { ...check, verdict: "operator", evidence: { ...check.evidence, outcome: "not_started", invalidated: "content_changed",
+    output: `${check.evidence.output.trimEnd()}\n\nEvidence is stale: checked content changed before the receipt settled; current content was not checked.` } };
+}
+
 /** One repository's evidence for the receipt, in its own terms. */
 async function unitEvidence(unit: ChangedUnit, proofs: Receipt["proofs"], rung: Pick<Receipt, "tests" | "exercises"> | undefined,
   measured: Measured | undefined, models: ModelRung | undefined): Promise<UnitEvidence> {
-  const sources = measured?.sources ?? [];
-  return { repository: unit.snapshot === undefined, ...modelEvidence(models),
+  const settledProofs = await Promise.all(proofs.map((proof) => settledCheck(unit.root, proof)));
+  const tests = await Promise.all((rung?.tests ?? []).map((test) => settledCheck(unit.root, test)));
+  const settledModels = models === undefined ? undefined : { ...models,
+    models: await Promise.all(models.models.map((model) => settledCheck(unit.root, model))) };
+  const sources = (measured?.sources ?? []).filter(({ path }) => settledProofs.some((proof) => proof.path === path && proof.verdict === "proved"));
+  // A proof's `.dfy.gen` is the base `lsc regen` merges against, regenerated from the source the proof covers.
+  const covered = new Set(settledProofs.filter(({ verdict }) => verdict === "proved").flatMap(({ evidence }) =>
+    evidence.files.flatMap((path) => path.endsWith(".dfy") ? [path, `${path}.gen`] : [path])));
+  return { repository: unit.snapshot === undefined, ...modelEvidence(settledModels),
     ...unit.snapshot === undefined ? {} : { snapshot: true, ...unit.snapshot.tooLarge.length === 0 ? {} : { tooLarge: unit.snapshot.tooLarge } },
-    base: unit.base, proofs, ...measured?.strength ?? { contracts: [] },
+    base: unit.base, proofs: settledProofs, ...measured?.strength,
+    contracts: (measured?.strength.contracts ?? []).filter(({ path }) => sources.some((source) => source.path === path)),
     inherited: unit.inherited, unmeasured: unit.unmeasured,
     ...unit.startState === undefined ? {} : { startState: unit.startState },
     ...unit.endState === undefined ? {} : { endState: unit.endState },
-    tests: rung?.tests ?? [], exercises: rung?.exercises ?? [], weakened: unit.weakened,
-    ...unprovedFiles(unit.changes, unit.changed, measured?.covered ?? new Set()), uncovered: uncovered(sources, unit.changes, unit.weakened),
+    tests, exercises: rung?.exercises ?? [], weakened: unit.weakened,
+    ...unprovedFiles(unit.changes, unit.changed, covered), uncovered: uncovered(sources, unit.changes, unit.weakened),
     changed: unit.unreadable ? "unreadable" : await recordedChanges(unit.root, unit.changed),
     lines: unit.unreadable ? "unreadable" : await checks().changeLines(unit.root, unit.base, unit.changed) };
 }

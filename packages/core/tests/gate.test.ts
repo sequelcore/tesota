@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Evidence } from "../../../src/evidence.ts";
+import { contentHash, type Evidence } from "../../../src/evidence.ts";
 import type { ProofOutcome } from "../../../src/verification/proof-outcome-rule.ts";
 import type { ExtensionFactory } from "../../../src/contract.ts";
 import { provideHost } from "../../../src/host.ts";
@@ -18,11 +18,13 @@ const proofs = new Map<string, ProofOutcome[]>();
 const lemmascript = { ...await import("../../../src/verification/lemmascript-verifier.ts") };
 mock.module("../../../src/verification/lemmascript-verifier.ts", () => ({
   ...lemmascript,
-  proveFile: (_root: string, path: string): Promise<Evidence> => {
+  proveFile: (root: string, path: string): Promise<Evidence> => {
+    const files = [path, path.replace(/\.ts$/u, ".dfy")];
     const outcome = proofs.get(path)?.shift() ?? "passed";
     return Promise.resolve({ verifier: "lemmascript", claim: `claim of ${path}`, limits: "", outcome,
       output: outcome === "passed" ? "1 verified, 0 errors" : "1 verified, 1 error: postcondition", durationMs: 1,
-      files: [path, path.replace(/\.ts$/u, ".dfy")], contentHash: `hash of ${path}` });
+      files, contentHash: contentHash(files.map((path) => ({ path,
+        content: existsSync(join(root, path)) ? readFileSync(join(root, path), "utf8") : undefined }))) });
   },
   // Every mutant fails its proof, so contracts measure strong without Dafny.
   proveSource: () => Promise.resolve("failed" satisfies ProofOutcome),

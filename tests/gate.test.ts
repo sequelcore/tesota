@@ -10,7 +10,8 @@ import { evidenceParts, evidenceText } from "../src/footer.js";
 import { changedFiles, GateProgress, type GateStatus, type RecordedRequest, registerGate, type SentBack } from "../src/gate.js";
 import { headCommit } from "../src/git.js";
 import { openCasesSystemPrompt } from "../src/open-cases.js";
-import { receiptDecisions, receiptFindings, type Receipt } from "../src/receipt.js";
+import { receiptMarkdown, subjectOf } from "../src/pull-request-receipt.js";
+import { receiptDecisions, receiptFindings, receiptSummary, renderReceipt, type Receipt } from "../src/receipt.js";
 import { gateVerdict, keepsWorking, toolMayChangeFiles } from "../src/verification/gate-rule.js";
 import type { ProofOutcome } from "../src/verification/proof-outcome-rule.js";
 import { emptyReceipt } from "./receipts.js";
@@ -20,11 +21,13 @@ const scripted = new Map<string, { outcome: ProofOutcome; output: string }>();
 let mutantOutcome: ProofOutcome = "failed";
 vi.mock("../src/verification/lemmascript-verifier.js", async (original) => ({
   ...await original<typeof import("../src/verification/lemmascript-verifier.js")>(),
-  proveFile: (_root: string, path: string): Promise<Evidence> => {
+  proveFile: (root: string, path: string): Promise<Evidence> => {
     const { outcome, output } = scripted.get(path) ?? { outcome: "passed", output: "1 verified, 0 errors" };
     if (output === "throws") return Promise.reject(new Error("the prover broke"));
+    const files = [path, path.replace(/\.ts$/u, ".dfy")];
     return Promise.resolve({ verifier: "lemmascript", claim: `claim of ${path}`, limits: "", outcome, output, durationMs: 1,
-      files: [path, path.replace(/\.ts$/u, ".dfy")], contentHash: `hash of ${path}` });
+      files, contentHash: contentHash(files.map((path) => ({ path,
+        content: existsSync(join(root, path)) ? readFileSync(join(root, path), "utf8") : undefined }))) });
   },
   // Every mutant ends as scripted, failing its proof unless a test says otherwise, so strength is measured without Dafny;
   // a survivor's equivalence proof (`equivalenceSource`) always fails, so it stays a survivor.
@@ -53,6 +56,93 @@ vi.mock("../src/model-check.js", async (original) => {
 });
 
 const roots: string[] = [];
+
+function expectStaleReceipt(recorded: Receipt, check: "tests" | "proof", label: string, subject: string): void {
+  // Output is not the source of staleness: presentation must use recorded facts.
+  const receipt = { ...recorded,
+    tests: recorded.tests.map((test) => ({ ...test, evidence: { ...test.evidence, output: "checked successfully" } })),
+    proofs: recorded.proofs.map((proof) => ({ ...proof, evidence: { ...proof.evidence, output: "1 verified, 0 errors" } })),
+  };
+  expect(receiptFindings(receipt)).toContainEqual(expect.objectContaining({ check, label, subject,
+    detail: expect.stringContaining("stale") }));
+  expect(receiptSummary(receipt).methods.find(({ method }) => method === (check === "tests" ? "Tested" : "Proved"))?.text)
+    .toContain(`${subject} · stale`);
+  for (const text of [renderReceipt(receipt), receiptMarkdown(receipt, { commit: "abc123", owner: "operator",
+    sessionId: "stale-evidence", stale: [], changedAfter: [] })]) {
+    expect(text).toContain("stale");
+    expect(text).toContain("current content was not checked");
+    expect(text).not.toMatch(/did not run|could not run/u);
+    expect(text).toContain(`stale         ${subject}`);
+  }
+}
+
+it.each([
+  ["checked value 2 → 999", "writeFileSync('value.js', '999\\n');", "not_started"],
+  ["second relevant input", "writeFileSync('input.json', '999\\n');", "not_started"],
+  ["formatting-only edit", "writeFileSync('value.js', ' 2\\n');", "not_started"],
+  ["generated output", "writeFileSync('generated.txt', 'output');", "passed"],
+  ["unchanged content", "", "passed"],
+])("binds the settled command evidence to content: %s (#617)", async (_name, mutation, outcome) => {
+  const root = repository({
+    "package.json": JSON.stringify({ packageManager: "bun@1.3.11", scripts: { check: "node check.cjs" } }),
+    "value.js": "1\n", "input.json": "1\n", ".gitignore": "generated.txt\n",
+    "check.cjs": "const {readFileSync, writeFileSync} = require('node:fs');\n" +
+      "require('node:assert/strict').equal(Number(readFileSync('value.js', 'utf8')), 2);\n" +
+      "require('node:assert/strict').equal(Number(readFileSync('input.json', 'utf8')), 2);\n" + mutation + "\nconsole.log('checked');\n",
+  });
+  const run = gate(root);
+  await run.input();
+  await run.tool("edit");
+  write(root, { "value.js": "2\n", "input.json": "2\n" });
+  const settled = await run.settle();
+  expect(settled?.continue).not.toBe(true);
+  const receipt = entry(settled).details as Receipt;
+  expect(receipt.tests).toMatchObject([{ command: "bun run check", verdict: outcome === "passed" ? "proved" : "operator",
+    evidence: { outcome, files: ["input.json", "value.js"] } }]);
+  if (outcome === "not_started") {
+    expect(receipt.tests[0]?.evidence.output).toContain("stale");
+    expectStaleReceipt(receipt, "tests", "Tests stale", "bun run check");
+    expect(entry(settled).content).not.toContain("  passed        bun run check");
+    expect(entry(settled).content).toContain("Evidence is stale: checked content changed before the receipt settled; current content was not checked.");
+  }
+  expect(run.progress.operations.operations().filter(({ method }) => method === "command")).toHaveLength(1);
+});
+
+it("does not retain proof coverage or contract findings when a command changes the proved source (#617)", async () => {
+  const root = repository({ "src/rule.ts": contract,
+    "package.json": JSON.stringify({ packageManager: "bun@1.3.11", scripts: { check: "node check.cjs" } }),
+    "check.cjs": `require('node:fs').writeFileSync('src/rule.ts', ${JSON.stringify(contract.replace("return 0", "return 999"))});`,
+  });
+  const run = gate(root);
+  await run.input();
+  await run.tool("edit");
+  write(root, { "src/rule.ts": contract.replace("return 0", "return 2") });
+  const settled = entry(await run.settle());
+  const receipt = settled.details as Receipt;
+  expect(receipt.proofs).toMatchObject([{ path: "src/rule.ts", verdict: "operator", evidence: { outcome: "not_started" } }]);
+  expect(receipt.contracts).toEqual([]);
+  expect(receipt.unverified).toContain("src/rule.ts");
+  expect(receipt.uncovered).toEqual([]);
+  expect(settled.content).toContain("Evidence is stale");
+  expectStaleReceipt(receipt, "proof", "Proof stale", "src/rule.ts");
+  expect(settled.content).not.toContain("  proved        src/rule.ts");
+});
+
+it("the export still catches content edited after a passing settled receipt (#617)", async () => {
+  const root = repository({ "package.json": JSON.stringify({ packageManager: "bun@1.3.11", scripts: { check: "node -e \"process.exit(0)\"" } }),
+    "value.js": "1\n" });
+  const run = gate(root);
+  await run.input();
+  await run.tool("edit");
+  write(root, { "value.js": "2\n" });
+  const receipt = entry(await run.settle()).details as Receipt;
+  expect(receipt.tests[0]?.evidence.outcome).toBe("passed");
+  commit(root, "checked change");
+  expect(await subjectOf(root, receipt, "session", "operator")).toMatchObject({ stale: [], changedAfter: [] });
+  write(root, { "value.js": "999\n" });
+  commit(root, "later edit");
+  expect(await subjectOf(root, receipt, "session", "operator")).toMatchObject({ stale: ["bun run check"], changedAfter: ["value.js"] });
+});
 
 it("asking a question alone cannot change project files, while unknown tools remain eligible", () => {
   expect(toolMayChangeFiles("ask_user", true, false)).toBe(false);
@@ -561,13 +651,13 @@ it("keeps the agent working while a changed contract fails, and settles with a r
   expect(proved?.continue).toBeUndefined();
   expect(entry(proved).customType).toBe("tesota-receipt");
   expect(facts(entry(proved).content)).toBe(["  proved        src/rule.ts",
-    "                content sha256 hash of src/rule.ts",
+    "                content sha256 ccc652fa505b947431e0e61131cecc92a08ca3084e7c79b4171999fc6f20a74f",
     "  not verified  src/rule.ts line 3: outside the contracts that proved, and no verifier covers them",
     "  not verified  notes.md: no verifier covers it",
     "  changed lines implementation +1 -0 · other +2 -1"].join("\n"));
   const receipt = entry(proved).details as Receipt;
   expect(receipt.proofs.map(({ path, verdict, evidence }) => [path, verdict, evidence.contentHash]))
-    .toEqual([["src/rule.ts", "proved", "hash of src/rule.ts"]]);
+    .toEqual([["src/rule.ts", "proved", "ccc652fa505b947431e0e61131cecc92a08ca3084e7c79b4171999fc6f20a74f"]]);
   expect(receipt).toMatchObject({ version: 2, base: await headCommit(root), engine: "0.1.0" });
   expect(receipt.model).toBeUndefined();
   expect(Date.parse(receipt.settledAt)).toBeGreaterThanOrEqual(Date.parse(receipt.startedAt));
@@ -1313,7 +1403,7 @@ it("verifies each repository the request changed in a folder of repositories, fr
     "  not proved    api/src/price.mjs: no proof covers it; the project's commands pass with it",
     "  not verified  notes/todo.md: no verifier covers it",
     "  proved        rules/src/rule.ts",
-    "                content sha256 hash of src/rule.ts",
+    "                content sha256 e8cda4ec2c6b993b18bb0e32a0a802c2a8f8c0cd3ffce5cb3023500d04d3e639",
     "  changed lines implementation +2 -1 · other +1 -0"].join("\n"));
   const receipt = entry(settled).details as Receipt;
   expect(receipt.units?.map(({ folder: at, repository, snapshot }) => [at, repository, snapshot ?? false]))
@@ -1514,7 +1604,7 @@ it("publishes the open-case listing, and a model check kept from an earlier chec
   writeFileSync(join(root, "src", "counter.ts"), "export const n = 1;\n");
   await run.settle();
   // The scripted model check publishes nothing of its own, as TLC's runner does.
-  expect(shape(run).map(([method]) => method)).toEqual(["receipt", "open_cases"]);
+  expect(shape(run).map(([method]) => method)).toEqual(["open_cases", "receipt"]);
   expect(run.progress.operations.operations().find(({ method }) => method === "open_cases")).toMatchObject({ target: "test/lister", result: "done" });
   run.agentStart();
   await run.tool("write");

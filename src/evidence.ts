@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { ProofOutcome } from "./verification/proof-outcome-rule.js";
 
 /**
@@ -14,6 +16,8 @@ export interface Evidence {
   /** What a pass does not establish. */
   readonly limits: string;
   readonly outcome: ProofOutcome;
+  /** Settlement found different content; the run's evidence cannot establish the current content. */
+  readonly invalidated?: "content_changed";
   /** The end of what the verifier printed, or why it did not run. */
   readonly output: string;
   readonly durationMs: number;
@@ -22,12 +26,16 @@ export interface Evidence {
   readonly contentHash: string;
 }
 
+/** Why evidence invalidated at settlement cannot establish the current content. */
+export const staleEvidenceWords = "Evidence is stale: checked content changed before the receipt settled; current content was not checked.";
+
 /**
  * A proof's run in a few words for people: how it ended, Dafny's first error
  * and the contract line it points at, and Dafny's tally. Dafny prints CRLF
  * on Windows.
  */
 export function proofSummary(evidence: Evidence): { readonly words: string; readonly at?: string; readonly tally?: string } {
+  if (evidence.invalidated === "content_changed") return { words: staleEvidenceWords };
   const tally = /finished with (\d+ verified, \d+ errors?)/u.exec(evidence.output)?.[1];
   const counted = tally === undefined ? {} : { tally };
   if (evidence.outcome === "passed") return { words: "every contract holds", ...counted };
@@ -44,6 +52,13 @@ export function proofSummary(evidence: Evidence): { readonly words: string; read
 export function quietOutput(output: string): string[] {
   return output.split(/\r?\n/u).map((line) => line.trimEnd()).filter((line) => !/^(?:Generated|Created): |^Running dafny verify/u.test(line))
     .filter((line, k, all) => line !== "" || (k > 0 && all[k - 1] !== ""));
+}
+
+/** Whether the current files still hold the content a verifier checked, independent of Git's index or HEAD. */
+export async function currentContent(root: string, evidence: Evidence): Promise<boolean> {
+  const files = await Promise.all(evidence.files.map(async (path) => ({ path,
+    content: await readFile(join(root, path), "utf8").catch(() => undefined) })));
+  return contentHash(files) === evidence.contentHash;
 }
 
 /** The SHA-256 of files' paths and content, in order; an unreadable file counts as absent. */

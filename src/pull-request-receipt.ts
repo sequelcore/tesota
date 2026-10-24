@@ -1,6 +1,5 @@
-import { readFile } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
-import { type Evidence, contentHash } from "./evidence.js";
+import { basename, dirname } from "node:path";
+import { type Evidence, currentContent } from "./evidence.js";
 import { git, headCommit } from "./git.js";
 import { entryReceipt, isReceipt, type Receipt, type ReceiptEntry, renderReceipt, unitReceipt } from "./receipt.js";
 
@@ -72,9 +71,7 @@ export function httpsRepository(remote: string): string | undefined {
 
 /** Whether the commit holds the content `evidence` checked: the files hash as they did, and none differs from `HEAD`. */
 async function current(root: string, evidence: Evidence): Promise<boolean> {
-  const files = await Promise.all(evidence.files.map(async (path) => ({ path,
-    content: await readFile(join(root, path), "utf8").catch(() => undefined) })));
-  if (contentHash(files) !== evidence.contentHash) return false;
+  if (!await currentContent(root, evidence)) return false;
   const status = await git(root, ["status", "--porcelain", "--untracked-files=all", "--", ...evidence.files]);
   return status === "";
 }

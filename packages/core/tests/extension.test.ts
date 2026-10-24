@@ -1,10 +1,10 @@
 import { createModels, fauxProvider } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Evidence } from "../../../src/evidence.ts";
+import { contentHash, type Evidence } from "../../../src/evidence.ts";
 import type { ProofOutcome } from "../../../src/verification/proof-outcome-rule.ts";
 import type { ExtensionFactory, Session } from "../../../src/contract.ts";
 import { createSession } from "../src/session.ts";
@@ -15,9 +15,13 @@ import { scriptedReply } from "./scripted.ts";
 const lemmascript = { ...await import("../../../src/verification/lemmascript-verifier.ts") };
 mock.module("../../../src/verification/lemmascript-verifier.ts", () => ({
   ...lemmascript,
-  proveFile: (_root: string, path: string): Promise<Evidence> => Promise.resolve({ verifier: "lemmascript", claim: `claim of ${path}`,
-    limits: "", outcome: "passed", output: "1 verified, 0 errors", durationMs: 1, files: [path, path.replace(/\.ts$/u, ".dfy")],
-    contentHash: `hash of ${path}` }),
+  proveFile: (root: string, path: string): Promise<Evidence> => {
+    const files = [path, path.replace(/\.ts$/u, ".dfy")];
+    return Promise.resolve({ verifier: "lemmascript", claim: `claim of ${path}`,
+      limits: "", outcome: "passed", output: "1 verified, 0 errors", durationMs: 1, files,
+      contentHash: contentHash(files.map((path) => ({ path,
+        content: existsSync(join(root, path)) ? readFileSync(join(root, path), "utf8") : undefined }))) });
+  },
   proveSource: () => Promise.resolve("failed" satisfies ProofOutcome),
 }));
 const { provideHost } = await import("../../../src/host.ts");
