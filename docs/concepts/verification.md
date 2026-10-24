@@ -184,8 +184,28 @@ Eligible units climb:
 5. When nothing goes back, settle with the receipt.
 
 Stopping the run while it climbs ends the step under way and every process
-it started, and starts no other: the receipt says you stopped it and claims
-no evidence.
+it started, and starts no other: the receipt says you stopped it, names the
+checks it interrupted or never started, and claims no evidence. Nothing goes
+back to the agent after a stop, and no check runs again.
+
+**A run that ends before it's verified** (#599) still settles with a receipt
+once a tool that may change files ran, whether you stopped it, it failed, or
+the shell ended. The receipt reads incomplete, never verified. It lists what
+the run left: each changed, deleted or untracked path with its final blob,
+and the captures' limits, read from Git without running anything. When Git
+can't tell, it says `unreadable` and why, never an empty list. Submitted
+answers to the agent's questions are kept; an answer that wasn't saved
+before the stop isn't. A question waiting for an answer has no time limit:
+it stays pending until you answer it or stop the run.
+
+When the process itself dies, nothing can verify the run then. Opening the
+session again records the run as interrupted, once, with a receipt that
+verified nothing and says what changed is unknown: no inventory was saved,
+and what's on disk now need not be what the run left. Nothing is replayed,
+neither writes nor unsaved answers. A new request verifies the current
+content. A session that is never opened again after a power loss or a
+killed process gets no receipt at all: only a process that survives could
+verify it, and Tesota runs none.
 
 **What goes back** follows one rule on every rung (`gateVerdict`, proved).
 A `failed` or `vacuous` result goes back to the agent, unless it repeats a

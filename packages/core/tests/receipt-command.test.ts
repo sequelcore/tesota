@@ -260,6 +260,18 @@ it("writes, in a repository of a folder of repositories, the part of that folder
   expect(output.pop()).toContain("The last receipt here covers several repositories.");
 });
 
+it("refuses, in a repository of a folder of repositories, its part of a stopped run's inventory (#599)", async () => {
+  const workspace = folder();
+  const root = repository(join(workspace, "api"));
+  const base = git(root, "rev-parse", "HEAD");
+  await session(workspace, [{ ...emptyReceipt, repository: true, base: null, stopped: "the operator stopped the run",
+    units: [{ ...emptyReceipt, folder: "api", base, changed: [{ path: "src/rule.ts", blob: null }] }] }]);
+  const output: string[] = [];
+  const write = { out: (text: string) => { output.push(text); }, error: (text: string) => { output.push(text); } };
+  expect(await receiptCommand([], root, sessionStore, write)).toBe(1);
+  expect(output.pop()).toContain("ended before Tesota verified it");
+});
+
 it("leaves out a receipt whose run never ended, as when Tesota was killed after recording it", async () => {
   const root = repository();
   await session(root, [{ ...emptyReceipt, base: git(root, "rev-parse", "HEAD") }]);

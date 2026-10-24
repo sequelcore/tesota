@@ -3,7 +3,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
-import type { FloorRefusal, ReceiptChild } from "../../../src/receipt.ts";
+import { type FloorRefusal, interruptedReceipt, type ReceiptChild, receiptEntry } from "../../../src/receipt.ts";
+import manifest from "../package.json" with { type: "json" };
 import type { Base } from "./base.ts";
 import type { ExtensionAPI } from "../../../src/contract.ts";
 import { type AgentType, agentTypes } from "./agents.ts";
@@ -233,9 +234,35 @@ export function recovery(entries: readonly SessionEntry[], output: (callId: stri
   }
   const runs = entries.filter((entry) => entry.type === "request").length;
   if (runs > 0 && !entries.some((entry) => entry.type === "run_end" && entry.run === runs)) {
+    const unsettled = unsettledReceipt(entries, runs);
+    if (unsettled !== undefined) added.push(unsettled);
     added.push({ type: "run_end", run: runs, outcome: "interrupted" });
   }
   return added;
+}
+
+/**
+ * The receipt of run `run`, which the process left without one (#599): once
+ * a call that may change files was about to run, a receipt that says nothing
+ * verified it and what changed is unknown, since no inventory was saved.
+ * Nothing when it settled with a receipt, or only read.
+ */
+function unsettledReceipt(entries: readonly SessionEntry[], run: number): SessionEntry | undefined {
+  const mine = entries.filter((entry) => "run" in entry && entry.run === run);
+  const request = ledgerOf(entries).find((entry) => entry.run === run);
+  if (request === undefined || !mine.some((entry) => entry.type === "call_intent" && entry.access !== "read")
+    || mine.some((entry) => (entry.type === "custom" || entry.type === "custom_message") && entry.customType === "tesota-receipt")) {
+    return undefined;
+  }
+  const units = request.base.units;
+  const only = units.length === 1 && units[0]?.folder === "" ? units[0] : undefined;
+  const clarifications = request.inputs.flatMap((input) => input.kind === "clarification" ? [input.clarification] : []);
+  const receipt = interruptedReceipt({ repository: units.some(({ kind }) => kind === "commit"),
+    base: only === undefined || only.kind === "refused" ? null : only.commit, startedAt: request.at, settledAt: new Date().toISOString(),
+    engine: manifest.version, ...clarifications.length === 0 ? {} : { clarifications },
+    ...request.children.length === 0 ? {} : { children: request.children },
+    ...request.refusals.length === 0 ? {} : { floorRefusals: request.refusals } });
+  return { run, ...receiptEntry(undefined, receipt) };
 }
 
 /**

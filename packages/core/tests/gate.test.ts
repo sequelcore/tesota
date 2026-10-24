@@ -11,6 +11,7 @@ import { provideHost } from "../../../src/host.ts";
 import { createSession, type EngineSession, openSession, type SessionOptions } from "../src/session.ts";
 import { shellHost } from "../src/shell/surface.ts";
 import type { ScriptStep } from "./engine.ts";
+import type { QuestionSubmit } from "../src/questions.ts";
 import { scriptedReply } from "./scripted.ts";
 
 /** The proofs the gate runs, scripted per file in order: the gate's decisions on the engine are under test, not LemmaScript. */
@@ -32,7 +33,7 @@ mock.module("../../../src/verification/lemmascript-verifier.ts", () => ({
 const { registerGate } = await import("../../../src/gate.ts");
 // The gate runs here as the engine's shell runs it, with the shell's editor, key names, version and shell (#446).
 provideHost(shellHost());
-const { entryReceipt, isReceipt, receiptDetailLines, receiptFindings } = await import("../../../src/receipt.ts");
+const { entryReceipt, isReceipt, receiptDetailLines, receiptFindings, receiptStanding, renderReceipt } = await import("../../../src/receipt.ts");
 type Receipt = import("../../../src/receipt.ts").Receipt;
 
 /**
@@ -590,11 +591,119 @@ describe("a run that ends before the gate verifies it", () => {
     await session.abort();
     await run;
     expect(session.outcome()).toBe("aborted");
-    expect(receiptOf(session)).toMatchObject({ stopped: "the operator stopped the run while Tesota verified it", tests: [] });
+    expect(receiptOf(session)).toMatchObject({ stopped: expect.stringMatching(/^the operator stopped the run while Tesota verified it; interrupted: /u),
+      tests: [] });
     // Stopped processes are gone within moments, not the minute they wait: Linux reaps a killed orphan on its own time.
     const alive = (pid: number): boolean => { try { process.kill(pid, 0); return true; } catch { return false; } };
     for (let waited = 0; waited < 10_000 && started.some(alive); waited += 100) await new Promise((resolve) => setTimeout(resolve, 100));
     expect(started.filter(alive)).toEqual([]);
+  }, 60_000);
+
+  test("a stop mid-run inventories the changed, deleted and untracked files it leaves, and stays incomplete", async () => {
+    const cwd = repository();
+    writeFileSync(join(cwd, "gone.txt"), "old\n");
+    git(cwd, "add", "-A");
+    git(cwd, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "gone");
+    let results = 0;
+    // The second call's result is where the operator stops; a file deleted by anyone counts, as the fingerprints say.
+    const stop: ExtensionFactory = (pi) => { pi.on("tool_result", () => {
+      if (++results === 2) { rmSync(join(cwd, "gone.txt")); void session.abort(); }
+    }); };
+    const session = gated(cwd, [edit(changed), { tool: "write", args: { path: "new.txt", content: "new\n" } }, "must not run"],
+      { extensions: [stop] });
+    await session.prompt("change f and add a note");
+    expect(session.outcome()).toBe("aborted");
+    const receipt = receiptOf(session)!;
+    expect(receipt).toMatchObject({ stopped: "the operator stopped the run", proofs: [], tests: [],
+      changed: [{ path: "gone.txt", blob: null }, { path: "new.txt", blob: git(cwd, "hash-object", "new.txt") },
+        { path: "src/rule.ts", blob: git(cwd, "hash-object", "src/rule.ts") }] });
+    expect(receiptStanding(receipt)).toBe("incomplete");
+    const text = renderReceipt(receipt);
+    for (const path of ["gone.txt (deleted)", "new.txt", "src/rule.ts"]) expect(text).toContain(path);
+  });
+
+  test.each(["answer", "stop"] as const)("a stop racing an answer keeps the answer only when it was committed first (%s first)", async (first) => {
+    const cwd = repository();
+    let ready = (): void => undefined;
+    const registered = new Promise<void>((resolve) => { ready = resolve; });
+    let submit: QuestionSubmit = () => "not registered";
+    const questions = [{ question: "Which behavior?", options: [
+      { label: "A", description: "Use behavior A." }, { label: "B", description: "Use behavior B." }] }];
+    const session = gated(cwd, [{ tool: "write", args: { path: "new.txt", content: "new\n" } },
+      { tool: "ask_user", args: { questions } }, "must not run"], {
+      questions: (_batch, given) => { submit = given; ready(); return () => undefined; } });
+    const run = session.prompt("write, then ask");
+    await registered;
+    if (first === "answer") {
+      expect(submit([{ selected: [1], text: "Committed answer." }])).toBeUndefined();
+      await session.abort();
+    } else {
+      await session.abort();
+      expect(submit([{ selected: [1], text: "Late draft." }])).toContain("no longer active");
+    }
+    await run;
+    const receipt = receiptOf(session)!;
+    expect(receipt.stopped).toBeDefined();
+    expect(receiptStanding(receipt)).toBe("incomplete");
+    expect(receipt.changed).toEqual([{ path: "new.txt", blob: git(cwd, "hash-object", "new.txt") }]);
+    expect(receipt.clarifications?.map(({ answers }) => answers[0]?.text))
+      .toEqual(first === "answer" ? ["Committed answer."] : undefined);
+    expect(JSON.stringify(entriesOf(session.file))).not.toContain("Late draft.");
+  });
+
+  test.each(["before its receipt", "after its receipt"] as const)("recovery after the process dies %s records it interrupted once, never a pass", async (when) => {
+    const cwd = repository();
+    const session = gated(cwd, [{ tool: "write", args: { path: "new.txt", content: "new\n" } }, "done"]);
+    await session.prompt("write new.txt");
+    expect(receiptStanding(receiptOf(session)!)).toBe("verified");
+    open.splice(open.indexOf(session), 1);
+    await session.dispose();
+    // The process died: before settling, nothing after the write's result was written; after it, the run's end was not.
+    const lines = readFileSync(session.file, "utf8").trimEnd().split("\n");
+    const entries = lines.slice(1).map((line) => JSON.parse(line) as { type: string; customType?: string });
+    const cut = when === "before its receipt" ? entries.findIndex((entry) => entry.type === "tool_result")
+      : entries.findIndex((entry) => entry.customType === "tesota-receipt");
+    writeFileSync(session.file, `${lines.slice(0, cut + 2).join("\n")}\n`);
+    // What is on disk at reopening is not what the dead run is said to have left.
+    writeFileSync(join(cwd, "later.txt"), "written after the process died\n");
+    const first = openSession(session.file, scriptless());
+    expect(first.outcome()).toBe("interrupted");
+    await first.dispose();
+    const once = readFileSync(session.file, "utf8");
+    const again = openSession(session.file, scriptless());
+    await again.dispose();
+    expect(readFileSync(session.file, "utf8")).toBe(once);
+    const receipts = entriesOf(session.file).map(entryReceipt).filter((receipt) => receipt !== undefined) as Receipt[];
+    expect(entriesOf(session.file).filter((entry) => entry.type === "run_end")).toMatchObject([{ outcome: "interrupted" }]);
+    expect(receipts).toHaveLength(1);
+    if (when === "after its receipt") return;
+    const [receipt] = receipts;
+    expect(receipt).toMatchObject({ changed: "unreadable", proofs: [], tests: [],
+      stopped: expect.stringContaining("change attribution is unknown") });
+    expect(receiptStanding(receipt!)).toBe("incomplete");
+    expect(JSON.stringify(receipt)).not.toContain("later.txt");
+  });
+
+  test("a check the stop interrupted is not run again, and the receipt names it", async () => {
+    const cwd = repository();
+    const counted = join(cwd, "counted.txt");
+    writeFileSync(join(cwd, "count.cjs"), `require("node:fs").appendFileSync(${JSON.stringify(counted)}, "ran\\n");\nsetTimeout(() => {}, 60000);\n`);
+    writeFileSync(join(cwd, "package.json"), JSON.stringify({ name: "counted-check", scripts: { test: "node count.cjs" } }));
+    writeFileSync(join(cwd, ".gitignore"), "counted.txt\n");
+    git(cwd, "add", "-A");
+    git(cwd, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "a counted check");
+    const session = gated(cwd, [{ tool: "write", args: { path: "notes.md", content: "# Notes\n" } }, "done"]);
+    const run = session.prompt("add notes");
+    while (!existsSync(counted)) await new Promise((resolve) => setTimeout(resolve, 20));
+    await session.abort();
+    await run;
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    expect(readFileSync(counted, "utf8")).toBe("ran\n");
+    const receipt = receiptOf(session)!;
+    expect(receipt.tests).toEqual([]);
+    expect(receipt.stopped).toMatch(/^the operator stopped the run while Tesota verified it; interrupted: project check .*test/u);
+    expect(receipt.changed).toEqual([{ path: "notes.md", blob: git(cwd, "hash-object", "notes.md") }]);
+    expect(receiptStanding(receipt)).toBe("incomplete");
   }, 60_000);
 
   test("a run that changed nothing settles with no receipt", async () => {

@@ -36,9 +36,16 @@ export interface Receipt {
   readonly snapshot?: true;
   /** The files Tesota's snapshot left out for their size, so nothing verified them. */
   readonly tooLarge?: readonly string[];
-  /** Why nothing was verified, when the project has neither a repository nor a snapshot. */
+  /**
+   * Why nothing was verified, when the project has neither a repository nor a
+   * snapshot; on a stopped run, why `changed` is `unreadable`.
+   */
   readonly reason?: string;
-  /** Why the run ended before Tesota verified anything; present only then. */
+  /**
+   * Why the run ended before Tesota verified anything, and which checks a stop
+   * interrupted or never started; present only then. Its `changed` is then an
+   * inventory of what the run left, read and never checked (#599).
+   */
   readonly stopped?: string;
   /** Generation ended with this unresolved question; verification still settled the changes. */
   readonly unresolvedQuestion?: string;
@@ -267,9 +274,9 @@ export function allEvidence(receipt: Receipt): UnitEvidence {
  */
 export function unitReceipt(receipt: Receipt, folder: string): Receipt | undefined {
   const unit = receipt.units?.find((candidate) => candidate.folder === folder && candidate.repository);
-  const { version, startedAt, settledAt, engine, model, clarifications, unresolvedQuestion } = receipt;
+  const { version, startedAt, settledAt, engine, model, clarifications, unresolvedQuestion, stopped } = receipt;
   return unit === undefined ? undefined : { ...unit, version, startedAt, settledAt, engine, ...model === undefined ? {} : { model },
-    ...clarifications === undefined ? {} : { clarifications },
+    ...clarifications === undefined ? {} : { clarifications }, ...stopped === undefined ? {} : { stopped },
     ...unresolvedQuestion === undefined ? {} : { unresolvedQuestion } };
 }
 
@@ -1113,9 +1120,35 @@ export function renderReceiptMessage(receipt: Receipt): string {
   ].join("\n\n");
 }
 
+/** A stopped run's inventory (#599): each path it left changed, or why it could not be read, and what its captures left out. */
+function leftLines(receipt: Receipt): string[] {
+  return (receipt.units ?? [{ ...receipt, folder: "" }]).flatMap((unit) => [
+    ...typeof unit.changed === "string"
+      ? [`  not read      what ${unit.folder === "" ? "the run" : plainName(unit.folder)} left changed: ${unit.reason ?? "Git could not tell"}`]
+      : unit.changed.map(({ path, blob }) => `  left changed  ${inUnit(unit.folder, path)}${blob === null ? " (deleted)" : ""}`),
+    ...unit.endState?.status === "unknown" && typeof unit.changed !== "string"
+      ? [`  not captured  the run's end: ${unit.endState.reason}; listed is every path that differs from the base`] : [],
+    ...unit.unmeasured.map(({ path, reason }) => `  not measured  ${inUnit(unit.folder, path)}: ${reason}`),
+    ...(unit.tooLarge ?? []).map((path) => `  not measured  ${inUnit(unit.folder, path)}: Tesota's snapshot left it out for its size`)]);
+}
+
+/**
+ * The receipt recovery records for a run whose process ended before it
+ * settled (#599): nothing verified it, and since no inventory of what it
+ * left was saved, what changed is unknown; the files on disk when the
+ * session opens again need not be what the run left.
+ */
+export function interruptedReceipt(run: Pick<Receipt, "repository" | "base" | "startedAt" | "settledAt" | "engine" |
+  "clarifications" | "children" | "floorRefusals">): Receipt {
+  return { version: 2, ...run, ...noEvidence, changed: "unreadable", lines: "unreadable",
+    stopped: "the session ended before Tesota verified this run, so no check ran; change attribution is unknown, "
+      + "and the files on disk now may not be what the run left. A new request verifies the current content",
+    reason: "no inventory of what the run left was saved before its process ended" };
+}
+
 /** Shared evidence wording for terminal text and chat Markdown. */
 function receiptLines(receipt: Receipt): string[] {
-  if (receipt.stopped !== undefined) return [`  not verified  this request's changes: ${receipt.stopped}`];
+  if (receipt.stopped !== undefined) return [`  not verified  this request's changes: ${receipt.stopped}`, ...leftLines(receipt)];
   return [...receipt.unresolvedQuestion === undefined ? [] : [`  incomplete    ${receipt.unresolvedQuestion}`],
   ...receipt.units === undefined ? unitLines(receipt) : receipt.units.flatMap((unit) => verified(unit)
     ? unitLines(fromFolder(unit)) : [`  not verified  ${plainName(unit.folder)}: ${plainReason(unit)}`]),

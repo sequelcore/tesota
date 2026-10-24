@@ -318,7 +318,9 @@ describe("recovery after the process was killed", () => {
       expect(existsSync(join(cwd, "never.txt"))).toBe(false);
       expect(resumed.ledger()).toMatchObject([{ run: 1, text: "go" }]);
       const once = entriesOf(file);
-      expect(once.slice(-3).map((entry) => entry.type)).toEqual(["reconciliation", "reconciliation", "run_end"]);
+      // A call that may change files was about to run, so the run gets a receipt that verified nothing (#599); a read gets none.
+      const tail = ["reconciliation", "reconciliation", ...mode === "tool" ? ["custom_message"] : [], "run_end"];
+      expect(once.slice(-tail.length).map((entry) => entry.type)).toEqual(tail);
       await resumed.dispose();
       const again = openSession(file, scriptless());
       open.push(again);

@@ -19,7 +19,11 @@ was cut off, by a crash or a closed terminal, resumes where its file ends:
 a call that only reads says it changed nothing. Other calls that started
 say their outcome is unknown; calls that never started say "not run".
 No call runs again automatically. An interrupted shell call also shows the
-end of what it printed, when saved, and the path to its full output.
+end of what it printed, when saved, and the path to its full output. A run
+that may have changed files gets a receipt that verified nothing and says
+what changed is unknown; send a new request to verify the current content
+([verification](../concepts/verification.md)). A session never opened again
+gets none.
 A [subagent](subagents.md) the session was running ends "outcome unknown",
 and its own session ends interrupted. Session files use format version 6, which records withdrawals of pending messages;
 other versions are refused without changing their files.

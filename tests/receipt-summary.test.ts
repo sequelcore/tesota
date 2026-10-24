@@ -303,3 +303,15 @@ describe("receipts beyond the four", () => {
     expect(fenced).not.toMatch(markdownEscape);
   });
 });
+
+it("shows what a stopped run's captures left out beside what it left changed, and stays incomplete (#599)", () => {
+  const receipt: Receipt = { ...emptyReceipt, stopped: "the operator stopped the run", changed: [{ path: "src/a.ts", blob: "b".repeat(40) }],
+    unmeasured: [{ path: "cache/", reason: "an untracked directory with 200 or more files" }], tooLarge: ["data/huge.csv"],
+    endState: { status: "unknown", reason: "Git could not read HEAD" } };
+  const text = renderReceipt(receipt);
+  expect(receiptStanding(receipt)).toBe("incomplete");
+  expect(text).toContain("  left changed  src/a.ts");
+  expect(text).toContain("  not measured  cache/: an untracked directory with 200 or more files");
+  expect(text).toContain("  not measured  data/huge.csv: Tesota's snapshot left it out for its size");
+  expect(text).toContain("  not captured  the run's end: Git could not read HEAD");
+});
