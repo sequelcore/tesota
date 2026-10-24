@@ -31,11 +31,28 @@ the session closes, so a "Full output" path still works after resuming.
 ## Answer the agent
 
 The agent can ask up to three questions with two to four choices each,
-and ask you at most three times in one request; after that it decides
-with what it has and says which choice it made. Select one or several choices as the question allows, add your own text,
+and attempt at most three question batches in one request, including malformed
+or unavailable calls. A fourth attempt ends the run incomplete with the unresolved
+decision, rather than choosing for you. Select one or several choices as the question allows, add your own text,
 then submit the answers. A recommendation is a suggestion; nothing is
 selected or submitted for you. Questions wait until you answer, dismiss
-them or stop the run.
+them or stop the run. An admitted question keeps the same run open: no
+verification or receipt is published just for asking. Work resumes after your
+answer and verifies at its real end.
+
+A direct blocking question in the last prose paragraph gets one request to use
+`ask_user`, only when someone can answer and a batch remains. The repair may
+only ask the question or clarify that no decision is needed. A second blocking
+prose question or a failed repair ends incomplete. Malformed and unavailable
+question calls share this one repair allowance. Both bounds survive amendments,
+compaction and verification continuations.
+
+Recognition is a small English/Spanish heuristic, not a semantic guarantee.
+It covers direct forms such as “Should I…?”, “Which…?”, “Let me know which…”
+and “¿Quieres…?”, “¿Qué…?”, “Dime cuál…”. Code, quotes and headings are excluded;
+a question mark alone does not trigger it. Implicit questions, uncovered forms
+and other languages can be missed. Without a responder, as in print mode and
+subagents, a recognized unresolved question settles incomplete and stays visible.
 
 Ctrl+T opens the dashboard while a question is shown. Switching sessions
 keeps its unfinished answers; showing it again restores them. Esc dismisses

@@ -7,6 +7,8 @@ test("a run allows 32 automatic continuations", () => {
 });
 
 const extensionCases: readonly [string, Parameters<typeof afterExtensions>, AfterExtensions][] = [
+  ["an unresolved question finalizes despite an extension continuation", ["completed", false, false, true, 0, 32, true], "finalize"],
+  ["an unresolved question cannot enter full verification", ["completed", false, false, false, 0, 32, true], "finalize"],
   ["a completed loop reaches verification", ["completed", false, false, false, 0, 32], "verify"],
   ["a handler continues below the limit", ["completed", false, false, true, 31, 32], "continue"],
   ["a continuation at the limit finalizes", ["completed", false, false, true, 32, 32], "finalize"],
@@ -28,6 +30,8 @@ for (const [name, args, expected] of extensionCases) {
 }
 
 const verifierCases: readonly [string, Parameters<typeof afterVerifier>, AfterVerifier][] = [
+  ["an unresolved question cannot complete", ["completed", true, false, false, true, false, false, false, 0, 32, true], "incomplete"],
+  ["an unresolved question cannot continue despite pending input", ["completed", false, false, false, true, true, true, false, 0, 32, true], "incomplete"],
   ["normal verification completes", ["completed", true, false, false, true, false, false, false, 0, 32], "completed"],
   ["cancellation wins over a throw", ["completed", true, true, true, true, false, false, false, 0, 32], "aborted"],
   ["cancellation wins over a loop error", ["error", false, true, true, false, false, false, false, 0, 32], "aborted"],

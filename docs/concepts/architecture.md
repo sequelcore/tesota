@@ -40,7 +40,8 @@ A run is one request, from what you asked to its end:
    - `aborted`: you stopped it;
    - `error`: the provider failed, with the reason;
    - `incomplete`: a settle handler failed, the verifier had nothing to
-     settle it with, or it was sent back 32 times;
+     settle it with, it was sent back 32 times, or a blocking question exhausted
+     its batch or repair allowance;
    - `interrupted`: the process ended during the run, as a resumed session
      finds it.
 
@@ -76,7 +77,15 @@ Questions use the shell's input slot and the session's permission boundary.
 Effect 4 scopes each pending interaction: stopping or closing a session
 releases its form before the wait ends. Submitted answers are synced before
 acknowledgment; a storage failure ends the session's ability to run rather
-than continuing with an answer it could not save.
+than continuing with an answer it could not save. A pending native question
+keeps the run, admission base and fingerprints open without settlement.
+The loop counts attempts before schema validation, including denied and
+unavailable native calls. Its three-batch bound and one shared question-repair
+allowance live outside the conversation, so compaction, amendments and settle
+continuations cannot reset them. Exhaustion uses the settle rule's terminal
+finalization path: handlers may finalize evidence but cannot restart generation
+or mark the run completed. [Answer the agent](../guides/sessions.md#answer-the-agent)
+describes the prose heuristic and its limits.
 
 ## Workspaces
 

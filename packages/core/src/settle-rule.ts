@@ -10,14 +10,15 @@ export const continuationLimit = 32;
  * What follows ordinary settle handlers (#439): a completed loop continues
  * when a handler asks and the budget allows, or reaches verification when
  * none asks. Cancellation, a loop failure, a throw or an exhausted budget
- * only finalizes. Requests to continue accumulate across handlers.
+ * only finalizes. An unresolved question (`finalizing`) also only finalizes,
+ * regardless of send-backs. Requests to continue accumulate across handlers.
  */
 //@ requires continuations >= 0 && limit >= 0
-//@ ensures \result === "continue" <==> run === "completed" && !cancelled && !threw && continued && continuations < limit
-//@ ensures \result === "verify" <==> run === "completed" && !cancelled && !threw && !continued
-//@ ensures \result === "finalize" <==> cancelled || run !== "completed" || threw || (continued && continuations >= limit)
-export function afterExtensions(run: RunOutcome, cancelled: boolean, threw: boolean, continued: boolean, continuations: number, limit: number): AfterExtensions {
-  if (cancelled || run !== "completed" || threw) return "finalize";
+//@ ensures \result === "continue" <==> run === "completed" && !finalizing && !cancelled && !threw && continued && continuations < limit
+//@ ensures \result === "verify" <==> run === "completed" && !finalizing && !cancelled && !threw && !continued
+//@ ensures \result === "finalize" <==> finalizing || cancelled || run !== "completed" || threw || (continued && continuations >= limit)
+export function afterExtensions(run: RunOutcome, cancelled: boolean, threw: boolean, continued: boolean, continuations: number, limit: number, finalizing = false): AfterExtensions {
+  if (finalizing || cancelled || run !== "completed" || threw) return "finalize";
   if (!continued) return "verify";
   return continuations < limit ? "continue" : "finalize";
 }
@@ -30,20 +31,21 @@ export function afterExtensions(run: RunOutcome, cancelled: boolean, threw: bool
  * input continues without that budget when the verifier did not ask.
  * Every other case is incomplete, including a verifier that only finalized.
  * Jobs the run started that still run (#525) keep it going like unseen
- * input, so a run never completes while it waits on one.
+ * input, so a run never completes while it waits on one. A finalizing
+ * unresolved question cannot continue or complete, even if a handler asks.
  */
 //@ requires continuations >= 0 && limit >= 0
 //@ ensures \result === "aborted" <==> cancelled || run === "aborted"
 //@ ensures \result === "error" <==> !cancelled && run === "error" && !threw
-//@ ensures \result === "continue" <==> !cancelled && run === "completed" && verifying && !threw && registered && ((continued && continuations < limit) || (!continued && (pending || running)))
-//@ ensures \result === "completed" <==> !cancelled && run === "completed" && verifying && !threw && registered && !continued && !pending && !running
-//@ ensures \result === "incomplete" <==> !cancelled && run !== "aborted" && ((run === "error" && threw) || (run === "completed" && (!verifying || threw || !registered || (continued && continuations >= limit))))
+//@ ensures \result === "continue" <==> !cancelled && !finalizing && run === "completed" && verifying && !threw && registered && ((continued && continuations < limit) || (!continued && (pending || running)))
+//@ ensures \result === "completed" <==> !cancelled && !finalizing && run === "completed" && verifying && !threw && registered && !continued && !pending && !running
+//@ ensures \result === "incomplete" <==> !cancelled && run !== "aborted" && ((run === "error" && threw) || (run === "completed" && (finalizing || !verifying || threw || !registered || (continued && continuations >= limit))))
 //@ ensures \result === "completed" ==> verifying && registered && !threw && !cancelled && !running
 //@ ensures \result === "continue" ==> run === "completed" && !cancelled
-export function afterVerifier(run: RunOutcome, verifying: boolean, cancelled: boolean, threw: boolean, registered: boolean, continued: boolean, pending: boolean, running: boolean, continuations: number, limit: number): AfterVerifier {
+export function afterVerifier(run: RunOutcome, verifying: boolean, cancelled: boolean, threw: boolean, registered: boolean, continued: boolean, pending: boolean, running: boolean, continuations: number, limit: number, finalizing = false): AfterVerifier {
   if (cancelled || run === "aborted") return "aborted";
   if (run === "error" && !threw) return "error";
-  if (run !== "completed" || !verifying || threw || !registered) return "incomplete";
+  if (finalizing || run !== "completed" || !verifying || threw || !registered) return "incomplete";
   if (continued) return continuations < limit ? "continue" : "incomplete";
   return pending || running ? "continue" : "completed";
 }
