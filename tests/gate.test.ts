@@ -348,33 +348,75 @@ it("resolves attribution only for readable HEADs still at admission, including u
   expect(attributionResolved("H", known("H"), undefined, true)).toBe(false);
   expect(attributionResolved("H", { status: "unknown", reason: "unreadable" }, known("H"), true)).toBe(false);
   expect(attributionResolved("snapshot", undefined, undefined, false)).toBe(true);
+  const own = { sameBranch: true, descends: true, exclusive: true, timely: true };
+  expect(attributionResolved("H", known("H"), { ...known("own"), history: own }, true)).toBe(true);
+  for (const fact of ["sameBranch", "descends", "exclusive", "timely"] as const) {
+    expect(attributionResolved("H", known("H"), { ...known("own"), history: { ...own, [fact]: false } }, true)).toBe(false);
+  }
 });
 
-it.each(["merge", "switch", "rebase", "commit", "unchanged"])("withholds stale-base credit after %s and exports the settled checkout (#599)", async (action) => {
+/** Incoming refs and dates are real Git state, independent of the gate. */
+function prepareIncoming(root: string, action: string): void {
+  if (action === "remote") {
+    git(root, "update-ref", "refs/remotes/elsewhere/topic", "HEAD");
+    git(root, "checkout", "admission");
+    git(root, "branch", "-D", "upstream");
+  } else if (action === "url") {
+    // A URL pull need not create a remote-tracking ref. Give the incoming commit an old committer date.
+    expect(spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "--amend", "--no-edit"],
+      { cwd: root, encoding: "utf8", env: { ...process.env, GIT_COMMITTER_DATE: "2000-01-01T00:00:00Z" } }).status).toBe(0);
+    const source = folder();
+    git(root, "clone", "--bare", root, source);
+    git(root, "checkout", "admission");
+    git(root, "branch", "-D", "upstream");
+    git(root, "config", "test.source", source);
+  } else git(root, "checkout", "admission");
+}
+
+function moveHistory(root: string, action: string): void {
+  if (action === "mixed") { write(root, { "local.txt": "during request\n" }); commit(root, "own work"); }
+  if (action === "merge" || action === "mixed" || action === "remote") git(root, "-c", "user.name=t", "-c", "user.email=t@t", "merge", "--no-edit",
+    action === "remote" ? "refs/remotes/elsewhere/topic" : "upstream");
+  if (action === "url") {
+    const source = spawnSync("git", ["config", "test.source"], { cwd: root, encoding: "utf8" }).stdout.trim();
+    git(root, "-c", "user.name=t", "-c", "user.email=t@t", "pull", "--no-rebase", source, "upstream");
+  }
+  if (action === "switch") git(root, "switch", "upstream");
+  if (action === "rebase") git(root, "-c", "user.name=t", "-c", "user.email=t@t", "rebase", "upstream");
+  if (action === "commit" || action === "unchanged" || action === "amend") {
+    write(root, { "test/imported.test.mjs": priceTest(1, 1, "imported"), "src/imported.ts": contract });
+    if (action === "commit") commit(root, "local expectations");
+    // Rewriting the admission commit makes new, timely, unshared commits; only its broken ancestry withholds credit.
+    if (action === "amend") { git(root, "add", "-A"); git(root, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--amend", "--no-edit"); }
+  }
+}
+
+it.each(["merge", "remote", "url", "switch", "rebase", "amend", "mixed", "commit", "unchanged"])("attributes %s history and exports the settled checkout (#599)", async (action) => {
   const root = testedProject();
   git(root, "branch", "admission");
   git(root, "checkout", "-b", "upstream");
   write(root, { "test/imported.test.mjs": priceTest(1, 1, "imported"), "src/imported.ts": contract });
-  commit(root, "upstream expectations");
-  git(root, "checkout", "admission");
-  if (action === "rebase" || action === "merge") { write(root, { "local.txt": "local\n" }); commit(root, "local before request"); }
+  git(root, "add", "-A");
+  // A future committer date keeps the incoming commit timely, so each case isolates the fact it names (url backdates it).
+  expect(spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "upstream expectations"],
+    { cwd: root, encoding: "utf8", env: { ...process.env, GIT_COMMITTER_DATE: "2099-01-01T00:00:00Z" } }).status).toBe(0);
+  prepareIncoming(root, action);
+  if (action === "rebase" || action === "merge" || action === "amend") { write(root, { "local.txt": "local\n" }); commit(root, "local before request"); }
   const run = gate(root);
   await run.input();
   await run.tool("bash");
-  if (action === "merge") git(root, "-c", "user.name=t", "-c", "user.email=t@t", "merge", "--no-edit", "upstream");
-  if (action === "switch") git(root, "switch", "upstream");
-  if (action === "rebase") git(root, "-c", "user.name=t", "-c", "user.email=t@t", "rebase", "upstream");
-  if (action === "commit" || action === "unchanged") {
-    write(root, { "test/imported.test.mjs": priceTest(1, 1, "imported"), "src/imported.ts": contract });
-    if (action === "commit") commit(root, "local expectations");
-  }
+  moveHistory(root, action);
   // Local work on an imported path must remain visible, not be filtered as upstream.
   if (action === "merge") write(root, { "src/imported.ts": contract.replace("return 0", "return 2") });
   const receipt = entry(await run.settle()).details as Receipt;
   expect(receipt.tests.some(({ evidence }) => evidence.outcome === "passed")).toBe(true);
   expect(receipt.proofs.map(({ path }) => path)).toContain("src/imported.ts");
   expect(receipt.changed).toEqual(expect.arrayContaining([expect.objectContaining({ path: "test/imported.test.mjs" })]));
-  if (action === "unchanged") {
+  const texts = [renderReceipt(receipt), receiptMarkdown(receipt, { commit: "abc", owner: "t", sessionId: action, stale: [], changedAfter: [] })];
+  for (const text of texts) expect(text.match(/compared with the request's start/giu) ?? []).toHaveLength(action === "commit" || action === "unchanged" ? 0 : 1);
+  if (action === "unchanged" || action === "commit") {
+    expect(receiptFindings(receipt).some(({ label }) => label === "Attribution unresolved")).toBe(false);
+    expect(await subjectOf(root, receipt, action, "operator")).toMatchObject({ changedAfter: action === "unchanged" ? ["src/imported.ts", "test/imported.test.mjs"] : [] });
     expect(receipt.exercises.length).toBeGreaterThan(0);
     expect(receipt.contracts.length).toBeGreaterThan(0);
   } else {
@@ -427,7 +469,7 @@ it("qualifies the #612 branch-switch deletion against the request's start (#599)
   expect(receipt.exercises).toEqual([]);
   expect(receipt.tests[0]?.evidence.outcome).toBe("passed");
   const finding = receiptFindings(receipt).find(({ check }) => check === "weakening");
-  expect(finding?.detail).toContain("compared with the request's start");
+  expect(finding?.detail).not.toContain("compared with the request's start");
   for (const text of [renderReceipt(receipt), receiptMarkdown(receipt, { commit: "abc", owner: "t", sessionId: "switch", stale: [], changedAfter: [] })]) {
     expect(text).toContain("compared with the request's start");
     expect(text).not.toContain("this request deleted");
@@ -1293,7 +1335,7 @@ it("puts each change that may weaken the evidence in the receipt, committed or n
     "  may weaken    src/rule.ts: adds //@ requires y > 0 to a function the base had",
     "  may weaken    tests/old.test.ts: deletes a test file",
     "  may weaken    tests/rule.test.ts: edits a test file",
-  ].map((line) => `${line}; compared with the request's start`));
+  ].map((line) => `${line}`));
   expect((settled.details as Receipt).weakened).toContainEqual(
     { path: "tests/old.test.ts", kind: "deleted_test" });
   // The proof holds only given the assumptions added to its source and its .dfy, not those of another file (#399).
@@ -1325,7 +1367,7 @@ it("says a change too large to read was not checked for weakening, instead of li
     ].join("\n"));
   expect((settled.details as Receipt).weakened).toBe("too_large");
 }, 60_000);
-it("runs the project's tests but withholds exercise after the agent commits",  async () => {
+it("runs the project's tests and keeps exercise after the agent commits",  async () => {
   const root = testedProject();
   const run = gate(root);
   await run.input();
@@ -1341,13 +1383,16 @@ it("runs the project's tests but withholds exercise after the agent commits",  a
   // The snapshot and the fixture are no tests a runner runs alone, so they get no line of their own on the base (#615).
   expect(facts(entry(settled).content)).toBe([
     "  passed        bun run test",
-    "  not proved    src/price.mjs: no proof covers it; the project's commands pass with it; compared with the request's start",
-    "  changed lines implementation +1 -1 · tests +10 -0 · compared with the request's start"].join("\n"));
+    "  notices change test/negative.test.mjs: fails on the base, passes with the change; by the whole check, `bun run test`; added in this request",
+    "  passes on base test/positive.test.mjs: it passes without the change too; by the whole check, `bun run test`; added in this request",
+    "  not proved    src/price.mjs: no proof covers it; the project's commands pass with it",
+    "  changed lines implementation +1 -1 · tests +10 -0"].join("\n"));
   const receipt = entry(settled).details as Receipt;
   expect(receipt.tests.map(({ command, evidence }) => [command, evidence.verifier, evidence.files]))
     .toEqual([["bun run test", "command", changed]]);
-  expect(receipt.exercises).toEqual([]);
-  // No stale-base exercise worktree remains; checkout dependencies are untouched.
+  expect(receipt.exercises.map(({ path, sensitivity }) => [path, sensitivity])).toEqual([
+    ["test/negative.test.mjs", "fails_then_passes"], ["test/positive.test.mjs", "passes_on_base"]]);
+  // No exercise worktree remains; checkout dependencies are untouched.
   expect(spawnSync("git", ["worktree", "list", "--porcelain"], { cwd: root, encoding: "utf8" }).stdout.match(/^worktree /gmu))
     .toHaveLength(1);
   expect(existsSync(join(root, "node_modules", "dep", "index.js"))).toBe(true);
@@ -1490,6 +1535,7 @@ it("verifies each repository the request changed in a folder of repositories, fr
   write(join(root, "api"), { "src/price.mjs": "export const total = (n) => Math.max(n, 0);\n" });
   writeFileSync(join(root, "rules", "src", "rule.ts"), `${contract}// changed\n`);
   commit(join(root, "rules"), "the agent's commit");
+  git(join(root, "rules"), "tag", "published"); // Another ref reaches it: only this unit loses credit.
   write(root, { "notes/todo.md": "- one\n- two\n" });
   const settled = await run.settle();
   expect(settled?.continue).toBeUndefined();
@@ -1500,7 +1546,7 @@ it("verifies each repository the request changed in a folder of repositories, fr
     "  not verified  notes/todo.md: no verifier covers it",
     "  proved        rules/src/rule.ts",
     "                content sha256 e8cda4ec2c6b993b18bb0e32a0a802c2a8f8c0cd3ffce5cb3023500d04d3e639",
-    "  changed lines implementation +2 -1 · other +1 -0 · compared with the request's start"].join("\n"));
+    "  changed lines implementation +2 -1 · other +1 -0"].join("\n"));
   const receipt = entry(settled).details as Receipt;
   expect(receipt.units?.map(({ folder: at, repository, snapshot }) => [at, repository, snapshot ?? false]))
     .toEqual([["api", true, false], ["notes", false, true], ["rules", true, false]]);

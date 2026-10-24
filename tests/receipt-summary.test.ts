@@ -73,15 +73,15 @@ describe("the real receipt of #584, as the issue shows it", () => {
       "○ Models   none recorded",
       "",
       "! Review test edits · 2 heuristic flags",
-      "  May weaken evidence; not confirmed weakening; compared with the request's start.",
+      "  May weaken evidence; not confirmed weakening.",
       "○ Change sensitivity unknown · 3 test files",
       "  Base fails too; no per-test failure report.",
       "○ Attribution unresolved",
       "  history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish request attribution. Changes are compared with the request's start, not attributed to this request",
       "○ No proof covers 3 changed files",
-      "  Compared with the request's start.",
       "",
       "Details",
+      "  passed        bun run check",
     ]);
   });
 

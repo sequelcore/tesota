@@ -4,11 +4,11 @@ export function fingerprintEligible(known: boolean, headMoved: boolean, pathChan
   return !known || headMoved || pathChanged || unmeasured;
 }
 
-/** Contribution credit needs readable captures whose HEADs both equal the admission HEAD. Snapshots have no Git history. */
-//@ ensures \result <==> (!repository || (startKnown && endKnown && startAtBase && endAtBase))
+/** Credit needs unchanged history or a same-branch descent of exclusively reached, timely commits. */
+//@ ensures \result <==> (!repository || (startKnown && endKnown && startAtBase && (endAtBase || (sameBranch && descends && exclusive && timely))))
 export function historyAttributable(repository: boolean, startKnown: boolean, endKnown: boolean,
-  startAtBase: boolean, endAtBase: boolean): boolean {
-  return !repository || (startKnown && endKnown && startAtBase && endAtBase);
+  startAtBase: boolean, endAtBase: boolean, sameBranch: boolean, descends: boolean, exclusive: boolean, timely: boolean): boolean {
+  return !repository || (startKnown && endKnown && startAtBase && (endAtBase || (sameBranch && descends && exclusive && timely)));
 }
 
 /** Unmeasured paths cannot be called unchanged; commits since H remain part of the observed change. */

@@ -15,7 +15,7 @@ import { inFolder, owningProjects, suggestChecks } from "./projects.js";
 import { proofReport } from "./prove-tool.js";
 import { entryReceipt, type FloorRefusal, inUnit, isReceipt, type ModelResult, noEvidence, type Receipt, type ReceiptChild, receiptEntry,
   type UnitEvidence } from "./receipt.js";
-import { attributionResolved, captureFingerprint, compareFingerprints, type Fingerprint, pathBlobs } from "./request-fingerprint.js";
+import { attributionResolved, captureFingerprint, compareFingerprints, type Fingerprint, historyFacts, pathBlobs } from "./request-fingerprint.js";
 import { takeSnapshot } from "./snapshot.js";
 import type { CommandRun } from "./test-rung.js";
 import type { FileChange } from "./verification-changes.js";
@@ -405,8 +405,9 @@ export class GateProgress {
  * on `agent_start`, which every continuation fires too. When nothing goes back, the run settles with
  * a receipt for the operator. The first non-reader tool fingerprints each
  * repository; paths changed since then and commits since admission are the
- * observed comparison set. Weakening keeps admission H; history movement
- * withholds exercise and contract-intent credit, never current-checkout checks.
+ * observed comparison set. Weakening keeps admission H; history movement the
+ * request cannot be shown to own withholds exercise and contract-intent credit,
+ * never current-checkout checks.
  * A commit hides nothing; a steer or follow-up sent while the agent works belongs to
  * the request already running. Outside a Git repository the base is
  * Tesota's snapshot of the folder (`takeSnapshot`, #384); where it takes
@@ -697,7 +698,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     const measurable = units.filter(({ folder }) => bases.has(folder));
     const initial = yield* step(async () => fingerprints);
     const read = yield* step(() => Promise.all(measurable.map(({ folder, repository }) =>
-      changedUnit(ctx.cwd, folder, bases.get(folder) ?? null, repository ? undefined : tooLarge.get(folder) ?? [], initial?.get(folder)))));
+      changedUnit(ctx.cwd, folder, bases.get(folder) ?? null, repository ? undefined : tooLarge.get(folder) ?? [], initial?.get(folder), run.startedAt))));
     if (!workspace && read[0] === undefined) return outsideGit(ctx, run, refused.get(""));
     const changed = read.filter((unit): unit is ChangedUnit => typeof unit === "object");
     // A folder with no snapshot, or a repository Git could not read, is not verified; it is listed once it may have changed.
@@ -842,7 +843,7 @@ async function changesFromBase(root: string, base: string | null): Promise<{
 }
 
 /** Each capture's facts and the committed paths since H; an unknown capture keeps verification against H. */
-async function fingerprintedUnit(root: string, base: string | null, start: Fingerprint): Promise<{
+async function fingerprintedUnit(root: string, base: string | null, start: Fingerprint, startedAt: string): Promise<{
   attribution: ReturnType<typeof compareFingerprints>;
   facts: Pick<ChangedUnit, "startState" | "endState">;
 }> {
@@ -852,9 +853,10 @@ async function fingerprintedUnit(root: string, base: string | null, start: Finge
       : await gitPaths(root, [...diffFrom(base, "--name-only"), end.head]);
   if (committed === undefined) end = { status: "unknown", reason: "Git could not read the files committed since the admission base" };
   const compared = compareFingerprints(start, end, committed ?? []);
-  return { attribution: { ...compared, eligible: compared.eligible || !attributionResolved(base, start, end, true) },
-    facts: { startState: start.status === "unknown" ? start : { status: "known", head: start.head },
-      endState: end.status === "unknown" ? end : { status: "known", head: end.head } } };
+  const history = end.status === "known" && end.head !== base ? await historyFacts(root, base, start, end, startedAt) : undefined;
+  const facts = { startState: start.status === "unknown" ? start : { status: "known" as const, head: start.head },
+    endState: end.status === "unknown" ? end : { status: "known" as const, head: end.head, ...history === undefined ? {} : { history } } };
+  return { attribution: { ...compared, eligible: compared.eligible || !attributionResolved(base, facts.startState, facts.endState, true) }, facts };
 }
 
 /**
@@ -863,10 +865,10 @@ async function fingerprintedUnit(root: string, base: string | null, start: Finge
  * changed nothing, and nothing when Git cannot read it.
  */
 async function changedUnit(cwd: string, folder: string, base: string | null, tooLarge: readonly string[] | undefined,
-  fingerprint: Fingerprint | undefined):
+  fingerprint: Fingerprint | undefined, startedAt: string):
   Promise<ChangedUnit | "unchanged" | undefined> {
   const root = join(cwd, folder);
-  const captured = fingerprint === undefined ? undefined : await fingerprintedUnit(root, base, fingerprint);
+  const captured = fingerprint === undefined ? undefined : await fingerprintedUnit(root, base, fingerprint, startedAt);
   const attribution = captured?.attribution ?? { eligible: true, changed: undefined, inherited: [], unmeasured: [] };
   if (!attribution.eligible) return "unchanged";
   const whole = await changesFromBase(root, base);

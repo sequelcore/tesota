@@ -17,25 +17,24 @@ Check evidence, not your acceptance.
 ○ Models   none recorded
 
 ! Review test edits · 2 heuristic flags
-  May weaken evidence; not confirmed weakening; compared with the request's start.
+  May weaken evidence; not confirmed weakening.
 ○ Change sensitivity unknown · 3 test files
   Base fails too; no per-test failure report.
 ○ Attribution unresolved
   history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish request attribution. Changes are compared with the request's start, not attributed to this request
 ○ No proof covers 3 changed files
-  Compared with the request's start.
 
 Details
   passed        bun run check
-  not checked   packages/core/tests/interface.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; compared with the request's start; contribution unresolved
-  not checked   tests/welcome-header.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; compared with the request's start; contribution unresolved
-  not checked   tests/working-orb.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; compared with the request's start; contribution unresolved
-  may weaken    packages/core/tests/interface.test.ts: edits a test file; compared with the request's start
-  may weaken    tests/welcome-header.test.ts: edits a test file; compared with the request's start
-  not proved    NOTICE: no proof covers it; the project's commands pass with it; compared with the request's start
-  not proved    src/tesota.ts: no proof covers it; the project's commands pass with it; compared with the request's start
-  not proved    src/welcome-header.ts: no proof covers it; the project's commands pass with it; compared with the request's start
-  changed lines implementation +99 -18 · tests +75 -25 · other +7 -0 · compared with the request's start
+  not checked   packages/core/tests/interface.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  not checked   tests/welcome-header.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  not checked   tests/working-orb.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  may weaken    packages/core/tests/interface.test.ts: edits a test file
+  may weaken    tests/welcome-header.test.ts: edits a test file
+  not proved    NOTICE: no proof covers it; the project's commands pass with it
+  not proved    src/tesota.ts: no proof covers it; the project's commands pass with it
+  not proved    src/welcome-header.ts: no proof covers it; the project's commands pass with it
+  changed lines implementation +99 -18 · tests +75 -25 · other +7 -0
   model listed  no case the request leaves open, by openai/gpt-6-sol; a model's opinion, not a check
 From 700f9a9d4a0b · Tesota 0.1.0-alpha.1 · openai/gpt-6.1-sol
 
@@ -64,8 +63,7 @@ exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a ca
  ! Review test edits · 2 heuristic
    flags
    May weaken evidence; not confirmed
-   weakening; compared with the
-   request's start.
+   weakening.
  ! Not verified · notes
    it is in no Git repository, so
    Tesota cannot tell what changed
@@ -82,7 +80,6 @@ exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a ca
    with the request's start, not
    attributed to this request
  ○ No proof covers 3 changed files
-   Compared with the request's start.
 
  ▸ Details · paths, output,
    assumptions, model opinions
@@ -100,8 +97,7 @@ exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a ca
  ○ Models   none recorded
 
  ! Review test edits · 2 heuristic flags
-   May weaken evidence; not confirmed weakening; compared with the request's
-   start.
+   May weaken evidence; not confirmed weakening.
  ! Not verified · notes
    it is in no Git repository, so Tesota cannot tell what changed
  ○ Change sensitivity unknown · 3 test files
@@ -112,7 +108,6 @@ exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a ca
    Changes are compared with the request's start, not attributed to this
    request
  ○ No proof covers 3 changed files
-   Compared with the request's start.
 
  ▸ Details · paths, output, assumptions, model opinions
 "
@@ -129,7 +124,7 @@ exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a ca
  ○ Models   none recorded
 
  ! Review test edits · 2 heuristic flags
-   May weaken evidence; not confirmed weakening; compared with the request's start.
+   May weaken evidence; not confirmed weakening.
  ! Not verified · notes
    it is in no Git repository, so Tesota cannot tell what changed
  ○ Change sensitivity unknown · 3 test files
@@ -138,7 +133,6 @@ exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a ca
    api: history moved, could not be read, or was not captured; recorded exercise and contract measurements do not
    establish request attribution. Changes are compared with the request's start, not attributed to this request
  ○ No proof covers 3 changed files
-   Compared with the request's start.
 
  ▸ Details · paths, output, assumptions, model opinions
 "
@@ -158,8 +152,7 @@ exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a ca
  ! Review test edits · 2 heuristic
    flags
    May weaken evidence; not confirmed
-   weakening; compared with the
-   request's start.
+   weakening.
  ! Not verified · notes
    it is in no Git repository, so
    Tesota cannot tell what changed
@@ -176,7 +169,6 @@ exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a ca
    with the request's start, not
    attributed to this request
  ○ No proof covers 3 changed files
-   Compared with the request's start.
 
  ▾ Details
    passed        cd api && bun run
@@ -186,50 +178,41 @@ exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a ca
      test.ts: on the base it failed,
      but so does the base without it,
      and no test report says which
-     tests fail; compared with the
-     request's start; contribution
+     tests fail; contribution
      unresolved
    not checked
      api/tests/welcome-header.test.ts:
      on the base it failed, but so does
      the base without it, and no test
      report says which tests fail;
-     compared with the request's start;
      contribution unresolved
    not checked
      api/tests/working-orb.test.ts: on
      the base it failed, but so does
      the base without it, and no test
      report says which tests fail;
-     compared with the request's start;
      contribution unresolved
    may weaken
      api/packages/core/tests/interface.
-     test.ts: edits a test file;
-     compared with the request's start
+     test.ts: edits a test file
    may weaken
      api/tests/welcome-header.test.ts:
-     edits a test file; compared with
-     the request's start
+     edits a test file
    not proved    api/NOTICE: no proof
      covers it; the project's commands
-     pass with it; compared with the
-     request's start
+     pass with it
    not proved    api/src/tesota.ts: no
      proof covers it; the project's
-     commands pass with it; compared
-     with the request's start
+     commands pass with it
    not proved
      api/src/welcome-header.ts: no
      proof covers it; the project's
-     commands pass with it; compared
-     with the request's start
+     commands pass with it
    not verified  notes: it is in no Git
      repository, so Tesota cannot tell
      what changed
    changed lines implementation +99 -18
-     · tests +75 -25 · other +7 -0 ·
-     compared with the request's start
+     · tests +75 -25 · other +7 -0
  From api 700f9a9d4a0b · Tesota 0.1.0
 "
 `;
@@ -245,8 +228,7 @@ exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a ca
  ○ Models   none recorded
 
  ! Review test edits · 2 heuristic flags
-   May weaken evidence; not confirmed weakening; compared with the request's
-   start.
+   May weaken evidence; not confirmed weakening.
  ! Not verified · notes
    it is in no Git repository, so Tesota cannot tell what changed
  ○ Change sensitivity unknown · 3 test files
@@ -257,33 +239,29 @@ exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a ca
    Changes are compared with the request's start, not attributed to this
    request
  ○ No proof covers 3 changed files
-   Compared with the request's start.
 
  ▾ Details
    passed        cd api && bun run check
    not checked   api/packages/core/tests/interface.test.ts: on the base it
      failed, but so does the base without it, and no test report says which
-     tests fail; compared with the request's start; contribution unresolved
+     tests fail; contribution unresolved
    not checked   api/tests/welcome-header.test.ts: on the base it failed, but
      so does the base without it, and no test report says which tests fail;
-     compared with the request's start; contribution unresolved
+     contribution unresolved
    not checked   api/tests/working-orb.test.ts: on the base it failed, but so
      does the base without it, and no test report says which tests fail;
-     compared with the request's start; contribution unresolved
-   may weaken    api/packages/core/tests/interface.test.ts: edits a test file;
-     compared with the request's start
-   may weaken    api/tests/welcome-header.test.ts: edits a test file; compared
-     with the request's start
+     contribution unresolved
+   may weaken    api/packages/core/tests/interface.test.ts: edits a test file
+   may weaken    api/tests/welcome-header.test.ts: edits a test file
    not proved    api/NOTICE: no proof covers it; the project's commands pass
-     with it; compared with the request's start
+     with it
    not proved    api/src/tesota.ts: no proof covers it; the project's commands
-     pass with it; compared with the request's start
+     pass with it
    not proved    api/src/welcome-header.ts: no proof covers it; the project's
-     commands pass with it; compared with the request's start
+     commands pass with it
    not verified  notes: it is in no Git repository, so Tesota cannot tell what
      changed
-   changed lines implementation +99 -18 · tests +75 -25 · other +7 -0 ·
-     compared with the request's start
+   changed lines implementation +99 -18 · tests +75 -25 · other +7 -0
  From api 700f9a9d4a0b · Tesota 0.1.0
 "
 `;
@@ -299,7 +277,7 @@ exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a ca
  ○ Models   none recorded
 
  ! Review test edits · 2 heuristic flags
-   May weaken evidence; not confirmed weakening; compared with the request's start.
+   May weaken evidence; not confirmed weakening.
  ! Not verified · notes
    it is in no Git repository, so Tesota cannot tell what changed
  ○ Change sensitivity unknown · 3 test files
@@ -308,25 +286,22 @@ exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a ca
    api: history moved, could not be read, or was not captured; recorded exercise and contract measurements do not
    establish request attribution. Changes are compared with the request's start, not attributed to this request
  ○ No proof covers 3 changed files
-   Compared with the request's start.
 
  ▾ Details
    passed        cd api && bun run check
    not checked   api/packages/core/tests/interface.test.ts: on the base it failed, but so does the base without it, and
-     no test report says which tests fail; compared with the request's start; contribution unresolved
+     no test report says which tests fail; contribution unresolved
    not checked   api/tests/welcome-header.test.ts: on the base it failed, but so does the base without it, and no test
-     report says which tests fail; compared with the request's start; contribution unresolved
+     report says which tests fail; contribution unresolved
    not checked   api/tests/working-orb.test.ts: on the base it failed, but so does the base without it, and no test
-     report says which tests fail; compared with the request's start; contribution unresolved
-   may weaken    api/packages/core/tests/interface.test.ts: edits a test file; compared with the request's start
-   may weaken    api/tests/welcome-header.test.ts: edits a test file; compared with the request's start
-   not proved    api/NOTICE: no proof covers it; the project's commands pass with it; compared with the request's start
-   not proved    api/src/tesota.ts: no proof covers it; the project's commands pass with it; compared with the
-     request's start
-   not proved    api/src/welcome-header.ts: no proof covers it; the project's commands pass with it; compared with the
-     request's start
+     report says which tests fail; contribution unresolved
+   may weaken    api/packages/core/tests/interface.test.ts: edits a test file
+   may weaken    api/tests/welcome-header.test.ts: edits a test file
+   not proved    api/NOTICE: no proof covers it; the project's commands pass with it
+   not proved    api/src/tesota.ts: no proof covers it; the project's commands pass with it
+   not proved    api/src/welcome-header.ts: no proof covers it; the project's commands pass with it
    not verified  notes: it is in no Git repository, so Tesota cannot tell what changed
-   changed lines implementation +99 -18 · tests +75 -25 · other +7 -0 · compared with the request's start
+   changed lines implementation +99 -18 · tests +75 -25 · other +7 -0
  From api 700f9a9d4a0b · Tesota 0.1.0
 "
 `;
@@ -341,26 +316,26 @@ Check evidence, not your acceptance.
 - ○ **Proved** — none recorded
 - ○ **Models** — none recorded
 
-- ! Review test edits · 2 heuristic flags — May weaken evidence; not confirmed weakening; compared with the request's start.
+- ! Review test edits · 2 heuristic flags — May weaken evidence; not confirmed weakening.
 - ! Not verified · notes — it is in no Git repository, so Tesota cannot tell what changed
 - ○ Change sensitivity unknown · 3 test files — Base fails too; no per\\-test failure report.
 - ○ Attribution unresolved · api — api: history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish request attribution. Changes are compared with the request's start, not attributed to this request
-- ○ No proof covers 3 changed files — Compared with the request's start.
+- ○ No proof covers 3 changed files
 
 **Details**
 
 \`\`\`text
   passed        cd api && bun run check
-  not checked   api/packages/core/tests/interface.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; compared with the request's start; contribution unresolved
-  not checked   api/tests/welcome-header.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; compared with the request's start; contribution unresolved
-  not checked   api/tests/working-orb.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; compared with the request's start; contribution unresolved
-  may weaken    api/packages/core/tests/interface.test.ts: edits a test file; compared with the request's start
-  may weaken    api/tests/welcome-header.test.ts: edits a test file; compared with the request's start
-  not proved    api/NOTICE: no proof covers it; the project's commands pass with it; compared with the request's start
-  not proved    api/src/tesota.ts: no proof covers it; the project's commands pass with it; compared with the request's start
-  not proved    api/src/welcome-header.ts: no proof covers it; the project's commands pass with it; compared with the request's start
+  not checked   api/packages/core/tests/interface.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  not checked   api/tests/welcome-header.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  not checked   api/tests/working-orb.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  may weaken    api/packages/core/tests/interface.test.ts: edits a test file
+  may weaken    api/tests/welcome-header.test.ts: edits a test file
+  not proved    api/NOTICE: no proof covers it; the project's commands pass with it
+  not proved    api/src/tesota.ts: no proof covers it; the project's commands pass with it
+  not proved    api/src/welcome-header.ts: no proof covers it; the project's commands pass with it
   not verified  notes: it is in no Git repository, so Tesota cannot tell what changed
-  changed lines implementation +99 -18 · tests +75 -25 · other +7 -0 · compared with the request's start
+  changed lines implementation +99 -18 · tests +75 -25 · other +7 -0
 From api 700f9a9d4a0b · Tesota 0.1.0
 \`\`\`"
 `;
@@ -375,7 +350,7 @@ Check evidence, not your acceptance.
 ○ Models   none recorded
 
 ! Review test edits · 2 heuristic flags
-  May weaken evidence; not confirmed weakening; compared with the request's start.
+  May weaken evidence; not confirmed weakening.
 ! Not verified · notes
   it is in no Git repository, so Tesota cannot tell what changed
 ○ Change sensitivity unknown · 3 test files
@@ -383,20 +358,19 @@ Check evidence, not your acceptance.
 ○ Attribution unresolved · api
   api: history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish request attribution. Changes are compared with the request's start, not attributed to this request
 ○ No proof covers 3 changed files
-  Compared with the request's start.
 
 Details
   passed        cd api && bun run check
-  not checked   api/packages/core/tests/interface.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; compared with the request's start; contribution unresolved
-  not checked   api/tests/welcome-header.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; compared with the request's start; contribution unresolved
-  not checked   api/tests/working-orb.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; compared with the request's start; contribution unresolved
-  may weaken    api/packages/core/tests/interface.test.ts: edits a test file; compared with the request's start
-  may weaken    api/tests/welcome-header.test.ts: edits a test file; compared with the request's start
-  not proved    api/NOTICE: no proof covers it; the project's commands pass with it; compared with the request's start
-  not proved    api/src/tesota.ts: no proof covers it; the project's commands pass with it; compared with the request's start
-  not proved    api/src/welcome-header.ts: no proof covers it; the project's commands pass with it; compared with the request's start
+  not checked   api/packages/core/tests/interface.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  not checked   api/tests/welcome-header.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  not checked   api/tests/working-orb.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  may weaken    api/packages/core/tests/interface.test.ts: edits a test file
+  may weaken    api/tests/welcome-header.test.ts: edits a test file
+  not proved    api/NOTICE: no proof covers it; the project's commands pass with it
+  not proved    api/src/tesota.ts: no proof covers it; the project's commands pass with it
+  not proved    api/src/welcome-header.ts: no proof covers it; the project's commands pass with it
   not verified  notes: it is in no Git repository, so Tesota cannot tell what changed
-  changed lines implementation +99 -18 · tests +75 -25 · other +7 -0 · compared with the request's start
+  changed lines implementation +99 -18 · tests +75 -25 · other +7 -0
 From api 700f9a9d4a0b · Tesota 0.1.0"
 `;
 
@@ -721,8 +695,7 @@ exports[`the real receipt of #574 > as a card 40 columns wide, the same words in
 
  ! Review test edits · 1 heuristic flag
    May weaken evidence; not confirmed
-   weakening; compared with the
-   request's start.
+   weakening.
  ○ Change sensitivity unknown · 2 test
    files
    Base fails too; no per-test failure
@@ -736,7 +709,6 @@ exports[`the real receipt of #574 > as a card 40 columns wide, the same words in
    request's start, not attributed to
    this request
  ○ No proof covers 1 changed file
-   Compared with the request's start.
 
  ▸ Details · paths, output,
    assumptions, model opinions
@@ -755,8 +727,7 @@ exports[`the real receipt of #574 > as a card 40 columns wide, the same words in
 
  ! Review test edits · 1 heuristic flag
    May weaken evidence; not confirmed
-   weakening; compared with the
-   request's start.
+   weakening.
  ○ Change sensitivity unknown · 2 test
    files
    Base fails too; no per-test failure
@@ -770,7 +741,6 @@ exports[`the real receipt of #574 > as a card 40 columns wide, the same words in
    request's start, not attributed to
    this request
  ○ No proof covers 1 changed file
-   Compared with the request's start.
 
  ▾ Details
    passed        bun run check
@@ -779,27 +749,22 @@ exports[`the real receipt of #574 > as a card 40 columns wide, the same words in
      on the base it failed, but so does
      the base without it, and no test
      report says which tests fail;
-     compared with the request's start;
      contribution unresolved
    not checked
      packages/core/tests/virtual-termin
      al.ts: on the base it failed, but
      so does the base without it, and
      no test report says which tests
-     fail; compared with the request's
-     start; contribution unresolved
+     fail; contribution unresolved
    may weaken
      packages/core/tests/shell.test.ts:
-     edits a test file; compared with
-     the request's start
+     edits a test file
    not proved
      packages/core/src/shell/shell.ts:
      no proof covers it; the project's
-     commands pass with it; compared
-     with the request's start
+     commands pass with it
    changed lines implementation +3 -3 ·
-     tests +31 -2 · compared with the
-     request's start
+     tests +31 -2
    model listed  no case the request
      leaves open, by openai/gpt-6-sol;
      a model's opinion, not a check
@@ -820,8 +785,7 @@ exports[`the real receipt of #574 > as a card 80 columns wide, the same words in
  ○ Models   none recorded
 
  ! Review test edits · 1 heuristic flag
-   May weaken evidence; not confirmed weakening; compared with the request's
-   start.
+   May weaken evidence; not confirmed weakening.
  ○ Change sensitivity unknown · 2 test files
    Base fails too; no per-test failure report.
  ○ Attribution unresolved
@@ -829,7 +793,6 @@ exports[`the real receipt of #574 > as a card 80 columns wide, the same words in
    contract measurements do not establish request attribution. Changes are
    compared with the request's start, not attributed to this request
  ○ No proof covers 1 changed file
-   Compared with the request's start.
 
  ▸ Details · paths, output, assumptions, model opinions
 "
@@ -846,8 +809,7 @@ exports[`the real receipt of #574 > as a card 80 columns wide, the same words in
  ○ Models   none recorded
 
  ! Review test edits · 1 heuristic flag
-   May weaken evidence; not confirmed weakening; compared with the request's
-   start.
+   May weaken evidence; not confirmed weakening.
  ○ Change sensitivity unknown · 2 test files
    Base fails too; no per-test failure report.
  ○ Attribution unresolved
@@ -855,22 +817,19 @@ exports[`the real receipt of #574 > as a card 80 columns wide, the same words in
    contract measurements do not establish request attribution. Changes are
    compared with the request's start, not attributed to this request
  ○ No proof covers 1 changed file
-   Compared with the request's start.
 
  ▾ Details
    passed        bun run check
    not checked   packages/core/tests/shell.test.ts: on the base it failed, but
      so does the base without it, and no test report says which tests fail;
-     compared with the request's start; contribution unresolved
+     contribution unresolved
    not checked   packages/core/tests/virtual-terminal.ts: on the base it
      failed, but so does the base without it, and no test report says which
-     tests fail; compared with the request's start; contribution unresolved
-   may weaken    packages/core/tests/shell.test.ts: edits a test file; compared
-     with the request's start
+     tests fail; contribution unresolved
+   may weaken    packages/core/tests/shell.test.ts: edits a test file
    not proved    packages/core/src/shell/shell.ts: no proof covers it; the
-     project's commands pass with it; compared with the request's start
-   changed lines implementation +3 -3 · tests +31 -2 · compared with the
-     request's start
+     project's commands pass with it
+   changed lines implementation +3 -3 · tests +31 -2
    model listed  no case the request leaves open, by openai/gpt-6-sol; a
      model's opinion, not a check
  From 39d91577bad9 · Tesota 0.1.0-alpha.1 · claude-code/claude-opus-5-5
@@ -888,14 +847,13 @@ exports[`the real receipt of #574 > as a card 120 columns wide, the same words i
  ○ Models   none recorded
 
  ! Review test edits · 1 heuristic flag
-   May weaken evidence; not confirmed weakening; compared with the request's start.
+   May weaken evidence; not confirmed weakening.
  ○ Change sensitivity unknown · 2 test files
    Base fails too; no per-test failure report.
  ○ Attribution unresolved
    history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish
    request attribution. Changes are compared with the request's start, not attributed to this request
  ○ No proof covers 1 changed file
-   Compared with the request's start.
 
  ▸ Details · paths, output, assumptions, model opinions
 "
@@ -912,25 +870,23 @@ exports[`the real receipt of #574 > as a card 120 columns wide, the same words i
  ○ Models   none recorded
 
  ! Review test edits · 1 heuristic flag
-   May weaken evidence; not confirmed weakening; compared with the request's start.
+   May weaken evidence; not confirmed weakening.
  ○ Change sensitivity unknown · 2 test files
    Base fails too; no per-test failure report.
  ○ Attribution unresolved
    history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish
    request attribution. Changes are compared with the request's start, not attributed to this request
  ○ No proof covers 1 changed file
-   Compared with the request's start.
 
  ▾ Details
    passed        bun run check
    not checked   packages/core/tests/shell.test.ts: on the base it failed, but so does the base without it, and no test
-     report says which tests fail; compared with the request's start; contribution unresolved
+     report says which tests fail; contribution unresolved
    not checked   packages/core/tests/virtual-terminal.ts: on the base it failed, but so does the base without it, and
-     no test report says which tests fail; compared with the request's start; contribution unresolved
-   may weaken    packages/core/tests/shell.test.ts: edits a test file; compared with the request's start
-   not proved    packages/core/src/shell/shell.ts: no proof covers it; the project's commands pass with it; compared
-     with the request's start
-   changed lines implementation +3 -3 · tests +31 -2 · compared with the request's start
+     no test report says which tests fail; contribution unresolved
+   may weaken    packages/core/tests/shell.test.ts: edits a test file
+   not proved    packages/core/src/shell/shell.ts: no proof covers it; the project's commands pass with it
+   changed lines implementation +3 -3 · tests +31 -2
    model listed  no case the request leaves open, by openai/gpt-6-sol; a model's opinion, not a check
  From 39d91577bad9 · Tesota 0.1.0-alpha.1 · claude-code/claude-opus-5-5
 "
@@ -946,20 +902,20 @@ Check evidence, not your acceptance.
 - ○ **Proved** — none recorded
 - ○ **Models** — none recorded
 
-- ! Review test edits · 1 heuristic flag — May weaken evidence; not confirmed weakening; compared with the request's start.
+- ! Review test edits · 1 heuristic flag — May weaken evidence; not confirmed weakening.
 - ○ Change sensitivity unknown · 2 test files — Base fails too; no per\\-test failure report.
 - ○ Attribution unresolved — history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish request attribution. Changes are compared with the request's start, not attributed to this request
-- ○ No proof covers 1 changed file — Compared with the request's start.
+- ○ No proof covers 1 changed file
 
 **Details**
 
 \`\`\`text
   passed        bun run check
-  not checked   packages/core/tests/shell.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; compared with the request's start; contribution unresolved
-  not checked   packages/core/tests/virtual-terminal.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; compared with the request's start; contribution unresolved
-  may weaken    packages/core/tests/shell.test.ts: edits a test file; compared with the request's start
-  not proved    packages/core/src/shell/shell.ts: no proof covers it; the project's commands pass with it; compared with the request's start
-  changed lines implementation +3 -3 · tests +31 -2 · compared with the request's start
+  not checked   packages/core/tests/shell.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  not checked   packages/core/tests/virtual-terminal.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  may weaken    packages/core/tests/shell.test.ts: edits a test file
+  not proved    packages/core/src/shell/shell.ts: no proof covers it; the project's commands pass with it
+  changed lines implementation +3 -3 · tests +31 -2
   model listed  no case the request leaves open, by openai/gpt-6-sol; a model's opinion, not a check
 From 39d91577bad9 · Tesota 0.1.0-alpha.1 · claude-code/claude-opus-5-5
 \`\`\`"
@@ -975,21 +931,20 @@ Check evidence, not your acceptance.
 ○ Models   none recorded
 
 ! Review test edits · 1 heuristic flag
-  May weaken evidence; not confirmed weakening; compared with the request's start.
+  May weaken evidence; not confirmed weakening.
 ○ Change sensitivity unknown · 2 test files
   Base fails too; no per-test failure report.
 ○ Attribution unresolved
   history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish request attribution. Changes are compared with the request's start, not attributed to this request
 ○ No proof covers 1 changed file
-  Compared with the request's start.
 
 Details
   passed        bun run check
-  not checked   packages/core/tests/shell.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; compared with the request's start; contribution unresolved
-  not checked   packages/core/tests/virtual-terminal.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; compared with the request's start; contribution unresolved
-  may weaken    packages/core/tests/shell.test.ts: edits a test file; compared with the request's start
-  not proved    packages/core/src/shell/shell.ts: no proof covers it; the project's commands pass with it; compared with the request's start
-  changed lines implementation +3 -3 · tests +31 -2 · compared with the request's start
+  not checked   packages/core/tests/shell.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  not checked   packages/core/tests/virtual-terminal.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  may weaken    packages/core/tests/shell.test.ts: edits a test file
+  not proved    packages/core/src/shell/shell.ts: no proof covers it; the project's commands pass with it
+  changed lines implementation +3 -3 · tests +31 -2
   model listed  no case the request leaves open, by openai/gpt-6-sol; a model's opinion, not a check
 From 39d91577bad9 · Tesota 0.1.0-alpha.1 · claude-code/claude-opus-5-5"
 `;
@@ -1006,8 +961,7 @@ exports[`the real receipt of #574 > in each theme's colors > dark collapsed 80 1
  "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m○\\u001b[39m \\u001b[38;2;242;238;230mModels   \\u001b[39m\\u001b[38;2;185;183;170mnone recorded\\u001b[39m                                                       \\u001b[49m",
  "\\u001b[48;2;49;43;56m                                                                                \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;213;179;106m!\\u001b[39m \\u001b[38;2;242;238;230mReview test edits · 1 heuristic flag\\u001b[39m                                         \\u001b[49m",
- "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m  May weaken evidence; not confirmed weakening; compared with the request's    \\u001b[49m",
- "\\u001b[48;2;49;43;56m   \\u001b[38;2;185;183;170mstart.\\u001b[39m                                                                       \\u001b[49m",
+ "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m  May weaken evidence; not confirmed weakening.\\u001b[39m                                \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m○\\u001b[39m \\u001b[38;2;242;238;230mChange sensitivity unknown · 2 test files\\u001b[39m                                    \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m  Base fails too; no per-test failure report.\\u001b[39m                                  \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m○\\u001b[39m \\u001b[38;2;242;238;230mAttribution unresolved\\u001b[39m                                                       \\u001b[49m",
@@ -1015,7 +969,6 @@ exports[`the real receipt of #574 > in each theme's colors > dark collapsed 80 1
  "\\u001b[48;2;49;43;56m   \\u001b[38;2;185;183;170mcontract measurements do not establish request attribution. Changes are      \\u001b[49m",
  "\\u001b[48;2;49;43;56m   \\u001b[38;2;185;183;170m\\u001b[38;2;185;183;170mcompared with the request's start, not attributed to this request\\u001b[39m            \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m○\\u001b[39m \\u001b[38;2;242;238;230mNo proof covers 1 changed file\\u001b[39m                                               \\u001b[49m",
- "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m  Compared with the request's start.\\u001b[39m                                           \\u001b[49m",
  "\\u001b[48;2;49;43;56m                                                                                \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;143;141;132m▸ Details · paths, output, assumptions, model opinions\\u001b[39m                         \\u001b[49m",
  "\\u001b[48;2;49;43;56m                                                                                \\u001b[49m"
@@ -1034,8 +987,7 @@ exports[`the real receipt of #574 > in each theme's colors > light collapsed 80 
  "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m○\\u001b[39m \\u001b[38;2;36;33;31mModels   \\u001b[39m\\u001b[38;2;95;98;88mnone recorded\\u001b[39m                                                       \\u001b[49m",
  "\\u001b[48;2;250;247;251m                                                                                \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;110;96;44m!\\u001b[39m \\u001b[38;2;36;33;31mReview test edits · 1 heuristic flag\\u001b[39m                                         \\u001b[49m",
- "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m  May weaken evidence; not confirmed weakening; compared with the request's    \\u001b[49m",
- "\\u001b[48;2;250;247;251m   \\u001b[38;2;95;98;88mstart.\\u001b[39m                                                                       \\u001b[49m",
+ "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m  May weaken evidence; not confirmed weakening.\\u001b[39m                                \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m○\\u001b[39m \\u001b[38;2;36;33;31mChange sensitivity unknown · 2 test files\\u001b[39m                                    \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m  Base fails too; no per-test failure report.\\u001b[39m                                  \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m○\\u001b[39m \\u001b[38;2;36;33;31mAttribution unresolved\\u001b[39m                                                       \\u001b[49m",
@@ -1043,7 +995,6 @@ exports[`the real receipt of #574 > in each theme's colors > light collapsed 80 
  "\\u001b[48;2;250;247;251m   \\u001b[38;2;95;98;88mcontract measurements do not establish request attribution. Changes are      \\u001b[49m",
  "\\u001b[48;2;250;247;251m   \\u001b[38;2;95;98;88m\\u001b[38;2;95;98;88mcompared with the request's start, not attributed to this request\\u001b[39m            \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m○\\u001b[39m \\u001b[38;2;36;33;31mNo proof covers 1 changed file\\u001b[39m                                               \\u001b[49m",
- "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m  Compared with the request's start.\\u001b[39m                                           \\u001b[49m",
  "\\u001b[48;2;250;247;251m                                                                                \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;134;136;126m▸ Details · paths, output, assumptions, model opinions\\u001b[39m                         \\u001b[49m",
  "\\u001b[48;2;250;247;251m                                                                                \\u001b[49m"
@@ -1074,7 +1025,6 @@ exports[`the real receipt of #575 > as a card 40 columns wide, the same words in
    request's start, not attributed to
    this request
  ○ No proof covers 3 changed files
-   Compared with the request's start.
 
  Model opinions · not evidence, not
  counted
@@ -1111,7 +1061,6 @@ exports[`the real receipt of #575 > as a card 40 columns wide, the same words in
    request's start, not attributed to
    this request
  ○ No proof covers 3 changed files
-   Compared with the request's start.
 
  Model opinions · not evidence, not
  counted
@@ -1125,24 +1074,19 @@ exports[`the real receipt of #575 > as a card 40 columns wide, the same words in
      base it failed, but so does the
      base without it, and no test
      report says which tests fail;
-     compared with the request's start;
      contribution unresolved
    not proved
      docs/concepts/verification.md: no
      proof covers it; the project's
-     commands pass with it; compared
-     with the request's start
+     commands pass with it
    not proved    docs/receipt-v2.md: no
      proof covers it; the project's
-     commands pass with it; compared
-     with the request's start
+     commands pass with it
    not proved    src/test-rung.ts: no
      proof covers it; the project's
-     commands pass with it; compared
-     with the request's start
+     commands pass with it
    changed lines implementation +37 -7
-     · tests +37 -2 · other +6 -1 ·
-     compared with the request's start
+     · tests +37 -2 · other +6 -1
    model listed  by openai/gpt-6-sol,
      cases the request may leave open,
      for you to settle; a model's
@@ -1195,7 +1139,6 @@ exports[`the real receipt of #575 > as a card 80 columns wide, the same words in
    contract measurements do not establish request attribution. Changes are
    compared with the request's start, not attributed to this request
  ○ No proof covers 3 changed files
-   Compared with the request's start.
 
  Model opinions · not evidence, not counted
  ◇ 1 open case for you to settle, listed by openai/gpt-6-sol
@@ -1222,7 +1165,6 @@ exports[`the real receipt of #575 > as a card 80 columns wide, the same words in
    contract measurements do not establish request attribution. Changes are
    compared with the request's start, not attributed to this request
  ○ No proof covers 3 changed files
-   Compared with the request's start.
 
  Model opinions · not evidence, not counted
  ◇ 1 open case for you to settle, listed by openai/gpt-6-sol
@@ -1230,16 +1172,15 @@ exports[`the real receipt of #575 > as a card 80 columns wide, the same words in
  ▾ Details
    passed        bun run check
    not checked   tests/test-rung.test.ts: on the base it failed, but so does
-     the base without it, and no test report says which tests fail; compared
-     with the request's start; contribution unresolved
+     the base without it, and no test report says which tests fail;
+     contribution unresolved
    not proved    docs/concepts/verification.md: no proof covers it; the
-     project's commands pass with it; compared with the request's start
+     project's commands pass with it
    not proved    docs/receipt-v2.md: no proof covers it; the project's commands
-     pass with it; compared with the request's start
+     pass with it
    not proved    src/test-rung.ts: no proof covers it; the project's commands
-     pass with it; compared with the request's start
-   changed lines implementation +37 -7 · tests +37 -2 · other +6 -1 · compared
-     with the request's start
+     pass with it
+   changed lines implementation +37 -7 · tests +37 -2 · other +6 -1
    model listed  by openai/gpt-6-sol, cases the request may leave open, for you
      to settle; a model's opinion, not a check:
                  The contents of issue #575 and its comments are not supplied
@@ -1272,7 +1213,6 @@ exports[`the real receipt of #575 > as a card 120 columns wide, the same words i
    history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish
    request attribution. Changes are compared with the request's start, not attributed to this request
  ○ No proof covers 3 changed files
-   Compared with the request's start.
 
  Model opinions · not evidence, not counted
  ◇ 1 open case for you to settle, listed by openai/gpt-6-sol
@@ -1298,7 +1238,6 @@ exports[`the real receipt of #575 > as a card 120 columns wide, the same words i
    history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish
    request attribution. Changes are compared with the request's start, not attributed to this request
  ○ No proof covers 3 changed files
-   Compared with the request's start.
 
  Model opinions · not evidence, not counted
  ◇ 1 open case for you to settle, listed by openai/gpt-6-sol
@@ -1306,14 +1245,11 @@ exports[`the real receipt of #575 > as a card 120 columns wide, the same words i
  ▾ Details
    passed        bun run check
    not checked   tests/test-rung.test.ts: on the base it failed, but so does the base without it, and no test report
-     says which tests fail; compared with the request's start; contribution unresolved
-   not proved    docs/concepts/verification.md: no proof covers it; the project's commands pass with it; compared with
-     the request's start
-   not proved    docs/receipt-v2.md: no proof covers it; the project's commands pass with it; compared with the
-     request's start
-   not proved    src/test-rung.ts: no proof covers it; the project's commands pass with it; compared with the request's
-     start
-   changed lines implementation +37 -7 · tests +37 -2 · other +6 -1 · compared with the request's start
+     says which tests fail; contribution unresolved
+   not proved    docs/concepts/verification.md: no proof covers it; the project's commands pass with it
+   not proved    docs/receipt-v2.md: no proof covers it; the project's commands pass with it
+   not proved    src/test-rung.ts: no proof covers it; the project's commands pass with it
+   changed lines implementation +37 -7 · tests +37 -2 · other +6 -1
    model listed  by openai/gpt-6-sol, cases the request may leave open, for you to settle; a model's opinion, not a
      check:
                  The contents of issue #575 and its comments are not supplied here, and they describe a behavior with
@@ -1340,7 +1276,7 @@ Check evidence, not your acceptance.
 
 - ○ Change sensitivity unknown · 1 test file — Base fails too; no per\\-test failure report.
 - ○ Attribution unresolved — history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish request attribution. Changes are compared with the request's start, not attributed to this request
-- ○ No proof covers 3 changed files — Compared with the request's start.
+- ○ No proof covers 3 changed files
 
 **Model opinions · not evidence, not counted**
 
@@ -1350,11 +1286,11 @@ Check evidence, not your acceptance.
 
 \`\`\`text
   passed        bun run check
-  not checked   tests/test-rung.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; compared with the request's start; contribution unresolved
-  not proved    docs/concepts/verification.md: no proof covers it; the project's commands pass with it; compared with the request's start
-  not proved    docs/receipt-v2.md: no proof covers it; the project's commands pass with it; compared with the request's start
-  not proved    src/test-rung.ts: no proof covers it; the project's commands pass with it; compared with the request's start
-  changed lines implementation +37 -7 · tests +37 -2 · other +6 -1 · compared with the request's start
+  not checked   tests/test-rung.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  not proved    docs/concepts/verification.md: no proof covers it; the project's commands pass with it
+  not proved    docs/receipt-v2.md: no proof covers it; the project's commands pass with it
+  not proved    src/test-rung.ts: no proof covers it; the project's commands pass with it
+  changed lines implementation +37 -7 · tests +37 -2 · other +6 -1
   model listed  by openai/gpt-6-sol, cases the request may leave open, for you to settle; a model's opinion, not a check:
                 The contents of issue #575 and its comments are not supplied here, and they describe a behavior with two plausible outcomes for the same valid input.: The behavior follows one interpretation of the issue and comments or The behavior follows the other interpretation of the issue and comments
 From c94a4614edbf · Tesota 0.1.0-alpha.1 · claude-code/claude-opus-5-5
@@ -1378,18 +1314,17 @@ Check evidence, not your acceptance.
 ○ Attribution unresolved
   history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish request attribution. Changes are compared with the request's start, not attributed to this request
 ○ No proof covers 3 changed files
-  Compared with the request's start.
 
 Model opinions · not evidence, not counted
 ◇ 1 open case for you to settle, listed by openai/gpt-6-sol
 
 Details
   passed        bun run check
-  not checked   tests/test-rung.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; compared with the request's start; contribution unresolved
-  not proved    docs/concepts/verification.md: no proof covers it; the project's commands pass with it; compared with the request's start
-  not proved    docs/receipt-v2.md: no proof covers it; the project's commands pass with it; compared with the request's start
-  not proved    src/test-rung.ts: no proof covers it; the project's commands pass with it; compared with the request's start
-  changed lines implementation +37 -7 · tests +37 -2 · other +6 -1 · compared with the request's start
+  not checked   tests/test-rung.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  not proved    docs/concepts/verification.md: no proof covers it; the project's commands pass with it
+  not proved    docs/receipt-v2.md: no proof covers it; the project's commands pass with it
+  not proved    src/test-rung.ts: no proof covers it; the project's commands pass with it
+  changed lines implementation +37 -7 · tests +37 -2 · other +6 -1
   model listed  by openai/gpt-6-sol, cases the request may leave open, for you to settle; a model's opinion, not a check:
                 The contents of issue #575 and its comments are not supplied here, and they describe a behavior with two plausible outcomes for the same valid input.: The behavior follows one interpretation of the issue and comments or The behavior follows the other interpretation of the issue and comments
 From c94a4614edbf · Tesota 0.1.0-alpha.1 · claude-code/claude-opus-5-5
@@ -1416,7 +1351,6 @@ exports[`the real receipt of #575 > in each theme's colors > dark collapsed 80 1
  "\\u001b[48;2;49;43;56m   \\u001b[38;2;185;183;170mcontract measurements do not establish request attribution. Changes are      \\u001b[49m",
  "\\u001b[48;2;49;43;56m   \\u001b[38;2;185;183;170m\\u001b[38;2;185;183;170mcompared with the request's start, not attributed to this request\\u001b[39m            \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m○\\u001b[39m \\u001b[38;2;242;238;230mNo proof covers 3 changed files\\u001b[39m                                              \\u001b[49m",
- "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m  Compared with the request's start.\\u001b[39m                                           \\u001b[49m",
  "\\u001b[48;2;49;43;56m                                                                                \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;143;141;132m\\u001b[1mModel opinions · not evidence, not counted\\u001b[22m\\u001b[39m                                     \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;198;168;210m◇\\u001b[39m \\u001b[38;2;242;238;230m1 open case for you to settle, listed by openai/gpt-6-sol\\u001b[39m                    \\u001b[49m",
@@ -1445,7 +1379,6 @@ exports[`the real receipt of #575 > in each theme's colors > light collapsed 80 
  "\\u001b[48;2;250;247;251m   \\u001b[38;2;95;98;88mcontract measurements do not establish request attribution. Changes are      \\u001b[49m",
  "\\u001b[48;2;250;247;251m   \\u001b[38;2;95;98;88m\\u001b[38;2;95;98;88mcompared with the request's start, not attributed to this request\\u001b[39m            \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m○\\u001b[39m \\u001b[38;2;36;33;31mNo proof covers 3 changed files\\u001b[39m                                              \\u001b[49m",
- "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m  Compared with the request's start.\\u001b[39m                                           \\u001b[49m",
  "\\u001b[48;2;250;247;251m                                                                                \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;134;136;126m\\u001b[1mModel opinions · not evidence, not counted\\u001b[22m\\u001b[39m                                     \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;109;75;120m◇\\u001b[39m \\u001b[38;2;36;33;31m1 open case for you to settle, listed by openai/gpt-6-sol\\u001b[39m                    \\u001b[49m",
@@ -1469,8 +1402,7 @@ exports[`the real receipt of #577 > as a card 40 columns wide, the same words in
  ! Review test edits · 2 heuristic
    flags
    May weaken evidence; not confirmed
-   weakening; compared with the
-   request's start.
+   weakening.
  ○ Change sensitivity unknown · 2 test
    files
    Base fails too; no per-test failure
@@ -1484,7 +1416,6 @@ exports[`the real receipt of #577 > as a card 40 columns wide, the same words in
    request's start, not attributed to
    this request
  ○ No proof covers 5 changed files
-   Compared with the request's start.
 
  ▸ Details · paths, output,
    assumptions, model opinions
@@ -1505,8 +1436,7 @@ exports[`the real receipt of #577 > as a card 40 columns wide, the same words in
  ! Review test edits · 2 heuristic
    flags
    May weaken evidence; not confirmed
-   weakening; compared with the
-   request's start.
+   weakening.
  ○ Change sensitivity unknown · 2 test
    files
    Base fails too; no per-test failure
@@ -1520,7 +1450,6 @@ exports[`the real receipt of #577 > as a card 40 columns wide, the same words in
    request's start, not attributed to
    this request
  ○ No proof covers 5 changed files
-   Compared with the request's start.
 
  ▾ Details
    passed        bun run check
@@ -1529,50 +1458,40 @@ exports[`the real receipt of #577 > as a card 40 columns wide, the same words in
      st.ts: on the base it failed, but
      so does the base without it, and
      no test report says which tests
-     fail; compared with the request's
-     start; contribution unresolved
+     fail; contribution unresolved
    not checked
      packages/core/tests/compaction.tes
      t.ts: on the base it failed, but
      so does the base without it, and
      no test report says which tests
-     fail; compared with the request's
-     start; contribution unresolved
+     fail; contribution unresolved
    may weaken
      packages/core/tests/claude-code.te
-     st.ts: edits a test file; compared
-     with the request's start
+     st.ts: edits a test file
    may weaken
      packages/core/tests/compaction.tes
-     t.ts: edits a test file; compared
-     with the request's start
+     t.ts: edits a test file
    not proved    docs/guides/models.md:
      no proof covers it; the project's
-     commands pass with it; compared
-     with the request's start
+     commands pass with it
    not proved
      packages/core/src/compaction.ts:
      no proof covers it; the project's
-     commands pass with it; compared
-     with the request's start
+     commands pass with it
    not proved
      packages/core/src/extensions.ts:
      no proof covers it; the project's
-     commands pass with it; compared
-     with the request's start
+     commands pass with it
    not proved
      packages/core/src/loop.ts: no
      proof covers it; the project's
-     commands pass with it; compared
-     with the request's start
+     commands pass with it
    not proved
      packages/core/src/providers/claude
      -code.ts: no proof covers it; the
-     project's commands pass with it;
-     compared with the request's start
+     project's commands pass with it
    changed lines implementation +23 -11
-     · tests +65 -3 · other +4 -1 ·
-     compared with the request's start
+     · tests +65 -3 · other +4 -1
    model listed  no case the request
      leaves open, by openai/gpt-6-sol;
      a model's opinion, not a check
@@ -1603,8 +1522,7 @@ exports[`the real receipt of #577 > as a card 80 columns wide, the same words in
  ○ Models   none recorded
 
  ! Review test edits · 2 heuristic flags
-   May weaken evidence; not confirmed weakening; compared with the request's
-   start.
+   May weaken evidence; not confirmed weakening.
  ○ Change sensitivity unknown · 2 test files
    Base fails too; no per-test failure report.
  ○ Attribution unresolved
@@ -1612,7 +1530,6 @@ exports[`the real receipt of #577 > as a card 80 columns wide, the same words in
    contract measurements do not establish request attribution. Changes are
    compared with the request's start, not attributed to this request
  ○ No proof covers 5 changed files
-   Compared with the request's start.
 
  ▸ Details · paths, output, assumptions, model opinions
  ▸ Context · 2 subagents
@@ -1630,8 +1547,7 @@ exports[`the real receipt of #577 > as a card 80 columns wide, the same words in
  ○ Models   none recorded
 
  ! Review test edits · 2 heuristic flags
-   May weaken evidence; not confirmed weakening; compared with the request's
-   start.
+   May weaken evidence; not confirmed weakening.
  ○ Change sensitivity unknown · 2 test files
    Base fails too; no per-test failure report.
  ○ Attribution unresolved
@@ -1639,32 +1555,28 @@ exports[`the real receipt of #577 > as a card 80 columns wide, the same words in
    contract measurements do not establish request attribution. Changes are
    compared with the request's start, not attributed to this request
  ○ No proof covers 5 changed files
-   Compared with the request's start.
 
  ▾ Details
    passed        bun run check
    not checked   packages/core/tests/claude-code.test.ts: on the base it
      failed, but so does the base without it, and no test report says which
-     tests fail; compared with the request's start; contribution unresolved
+     tests fail; contribution unresolved
    not checked   packages/core/tests/compaction.test.ts: on the base it failed,
      but so does the base without it, and no test report says which tests fail;
-     compared with the request's start; contribution unresolved
-   may weaken    packages/core/tests/claude-code.test.ts: edits a test file;
-     compared with the request's start
-   may weaken    packages/core/tests/compaction.test.ts: edits a test file;
-     compared with the request's start
+     contribution unresolved
+   may weaken    packages/core/tests/claude-code.test.ts: edits a test file
+   may weaken    packages/core/tests/compaction.test.ts: edits a test file
    not proved    docs/guides/models.md: no proof covers it; the project's
-     commands pass with it; compared with the request's start
+     commands pass with it
    not proved    packages/core/src/compaction.ts: no proof covers it; the
-     project's commands pass with it; compared with the request's start
+     project's commands pass with it
    not proved    packages/core/src/extensions.ts: no proof covers it; the
-     project's commands pass with it; compared with the request's start
+     project's commands pass with it
    not proved    packages/core/src/loop.ts: no proof covers it; the project's
-     commands pass with it; compared with the request's start
+     commands pass with it
    not proved    packages/core/src/providers/claude-code.ts: no proof covers
-     it; the project's commands pass with it; compared with the request's start
-   changed lines implementation +23 -11 · tests +65 -3 · other +4 -1 · compared
-     with the request's start
+     it; the project's commands pass with it
+   changed lines implementation +23 -11 · tests +65 -3 · other +4 -1
    model listed  no case the request leaves open, by openai/gpt-6-sol; a
      model's opinion, not a check
  From 700f9a9d4a0b · Tesota 0.1.0-alpha.1 · openai/gpt-6.1-sol
@@ -1689,14 +1601,13 @@ exports[`the real receipt of #577 > as a card 120 columns wide, the same words i
  ○ Models   none recorded
 
  ! Review test edits · 2 heuristic flags
-   May weaken evidence; not confirmed weakening; compared with the request's start.
+   May weaken evidence; not confirmed weakening.
  ○ Change sensitivity unknown · 2 test files
    Base fails too; no per-test failure report.
  ○ Attribution unresolved
    history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish
    request attribution. Changes are compared with the request's start, not attributed to this request
  ○ No proof covers 5 changed files
-   Compared with the request's start.
 
  ▸ Details · paths, output, assumptions, model opinions
  ▸ Context · 2 subagents
@@ -1714,34 +1625,28 @@ exports[`the real receipt of #577 > as a card 120 columns wide, the same words i
  ○ Models   none recorded
 
  ! Review test edits · 2 heuristic flags
-   May weaken evidence; not confirmed weakening; compared with the request's start.
+   May weaken evidence; not confirmed weakening.
  ○ Change sensitivity unknown · 2 test files
    Base fails too; no per-test failure report.
  ○ Attribution unresolved
    history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish
    request attribution. Changes are compared with the request's start, not attributed to this request
  ○ No proof covers 5 changed files
-   Compared with the request's start.
 
  ▾ Details
    passed        bun run check
    not checked   packages/core/tests/claude-code.test.ts: on the base it failed, but so does the base without it, and
-     no test report says which tests fail; compared with the request's start; contribution unresolved
+     no test report says which tests fail; contribution unresolved
    not checked   packages/core/tests/compaction.test.ts: on the base it failed, but so does the base without it, and no
-     test report says which tests fail; compared with the request's start; contribution unresolved
-   may weaken    packages/core/tests/claude-code.test.ts: edits a test file; compared with the request's start
-   may weaken    packages/core/tests/compaction.test.ts: edits a test file; compared with the request's start
-   not proved    docs/guides/models.md: no proof covers it; the project's commands pass with it; compared with the
-     request's start
-   not proved    packages/core/src/compaction.ts: no proof covers it; the project's commands pass with it; compared
-     with the request's start
-   not proved    packages/core/src/extensions.ts: no proof covers it; the project's commands pass with it; compared
-     with the request's start
-   not proved    packages/core/src/loop.ts: no proof covers it; the project's commands pass with it; compared with the
-     request's start
-   not proved    packages/core/src/providers/claude-code.ts: no proof covers it; the project's commands pass with it;
-     compared with the request's start
-   changed lines implementation +23 -11 · tests +65 -3 · other +4 -1 · compared with the request's start
+     test report says which tests fail; contribution unresolved
+   may weaken    packages/core/tests/claude-code.test.ts: edits a test file
+   may weaken    packages/core/tests/compaction.test.ts: edits a test file
+   not proved    docs/guides/models.md: no proof covers it; the project's commands pass with it
+   not proved    packages/core/src/compaction.ts: no proof covers it; the project's commands pass with it
+   not proved    packages/core/src/extensions.ts: no proof covers it; the project's commands pass with it
+   not proved    packages/core/src/loop.ts: no proof covers it; the project's commands pass with it
+   not proved    packages/core/src/providers/claude-code.ts: no proof covers it; the project's commands pass with it
+   changed lines implementation +23 -11 · tests +65 -3 · other +4 -1
    model listed  no case the request leaves open, by openai/gpt-6-sol; a model's opinion, not a check
  From 700f9a9d4a0b · Tesota 0.1.0-alpha.1 · openai/gpt-6.1-sol
 
@@ -1763,25 +1668,25 @@ Check evidence, not your acceptance.
 - ○ **Proved** — none recorded
 - ○ **Models** — none recorded
 
-- ! Review test edits · 2 heuristic flags — May weaken evidence; not confirmed weakening; compared with the request's start.
+- ! Review test edits · 2 heuristic flags — May weaken evidence; not confirmed weakening.
 - ○ Change sensitivity unknown · 2 test files — Base fails too; no per\\-test failure report.
 - ○ Attribution unresolved — history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish request attribution. Changes are compared with the request's start, not attributed to this request
-- ○ No proof covers 5 changed files — Compared with the request's start.
+- ○ No proof covers 5 changed files
 
 **Details**
 
 \`\`\`text
   passed        bun run check
-  not checked   packages/core/tests/claude-code.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; compared with the request's start; contribution unresolved
-  not checked   packages/core/tests/compaction.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; compared with the request's start; contribution unresolved
-  may weaken    packages/core/tests/claude-code.test.ts: edits a test file; compared with the request's start
-  may weaken    packages/core/tests/compaction.test.ts: edits a test file; compared with the request's start
-  not proved    docs/guides/models.md: no proof covers it; the project's commands pass with it; compared with the request's start
-  not proved    packages/core/src/compaction.ts: no proof covers it; the project's commands pass with it; compared with the request's start
-  not proved    packages/core/src/extensions.ts: no proof covers it; the project's commands pass with it; compared with the request's start
-  not proved    packages/core/src/loop.ts: no proof covers it; the project's commands pass with it; compared with the request's start
-  not proved    packages/core/src/providers/claude-code.ts: no proof covers it; the project's commands pass with it; compared with the request's start
-  changed lines implementation +23 -11 · tests +65 -3 · other +4 -1 · compared with the request's start
+  not checked   packages/core/tests/claude-code.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  not checked   packages/core/tests/compaction.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  may weaken    packages/core/tests/claude-code.test.ts: edits a test file
+  may weaken    packages/core/tests/compaction.test.ts: edits a test file
+  not proved    docs/guides/models.md: no proof covers it; the project's commands pass with it
+  not proved    packages/core/src/compaction.ts: no proof covers it; the project's commands pass with it
+  not proved    packages/core/src/extensions.ts: no proof covers it; the project's commands pass with it
+  not proved    packages/core/src/loop.ts: no proof covers it; the project's commands pass with it
+  not proved    packages/core/src/providers/claude-code.ts: no proof covers it; the project's commands pass with it
+  changed lines implementation +23 -11 · tests +65 -3 · other +4 -1
   model listed  no case the request leaves open, by openai/gpt-6-sol; a model's opinion, not a check
 From 700f9a9d4a0b · Tesota 0.1.0-alpha.1 · openai/gpt-6.1-sol
 \`\`\`
@@ -1801,26 +1706,25 @@ Check evidence, not your acceptance.
 ○ Models   none recorded
 
 ! Review test edits · 2 heuristic flags
-  May weaken evidence; not confirmed weakening; compared with the request's start.
+  May weaken evidence; not confirmed weakening.
 ○ Change sensitivity unknown · 2 test files
   Base fails too; no per-test failure report.
 ○ Attribution unresolved
   history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish request attribution. Changes are compared with the request's start, not attributed to this request
 ○ No proof covers 5 changed files
-  Compared with the request's start.
 
 Details
   passed        bun run check
-  not checked   packages/core/tests/claude-code.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; compared with the request's start; contribution unresolved
-  not checked   packages/core/tests/compaction.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; compared with the request's start; contribution unresolved
-  may weaken    packages/core/tests/claude-code.test.ts: edits a test file; compared with the request's start
-  may weaken    packages/core/tests/compaction.test.ts: edits a test file; compared with the request's start
-  not proved    docs/guides/models.md: no proof covers it; the project's commands pass with it; compared with the request's start
-  not proved    packages/core/src/compaction.ts: no proof covers it; the project's commands pass with it; compared with the request's start
-  not proved    packages/core/src/extensions.ts: no proof covers it; the project's commands pass with it; compared with the request's start
-  not proved    packages/core/src/loop.ts: no proof covers it; the project's commands pass with it; compared with the request's start
-  not proved    packages/core/src/providers/claude-code.ts: no proof covers it; the project's commands pass with it; compared with the request's start
-  changed lines implementation +23 -11 · tests +65 -3 · other +4 -1 · compared with the request's start
+  not checked   packages/core/tests/claude-code.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  not checked   packages/core/tests/compaction.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  may weaken    packages/core/tests/claude-code.test.ts: edits a test file
+  may weaken    packages/core/tests/compaction.test.ts: edits a test file
+  not proved    docs/guides/models.md: no proof covers it; the project's commands pass with it
+  not proved    packages/core/src/compaction.ts: no proof covers it; the project's commands pass with it
+  not proved    packages/core/src/extensions.ts: no proof covers it; the project's commands pass with it
+  not proved    packages/core/src/loop.ts: no proof covers it; the project's commands pass with it
+  not proved    packages/core/src/providers/claude-code.ts: no proof covers it; the project's commands pass with it
+  changed lines implementation +23 -11 · tests +65 -3 · other +4 -1
   model listed  no case the request leaves open, by openai/gpt-6-sol; a model's opinion, not a check
 From 700f9a9d4a0b · Tesota 0.1.0-alpha.1 · openai/gpt-6.1-sol
 
@@ -1841,8 +1745,7 @@ exports[`the real receipt of #577 > in each theme's colors > dark collapsed 80 1
  "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m○\\u001b[39m \\u001b[38;2;242;238;230mModels   \\u001b[39m\\u001b[38;2;185;183;170mnone recorded\\u001b[39m                                                       \\u001b[49m",
  "\\u001b[48;2;49;43;56m                                                                                \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;213;179;106m!\\u001b[39m \\u001b[38;2;242;238;230mReview test edits · 2 heuristic flags\\u001b[39m                                        \\u001b[49m",
- "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m  May weaken evidence; not confirmed weakening; compared with the request's    \\u001b[49m",
- "\\u001b[48;2;49;43;56m   \\u001b[38;2;185;183;170mstart.\\u001b[39m                                                                       \\u001b[49m",
+ "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m  May weaken evidence; not confirmed weakening.\\u001b[39m                                \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m○\\u001b[39m \\u001b[38;2;242;238;230mChange sensitivity unknown · 2 test files\\u001b[39m                                    \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m  Base fails too; no per-test failure report.\\u001b[39m                                  \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m○\\u001b[39m \\u001b[38;2;242;238;230mAttribution unresolved\\u001b[39m                                                       \\u001b[49m",
@@ -1850,7 +1753,6 @@ exports[`the real receipt of #577 > in each theme's colors > dark collapsed 80 1
  "\\u001b[48;2;49;43;56m   \\u001b[38;2;185;183;170mcontract measurements do not establish request attribution. Changes are      \\u001b[49m",
  "\\u001b[48;2;49;43;56m   \\u001b[38;2;185;183;170m\\u001b[38;2;185;183;170mcompared with the request's start, not attributed to this request\\u001b[39m            \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m○\\u001b[39m \\u001b[38;2;242;238;230mNo proof covers 5 changed files\\u001b[39m                                              \\u001b[49m",
- "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m  Compared with the request's start.\\u001b[39m                                           \\u001b[49m",
  "\\u001b[48;2;49;43;56m                                                                                \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;143;141;132m▸ Details · paths, output, assumptions, model opinions\\u001b[39m                         \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;143;141;132m▸ Context · 2 subagents\\u001b[39m                                                        \\u001b[49m",
@@ -1870,8 +1772,7 @@ exports[`the real receipt of #577 > in each theme's colors > light collapsed 80 
  "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m○\\u001b[39m \\u001b[38;2;36;33;31mModels   \\u001b[39m\\u001b[38;2;95;98;88mnone recorded\\u001b[39m                                                       \\u001b[49m",
  "\\u001b[48;2;250;247;251m                                                                                \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;110;96;44m!\\u001b[39m \\u001b[38;2;36;33;31mReview test edits · 2 heuristic flags\\u001b[39m                                        \\u001b[49m",
- "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m  May weaken evidence; not confirmed weakening; compared with the request's    \\u001b[49m",
- "\\u001b[48;2;250;247;251m   \\u001b[38;2;95;98;88mstart.\\u001b[39m                                                                       \\u001b[49m",
+ "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m  May weaken evidence; not confirmed weakening.\\u001b[39m                                \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m○\\u001b[39m \\u001b[38;2;36;33;31mChange sensitivity unknown · 2 test files\\u001b[39m                                    \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m  Base fails too; no per-test failure report.\\u001b[39m                                  \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m○\\u001b[39m \\u001b[38;2;36;33;31mAttribution unresolved\\u001b[39m                                                       \\u001b[49m",
@@ -1879,7 +1780,6 @@ exports[`the real receipt of #577 > in each theme's colors > light collapsed 80 
  "\\u001b[48;2;250;247;251m   \\u001b[38;2;95;98;88mcontract measurements do not establish request attribution. Changes are      \\u001b[49m",
  "\\u001b[48;2;250;247;251m   \\u001b[38;2;95;98;88m\\u001b[38;2;95;98;88mcompared with the request's start, not attributed to this request\\u001b[39m            \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m○\\u001b[39m \\u001b[38;2;36;33;31mNo proof covers 5 changed files\\u001b[39m                                              \\u001b[49m",
- "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m  Compared with the request's start.\\u001b[39m                                           \\u001b[49m",
  "\\u001b[48;2;250;247;251m                                                                                \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;134;136;126m▸ Details · paths, output, assumptions, model opinions\\u001b[39m                         \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;134;136;126m▸ Context · 2 subagents\\u001b[39m                                                        \\u001b[49m",
@@ -1900,8 +1800,7 @@ exports[`the real receipt of #584 > as a card 40 columns wide, the same words in
  ! Review test edits · 2 heuristic
    flags
    May weaken evidence; not confirmed
-   weakening; compared with the
-   request's start.
+   weakening.
  ○ Change sensitivity unknown · 3 test
    files
    Base fails too; no per-test failure
@@ -1915,7 +1814,6 @@ exports[`the real receipt of #584 > as a card 40 columns wide, the same words in
    request's start, not attributed to
    this request
  ○ No proof covers 3 changed files
-   Compared with the request's start.
 
  ▸ Details · paths, output,
    assumptions, model opinions
@@ -1936,8 +1834,7 @@ exports[`the real receipt of #584 > as a card 40 columns wide, the same words in
  ! Review test edits · 2 heuristic
    flags
    May weaken evidence; not confirmed
-   weakening; compared with the
-   request's start.
+   weakening.
  ○ Change sensitivity unknown · 3 test
    files
    Base fails too; no per-test failure
@@ -1951,7 +1848,6 @@ exports[`the real receipt of #584 > as a card 40 columns wide, the same words in
    request's start, not attributed to
    this request
  ○ No proof covers 3 changed files
-   Compared with the request's start.
 
  ▾ Details
    passed        bun run check
@@ -1960,45 +1856,36 @@ exports[`the real receipt of #584 > as a card 40 columns wide, the same words in
      .ts: on the base it failed, but so
      does the base without it, and no
      test report says which tests fail;
-     compared with the request's start;
      contribution unresolved
    not checked
      tests/welcome-header.test.ts: on
      the base it failed, but so does
      the base without it, and no test
      report says which tests fail;
-     compared with the request's start;
      contribution unresolved
    not checked
      tests/working-orb.test.ts: on the
      base it failed, but so does the
      base without it, and no test
      report says which tests fail;
-     compared with the request's start;
      contribution unresolved
    may weaken
      packages/core/tests/interface.test
-     .ts: edits a test file; compared
-     with the request's start
+     .ts: edits a test file
    may weaken
      tests/welcome-header.test.ts:
-     edits a test file; compared with
-     the request's start
+     edits a test file
    not proved    NOTICE: no proof
      covers it; the project's commands
-     pass with it; compared with the
-     request's start
+     pass with it
    not proved    src/tesota.ts: no
      proof covers it; the project's
-     commands pass with it; compared
-     with the request's start
+     commands pass with it
    not proved    src/welcome-header.ts:
      no proof covers it; the project's
-     commands pass with it; compared
-     with the request's start
+     commands pass with it
    changed lines implementation +99 -18
-     · tests +75 -25 · other +7 -0 ·
-     compared with the request's start
+     · tests +75 -25 · other +7 -0
    model listed  no case the request
      leaves open, by openai/gpt-6-sol;
      a model's opinion, not a check
@@ -2040,8 +1927,7 @@ exports[`the real receipt of #584 > as a card 80 columns wide, the same words in
  ○ Models   none recorded
 
  ! Review test edits · 2 heuristic flags
-   May weaken evidence; not confirmed weakening; compared with the request's
-   start.
+   May weaken evidence; not confirmed weakening.
  ○ Change sensitivity unknown · 3 test files
    Base fails too; no per-test failure report.
  ○ Attribution unresolved
@@ -2049,7 +1935,6 @@ exports[`the real receipt of #584 > as a card 80 columns wide, the same words in
    contract measurements do not establish request attribution. Changes are
    compared with the request's start, not attributed to this request
  ○ No proof covers 3 changed files
-   Compared with the request's start.
 
  ▸ Details · paths, output, assumptions, model opinions
  ▸ Context · 1 answer · 1 subagent
@@ -2067,8 +1952,7 @@ exports[`the real receipt of #584 > as a card 80 columns wide, the same words in
  ○ Models   none recorded
 
  ! Review test edits · 2 heuristic flags
-   May weaken evidence; not confirmed weakening; compared with the request's
-   start.
+   May weaken evidence; not confirmed weakening.
  ○ Change sensitivity unknown · 3 test files
    Base fails too; no per-test failure report.
  ○ Attribution unresolved
@@ -2076,31 +1960,27 @@ exports[`the real receipt of #584 > as a card 80 columns wide, the same words in
    contract measurements do not establish request attribution. Changes are
    compared with the request's start, not attributed to this request
  ○ No proof covers 3 changed files
-   Compared with the request's start.
 
  ▾ Details
    passed        bun run check
    not checked   packages/core/tests/interface.test.ts: on the base it failed,
      but so does the base without it, and no test report says which tests fail;
-     compared with the request's start; contribution unresolved
+     contribution unresolved
    not checked   tests/welcome-header.test.ts: on the base it failed, but so
      does the base without it, and no test report says which tests fail;
-     compared with the request's start; contribution unresolved
+     contribution unresolved
    not checked   tests/working-orb.test.ts: on the base it failed, but so does
-     the base without it, and no test report says which tests fail; compared
-     with the request's start; contribution unresolved
-   may weaken    packages/core/tests/interface.test.ts: edits a test file;
-     compared with the request's start
-   may weaken    tests/welcome-header.test.ts: edits a test file; compared with
-     the request's start
+     the base without it, and no test report says which tests fail;
+     contribution unresolved
+   may weaken    packages/core/tests/interface.test.ts: edits a test file
+   may weaken    tests/welcome-header.test.ts: edits a test file
    not proved    NOTICE: no proof covers it; the project's commands pass with
-     it; compared with the request's start
+     it
    not proved    src/tesota.ts: no proof covers it; the project's commands pass
-     with it; compared with the request's start
+     with it
    not proved    src/welcome-header.ts: no proof covers it; the project's
-     commands pass with it; compared with the request's start
-   changed lines implementation +99 -18 · tests +75 -25 · other +7 -0 ·
-     compared with the request's start
+     commands pass with it
+   changed lines implementation +99 -18 · tests +75 -25 · other +7 -0
    model listed  no case the request leaves open, by openai/gpt-6-sol; a
      model's opinion, not a check
  From 700f9a9d4a0b · Tesota 0.1.0-alpha.1 · openai/gpt-6.1-sol
@@ -2130,14 +2010,13 @@ exports[`the real receipt of #584 > as a card 120 columns wide, the same words i
  ○ Models   none recorded
 
  ! Review test edits · 2 heuristic flags
-   May weaken evidence; not confirmed weakening; compared with the request's start.
+   May weaken evidence; not confirmed weakening.
  ○ Change sensitivity unknown · 3 test files
    Base fails too; no per-test failure report.
  ○ Attribution unresolved
    history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish
    request attribution. Changes are compared with the request's start, not attributed to this request
  ○ No proof covers 3 changed files
-   Compared with the request's start.
 
  ▸ Details · paths, output, assumptions, model opinions
  ▸ Context · 1 answer · 1 subagent
@@ -2155,31 +2034,28 @@ exports[`the real receipt of #584 > as a card 120 columns wide, the same words i
  ○ Models   none recorded
 
  ! Review test edits · 2 heuristic flags
-   May weaken evidence; not confirmed weakening; compared with the request's start.
+   May weaken evidence; not confirmed weakening.
  ○ Change sensitivity unknown · 3 test files
    Base fails too; no per-test failure report.
  ○ Attribution unresolved
    history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish
    request attribution. Changes are compared with the request's start, not attributed to this request
  ○ No proof covers 3 changed files
-   Compared with the request's start.
 
  ▾ Details
    passed        bun run check
    not checked   packages/core/tests/interface.test.ts: on the base it failed, but so does the base without it, and no
-     test report says which tests fail; compared with the request's start; contribution unresolved
+     test report says which tests fail; contribution unresolved
    not checked   tests/welcome-header.test.ts: on the base it failed, but so does the base without it, and no test
-     report says which tests fail; compared with the request's start; contribution unresolved
+     report says which tests fail; contribution unresolved
    not checked   tests/working-orb.test.ts: on the base it failed, but so does the base without it, and no test report
-     says which tests fail; compared with the request's start; contribution unresolved
-   may weaken    packages/core/tests/interface.test.ts: edits a test file; compared with the request's start
-   may weaken    tests/welcome-header.test.ts: edits a test file; compared with the request's start
-   not proved    NOTICE: no proof covers it; the project's commands pass with it; compared with the request's start
-   not proved    src/tesota.ts: no proof covers it; the project's commands pass with it; compared with the request's
-     start
-   not proved    src/welcome-header.ts: no proof covers it; the project's commands pass with it; compared with the
-     request's start
-   changed lines implementation +99 -18 · tests +75 -25 · other +7 -0 · compared with the request's start
+     says which tests fail; contribution unresolved
+   may weaken    packages/core/tests/interface.test.ts: edits a test file
+   may weaken    tests/welcome-header.test.ts: edits a test file
+   not proved    NOTICE: no proof covers it; the project's commands pass with it
+   not proved    src/tesota.ts: no proof covers it; the project's commands pass with it
+   not proved    src/welcome-header.ts: no proof covers it; the project's commands pass with it
+   changed lines implementation +99 -18 · tests +75 -25 · other +7 -0
    model listed  no case the request leaves open, by openai/gpt-6-sol; a model's opinion, not a check
  From 700f9a9d4a0b · Tesota 0.1.0-alpha.1 · openai/gpt-6.1-sol
 
@@ -2205,24 +2081,24 @@ Check evidence, not your acceptance.
 - ○ **Proved** — none recorded
 - ○ **Models** — none recorded
 
-- ! Review test edits · 2 heuristic flags — May weaken evidence; not confirmed weakening; compared with the request's start.
+- ! Review test edits · 2 heuristic flags — May weaken evidence; not confirmed weakening.
 - ○ Change sensitivity unknown · 3 test files — Base fails too; no per\\-test failure report.
 - ○ Attribution unresolved — history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish request attribution. Changes are compared with the request's start, not attributed to this request
-- ○ No proof covers 3 changed files — Compared with the request's start.
+- ○ No proof covers 3 changed files
 
 **Details**
 
 \`\`\`text
   passed        bun run check
-  not checked   packages/core/tests/interface.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; compared with the request's start; contribution unresolved
-  not checked   tests/welcome-header.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; compared with the request's start; contribution unresolved
-  not checked   tests/working-orb.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; compared with the request's start; contribution unresolved
-  may weaken    packages/core/tests/interface.test.ts: edits a test file; compared with the request's start
-  may weaken    tests/welcome-header.test.ts: edits a test file; compared with the request's start
-  not proved    NOTICE: no proof covers it; the project's commands pass with it; compared with the request's start
-  not proved    src/tesota.ts: no proof covers it; the project's commands pass with it; compared with the request's start
-  not proved    src/welcome-header.ts: no proof covers it; the project's commands pass with it; compared with the request's start
-  changed lines implementation +99 -18 · tests +75 -25 · other +7 -0 · compared with the request's start
+  not checked   packages/core/tests/interface.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  not checked   tests/welcome-header.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  not checked   tests/working-orb.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  may weaken    packages/core/tests/interface.test.ts: edits a test file
+  may weaken    tests/welcome-header.test.ts: edits a test file
+  not proved    NOTICE: no proof covers it; the project's commands pass with it
+  not proved    src/tesota.ts: no proof covers it; the project's commands pass with it
+  not proved    src/welcome-header.ts: no proof covers it; the project's commands pass with it
+  changed lines implementation +99 -18 · tests +75 -25 · other +7 -0
   model listed  no case the request leaves open, by openai/gpt-6-sol; a model's opinion, not a check
 From 700f9a9d4a0b · Tesota 0.1.0-alpha.1 · openai/gpt-6.1-sol
 \`\`\`
@@ -2246,25 +2122,24 @@ Check evidence, not your acceptance.
 ○ Models   none recorded
 
 ! Review test edits · 2 heuristic flags
-  May weaken evidence; not confirmed weakening; compared with the request's start.
+  May weaken evidence; not confirmed weakening.
 ○ Change sensitivity unknown · 3 test files
   Base fails too; no per-test failure report.
 ○ Attribution unresolved
   history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish request attribution. Changes are compared with the request's start, not attributed to this request
 ○ No proof covers 3 changed files
-  Compared with the request's start.
 
 Details
   passed        bun run check
-  not checked   packages/core/tests/interface.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; compared with the request's start; contribution unresolved
-  not checked   tests/welcome-header.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; compared with the request's start; contribution unresolved
-  not checked   tests/working-orb.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; compared with the request's start; contribution unresolved
-  may weaken    packages/core/tests/interface.test.ts: edits a test file; compared with the request's start
-  may weaken    tests/welcome-header.test.ts: edits a test file; compared with the request's start
-  not proved    NOTICE: no proof covers it; the project's commands pass with it; compared with the request's start
-  not proved    src/tesota.ts: no proof covers it; the project's commands pass with it; compared with the request's start
-  not proved    src/welcome-header.ts: no proof covers it; the project's commands pass with it; compared with the request's start
-  changed lines implementation +99 -18 · tests +75 -25 · other +7 -0 · compared with the request's start
+  not checked   packages/core/tests/interface.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  not checked   tests/welcome-header.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  not checked   tests/working-orb.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
+  may weaken    packages/core/tests/interface.test.ts: edits a test file
+  may weaken    tests/welcome-header.test.ts: edits a test file
+  not proved    NOTICE: no proof covers it; the project's commands pass with it
+  not proved    src/tesota.ts: no proof covers it; the project's commands pass with it
+  not proved    src/welcome-header.ts: no proof covers it; the project's commands pass with it
+  changed lines implementation +99 -18 · tests +75 -25 · other +7 -0
   model listed  no case the request leaves open, by openai/gpt-6-sol; a model's opinion, not a check
 From 700f9a9d4a0b · Tesota 0.1.0-alpha.1 · openai/gpt-6.1-sol
 
@@ -2288,8 +2163,7 @@ exports[`the real receipt of #584 > in each theme's colors > dark collapsed 80 1
  "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m○\\u001b[39m \\u001b[38;2;242;238;230mModels   \\u001b[39m\\u001b[38;2;185;183;170mnone recorded\\u001b[39m                                                       \\u001b[49m",
  "\\u001b[48;2;49;43;56m                                                                                \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;213;179;106m!\\u001b[39m \\u001b[38;2;242;238;230mReview test edits · 2 heuristic flags\\u001b[39m                                        \\u001b[49m",
- "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m  May weaken evidence; not confirmed weakening; compared with the request's    \\u001b[49m",
- "\\u001b[48;2;49;43;56m   \\u001b[38;2;185;183;170mstart.\\u001b[39m                                                                       \\u001b[49m",
+ "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m  May weaken evidence; not confirmed weakening.\\u001b[39m                                \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m○\\u001b[39m \\u001b[38;2;242;238;230mChange sensitivity unknown · 3 test files\\u001b[39m                                    \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m  Base fails too; no per-test failure report.\\u001b[39m                                  \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m○\\u001b[39m \\u001b[38;2;242;238;230mAttribution unresolved\\u001b[39m                                                       \\u001b[49m",
@@ -2297,7 +2171,6 @@ exports[`the real receipt of #584 > in each theme's colors > dark collapsed 80 1
  "\\u001b[48;2;49;43;56m   \\u001b[38;2;185;183;170mcontract measurements do not establish request attribution. Changes are      \\u001b[49m",
  "\\u001b[48;2;49;43;56m   \\u001b[38;2;185;183;170m\\u001b[38;2;185;183;170mcompared with the request's start, not attributed to this request\\u001b[39m            \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m○\\u001b[39m \\u001b[38;2;242;238;230mNo proof covers 3 changed files\\u001b[39m                                              \\u001b[49m",
- "\\u001b[48;2;49;43;56m \\u001b[38;2;185;183;170m  Compared with the request's start.\\u001b[39m                                           \\u001b[49m",
  "\\u001b[48;2;49;43;56m                                                                                \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;143;141;132m▸ Details · paths, output, assumptions, model opinions\\u001b[39m                         \\u001b[49m",
  "\\u001b[48;2;49;43;56m \\u001b[38;2;143;141;132m▸ Context · 1 answer · 1 subagent\\u001b[39m                                              \\u001b[49m",
@@ -2317,8 +2190,7 @@ exports[`the real receipt of #584 > in each theme's colors > light collapsed 80 
  "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m○\\u001b[39m \\u001b[38;2;36;33;31mModels   \\u001b[39m\\u001b[38;2;95;98;88mnone recorded\\u001b[39m                                                       \\u001b[49m",
  "\\u001b[48;2;250;247;251m                                                                                \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;110;96;44m!\\u001b[39m \\u001b[38;2;36;33;31mReview test edits · 2 heuristic flags\\u001b[39m                                        \\u001b[49m",
- "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m  May weaken evidence; not confirmed weakening; compared with the request's    \\u001b[49m",
- "\\u001b[48;2;250;247;251m   \\u001b[38;2;95;98;88mstart.\\u001b[39m                                                                       \\u001b[49m",
+ "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m  May weaken evidence; not confirmed weakening.\\u001b[39m                                \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m○\\u001b[39m \\u001b[38;2;36;33;31mChange sensitivity unknown · 3 test files\\u001b[39m                                    \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m  Base fails too; no per-test failure report.\\u001b[39m                                  \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m○\\u001b[39m \\u001b[38;2;36;33;31mAttribution unresolved\\u001b[39m                                                       \\u001b[49m",
@@ -2326,7 +2198,6 @@ exports[`the real receipt of #584 > in each theme's colors > light collapsed 80 
  "\\u001b[48;2;250;247;251m   \\u001b[38;2;95;98;88mcontract measurements do not establish request attribution. Changes are      \\u001b[49m",
  "\\u001b[48;2;250;247;251m   \\u001b[38;2;95;98;88m\\u001b[38;2;95;98;88mcompared with the request's start, not attributed to this request\\u001b[39m            \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m○\\u001b[39m \\u001b[38;2;36;33;31mNo proof covers 3 changed files\\u001b[39m                                              \\u001b[49m",
- "\\u001b[48;2;250;247;251m \\u001b[38;2;95;98;88m  Compared with the request's start.\\u001b[39m                                           \\u001b[49m",
  "\\u001b[48;2;250;247;251m                                                                                \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;134;136;126m▸ Details · paths, output, assumptions, model opinions\\u001b[39m                         \\u001b[49m",
  "\\u001b[48;2;250;247;251m \\u001b[38;2;134;136;126m▸ Context · 1 answer · 1 subagent\\u001b[39m                                              \\u001b[49m",

@@ -12,13 +12,13 @@ lemma fingerprintEligible_ensures(known: bool, headMoved: bool, pathChanged: boo
 {
 }
 
-function historyAttributable(repository: bool, startKnown: bool, endKnown: bool, startAtBase: bool, endAtBase: bool): bool
+function historyAttributable(repository: bool, startKnown: bool, endKnown: bool, startAtBase: bool, endAtBase: bool, sameBranch: bool, descends: bool, exclusive: bool, timely: bool): bool
 {
-  (!(repository) || (((startKnown && endKnown) && startAtBase) && endAtBase))
+  (!(repository) || (((startKnown && endKnown) && startAtBase) && (endAtBase || (((sameBranch && descends) && exclusive) && timely))))
 }
 
-lemma historyAttributable_ensures(repository: bool, startKnown: bool, endKnown: bool, startAtBase: bool, endAtBase: bool)
-  ensures (historyAttributable(repository, startKnown, endKnown, startAtBase, endAtBase) <==> (!(repository) || (((startKnown && endKnown) && startAtBase) && endAtBase)))
+lemma historyAttributable_ensures(repository: bool, startKnown: bool, endKnown: bool, startAtBase: bool, endAtBase: bool, sameBranch: bool, descends: bool, exclusive: bool, timely: bool)
+  ensures (historyAttributable(repository, startKnown, endKnown, startAtBase, endAtBase, sameBranch, descends, exclusive, timely) <==> (!(repository) || (((startKnown && endKnown) && startAtBase) && (endAtBase || (((sameBranch && descends) && exclusive) && timely)))))
 {
 }
 

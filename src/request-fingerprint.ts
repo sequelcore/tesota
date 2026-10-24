@@ -3,17 +3,25 @@ import { join, posix } from "node:path";
 import { git } from "./git.js";
 import { attributePath, fingerprintEligible, historyAttributable } from "./verification/fingerprint-rule.js";
 
-export type StartState = { readonly status: "known"; readonly head: string | null }
+export interface HistoryFacts {
+  readonly sameBranch: boolean;
+  readonly descends: boolean;
+  readonly exclusive: boolean;
+  readonly timely: boolean;
+}
+export type StartState = { readonly status: "known"; readonly head: string | null; readonly history?: HistoryFacts }
   | { readonly status: "unknown"; readonly reason: string };
 /** Shared by selection and every receipt surface; missing captures cannot establish contribution. */
 export function attributionResolved(base: string | null, start: StartState | undefined, end: StartState | undefined,
   repository: boolean): boolean {
   return historyAttributable(repository, start?.status === "known", end?.status === "known",
-    start?.status === "known" && start.head === base, end?.status === "known" && end.head === base);
+    start?.status === "known" && start.head === base, end?.status === "known" && end.head === base,
+    end?.status === "known" && end.history?.sameBranch === true, end?.status === "known" && end.history?.descends === true,
+    end?.status === "known" && end.history?.exclusive === true, end?.status === "known" && end.history?.timely === true);
 }
 
 export interface UnmeasuredPath { readonly path: string; readonly reason: string }
-export type Fingerprint = { readonly status: "known"; readonly head: string | null;
+export type Fingerprint = { readonly status: "known"; readonly head: string | null; readonly branch: string;
   readonly blobs: ReadonlyMap<string, string | null>; readonly unmeasured: readonly UnmeasuredPath[] }
   | { readonly status: "unknown"; readonly reason: string };
 
@@ -109,7 +117,34 @@ export async function captureFingerprint(root: string): Promise<Fingerprint> {
   }
   const blobs = await pathBlobs(root, measured, prefix.trimEnd());
   return blobs === undefined ? { status: "unknown", reason: "Git could not hash the fingerprint's paths" }
-    : { status: "known", head: oid === "(initial)" ? null : oid, blobs, unmeasured };
+    : { status: "known", head: oid === "(initial)" ? null : oid,
+      branch: status.split("\0").find((field) => field.startsWith("# branch.head "))?.slice(14) ?? "", blobs, unmeasured };
+}
+
+/** Read Git facts only; the proved rule owns the attribution decision. Missing reads never grant credit. */
+export async function historyFacts(root: string, base: string | null, start: Fingerprint, end: Fingerprint,
+  startedAt: string): Promise<HistoryFacts | undefined> {
+  if (base === null || start.status !== "known" || end.status !== "known" || end.head === null) return undefined;
+  // H descends to HEAD exactly when it is their merge base; no common ancestor at all is a failed read.
+  const ancestor = await git(root, ["merge-base", base, end.head]);
+  const range = await git(root, ["log", "--no-show-signature", "--format=%H %ct", `${base}..${end.head}`]);
+  // Subtract every other branch, remote-tracking ref and tag in one history walk, not one process per commit.
+  const unshared = await git(root, ["rev-list", `${base}..${end.head}`, "--not",
+    `--exclude=${end.branch}`, "--branches", "--remotes", "--tags"]);
+  if (ancestor === undefined || range === undefined || unshared === undefined) return undefined;
+  const exclusiveIds = new Set(unshared.trim().split(/\r?\n/u).filter(Boolean));
+  let exclusive = true;
+  let timely = true;
+  const startSecond = Math.floor(Date.parse(startedAt) / 1000);
+  if (!Number.isFinite(startSecond)) return undefined;
+  for (const line of range.trim().split(/\r?\n/u).filter(Boolean)) {
+    const match = /^([a-f0-9]+) (\d+)$/u.exec(line);
+    if (match === null) return undefined;
+    exclusive &&= exclusiveIds.has(match[1] ?? "");
+    timely &&= Number(match[2]) >= startSecond;
+  }
+  return { sameBranch: start.branch !== "" && start.branch !== "(detached)" && start.branch === end.branch,
+    descends: ancestor.trim() === base, exclusive, timely };
 }
 
 /** Attribution observes results, not authors. An unreadable end is eligible too, with its reason. */

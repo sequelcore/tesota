@@ -91,9 +91,13 @@ results, not authors. A stash removing old dirt counts as a request change,
 even when it restores H's content. A commit hides nothing.
 
 **History movement limits credit, not verification.** A repository's
-contribution attribution is resolved only if both captured HEADs are known
-and equal the admission H. A merge, rebase, branch switch, ordinary local
-commit, or unreadable/missing capture makes it unresolved. The gate still
+contribution attribution needs readable captures, with the start HEAD at
+admission H. Unchanged history keeps credit. Moved history keeps it only
+on the same branch, when H is an ancestor of the end HEAD and every commit
+in `H..HEAD` is reached by no other local branch, remote-tracking ref or
+tag, and has a committer date at or after the request's start (at Git's
+whole-second precision). No remote or branch name is assumed. Failed or
+missing reads leave attribution unresolved. The gate still
 proves current files, runs project commands and checks models over the
 observed scope. It keeps H and every changed path, including imported files
 and overlapping local/upstream edits.
@@ -103,8 +107,18 @@ or ClaimCheck against the stale base. One prominent receipt limit says why;
 weakening, unproved paths and line totals are **compared with the request's
 start**, not attributed to this request. Text, card and export use the same
 proved decision. Empty exercise/contract lists then mean not measured, not
-success. The deliberate cost: even an ordinary local commit loses that
-credit. These captures cannot tell imported commits from local work.
+success. Ordinary local commits can therefore keep credit. One ambiguity
+remains: a fast-forward to a local commit that already existed, made inside
+the request's time and reached by no other ref, is credited. So is a pull
+by URL, which leaves no ref, of commits someone made during the request or
+whose committer date is ahead. Squash merges, cherry-picks and applied
+patches can also create new commits satisfying these facts; this is not
+proof of authorship. The reverse cost: pushing during the request moves a
+remote-tracking ref onto the request's commits, and merging a writing
+subagent's branch leaves that branch reaching them, so both stay
+unresolved. A request's first commit in
+an unborn repository stays unresolved: there is no admission commit from
+which to establish ancestry.
 See [Receipt v2](../receipt-v2.md#capturestate) for machine interpretation.
 
 Paths dirty at the start whose blob stayed the same are **inherited**.

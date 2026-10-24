@@ -322,7 +322,7 @@ const provenanceWords: Readonly<Record<TestExercise["provenance"], string>> = {
 
 /** A test against the base, as one line of words: what it did there, then who set what it expects. */
 const exerciseDetail = ({ provenance, reason }: TestExercise, attributable: boolean): string =>
-  `${reason}; ${attributable ? provenanceWords[provenance] : "compared with the request's start; contribution unresolved"}`;
+  `${reason}; ${attributable ? provenanceWords[provenance] : "contribution unresolved"}`;
 
 /** The change's lines by category in one row, when it changed any; a summary of the diff, not of what was verified. */
 function linesRow(lines: UnitEvidence["lines"]): string[] {
@@ -750,7 +750,6 @@ function unitFindings(receipt: UnitEvidence, folder = ""): Finding[] {
   const tested = receipt.tests.length > 0 && receipt.tests.every(({ verdict }) => verdict === "proved");
   const unproved = tested ? "Not proved" : "Not verified";
   const unread = typeof receipt.weakened === "string";
-  const comparison = resolved(receipt) ? "" : "; compared with the request's start";
   const found: Finding[] = [
     ...fingerprintFindings(receipt, folder),
     ...receipt.proofs.map((proof) => proofFinding(proof, addedAssumptions(proof.evidence.files, receipt.weakened))),
@@ -758,14 +757,14 @@ function unitFindings(receipt: UnitEvidence, folder = ""): Finding[] {
     ...modelFindings(receipt.models ?? [], receipt.unheaded ?? []),
     ...typeof receipt.weakened === "string"
       ? [{ standing: "decide" as const, check: "weakening" as const, label: "Weakening not checked", subject: "the change",
-        detail: (receipt.weakened === "too_large" ? "it is too large to check for weakening" : "Git could not show it") + comparison, more: [] }]
+        detail: (receipt.weakened === "too_large" ? "it is too large to check for weakening" : "Git could not show it"), more: [] }]
       : receipt.weakened.map((change): Finding => {
         const detail = (change.kind === "added_assume" ? trustedWords(change)
           : change.kind === "added_skip" ? skippedWords(change)
-          : change.kind === "changed_check_script" ? `${weakeningWords[change.kind]} ${change.script}` : weakeningWords[change.kind]) + comparison;
+          : change.kind === "changed_check_script" ? `${weakeningWords[change.kind]} ${change.script}` : weakeningWords[change.kind]);
         return { standing: "decide", check: "weakening", label: "May weaken the evidence", subject: change.path, detail,
           more: "annotation" in change ? [change.annotation] : [], group: { title: `${reviewTitles[change.kind]} · %`,
-            noun: ["heuristic flag", "heuristic flags"], note: "May weaken evidence; not confirmed weakening" + comparison + ".", item: `${change.path}: ${detail}` } };
+            noun: ["heuristic flag", "heuristic flags"], note: "May weaken evidence; not confirmed weakening" + ".", item: `${change.path}: ${detail}` } };
       }),
     ...receipt.contracts.map(contractFinding),
     ...receipt.exercises.map((exercise): Finding => {
@@ -788,12 +787,12 @@ function unitFindings(receipt: UnitEvidence, folder = ""): Finding[] {
       const subject = `${path} ${lines.length === 1 && lines[0]?.[0] === lines[0]?.[1] ? "line" : "lines"} ` +
         lines.map(([start, end]) => start === end ? `${start}` : `${start}–${end}`).join(", ");
       return { standing: "gap", check: "coverage", label: unproved, subject,
-        detail: (tested ? "outside any contract; the tests pass with them" : "outside any contract, and nothing checked them") + comparison, more: [],
-        group: { title: "No proof covers changed lines in %", noun: ["file", "files"], note: [tested ? "" : "Not checked by anything else.", comparison === "" ? "" : "Compared with the request's start."].filter(Boolean).join(" "), item: subject } };
+        detail: (tested ? "outside any contract; the tests pass with them" : "outside any contract, and nothing checked them"), more: [],
+        group: { title: "No proof covers changed lines in %", noun: ["file", "files"], note: tested ? "" : "Not checked by anything else.", item: subject } };
     }),
     ...receipt.unverified.map((path): Finding => ({ standing: "gap", check: "coverage", label: unproved, subject: path,
-      detail: (tested ? "no contract; the tests pass with it" : "nothing checked it") + comparison, more: [],
-      group: { title: "No proof covers %", noun: ["changed file", "changed files"], note: [tested ? "" : "Not checked by anything else.", comparison === "" ? "" : "Compared with the request's start."].filter(Boolean).join(" "), item: path } })),
+      detail: (tested ? "no contract; the tests pass with it" : "nothing checked it"), more: [],
+      group: { title: "No proof covers %", noun: ["changed file", "changed files"], note: tested ? "" : "Not checked by anything else.", item: path } })),
     ...(receipt.tooLarge ?? []).map((path): Finding => ({ standing: "gap", check: "coverage", label: "Not verified", subject: path,
       detail: "too large for Tesota's snapshot, which left it out", more: [],
       group: { title: "Left out of Tesota's snapshot · %", noun: ["file too large", "files too large"], note: "Not verified by anything.",
@@ -1121,8 +1120,7 @@ function receiptLines(receipt: Receipt): string[] {
   ...receipt.units === undefined ? unitLines(receipt) : receipt.units.flatMap((unit) => verified(unit)
     ? unitLines(fromFolder(unit)) : [`  not verified  ${plainName(unit.folder)}: ${plainReason(unit)}`]),
   // One row for the whole change, every repository's lines together, last: it sums up the diff, not the evidence.
-  ...linesRow(allEvidence(receipt).lines).map((row) =>
-    (receipt.units ?? [receipt]).some((unit) => !resolved(unit)) ? `${row} · compared with the request's start` : row),
+  ...linesRow(allEvidence(receipt).lines),
   ...openCaseLines(receipt.openCases)];
 }
 
@@ -1132,7 +1130,6 @@ function unitLines(receipt: UnitEvidence): string[] {
     return [`  not verified  this request's changes: ${receipt.reason ?? "the project has no Git repository, so Tesota cannot tell which files changed"}`];
   }
   const tested = receipt.tests.length > 0 && receipt.tests.every(({ verdict }) => verdict === "proved");
-  const comparison = resolved(receipt) ? "" : "; compared with the request's start";
   const listed = [
     ...fingerprintFindings(receipt).filter(({ label }) => label !== "Attribution unresolved").map(({ label, subject, detail }) => `  not measured  ${label}: ${subject}${subject === "" ? "" : ": "}${detail}`),
     ...receipt.inherited.length === 0 ? [] : [`  inherited     ${receipt.inherited.length} ${receipt.inherited.length === 1 ? "file" : "files"} already uncommitted, not this request's`,
@@ -1147,20 +1144,20 @@ function unitLines(receipt: UnitEvidence): string[] {
     ...(receipt.unheaded ?? []).map((path) => `  not checked   ${path}: it declares no tesota-model header, so no model check ran`),
     ...receipt.exercises.map((exercise) => `  ${sensitivityText[exercise.sensitivity]} ${exercise.path}: ${exerciseDetail(exercise, resolved(receipt))}`),
     ...receipt.weakened === "too_large"
-      ? ["  not checked   weakened evidence: the change is too large to check for weakening" + comparison]
+      ? ["  not checked   weakened evidence: the change is too large to check for weakening"]
       : receipt.weakened === "unreadable"
-        ? ["  not checked   weakened evidence: Git could not show the change" + comparison] : receipt.weakened.map((change) => weakening(change) + comparison),
+        ? ["  not checked   weakened evidence: Git could not show the change"] : receipt.weakened.map((change) => weakening(change)),
     ...typeof receipt.weakened === "string" && receipt.proofs.length > 0
       ? ["  not checked   which changed lines the proofs cover, for the same reason"] : [],
     ...receipt.uncovered.filter(({ lines }) => lines.length > 0).map(({ path, lines }) => {
       const one = lines.length === 1 && lines[0]?.[0] === lines[0]?.[1];
       const where = `${path} ${one ? "line" : "lines"} ${lines.map(([start, end]) => start === end ? `${start}` : `${start}-${end}`).join(", ")}`;
       return (tested ? `  not proved    ${where}: outside the contracts that proved; the project's commands pass with them`
-        : `  not verified  ${where}: outside the contracts that proved, and no verifier covers them`) + comparison;
+        : `  not verified  ${where}: outside the contracts that proved, and no verifier covers them`);
     }),
     ...receipt.unverified.map((path) => (tested
       ? `  not proved    ${path}: no proof covers it; the project's commands pass with it`
-      : `  not verified  ${path}: no verifier covers it`) + comparison),
+      : `  not verified  ${path}: no verifier covers it`)),
     ...(receipt.tooLarge ?? []).map((path) => `  not verified  ${path}: too large for Tesota's snapshot, which left it out`),
   ];
   // A change of comments alone leaves nothing to list; the receipt says so rather than ending empty.

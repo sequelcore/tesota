@@ -192,11 +192,17 @@ compares every changed path against the admission `base`, and the receipt
 shows the reason. Limits keep paths unmeasured even if their names and
 `HEAD` were readable.
 
-For a repository, contribution attribution is resolved only when both
-captures are known and both `head` values equal the admission `base`
-(including null before the first commit). Missing or unknown captures, a
-merge, rebase, branch switch, or ordinary local commit leave attribution
-unresolved. The same pure rule governs gate selection and presentation.
+For a repository, contribution attribution needs known captures and a start
+`head` equal to the admission `base`. An end `head` still at `base` resolves
+attribution (including null before the first commit). Otherwise the end
+capture's optional `history` records four boolean facts: `sameBranch`,
+`descends`, `exclusive`, and `timely`. All four must be true: the branch is
+unchanged, `base` is an ancestor of the end HEAD, no commit in `base..HEAD`
+is reached by another local branch, any remote-tracking ref or any tag, and
+every commit's committer date is at or after the request's start, at Git's
+whole-second precision. No branch or remote name is assumed. Missing facts
+or failed reads cannot resolve moved history. The same proved pure rule
+governs gate selection and every presentation surface.
 
 An unresolved unit still records all observed `changed` paths and final
 blobs, including imported files and paths touched both locally and upstream.
@@ -204,19 +210,27 @@ It still checks the resulting checkout. It does not run test exercise or
 contract-strength and ClaimCheck selection against the stale base:
 `exercises` and `contracts` are empty, and `claimcheck` is absent. These are
 **not measured**, not successful empty measurements. The receipt shows one
-prominent attribution limit per unit, naming the repository in a workspace. Weakening, unproved paths and line
-totals are comparisons **with the request's start**, not claims that this
-request authored or deleted them. JSON consumers derive this interpretation
-from `base`, `startState` and `endState`, using the same rule; the format adds
-no attribution field. Export keeps those facts and does not rewrite stored
+prominent attribution limit per unit, naming the repository in a workspace.
+It says once that changes are **compared with the request's start**, not
+claims that this request authored or deleted them; individual findings and
+line totals do not repeat it. Resolved receipts show no attribution notice.
+JSON consumers derive this interpretation from `base`, `startState` and
+`endState`, including its `history` facts, using the same rule. Export keeps those facts and does not rewrite stored
 receipts. If a stored receipt has measurements but lacks readable captures,
 its notice qualifies those recorded measurements rather than claiming they
 never ran; its exercise provenance is not presented as request authorship.
 
-The accepted conservative cost is that committing ordinary local work also
-loses contribution-specific credit. Endpoint captures cannot reliably
-separate imported history from local commits. `inherited` is not widened to
-mean imported work. Retaining imported paths in `changed` also keeps
+Ordinary local commits can keep contribution-specific credit. The remaining
+ambiguity is a fast-forward to a local commit that already existed, made
+inside the request's time and reached by no other ref: it is credited, as
+is a URL pull of commits made during the request or dated ahead. Pushing
+during the request, or merging another local branch such as a subagent's,
+leaves those commits reached by another ref, so attribution stays
+unresolved. Squash merges, cherry-picks and applied patches can likewise create new
+commits that satisfy these facts; they do not prove authorship. Making the
+first commit in an unborn repository stays unresolved, since there is no
+admission commit from which to establish ancestry.
+`inherited` is not widened to mean imported work. Retaining imported paths in `changed` also keeps
 `changedAfter` empty when exporting an unchanged settled commit.
 
 The gate observes results, not authors. A stash that removes old dirt is a
