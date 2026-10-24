@@ -35,6 +35,11 @@ export interface ModelView {
   readonly plain: string;
 }
 
+/** A count as a partial graph allows reading it: a lower bound. */
+export function boundedCount(partial: boolean, count: number): string {
+  return `${partial ? ">=" : ""}${count}`;
+}
+
 export function defaultProjection(states: readonly ViewState[], header: string): string[] {
   const names = [...new Set(states.flatMap(s => Object.keys(s.variables)))].sort();
   const declared = /^\s*\(?\*?\s*@view groupBy:\s*([\w ,]+)/mu.exec(header)?.[1]?.split(",").map(s => s.trim()).filter(Boolean);
@@ -113,7 +118,7 @@ function projectEdges(graph: ReachedGraph, membership: ReadonlyMap<string, strin
 
 /** No layout, terminal controls or claim that a quotient path is an execution. */
 export function renderModelView(view: Omit<ModelView, "plain">): string {
-  const count = (n: number): string => `${view.partial ? ">=" : ""}${n}`;
+  const count = (n: number): string => boundedCount(view.partial, n);
   return [view.partial ? "Partial exploration; counts are lower bounds" : "Complete exploration; exact counts",
     `Reached ${count(view.states.length)}; reported violating ${count(view.violations.length)} (zero reports do not establish safety)`,
     "Grouped transitions are not an execution. Only TLC's concrete trace is an execution.",

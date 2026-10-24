@@ -21,7 +21,9 @@ export async function loadModelView(manifest: string, request: ViewRequest, sign
         else chunks.push(chunk);
       } });
     if (oversized) throw new Error("Model viewer response exceeds 64 MiB budget; use the raw graph artifacts");
-    if (result.ended !== "exited" || result.exitCode !== 0) throw new Error(`Model viewer worker ${result.ended}: ${result.stderr}`);
+    // The worker's runtime prints a code frame before the error; its reason is the last `error:` line.
+    const reason = [...result.stderr.matchAll(/^\s*(?:\w*Error|error): (.+)$/gmu)].at(-1)?.[1] ?? result.stderr.trim();
+    if (result.ended !== "exited" || result.exitCode !== 0) throw new Error(`Model viewer worker ${result.ended}: ${reason}`);
     return JSON.parse(Buffer.concat(chunks).toString("utf8")) as ModelView;
   } finally { signal.removeEventListener("abort", abort); }
 }

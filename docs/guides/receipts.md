@@ -24,9 +24,22 @@ Partial exploration labels both counts as lower bounds. Zero reported
 violations is not a safety verdict. A missing or limited capture says so;
 the graph never changes the verification verdict.
 
-**Open graph** names the artifact stem beside the session: open its `.dot`,
-`.mmd` or `.txt` file in a text editor. A preview that does not fit says to
-open those files; it has no scroll region of its own.
+**Open graph** names the `/graph <name>` command that opens the capture
+full-screen; its `.dot`, `.mmd` and `.txt` files stay beside the session. A
+preview that does not fit has no scroll region of its own: open the graph.
+
+`/graph` opens the newest graph the shown session's receipts captured, or the
+one it names, over the conversation. Arrows and drag pan; `+` and `-` choose
+one of three detail levels; `g` groups by up to two variables; Enter drills
+into the selected group; `n` and `p` jump between reported violating states;
+`t` shows TLC's concrete trace, the only execution shown; `/` searches the
+reached states; Tab moves the selection, and the side panel shows the selected
+state's full variables. Esc closes a prompt, leaves a drilled group or the
+trace, then closes the viewer, returning to the same place in the conversation
+with the draft kept. A question that arrives while it is open waits under it.
+Counts follow the capture: a partial exploration's are lower bounds.
+`/graph --plain`, the inline shell, and a terminal smaller than 40×12 append
+the graph's text rendering to the conversation instead.
 
 ## For a pull request
 

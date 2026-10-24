@@ -482,6 +482,41 @@ describe("tesota-core", () => {
     await running;
   });
 
+  test("/graph opens the shown session's captured graph full-screen, or appends its text with --plain or where a full screen does not fit (#592)", async () => {
+    const { terminal, sessions, running, cwd } = await app();
+    try {
+      send(terminal, "/graph");
+      await terminal.until("No captured graph in this session");
+      // A session whose receipt carries a real TLC capture, as the gate records it.
+      const manifest = join(import.meta.dir, "fixtures", "model-viewer", "lights-complete.manifest.json");
+      const at = new Date(0).toISOString();
+      writeFileSync(join(sessions, "graphs.jsonl"), [{ type: "session", format: "tesota-session", version: 6, id: "graphs", cwd, createdAt: at, checkout: cwd },
+        { type: "request", run: 1, text: "check the lights", origin: "interactive", at, base: { units: [] } },
+        { type: "custom_message", run: 1, customType: "tesota-receipt-graphs", content: "the receipt", display: true,
+          details: { receipt: {}, graphs: [{ subject: "models/Lights.tla", capture: { status: "captured", manifest } }] } }]
+        .map((line) => JSON.stringify(line)).join("\n") + "\n");
+      send(terminal, "/resume");
+      await terminal.until("check the lights");
+      terminal.type(enter);
+      await terminal.until("the receipt");
+      send(terminal, "/graph");
+      expect(await terminal.until("grouped by door > lamp")).toContain("Model graph · models/Lights.tla");
+      terminal.type("\x1b");
+      await terminal.untilGone("Model graph");
+      send(terminal, "/graph lights-other");
+      await terminal.until("No captured graph lights-other in this session.");
+      send(terminal, "/graph --plain lights-complete");
+      expect(await terminal.until("TLC concrete trace (not regrouped or filtered)")).not.toContain("Model graph");
+      terminal.resize(100, 11);
+      send(terminal, "/graph");
+      await terminal.until("The graph is above as text");
+      expect(await terminal.screen()).not.toContain("Model graph");
+    } finally {
+      send(terminal, "/quit");
+      await running;
+    }
+  }, 30_000);
+
   test("/resume of an earlier session of the folder's checkout takes the checkout from the shell's unused session (#595)", async () => {
     const { terminal, sessions, running } = await app([], { earlier: "the earlier request" });
     send(terminal, "/resume");
@@ -722,4 +757,29 @@ describe("tesota-core", () => {
     send(terminal, "/quit");
     await running;
   });
+});
+
+test("plain graph worker error notices sanitize manifest-derived terminal controls", async () => {
+  const { terminal, sessions, running, cwd } = await app();
+  try {
+    const manifest = join(cwd, "missing\x1b]52;c;INJECT\x07.json");
+    const at = new Date(0).toISOString();
+    writeFileSync(join(sessions, "unsafe-graph.jsonl"), [
+      { type: "session", format: "tesota-session", version: 6, id: "unsafe-graph", cwd, createdAt: at, checkout: cwd },
+      { type: "request", run: 1, text: "unsafe graph notice", origin: "interactive", at, base: { units: [] } },
+      { type: "custom_message", run: 1, customType: "tesota-receipt-graphs", content: "unsafe receipt", display: true,
+        details: { receipt: {}, graphs: [{ subject: "Lights", capture: { status: "captured", manifest } }] } },
+    ].map(line => JSON.stringify(line)).join("\n") + "\n");
+    send(terminal, "/resume");
+    await terminal.until("unsafe graph notice");
+    terminal.type(enter);
+    await terminal.until("unsafe receipt");
+    terminal.written = "";
+    send(terminal, "/graph --plain");
+    await terminal.until("Model viewer worker");
+    expect(terminal.written).not.toContain("\x1b]52;c;INJECT\x07");
+  } finally {
+    send(terminal, "/quit");
+    await running;
+  }
 });

@@ -490,6 +490,15 @@ export function receiptEntry(mode: string | undefined, receipt: Receipt):
 export interface ReceiptGraph { readonly subject: string; readonly capture?: GraphCapture; }
 export interface ReceiptGraphMessage { readonly receipt: Receipt; readonly graphs: readonly ReceiptGraph[]; }
 
+/** The graphs a session's receipts carry, the newest receipt's first: what `/graph` opens. */
+export function entryGraphs(entries: readonly ReceiptEntry[]): ReceiptGraph[] {
+  return [...entries].reverse().flatMap((entry) => {
+    const graphs = entry.customType === "tesota-receipt-graphs" && entry.type === "custom_message" && typeof entry.details === "object" && entry.details !== null
+      ? Reflect.get(entry.details, "graphs") : undefined;
+    return Array.isArray(graphs) ? graphs as ReceiptGraph[] : [];
+  });
+}
+
 /** A graph-bearing transcript message; print mode still records only receipt v2. */
 export function receiptGraphEntry(mode: string | undefined, receipt: Receipt, graphs: readonly ReceiptGraph[]):
   ReturnType<typeof receiptEntry> | { type: "custom_message"; customType: "tesota-receipt-graphs"; content: string; display: true; details: ReceiptGraphMessage } {

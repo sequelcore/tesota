@@ -1,6 +1,7 @@
 import type { ExtensionAPI, MessageRenderer, Theme, ThemeColor } from "./contract.js";
 import { host } from "./host.js";
 import { Box, type Component, sliceByColumn, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { basename } from "node:path";
 import { terminalText } from "./terminal-text.js";
 import type { GraphCapture } from "./model-graph.js";
 import type { SentBack } from "./gate.js";
@@ -98,7 +99,7 @@ export function graphPreviewRows(capture: GraphCapture | undefined, width: numbe
     row += `${row === "| " ? "" : gap}${token}`;
   }
   if (row !== "| ") diagram.push(row.trimEnd());
-  const stem = capture.manifest.replace(/\.manifest\.json$/u, "");
+  const stem = terminalText(basename(capture.manifest).replace(/\.manifest\.json$/u, ""));
   const bound = preview.partial ? ">=" : "";
   return [...preview.partial ? hang("Partial exploration; counts are lower bounds", width, 0) : [],
     ...hang(`${bound}${preview.reached} reached · ${bound}${preview.violating} reported violating (not a safety verdict)`, width, 0),
@@ -106,7 +107,7 @@ export function graphPreviewRows(capture: GraphCapture | undefined, width: numbe
     ...diagram.length <= 6 && !preview.omitted && diagram.every((line) => visibleWidth(line) <= width) ? diagram
       : preview.kind === "trace" ? [...diagram.slice(0, 5).map((line) => cut(line, width)), ...hang("Path continues; open graph files", width, 0)]
         : hang("Diagram does not fit; open graph files", width, 0),
-    ...hang(`Open graph: in a text editor, open the files beside the session with stem ${terminalText(stem)} and extension .dot, .mmd or .txt.`, width, 0)];
+    ...hang(`Open graph: /graph ${stem}`, width, 0), ...hang(`Files beside the session: ${stem}.dot, .mmd, .txt`, width, 0)];
 }
 
 /** The fewest columns the text beside the labels keeps; with fewer, expanded rows wrap under the glyph instead. */

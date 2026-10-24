@@ -54,6 +54,7 @@ change verification results.
 | `/new` | Start another session beside this one |
 | `/resume` | Open an earlier session of this folder |
 | `/agents` | Open the dashboard of sessions |
+| `/graph [--plain] [name]` | Open a [model graph](../guides/receipts.md#model-graph-previews) a receipt captured; `--plain` appends its text |
 | `/compact` | Summarize the older conversation |
 | `/mcp` | MCP servers: state, reconnect, sign in and out; also `/mcp login\|logout\|reconnect <server>` |
 | `/quit` | End the shell |

@@ -1,0 +1,16 @@
+strict digraph DiskGraph {
+nodesep=0.35;
+subgraph cluster_graph {
+color="white";
+8425962955229654535 [label="/\\ door = \"open\"\n/\\ lamp = \"off\"\n/\\ n = 0",style = filled]
+8425962955229654535 -> 6319671032156345888 [label="Switch",color="black",fontcolor="black"];
+6319671032156345888 [label="/\\ door = \"open\"\n/\\ lamp = \"on\"\n/\\ n = 0"];
+8425962955229654535 -> 8661760766980063124 [label="Lock",color="black",fontcolor="black"];
+8661760766980063124 [label="/\\ door = \"locked\"\n/\\ lamp = \"off\"\n/\\ n = 0"];
+6319671032156345888 -> 8425962955229654535 [label="Switch",color="black",fontcolor="black"];
+6319671032156345888 -> 4156577980817326152 [label="Lock",color="black",fontcolor="black"];
+4156577980817326152 [label="/\\ door = \"locked\"\n/\\ lamp = \"on\"\n/\\ n = 0"];
+{rank = same; 8425962955229654535;}
+{rank = same; 6319671032156345888;}
+}
+}
