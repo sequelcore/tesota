@@ -453,7 +453,7 @@ function engineSession(file: string, release: () => void, entries: SessionEntry[
   let loop: LoopSession;
   try {
     loop = createLoop({ ...options, cwd: workspace.cwd, ...workspace.env === undefined ? {} : { env: workspace.env }, sessionId: id, verifier: (pi) => { options.verifier(pi, request); }, branch: () => branchOf(entries),
-      writer: options.writer?.(recording) ?? recording, outputFolder: outputOf(file), ...opened ? { resumed: stateOf(entries) } : {},
+      writer: options.writer?.(recording) ?? recording, outputFolder: outputOf(file), sessionFile: file, ...opened ? { resumed: stateOf(entries) } : {},
       ...host === undefined ? {} : { jobTools: (jobs) => [agentTool(host, jobs)] },
       ...options.child === undefined ? {} : { instructions: options.child.instructions(workspace.cwd, workspace.branch) } });
   } catch (error) {

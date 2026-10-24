@@ -114,6 +114,33 @@ format. Without Java or TLC the receipt says the model wasn't checked;
 the run never fails for it. [Install](../get-started/install.md) says where
 Tesota finds TLC.
 
+### Reached-graph artifacts
+
+Each TLA+ run dumps its reached graph in the same TLC invocation that
+produces the evidence. Artifacts sit beside the session's `.jsonl` file,
+not in the project: `<session>.jsonl.model-<run-id>.dot`, `.mmd`, `.txt`
+and `.manifest.json`. `check_model` reports the manifest's path. Main and
+planted-fault runs have separate manifests. Receipt v2 stays unchanged.
+
+The manifest links the session and evidence content hash, the run's
+command and timestamps, TLC version, model and configuration hashes
+(including the effective configuration with the header's invariants), and
+artifact hashes. It keeps string fingerprints, full state valuations,
+concrete action edges, the first counterexample trace, and each invariant's
+violating states as reported by TLC. It does not evaluate invariants itself.
+
+A finished exploration has exact reached-graph counts. An early stop is
+**partial**: its reached, edge and reported-violation counts are lower
+bounds, and zero violations does not establish safety. A TLC violation
+still fails when `-continue` returns exit 0.
+
+Capture is bounded to 16 MiB each for DOT and TLC output, 10,000 states
+and 50,000 edges. Bounds do not stop TLC or change its verdict. A limited,
+failed or unsupported capture says so separately; when the directory is
+writable, a manifest records that status. Deadlocks, liveness, other
+unsupported TLC errors, and Quint graph extraction are unavailable.
+The graph has no transcript preview or interactive viewer.
+
 pstack's `/create-formal-verification-skill` writes a TLA+ model by
 default and records the files it covers and the commit it was confirmed
 at; with this header, Tesota checks it on every request that touches them.

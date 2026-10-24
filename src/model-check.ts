@@ -1,8 +1,10 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, posix } from "node:path";
+import { StringDecoder } from "node:string_decoder";
 import { type Evidence, contentHash } from "./evidence.js";
 import { git } from "./git.js";
+import { captureGraph, graphContentHash, graphLimits, stateVariables, type GraphCapture, type GraphOptions } from "./model-graph.js";
 import { tesotaHome } from "./home.js";
 import { noOperations, type OperationResult, type OperationSink, type OperationSpec } from "./operations.js";
 import { runProcess } from "./process.js";
@@ -11,7 +13,7 @@ import { pathBlobs } from "./request-fingerprint.js";
 import { type Environment, runShell } from "./test-rung.js";
 import { projectFiles } from "./verification/lemmascript-verifier.js";
 import type { ProofOutcome } from "./verification/proof-outcome-rule.js";
-import { type FaultVerdict, type ModelRun, type Staleness, faultVerdict, modelOutcome, staleness, tlcRun,
+import { type FaultVerdict, type ModelRun, type Staleness, faultVerdict, modelOutcome, reportedTlcRun, staleness, tlcRun,
   writtenWithCode } from "./verification/model-rule.js";
 
 /** The word that makes a TLA+ or Quint file a model the gate checks, on the first line of its header. */
@@ -217,22 +219,6 @@ export interface Counterexample {
   readonly steps: readonly CounterexampleStep[];
 }
 
-/** A state's variables from its lines: `/\ name = value`, a value continuing on the lines below; one line alone when it has one. */
-function stateVariables(lines: readonly string[]): Map<string, string> {
-  const variables = new Map<string, string>();
-  let current: string | undefined;
-  for (const line of lines) {
-    const assignment = /^(?:\/\\\s+)?([A-Za-z_][\w]*)\s*=\s*(.*)$/u.exec(line.trim());
-    if (assignment !== null && (line.trimStart().startsWith("/\\") || variables.size === 0)) {
-      current = assignment[1] ?? "";
-      variables.set(current, assignment[2] ?? "");
-    } else if (current !== undefined && line.trim() !== "") {
-      variables.set(current, `${variables.get(current) ?? ""} ${line.trim()}`);
-    }
-  }
-  return variables;
-}
-
 /**
  * The counterexample in TLC's output, Quint's included, which runs TLC:
  * the first error it reports, then each `State n: <Action ...>` with the
@@ -273,6 +259,11 @@ interface CheckerRun {
   readonly output: string;
   readonly trace: string;
   readonly durationMs: number;
+  readonly capture?: GraphCapture;
+}
+
+function captureOf(run: CheckerRun): GraphCapture {
+  return run.capture ?? { status: "unavailable", reason: "Graph capture requires a session file and a TLC run; Quint graph extraction is unavailable" };
 }
 
 function distinctStates(output: string): number {
@@ -287,7 +278,7 @@ function distinctStates(output: string): number {
  * extracts, removed after. A missing Java or TLC is a run that did not start.
  */
 async function runTlc(root: string, spec: string, config: string, invariants: readonly string[], jar: string,
-  signal: AbortSignal): Promise<CheckerRun> {
+  signal: AbortSignal, capture?: GraphOptions, evidenceHash = ""): Promise<CheckerRun> {
   const started = Date.now();
   if (await readIfPresent(jar) === undefined) {
     return { run: "not_started", durationMs: 0, trace: "", output: `TLC is not installed: Tesota looks for tla2tools.jar at ${jar}.` };
@@ -295,14 +286,36 @@ async function runTlc(root: string, spec: string, config: string, invariants: re
   const directory = await mkdtemp(join(tmpdir(), "tesota-tlc-"));
   try {
     const written = join(directory, posix.basename(config));
-    await writeFile(written, `${await readIfPresent(join(root, config)) ?? ""}\n${invariants.map((name) => `INVARIANT ${name}`).join("\n")}\n`);
+    const configSource = await readIfPresent(join(root, config)) ?? "";
+    const modelSource = await readIfPresent(join(root, spec)) ?? "";
+    const effectiveConfig = `${configSource}\n${invariants.map((name) => `INVARIANT ${name}`).join("\n")}\n`;
+    await writeFile(written, effectiveConfig);
+    const dotFile = join(directory, "reached.dot");
+    let capturedOutput = "";
+    let outputBytes = 0;
+    const decoder = new StringDecoder("utf8");
+    let reportTail = "";
+    let violated = false;
     // From the specification's folder, where TLC finds the modules it extends.
-    const ran = await runProcess("java", [maxHeap, "-XX:+UseParallelGC", `-Djava.io.tmpdir=${directory}`, "-cp", jar, "tlc2.TLC",
-      "-workers", "auto", "-metadir", join(directory, "states"), "-config", written, posix.basename(spec)], join(root, posix.dirname(spec)),
-    signal, timeoutMs);
+    const args = [maxHeap, "-XX:+UseParallelGC", `-Djava.io.tmpdir=${directory}`, "-cp", jar, "tlc2.TLC",
+      "-workers", "auto", "-metadir", join(directory, "states"), "-dump", "dot,actionlabels", dotFile,
+      ...capture?.continue === true ? ["-continue"] : [], "-config", written, posix.basename(spec)];
+    const ran = await runProcess("java", args, join(root, posix.dirname(spec)),
+    signal, timeoutMs, undefined, { onStdout: (chunk) => {
+      const decoded = decoder.write(chunk);
+      reportTail += decoded;
+      violated ||= /Error: (?:Invariant \w+ is violated|Action property .* is violated|Deadlock reached|Temporal properties were violated|The first argument of Assert)/u.test(reportTail);
+      reportTail = reportTail.slice(-1024);
+      outputBytes += chunk.length;
+      if (outputBytes <= (capture?.limits?.bytes ?? graphLimits.bytes)) capturedOutput += decoded;
+    } });
     const output = ran.ended === "not_started" ? `Java could not start, so TLC did not run: ${ran.output}` : ran.output;
-    return { run: tlcRun(ran.ended === "cancelled", ran.ended === "timed_out", ran.ended !== "not_started", ran.exitCode ?? -1,
-      distinctStates(output)), output, trace: ran.stdout, durationMs: Date.now() - started };
+    return { run: reportedTlcRun(tlcRun(ran.ended === "cancelled", ran.ended === "timed_out", ran.ended !== "not_started", ran.exitCode ?? -1,
+      distinctStates(output)), violated), output, trace: ran.stdout, durationMs: Date.now() - started,
+      ...capture === undefined ? {} : { capture: await captureGraph(dotFile, capturedOutput, { sessionFile: capture.sessionFile, root, model: spec, config,
+          command: ["java", ...args], startedAt: new Date(started).toISOString(), finishedAt: new Date().toISOString(),
+          processEnded: ran.ended, evidenceOutputHash: graphContentHash(output), modelHash: graphContentHash(modelSource), configHash: graphContentHash(configSource),
+          effectiveConfigHash: graphContentHash(effectiveConfig), evidenceHash, exitCode: ran.exitCode }, capture, outputBytes <= (capture.limits?.bytes ?? graphLimits.bytes)) } };
   } finally { await rm(directory, { recursive: true, force: true }); }
 }
 
@@ -340,13 +353,16 @@ async function runQuint(root: string, model: string, invariants: readonly string
 }
 
 /** One checker run of a model or a fault, in the model's language: a TLA+ fault may be another configuration of the same specification. */
-function check(root: string, model: string, file: string, invariants: readonly string[], jar: string, signal: AbortSignal): Promise<CheckerRun> {
+function check(root: string, model: string, file: string, invariants: readonly string[], jar: string, signal: AbortSignal,
+  capture?: GraphOptions, evidenceHash?: string): Promise<CheckerRun> {
   if (language(model) === "quint") return runQuint(root, file, invariants, signal);
-  return file.endsWith(".cfg") ? runTlc(root, model, file, invariants, jar, signal) : runTlc(root, file, configOf(file), invariants, jar, signal);
+  return file.endsWith(".cfg") ? runTlc(root, model, file, invariants, jar, signal, capture, evidenceHash)
+    : runTlc(root, file, configOf(file), invariants, jar, signal, capture, evidenceHash);
 }
 
 /** A planted fault's check: how it ended, what that shows, and what the checker printed. */
 export interface FaultCheck extends ModelFault {
+  readonly capture?: GraphCapture;
   readonly verdict: FaultVerdict;
   readonly output: string;
   readonly durationMs: number;
@@ -363,6 +379,7 @@ export type ModelLink = "no_replay" | "linked" | "replay_failed";
  * whether the request wrote it with the code, and whether a replay links it.
  */
 export interface ModelCheck {
+  readonly capture?: GraphCapture;
   readonly path: string;
   readonly language: ModelLanguage;
   readonly header: ModelHeader;
@@ -414,7 +431,7 @@ export async function modelContent(root: string, path: string, header: ModelHead
  * faults and its covered files as they were before the check.
  */
 export async function checkModel(root: string, path: string, changed: readonly string[], signal: AbortSignal,
-  jar: string = tlaToolsJar(), ops: OperationSink = noOperations, env?: Environment): Promise<ModelCheck> {
+  jar: string = tlaToolsJar(), ops: OperationSink = noOperations, env?: Environment, capture?: GraphOptions): Promise<ModelCheck> {
   const started = Date.now();
   const source = await readIfPresent(join(root, path)) ?? "";
   const header = modelHeader(source) ?? { covers: [], invariants: [], atomic: [], omits: [], faults: [] };
@@ -446,13 +463,14 @@ export async function checkModel(root: string, path: string, changed: readonly s
   const replaySpec: OperationSpec | undefined = header.replay === undefined ? undefined
     : { method: "model_replay", unit: "", target: header.replay, parent: mainId };
   const replayId = replaySpec === undefined ? undefined : ops.plan(replaySpec);
-  const main = await ops.run(mainSpec, () => check(root, path, path, header.invariants, jar, signal), ({ run }) => modelRunResult(run), mainId);
+  const main = await ops.run(mainSpec, () => check(root, path, path, header.invariants, jar, signal, capture, contentHash(content)), ({ run }) => modelRunResult(run), mainId);
   const faults: FaultCheck[] = [];
   if (main.run === "passed") {
     for (const [k, fault] of header.faults.entries()) {
-      const ran = await ops.run(faultSpecs[k] ?? mainSpec, () => check(root, path, fault.path, header.invariants, jar, signal),
+      const ran = await ops.run(faultSpecs[k] ?? mainSpec, () => check(root, path, fault.path, header.invariants, jar, signal, capture, contentHash(content)),
         ({ run }) => modelRunResult(run), faultIds[k]);
-      faults.push({ ...fault, verdict: faultVerdict(ran.run), output: ran.output, durationMs: ran.durationMs });
+      faults.push({ ...fault, verdict: faultVerdict(ran.run), output: ran.output, durationMs: ran.durationMs,
+        capture: captureOf(ran) });
     }
   }
   const counterexample = main.run === "violated" ? tlcCounterexample(main.trace) : undefined;
@@ -460,7 +478,7 @@ export async function checkModel(root: string, path: string, changed: readonly s
   const link: ModelLink = header.replay === undefined || result.outcome !== "passed" ? "no_replay"
     : (await ops.run(replaySpec ?? mainSpec, () => runShell(header.replay ?? "", root, signal, timeoutMs, env), ({ outcome }) => outcome, replayId))
       .outcome === "passed" ? "linked" : "replay_failed";
-  return { ...facts, staleness: stalenessOf(result.outcome), problems, evidence: result, run: main.run, states: distinctStates(main.output), faults, ...counterexample === undefined ? {} : { counterexample }, link };
+  return { ...facts, capture: captureOf(main), staleness: stalenessOf(result.outcome), problems, evidence: result, run: main.run, states: distinctStates(main.output), faults, ...counterexample === undefined ? {} : { counterexample }, link };
 }
 
 /** The header format, as the gate tells an agent that wrote a model without one. */

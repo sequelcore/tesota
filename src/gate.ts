@@ -646,7 +646,8 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
    * again against what went back. With them, the TLA+ and Quint files the
    * request changed that declare no header.
    */
-  const checkModels = (units: readonly ChangedUnit[], tallied: Tally, env: Readonly<Record<string, string>> | undefined):
+  const checkModels = (units: readonly ChangedUnit[], tallied: Tally, env: Readonly<Record<string, string>> | undefined,
+    sessionFile: string | undefined):
     Effect.Effect<Map<string, ModelRung>> => effect().gen(function* () {
     const rungs = new Map<string, ModelRung>();
     for (const unit of units) {
@@ -666,7 +667,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
         }
         progress.publish({ step: "checking", path: key, startedAt: performance.now(), tally: tallied });
         const check = yield* step((signal) => checks().checkModel(unit.root, plan.path, unit.changed, signal, undefined,
-          progress.operations.forUnit(unit.folder), env));
+          progress.operations.forUnit(unit.folder), env, sessionFile === undefined ? undefined : { sessionFile }));
         modelsChecked.set(key, check);
         if (check.evidence.outcome === "passed") modelsPassed.set(key, check);
         models.push(judged(check));
@@ -741,7 +742,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
       strength.contracts.map((contract) => ({ ...contract, path: inUnit(folder, contract.path) })));
     const contractsSent = contractsBack(contracts, tally(allProofs, allTests, contracts), unresolvedQuestion !== undefined);
     if (contractsSent !== undefined) return contractsSent;
-    const modelRungs = yield* checkModels(changed, tally(allProofs, allTests, contracts), ctx.env);
+    const modelRungs = yield* checkModels(changed, tally(allProofs, allTests, contracts), ctx.env, ctx.sessionFile);
     const modelsSent = modelsBack(modelRungs, tally(allProofs, allTests, contracts), unresolvedQuestion !== undefined);
     if (modelsSent !== undefined) return modelsSent;
     const open = yield* listOpen(ctx);
@@ -988,9 +989,15 @@ interface ModelRung {
   readonly unheaded: readonly string[];
 }
 
+/** Graph manifests link the session and evidence; receipt v2 does not acquire capture fields. */
+function receiptModel(model: ModelResult): ModelResult {
+  const { capture: _capture, ...receipt } = model;
+  return { ...receipt, faults: model.faults.map(({ capture: _faultCapture, ...fault }) => fault) };
+}
+
 /** A repository's models for the receipt, when the rung found any. */
 function modelEvidence(rung: ModelRung | undefined): Pick<UnitEvidence, "models" | "unheaded"> {
-  return { ...rung === undefined || rung.models.length === 0 ? {} : { models: rung.models },
+  return { ...rung === undefined || rung.models.length === 0 ? {} : { models: rung.models.map(receiptModel) },
     ...rung === undefined || rung.unheaded.length === 0 ? {} : { unheaded: rung.unheaded } };
 }
 

@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, onTestFinished } from "vitest";
@@ -242,4 +242,132 @@ it.skipIf(!withTlc)("sends back a model whose planted fault passes, and one that
   expect(racy.counterexample?.violation).toBe("Invariant NoLostUpdate is violated.");
   expect(racy.counterexample?.steps.map(({ action }) => action)).toEqual(["initial state", "Read", "Read", "Write", "Write"]);
   expect(modelReport(racy)).toMatch(/1\. initial state: .*\n2\. Read: /u);
+}, 120_000);
+
+it.skipIf(!withTlc)("captures the nine reached states beside the session from the evidence run", async () => {
+  const { root } = repository((base) => ({ "models/Counter.tla": spec("Counter", header(base)), "models/Counter.cfg": config(true),
+    "models/CounterNoLock.cfg": config(false) }));
+  const sessionFile = join(root, "session.jsonl");
+  const check = await checkModel(root, "models/Counter.tla", [], new AbortController().signal, jar, undefined, undefined, { sessionFile });
+  expect(check.run).toBe("passed");
+  expect(check.capture?.status).toBe("captured");
+  const manifest = JSON.parse(readFileSync(check.capture?.manifest ?? "", "utf8"));
+  expect(manifest.graph.states).toHaveLength(9);
+  expect(manifest.exploration).toBe("complete");
+  expect(manifest.binding.sessionFile).toBe(sessionFile);
+  expect(manifest.binding.tlcVersion).toMatch(/^TLC2 Version/);
+  expect(manifest.binding.evidenceHash).toBe(check.evidence.contentHash);
+  expect(manifest.graph.states.every((state: { fingerprint: unknown }) => typeof state.fingerprint === "string")).toBe(true);
+  for (const extension of ["dot", "mmd", "txt"]) expect(existsSync(join(root, manifest.artifacts[extension].file))).toBe(true);
+}, 120_000);
+
+it.skipIf(!withTlc)("labels an early failing exploration and its counts partial", async () => {
+  const { root } = repository((base) => ({ "models/Racy.tla": spec("Racy", header(base, "models/Locked.cfg lock kept")),
+    "models/Racy.cfg": config(false), "models/Locked.cfg": config(true) }));
+  const check = await checkModel(root, "models/Racy.tla", [], new AbortController().signal, jar, undefined, undefined,
+    { sessionFile: join(root, "session.jsonl") });
+  expect(check.run).toBe("violated");
+  expect(check.capture?.status).toBe("captured");
+  const manifest = JSON.parse(readFileSync(check.capture?.manifest ?? "", "utf8"));
+  expect(manifest.exploration).toBe("partial");
+  expect(manifest.counts.kind).toBe("lower_bounds");
+  expect(manifest.counts.reached).toBe(check.states);
+  expect(manifest.graph.trace).toHaveLength(5);
+}, 120_000);
+
+const ring = (base: string): Record<string, string> => ({
+  "models/Ring.tla": `${header(base, "models/Fault.cfg same model").replace("invariant: NoLostUpdate", "invariant: Safe, Other")}
+---- MODULE Ring ----
+EXTENDS Naturals
+VARIABLE x
+Init == x = 0
+Next == x' = (x + 1) % 320
+Spec == Init /\\ [][Next]_x
+Safe == x < 160
+Other == x # 7
+====
+`,
+  "models/Ring.cfg": "SPECIFICATION Spec\n", "models/Fault.cfg": "SPECIFICATION Spec\n",
+});
+
+it.skipIf(!withTlc)("keeps the complete 320-state continued exploration but never treats exit zero as a pass", async () => {
+  const { root } = repository(ring);
+  const check = await checkModel(root, "models/Ring.tla", [], new AbortController().signal, jar, undefined, undefined,
+    { sessionFile: join(root, "session.jsonl"), continue: true });
+  expect(check.run).toBe("violated");
+  expect(check.evidence.outcome).toBe("failed");
+  expect(check.capture?.status).toBe("captured");
+  const manifest = JSON.parse(readFileSync(check.capture?.manifest ?? "", "utf8"));
+  expect(manifest.binding.exitCode).toBe(0);
+  expect(manifest.exploration).toBe("complete");
+  expect(manifest.counts).toEqual({ kind: "exact", reached: 320, edges: 320, violating: 161 });
+  expect(manifest.graph.violations.Safe).toHaveLength(160);
+  expect(manifest.graph.violations.Other).toHaveLength(1);
+}, 120_000);
+
+it.skipIf(!withTlc)("maps a red initial state from TLC's property report, not the last dumped node", async () => {
+  const { root } = repository((base) => ({
+    "models/Initial.tla": `${header(base, "models/Fault.cfg bad init").replace("invariant: NoLostUpdate", "invariant: Safe")}
+---- MODULE Initial ----
+EXTENDS Naturals
+VARIABLE x
+Init == x \\in {0, 1, 2}
+Next == x' = x
+Spec == Init /\\ [][Next]_x
+Safe == x # 1
+====
+`, "models/Initial.cfg": "SPECIFICATION Spec\n", "models/Fault.cfg": "SPECIFICATION Spec\n",
+  }));
+  const check = await checkModel(root, "models/Initial.tla", [], new AbortController().signal, jar, undefined, undefined,
+    { sessionFile: join(root, "session.jsonl"), continue: true });
+  expect(check.run).toBe("violated");
+  expect(check.capture?.status).toBe("captured");
+  const manifest = JSON.parse(readFileSync(check.capture?.manifest ?? "", "utf8"));
+  const red = manifest.graph.states.filter((state: { fingerprint: string }) => manifest.graph.violations.Safe.includes(state.fingerprint));
+  expect(red).toEqual([{ fingerprint: expect.any(String), valuation: "x = 1" }]);
+  expect(manifest.graph.states.at(-1).valuation).toBe("x = 2");
+}, 120_000);
+
+it.skipIf(!withTlc)("records a bounded capture failure without changing a continued violation verdict", async () => {
+  const { root } = repository(ring);
+  const check = await checkModel(root, "models/Ring.tla", [], new AbortController().signal, jar, undefined, undefined,
+    { sessionFile: join(root, "session.jsonl"), continue: true, limits: { bytes: 128, states: 1, edges: 1 } });
+  expect(check.run).toBe("violated");
+  expect(check.evidence.outcome).toBe("failed");
+  expect(check.capture?.status).toBe("limited");
+  const manifest = JSON.parse(readFileSync(check.capture?.manifest ?? "", "utf8"));
+  expect(manifest.status).toBe("limited");
+  expect(manifest.limits).toEqual({ bytes: 128, states: 1, edges: 1 });
+  expect(manifest.binding.evidenceHash).toBe(check.evidence.contentHash);
+}, 120_000);
+
+it.skipIf(!withTlc)("marks assertion graph extraction unavailable instead of publishing zero violations", async () => {
+  const { root } = repository((base) => ({
+    "models/Assertion.tla": `${header(base, "models/Fault.cfg assertion").replace("invariant: NoLostUpdate", "invariant: Safe")}
+---- MODULE Assertion ----
+EXTENDS Naturals, TLC
+VARIABLE x
+Init == x = 0
+Next == x' = 1 /\\ Assert(x # 1, "unsafe state")
+Spec == Init /\\ [][Next]_x
+Safe == x >= 0
+====
+`, "models/Assertion.cfg": "SPECIFICATION Spec\n", "models/Fault.cfg": "SPECIFICATION Spec\n",
+  }));
+  const check = await checkModel(root, "models/Assertion.tla", [], new AbortController().signal, jar, undefined, undefined,
+    { sessionFile: join(root, "session.jsonl") });
+  expect(check.evidence.outcome).toBe("failed");
+  expect(check.capture?.status).toBe("unavailable");
+}, 120_000);
+
+it.skipIf(!withTlc)("keeps a passing verdict when the artifact directory cannot be written", async () => {
+  const { root } = repository((base) => ({ "models/Counter.tla": spec("Counter", header(base)), "models/Counter.cfg": config(true),
+    "models/CounterNoLock.cfg": config(false), "not-a-directory": "file, not a directory" }));
+  const check = await checkModel(root, "models/Counter.tla", [], new AbortController().signal, jar, undefined, undefined,
+    { sessionFile: join(root, "not-a-directory", "session.jsonl") });
+  expect(check.run).toBe("passed");
+  expect(check.evidence.outcome).toBe("passed");
+  expect(check.capture?.status).toBe("failed");
+  expect(check.faults[0]?.verdict).toBe("caught");
+  expect(check.faults[0]?.capture?.status).toBe("failed");
 }, 120_000);

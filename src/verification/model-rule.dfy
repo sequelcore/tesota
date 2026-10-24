@@ -46,6 +46,20 @@ lemma tlcRun_ensures(cancelled: bool, timedOut: bool, started: bool, exitCode: i
 {
 }
 
+function reportedTlcRun(run: ModelRun, violated: bool): ModelRun
+{
+  if (run.passed? && violated) then
+    ModelRun.violated
+  else
+    run
+}
+
+lemma reportedTlcRun_ensures(run: ModelRun, violated: bool)
+  ensures (run.passed? ==> violated ==> reportedTlcRun(run, violated).violated?)
+  ensures (!((run.passed? && violated)) ==> (reportedTlcRun(run, violated) == run))
+{
+}
+
 function runOutcome(run: ModelRun): ProofOutcome
 {
   if (run.violated? || run.malformed?) then

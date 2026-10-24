@@ -149,3 +149,20 @@ it.runIf(withTlc)("model-checks a model whose planted fault breaks it, and retur
   const failed = stripTerminalSequences(modelTool.renderResult?.(racy, { expanded: false, isPartial: false }, theme).render(100).join("\n") ?? "");
   expect(failed).toContain("✗ Not model-checked — Invariant NoLostUpdate is violated.");
 }, 120_000);
+
+it.skipIf(!withTlc)("writes and reports graph artifacts beside the tool context's session file", async () => {
+  installTlc();
+  const root = folder({ "src/counter.ts": "export const count = 0;\n",
+    "models/Counter.tla": spec("Counter", "models/CounterNoLock.cfg no lock"), "models/Counter.cfg": config(true),
+    "models/CounterNoLock.cfg": config(false) });
+  const sessions = folder();
+  const sessionFile = join(sessions, "session.jsonl");
+  const result = await modelTool.execute("c", { path: "models/Counter.tla" }, new AbortController().signal, undefined,
+    { cwd: root, sessionFile } as never);
+  expect(result.details?.evidence.outcome).toBe("passed");
+  expect(result.details?.capture?.status).toBe("captured");
+  expect(result.details?.capture?.manifest).toMatch(/session\.jsonl\.model-.*\.manifest\.json$/u);
+  expect(result.details?.capture?.manifest?.startsWith(sessions)).toBe(true);
+  expect(said(result)).toContain(result.details?.capture?.manifest);
+  expect(existsSync(result.details?.capture?.manifest ?? "")).toBe(true);
+}, 120_000);
