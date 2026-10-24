@@ -6,6 +6,7 @@ import { clarificationText, type Clarification, type RequestInput } from "./clar
 import { type ChangeStatus, type ChangedFile, changedLines } from "./diff-lines.js";
 import { currentContent, type Evidence } from "./evidence.js";
 import { git, gitOutput, headCommit } from "./git.js";
+import { engineName } from "./engine-name.js";
 import { host } from "./host.js";
 import type { ModelCheck } from "./model-check.js";
 import { OPEN_CASES_MODEL, openCases } from "./open-cases.js";
@@ -554,7 +555,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     const receipt: Receipt = { version: 2,
       repository: begun?.units.some(({ folder, repository }) => repository && begun.bases.has(folder)) ?? false,
       base: workspace ? null : begun?.bases.get("") ?? null, startedAt: at,
-      settledAt: new Date().toISOString(), engine: host().version, ...sessionModel(ctx), ...noEvidence,
+      settledAt: new Date().toISOString(), engine: await engineName(), ...sessionModel(ctx), ...noEvidence,
       ...inventory, stopped: reason,
       ...clarifications.length === 0 ? {} : { clarifications }, ...children.length === 0 ? {} : { children },
       ...floorRefusals.length === 0 ? {} : { floorRefusals } };
@@ -703,8 +704,9 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     const { unresolvedQuestion } = question;
     const { units, bases, refs, tooLarge, refused } = yield* step(() => start ??= begin(ctx.cwd));
     startedAt ??= new Date().toISOString();
+    const engine = yield* effect().promise(engineName);
     const workspace = units.some(({ folder }) => folder !== "");
-    const run = { base: workspace ? null : bases.get("") ?? null, startedAt, engine: host().version, ...sessionModel(ctx),
+    const run = { base: workspace ? null : bases.get("") ?? null, startedAt, engine, ...sessionModel(ctx),
       ...question,
       ...clarifications.length === 0 ? {} : { clarifications }, ...children.length === 0 ? {} : { children },
       ...floorRefusals.length === 0 ? {} : { floorRefusals } };
