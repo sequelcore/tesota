@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFile, stat, writeFile } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 /** Capture bounds never constrain TLC's exploration or its verdict. */
 export const graphLimits: { readonly bytes: number; readonly states: number; readonly edges: number } = { bytes: 16 * 1024 * 1024, states: 10_000, edges: 50_000 };
@@ -20,10 +20,10 @@ export interface GraphPreview {
 }
 export type GraphCapture = { readonly status: "captured"; readonly manifest: string; readonly preview?: GraphPreview }
   | { readonly status: "failed" | "limited" | "unavailable"; readonly reason: string; readonly manifest?: string };
-interface GraphState { readonly fingerprint: string; readonly valuation: string; }
-interface GraphEdge { readonly from: string; readonly to: string; readonly action: string; }
-interface TraceState { readonly fingerprint: string; readonly action: string; readonly valuation: string; }
-interface ReachedGraph { readonly states: GraphState[]; readonly edges: GraphEdge[]; }
+export interface GraphState { readonly fingerprint: string; readonly valuation: string; }
+export interface GraphEdge { readonly from: string; readonly to: string; readonly action: string; }
+export interface TraceState { readonly fingerprint: string; readonly action: string; readonly valuation: string; }
+export interface ReachedGraph { readonly states: GraphState[]; readonly edges: GraphEdge[]; }
 
 /** TLC state assignments, including multiline records, sets, tuples and functions. */
 export function stateVariables(lines: readonly string[]): Map<string, string> {
@@ -77,7 +77,7 @@ function invariantReports(output: string, graph: ReachedGraph): { trace: TraceSt
 const hash = (text: string): string => createHash("sha256").update(text).digest("hex");
 
 /** TLC's DOT labels carry the full valuation, not a scalar-only variable subset. */
-function reachedGraph(dot: string): ReachedGraph {
+export function reachedGraph(dot: string): ReachedGraph {
   const states = [...dot.matchAll(/^(-?\d+) \[label="((?:[^"\\]|\\.)*)"/gmu)].map((match) => ({
     fingerprint: match[1] ?? "", valuation: JSON.parse(`"${match[2] ?? ""}"`) as string,
   }));
@@ -151,6 +151,7 @@ export async function captureGraph(dotFile: string, output: string, binding: Gra
       artifacts[extension] = { file, sha256: hash(text) };
     }
     await writeFile(manifest, JSON.stringify({ ...metadata, status: "captured",
+      header: await readFile(resolve(binding.root, binding.model), "utf8").catch(() => ""),
       exploration: complete ? "complete" : "partial", counts, graph: { ...graph, ...reports }, artifacts }, null, 2), { flag: "wx" });
     return { status: "captured", manifest, preview: transcriptGraph(graph, reports, counts, !complete) };
   } catch (error) { return failure("failed", String(error)); }

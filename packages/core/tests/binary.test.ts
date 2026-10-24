@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -46,6 +47,21 @@ test("the engine's binary starts, and runs LemmaScript it embeds", () => {
   const regen = run("__lsc", "regen", "--no-verify", "--backend=dafny", "clamp.ts");
   expect(regen.stderr).toBe("");
   expect(regen.stdout).toContain("clamp.dfy.gen");
+}, 120_000);
+
+test("the binary renders a captured graph through its disposable worker outside the checkout", () => {
+  const binary = join(folder("tesota-graph-binary-"), executable("tesota"));
+  build(binary);
+  const project = folder("tesota-graph-project-");
+  const dot = 'digraph {\n1 [label="/\\\\ pc = \\"idle\\""]\n}';
+  writeFileSync(join(project, "reached.dot"), dot);
+  writeFileSync(join(project, "graph.manifest.json"), JSON.stringify({ version: 1, status: "captured", exploration: "complete",
+    artifacts: { dot: { file: "reached.dot", sha256: createHash("sha256").update(dot).digest("hex") } }, graph: { trace: [], violations: {} } }));
+  const result = spawnSync(binary, ["graph", "--plain", join(project, "graph.manifest.json")], { cwd: project, encoding: "utf8" });
+  expect(result.status).toBe(0);
+  expect(result.stderr).toBe("");
+  expect(result.stdout).toContain("Reached 1; reported violating 0");
+  expect(result.stdout).toContain("pc");
 }, 120_000);
 
 test("in a binary, the verifier reads TypeScript, Python and Go, and proves a contract", () => {
