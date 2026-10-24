@@ -8,7 +8,7 @@ import { isReceipt, type Receipt, receiptStanding } from "../../../../src/receip
 import tesota from "../../../../src/tesota.ts";
 import { fileCredentialStore } from "../credentials.ts";
 import { unusedModels } from "../agents.ts";
-import { chosenModel, engineModels, loginOptions, runnableModel, runnableModels } from "../model-access.ts";
+import { accountLabels, chosenModel, engineModels, loginOptions, runnableModel, runnableModels } from "../model-access.ts";
 import { claudeCodeProviderId, claudeCodeSignIn } from "../providers/claude-code.ts";
 import type { Mode } from "../permission-rule.ts";
 import type { HistoryMessage } from "../loop.ts";
@@ -105,9 +105,9 @@ function firstRequest(file: string): string | undefined {
  */
 export async function runApp(options: AppOptions): Promise<void> {
   const credentials = options.credentials ?? fileCredentialStore();
-  const models = options.models ?? engineModels(credentials);
   const read = readSettings(options.settingsPath);
   let settings = read.settings;
+  const models = options.models ?? engineModels(credentials, settings.accounts ?? []);
   // Another Tesota may have saved since this one started: only what changed here is written over it (#453).
   const save = (change: Partial<Settings>): void => {
     settings = { ...settings, ...change };
@@ -462,8 +462,15 @@ export async function runApp(options: AppOptions): Promise<void> {
       if (models.getProvider(claudeCodeProviderId) !== undefined && !available.some(({ provider }) => provider === claudeCodeProviderId)) {
         shell.note(claudeCodeSignIn);
       }
+      const accounts = await accountLabels(credentials, settings.accounts ?? []);
+      for (const [id, account] of accounts) {
+        if (id.startsWith("claude-code@") && !available.some(({ provider }) => provider === id)) {
+          shell.note(`${id}: ${account}. Set CLAUDE_CONFIG_DIR to its configured folder, run claude, then /login there.`);
+        }
+      }
       if (available.length === 0) { shell.note("No provider is logged in: /login first, or set its API key.", "warning"); return; }
-      const picked = await shell.pick("Model", available.map((candidate) => ({ value: label(candidate), label: label(candidate) })));
+      const picked = await shell.pick("Model", available.map((candidate) => ({ value: label(candidate), label: label(candidate),
+        description: accounts.get(candidate.provider) ?? "" })));
       const next = available.find((candidate) => label(candidate) === picked);
       if (next === undefined) return;
       model = next;
@@ -473,7 +480,8 @@ export async function runApp(options: AppOptions): Promise<void> {
     } },
     "/login": { description: "Sign in to a model provider", run: async () => {
       const providers = models.getProviders().filter(({ auth }) => auth.oauth !== undefined || auth.apiKey?.login !== undefined);
-      const picked = await shell.pick("Log in to", providers.map(({ id, name }) => ({ value: id, label: name })));
+      const accounts = await accountLabels(credentials, settings.accounts ?? []);
+      const picked = await shell.pick("Log in to", providers.map(({ id, name }) => ({ value: id, label: name, description: accounts.get(id) ?? "" })));
       const provider = providers.find(({ id }) => id === picked);
       if (provider === undefined) return;
       const type = provider.auth.oauth !== undefined && provider.auth.apiKey?.login !== undefined

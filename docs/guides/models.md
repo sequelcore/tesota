@@ -59,6 +59,62 @@ refused before any request, naming the ones you can use. When that list
 can't be fetched, such as offline, your choice is kept and Tesota says it
 wasn't checked; OpenAI still refuses a model it doesn't serve.
 
+## Several accounts of one provider
+
+Declare each account in your `~/.tesota/settings.json`, not a project's file:
+
+```json
+{
+  "accounts": [
+    { "name": "personal", "provider": "claude-code", "folder": "/absolute/path/to/claude-personal" },
+    { "name": "work", "provider": "openai-codex" }
+  ],
+  "model": "claude-code@personal/claude-opus-5-5"
+}
+```
+
+Use an absolute folder for Claude Code (`C:/accounts/claude-personal` on
+Windows, for example). Names contain letters, digits, `_` or `-`, and are
+unique within a provider. Restart Tesota after changing the list.
+
+For Claude, sign in with Claude Code itself, using that folder:
+
+```sh
+CLAUDE_CONFIG_DIR=/absolute/path/to/claude-personal claude
+# Then /login in Claude Code
+```
+
+In PowerShell, set `$env:CLAUDE_CONFIG_DIR = 'C:/accounts/claude-personal'`
+before running `claude`. Tesota sets `CLAUDE_CONFIG_DIR` for that instance's
+Claude Code only. Named instances ignore ambient `ANTHROPIC_*` and
+`CLAUDE_*` overrides so a shell token or API key cannot replace the folder's
+sign-in. Tesota never changes `HOME`, and never reads, copies or stores
+Claude Code's credentials. It asks `claude auth status` in that folder for
+sign-in status and the account label.
+
+For ChatGPT, run `/login` in Tesota and pick `openai-codex@work`. Each
+instance has its own credential slot in `~/.tesota/auth.json`; logging out
+of one does not sign another out. The plain provider ID remains the default
+account, separate from the named instances.
+
+Choose an account exactly as you choose a model: `/model`, `--model`, the
+saved `model`, an agent type's `model`, or the `agent` tool's `model`:
+
+```sh
+tesota -p "Review the change" --model claude-code@personal/claude-opus-5-5
+```
+
+For example, a type can name `openai-codex@work/gpt-6.1-sol`. Run receipts
+keep the account-qualified model. The model and login lists label instances
+with Claude's email or ChatGPT's account ID and flag `same account as …`
+when two instances identify the same account, including the default. Print
+mode also reports the account labels. If the provider cannot report an
+identity, Tesota says it is unavailable rather than guessing.
+
+**Tesota never switches accounts automatically.** A limit ends that run
+with the provider's message; only you can explicitly choose another account.
+Use only your own accounts, never a shared account.
+
 ## Thinking
 
 For a model that reasons, `/settings` → **Thinking** sets how hard it

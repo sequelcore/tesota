@@ -136,6 +136,17 @@ const changed = `${contract}// changed\n`;
 const shell = process.platform === "win32" ? "powershell" : "bash";
 
 describe("the gate on @tesota/core", () => {
+  test.each(["claude-code@b", "openai-codex@work"])("the receipt keeps the explicitly selected account %s", async (provider) => {
+    const faux = fauxProvider({ provider, models: [{ id: "test-model" }] });
+    const script: readonly ScriptStep[] = [{ tool: "write", args: { path: "account.txt", content: "verified change\n" } }, "done"];
+    faux.setResponses(script.map(scriptedReply));
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const session = gated(mkdtempSync(join(tmpdir(), "tesota-account-receipt-")), [], { models, model: faux.getModel(), mode: "print" });
+    await session.prompt("write account.txt, then say done");
+    expect(receiptOf(session)?.model).toBe(`${provider}/test-model`);
+  });
+
   test.each(["tui", "print"] as const)("fingerprints old dirt before a shell call in %s and skips unchanged requests", async (mode) => {
     const cwd = repository();
     writeFileSync(join(cwd, "src/rule.ts"), changed);

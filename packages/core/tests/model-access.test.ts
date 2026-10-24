@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { fileCredentialStore } from "../src/credentials.ts";
-import { chosenModel, engineModels, loginOptions } from "../src/model-access.ts";
+import { accountLabels, chosenModel, engineModels, loginOptions } from "../src/model-access.ts";
 import { runPrint } from "../src/print.ts";
 import { createSession, type EngineSession } from "../src/session.ts";
 import { writeSettings } from "../src/settings.ts";
@@ -45,6 +45,54 @@ function oauthProvider(id: string) {
 }
 
 describe("the engine's models", () => {
+  test("ChatGPT instances use separate credential slots, never the plain provider's key", async () => {
+    const path = join(folder("tesota-accounts-"), "auth.json");
+    const credentials = fileCredentialStore(path);
+    const models = engineModels(credentials, [{ name: "work", provider: "openai-codex" }, { name: "personal", provider: "openai-codex" }]);
+    expect(models.getProvider("openai-codex@work")?.auth.oauth).toBeDefined();
+    expect(models.getProvider("openai-codex@work")?.auth.apiKey).toBeUndefined();
+    await credentials.modify("openai", async () => ({ type: "api_key", key: "default-key" }));
+    await credentials.modify("openai-codex@work", async () => ({ type: "oauth", access: "work-token", refresh: "work-refresh", expires: Date.now() + 3_600_000, accountId: "account-work" }));
+    await credentials.modify("openai-codex@personal", async () => ({ type: "oauth", access: "personal-token", refresh: "personal-refresh", expires: Date.now() + 3_600_000, accountId: "account-personal" }));
+    expect((await models.getAuth("openai-codex@work"))?.auth.apiKey).toBe("work-token");
+    expect((await models.getAuth("openai-codex@personal"))?.auth.apiKey).toBe("personal-token");
+    expect(chosenModel(models, { model: "openai-codex@work/gpt-6.1-sol" })?.provider).toBe("openai-codex@work");
+    await models.logout("openai-codex@work");
+    expect(await models.checkAuth("openai-codex@work")).toBeUndefined();
+    expect((await models.getAuth("openai-codex@personal"))?.auth.apiKey).toBe("personal-token");
+    expect(await fileCredentialStore(path).read("openai")).toMatchObject({ key: "default-key" });
+  });
+
+  test("print mode loads accounts from its operator settings for --model and the saved model", async () => {
+    const credentials = fileCredentialStore();
+    await credentials.modify("openai-codex@print", async () => ({ type: "oauth", access: "print-token", refresh: "refresh", expires: Date.now() + 3_600_000, accountId: "print-account" }));
+    try {
+      const settingsPath = join(folder("tesota-print-accounts-"), "settings.json");
+      writeSettings({ accounts: [{ name: "print", provider: "openai-codex" }], model: "openai-codex@print/not-a-model" }, settingsPath);
+      for (const args of [["hi", "--model", "openai-codex@print/not-a-model"], ["hi"]]) {
+        let errors = "";
+        expect(await runPrint(args, folder("tesota-print-cwd-"), { out: () => undefined, error: (text) => { errors += text; } }, {}, settingsPath)).toBe(1);
+        expect(errors).toContain("openai-codex@print/gpt-");
+      }
+    } finally { await credentials.delete("openai-codex@print"); }
+  });
+
+  test("instances are labeled by signed-in identity and duplicates flagged, including defaults", async () => {
+    const credentials = new InMemoryCredentialStore();
+    for (const id of ["openai-codex", "openai-codex@work"]) await credentials.modify(id, async () =>
+      ({ type: "oauth", access: "token", refresh: "refresh", expires: 0, accountId: "chatgpt-account-1" }));
+    const seen: (string | undefined)[] = [];
+    const labels = await accountLabels(credentials, [{ name: "b", provider: "claude-code", folder: "/claude-b" },
+      { name: "work", provider: "openai-codex" }], async (folder) => {
+      seen.push(folder);
+      return { loggedIn: true, email: "owner@example.test" };
+    });
+    expect(seen).toEqual([undefined, "/claude-b"]);
+    expect(labels.get("claude-code")).toContain("owner@example.test");
+    expect(labels.get("claude-code@b")).toBe("owner@example.test · same account as claude-code");
+    expect(labels.get("openai-codex@work")).toBe("chatgpt-account-1 · same account as openai-codex");
+  });
+
   test("pi-ai's built-in providers are there, and none is available without a credential", async () => {
     delete process.env["ANTHROPIC_API_KEY"];
     const models = engineModels(new InMemoryCredentialStore());

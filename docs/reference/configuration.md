@@ -40,7 +40,8 @@ No tool call may read or change `auth.json` or `mcp-auth.json`.
 
 | Setting | Values | Set by |
 | --- | --- | --- |
-| `model` | `<provider>/<id>` | `/model` |
+| `model` | `<provider>/<id>`, including `<provider>@<account>/<id>` | `/model` |
+| `accounts` | Named provider instances, below; operator settings only | You |
 | `thinkingLevel` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` | `/settings` |
 | `permissionMode` | `read`, `ask` (default), `full` | Shift+Tab |
 | `tuiMode` | `fullscreen` (default), `inline` | `/settings` |
@@ -51,6 +52,25 @@ No tool call may read or change `auth.json` or `mcp-auth.json`.
 A value Tesota doesn't recognize is left out, and Tesota names it when it
 starts. Tesota writes only the setting that changed, so two shells keep
 each other's.
+
+### `accounts`
+
+An array in your `settings.json`, never a project's. Each entry declares:
+
+| Key | Values |
+| --- | --- |
+| `name` | One or more ASCII letters, digits, `_` or `-`; unique within the provider |
+| `provider` | `claude-code` or `openai-codex` |
+| `folder` | Required absolute Claude Code configuration folder for `claude-code`; omitted for `openai-codex` |
+
+An invalid entry or repeated provider/name pair rejects the whole list and
+names `accounts` as invalid. Restart Tesota after editing it. A declaration
+creates the provider ID `<provider>@<name>` in the existing model selectors;
+the plain provider ID still names the default account. Claude instances set
+only `CLAUDE_CONFIG_DIR`, never `HOME`; ChatGPT instances use separate slots
+keyed by their full provider IDs in `auth.json`. No automatic switching or
+fallback takes place. [Models](../guides/models.md#several-accounts-of-one-provider)
+covers sign-in, account labels and duplicate-account warnings.
 
 ## A project's files
 

@@ -8,6 +8,19 @@ import { deviceId, readSettings, writeSettings } from "../src/settings.ts";
 const fileIn = (): string => join(mkdtempSync(join(tmpdir(), "tesota-core-settings-")), "settings.json");
 
 describe("the settings file", () => {
+  test("named accounts survive only valid, unambiguous declarations", () => {
+    const path = fileIn();
+    const accounts = [{ name: "b", provider: "claude-code", folder: join(tmpdir(), "claude-b") },
+      { name: "work", provider: "openai-codex" }] as const;
+    writeFileSync(path, JSON.stringify({ accounts }));
+    expect(readSettings(path)).toEqual({ settings: { accounts }, invalid: [] });
+    for (const bad of [[{ name: "a/b", provider: "openai-codex" }], [{ name: "b", provider: "claude-code" }],
+      [{ name: "b", provider: "other" }], [accounts[1], accounts[1]], [{ name: "b", provider: "claude-code", folder: "relative" }]]) {
+      writeFileSync(path, JSON.stringify({ accounts: bad }));
+      expect(readSettings(path)).toEqual({ settings: {}, invalid: ["accounts"] });
+    }
+  });
+
   test("no file means no settings", () => {
     expect(readSettings(fileIn())).toEqual({ settings: {}, invalid: [] });
   });

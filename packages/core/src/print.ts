@@ -4,12 +4,13 @@ import { tesotaHome } from "../../../src/home.ts";
 import { provideHost } from "../../../src/host.ts";
 import { entryReceipt, isReceipt, receiptStanding } from "../../../src/receipt.ts";
 import tesota from "../../../src/tesota.ts";
+import { fileCredentialStore } from "./credentials.ts";
 import { branchOf } from "./branch.ts";
 import { anyHooks, type Hooks, joinHooks } from "./hooks.ts";
 import type { McpServers } from "./mcp.ts";
 import { type McpServerConfig, readMcpConfig } from "./mcp-config.ts";
 import { unusedModels } from "./agents.ts";
-import { engineModels, runnableModel } from "./model-access.ts";
+import { accountLabels, engineModels, runnableModel } from "./model-access.ts";
 import { loadRules } from "./permissions.ts";
 import { createSession, type EngineSession } from "./session.ts";
 import { lastFloorNotice, peekSessionFile } from "./session-file.ts";
@@ -89,10 +90,13 @@ async function serversFor(session: EngineSession, mcp: { own: string; project?: 
  */
 export async function runPrint(args: readonly string[], cwd: string, write: PrintOutput,
   flags: Readonly<Record<string, string>> = {}, settingsPath: string = join(tesotaHome(), "settings.json"),
-  models: MutableModels = engineModels()): Promise<number> {
+  models?: MutableModels): Promise<number> {
   const asked = parse(args);
   if (typeof asked === "string") { write.error(`${asked}\n`); return 2; }
   const { settings } = readSettings(settingsPath);
+  const accounts = settings.accounts ?? [];
+  models ??= engineModels(fileCredentialStore(), accounts);
+  for (const [id, label] of await accountLabels(fileCredentialStore(), accounts)) write.error(`${id}: ${label}\n`);
   const named = asked.model ?? settings.model;
   if (named === undefined) { write.error("No model: run tesota, then /login and /model.\n"); return 1; }
   // A model the sign-in does not serve is refused here rather than at the first request (#566).
