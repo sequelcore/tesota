@@ -72,8 +72,8 @@ class ReplyView extends Container {
 
 /** What a call's arguments say in one line: its pattern and path, its path, or its command. */
 function summary(call: ToolCall): string {
-  const args = call.arguments as Record<string, unknown>;
-  const text = (value: unknown): string => typeof value === "string" ? value.split("\n")[0] ?? "" : "";
+  const args = (call.arguments ?? {}) as Record<string, unknown>;
+  const text =(value: unknown): string => typeof value === "string" ? value.split("\n")[0] ?? "" : "";
   // A search shows what it looks for, then where: `quesillo in notes`.
   if (typeof args["pattern"] === "string") return [text(args["pattern"]), text(args["path"])].filter((part) => part !== "").join(" in ");
   return text(args["path"] ?? args["command"] ?? args["description"]);
@@ -94,17 +94,17 @@ function childStanding(details: unknown, theme: ShellTheme): string {
   return `${String(outcome)}${typeof verification === "string" ? `, ${verification}` : ""}${typeof limited === "string" ? ` (${limited} limit)` : ""}`;
 }
 
-/** An edit's replacements as removed and added lines. */
+/** An edit's replacements as removed and added lines; arguments the model malformed draw none. */
 export function diffLines(call: { readonly arguments: unknown }): string[] {
-  const edits = (call.arguments as { edits?: { oldText?: unknown; newText?: unknown }[] }).edits ?? [];
+  const edits: unknown = (call.arguments as { edits?: unknown } | undefined)?.edits;
   const lines = (text: unknown, prefix: string): string[] => {
-    const value = String(text ?? "");
+    const value = typeof text === "string" ? text : "";
     return value === "" ? [] : value.replace(/\r?\n$/u, "").split(/\r?\n/u).map((line) => `${prefix} ${line}`);
   };
-  return edits.flatMap(({ oldText, newText }) => [
-    ...lines(oldText, "-"),
-    ...lines(newText, "+"),
-  ]);
+  return Array.isArray(edits) ? edits.flatMap((edit: unknown) => {
+    const { oldText, newText } = (typeof edit === "object" && edit !== null ? edit : {}) as { oldText?: unknown; newText?: unknown };
+    return [...lines(oldText, "-"), ...lines(newText, "+")];
+  }) : [];
 }
 
 /** A call's status, tool and target, with details when expanded and failures always visible. */
