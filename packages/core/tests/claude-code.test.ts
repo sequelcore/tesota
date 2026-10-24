@@ -4,12 +4,13 @@ import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
 import { getSessionPath, openSession as openClaudeSession } from "cc-session-io";
 import { afterEach, describe, expect, test } from "bun:test";
 import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { type execFile, type ExecFileOptions, spawnSync } from "node:child_process";
+import { type execFile, type ExecFileOptions, type spawn, type SpawnOptions, spawnSync } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Type } from "typebox";
 import { engineModels, runnableModels } from "../src/model-access.ts";
-import { claudeCodeExecutable, claudeCodeProvider, claudeCodeStatus, type StartQuery } from "../src/providers/claude-code.ts";
+import { claudeCodeExecutable, claudeCodeLogin, claudeCodeProvider, claudeCodeStatus, type StartQuery } from "../src/providers/claude-code.ts";
 import { runPrint } from "../src/print.ts";
 import { writeSettings } from "../src/settings.ts";
 import { createSession, type EngineSession } from "../src/session.ts";
@@ -182,6 +183,28 @@ describe("the claude-code provider", () => {
     expect(status).toEqual({ loggedIn: true, email: "owner@example.test" });
     expect(seen?.env?.["CLAUDE_CONFIG_DIR"]).toBe("/claude-b");
     expect(seen?.env?.["HOME"]).toBe(process.env["HOME"]);
+  });
+
+  test("an account's sign-in is Claude Code's own login, on the terminal, in the account's folder with HOME unchanged (#642)", async () => {
+    let seen: { args: readonly string[]; options: SpawnOptions } | undefined;
+    const saved = process.env["ANTHROPIC_API_KEY"];
+    process.env["ANTHROPIC_API_KEY"] = "sk-ant-ambient";
+    try {
+      const run = ((_file: string, args: readonly string[], options: SpawnOptions) => {
+        seen = { args, options };
+        const child = new EventEmitter();
+        queueMicrotask(() => child.emit("close", 0));
+        return child;
+      }) as unknown as typeof spawn;
+      await claudeCodeLogin("/claude-b", run);
+    } finally {
+      if (saved === undefined) delete process.env["ANTHROPIC_API_KEY"]; else process.env["ANTHROPIC_API_KEY"] = saved;
+    }
+    expect(seen?.args).toEqual(["auth", "login"]);
+    expect(seen?.options.stdio).toBe("inherit");
+    expect(seen?.options.env?.["CLAUDE_CONFIG_DIR"]).toBe("/claude-b");
+    expect(seen?.options.env?.["HOME"]).toBe(process.env["HOME"]);
+    expect(seen?.options.env?.["ANTHROPIC_API_KEY"]).toBeUndefined();
   });
 
   test("a named instance sets only its Claude folder and keeps its identity on a limit, without fallback", async () => {

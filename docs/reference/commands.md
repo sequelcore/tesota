@@ -7,6 +7,10 @@
 | `tesota` | Opens the shell in the current folder |
 | `tesota -p "<request>"` | Runs one request without the shell ([Print mode](../guides/print-mode.md)) |
 | `tesota receipt [--json] [--owner <login or email>]` | Writes the last receipt for a pull request, or as an in-toto Statement ([Receipts](../guides/receipts.md)) |
+| `tesota accounts` | Lists your accounts, each with the account it is signed in to ([Several accounts](../guides/models.md#several-accounts-of-one-provider)) |
+| `tesota accounts add claude-code\|openai-codex <name>` | Adds an account in one step: its sign-in, then its record |
+| `tesota accounts login <provider>@<name>` | Signs an account in again |
+| `tesota accounts remove <provider>@<name>` | Removes an account no setting or agent type names |
 | `tesota --version` | Prints the version |
 
 | Option | For | |
@@ -19,7 +23,8 @@
 
 | Command | |
 | --- | --- |
-| `/login` | Sign in to a model provider |
+| `/login` | Sign in to a model provider, or add an account |
+| `/accounts` | Your accounts and their sign-ins: add one, sign one in again, remove one |
 | `/logout` | Forget a provider's sign-in |
 | `/model` | Choose the model |
 | `/settings` | Terminal mode (fullscreen or inline) and thinking level |

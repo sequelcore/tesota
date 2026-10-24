@@ -2,7 +2,7 @@ import type { Options, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-a
 import { type Api, type AssistantMessage, type AssistantMessageEventStream, calculateCost, createAssistantMessageEventStream,
   getCurrentSystemPrompt, getCurrentTools, type ImageContent, type Message, type Model, type Provider, type SimpleStreamOptions,
   type TextContent, type Tool, type ToolCall, type ToolResultMessage } from "@earendil-works/pi-ai";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, rmdirSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -115,6 +115,22 @@ export function claudeCodeStatus(configDir?: string, execute: typeof execFile = 
         resolve({ loggedIn: status.loggedIn === true, ...typeof status.email === "string" ? { email: status.email } : {} });
       } catch { resolve({ loggedIn: false }); }
     });
+  });
+}
+
+/**
+ * Claude Code's own sign-in (`claude auth login`) for the account in
+ * `configDir` (#642), on the operator's terminal: Tesota starts it and waits,
+ * and never sees what it asks or stores. Settles when it ends, whether or not
+ * it signed in; `claudeCodeStatus` says which.
+ */
+export function claudeCodeLogin(configDir: string, run: typeof spawn = spawn): Promise<void> {
+  const program = claudeCodeExecutable();
+  if (program === undefined) return Promise.reject(new Error("Claude Code is not installed: install it, then add the account again."));
+  return new Promise((resolve, reject) => {
+    const child = run(program, ["auth", "login"], { stdio: "inherit", env: instanceEnvironment(configDir) });
+    child.once("error", reject);
+    child.once("close", () => { resolve(); });
   });
 }
 

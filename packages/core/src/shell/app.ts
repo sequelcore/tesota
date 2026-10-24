@@ -6,6 +6,7 @@ import { tesotaHome } from "../../../../src/home.ts";
 import { provideHost } from "../../../../src/host.ts";
 import { isReceipt, type Receipt, receiptStanding } from "../../../../src/receipt.ts";
 import tesota from "../../../../src/tesota.ts";
+import { type AccountHands, accountRows, addAccount, type ClaudeCode, claudeOf, removeAccount, signInAgain } from "../accounts.ts";
 import { fileCredentialStore } from "../credentials.ts";
 import { unusedModels } from "../agents.ts";
 import { accountLabels, chosenModel, engineModels, loginOptions, runnableModel, runnableModels } from "../model-access.ts";
@@ -42,6 +43,8 @@ export interface AppOptions {
   readonly sessions?: string;
   /** The verifier's flags, by name, as the command line gave them. */
   readonly flags?: Readonly<Record<string, string>>;
+  /** Claude Code's sign-in and status in an account's folder (#642); the operator's own Claude Code when not given. */
+  readonly claude?: ClaudeCode | undefined;
 }
 
 const levels: readonly ModelThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -362,6 +365,38 @@ export async function runApp(options: AppOptions): Promise<void> {
       } else shell.note(event.message);
     },
   };
+  const claude = claudeOf(options.claude);
+  /** The accounts as this shell manages them (#642): Claude Code's sign-in gets the terminal while it runs. */
+  const hands: AccountHands = { settingsPath, models, credentials, interaction, cwd: options.cwd,
+    claude: { signIn: (at) => shell.handOver(() => claude.signIn(at)), status: claude.status } };
+  /** Runs an account's step, says what it did or why not, and keeps this shell's list of accounts as the settings now say. */
+  const accountStep = async (step: () => Promise<string>): Promise<void> => {
+    try { shell.note(await step()); } catch (error) { shell.note(error instanceof Error ? error.message : String(error), "warning"); }
+    const { accounts } = readSettings(settingsPath).settings;
+    settings = { ...settings, ...accounts === undefined ? {} : { accounts } };
+  };
+  /** Adds an account in one step (#642): a provider, a name, and its own sign-in. */
+  const addAnAccount = async (): Promise<void> => {
+    const provider = await shell.pick("Account of", [
+      { value: "claude-code", label: "Claude Code", description: "signs in with your own Claude Code, in a folder of its own" },
+      { value: "openai-codex", label: "ChatGPT", description: "signs in to ChatGPT for this account alone" },
+    ]);
+    if (provider === undefined) return;
+    const name = await shell.ask("Name the account: letters, digits, _ or -", { placeholder: "work" });
+    if (name === undefined || name.trim() === "") return;
+    await accountStep(() => addAccount(hands, provider, name.trim()));
+  };
+  /** `/accounts` (#642): each account with what it is signed in to; one picked is signed in again or removed. */
+  const accountsCommand = async (): Promise<void> => {
+    const rows = (await accountRows(hands)).filter((row) => row.default !== true);
+    const picked = await shell.pick("Accounts", [{ value: "", label: "Add an account", description: "Claude Code or ChatGPT, under a name" },
+      ...rows.map(({ id, label: signedIn, folder: at }) => ({ value: id, label: id, description: at === undefined ? signedIn : `${signedIn} · ${at}` }))]);
+    if (picked === undefined) return;
+    if (picked === "") { await addAnAccount(); return; }
+    const action = await shell.pick(picked, [{ value: "login", label: "Sign in again" }, { value: "remove", label: "Remove" }]);
+    if (action === "login") await accountStep(() => signInAgain(hands, picked));
+    else if (action === "remove") await accountStep(() => removeAccount(hands, picked));
+  };
   /** A project's hooks run its own commands: they run only once the operator trusts them as they are now (#457). */
   const trustProjectHooks = async (): Promise<void> => {
     const { hooks: project, hash, trusted: already } = standards.projectHooks;
@@ -462,10 +497,10 @@ export async function runApp(options: AppOptions): Promise<void> {
       if (models.getProvider(claudeCodeProviderId) !== undefined && !available.some(({ provider }) => provider === claudeCodeProviderId)) {
         shell.note(claudeCodeSignIn);
       }
-      const accounts = await accountLabels(credentials, settings.accounts ?? []);
+      const accounts = await accountLabels(credentials, settings.accounts ?? [], claude.status);
       for (const [id, account] of accounts) {
         if (id.startsWith("claude-code@") && !available.some(({ provider }) => provider === id)) {
-          shell.note(`${id}: ${account}. Set CLAUDE_CONFIG_DIR to its configured folder, run claude, then /login there.`);
+          shell.note(`${id}: ${account}. Sign it in again with /accounts.`);
         }
       }
       if (available.length === 0) { shell.note("No provider is logged in: /login first, or set its API key.", "warning"); return; }
@@ -480,8 +515,10 @@ export async function runApp(options: AppOptions): Promise<void> {
     } },
     "/login": { description: "Sign in to a model provider", run: async () => {
       const providers = models.getProviders().filter(({ auth }) => auth.oauth !== undefined || auth.apiKey?.login !== undefined);
-      const accounts = await accountLabels(credentials, settings.accounts ?? []);
-      const picked = await shell.pick("Log in to", providers.map(({ id, name }) => ({ value: id, label: name, description: accounts.get(id) ?? "" })));
+      const accounts = await accountLabels(credentials, settings.accounts ?? [], claude.status);
+      const picked = await shell.pick("Log in to", [{ value: "", label: "Add an account", description: "Claude Code or ChatGPT, under a name" },
+        ...providers.map(({ id, name }) => ({ value: id, label: name, description: accounts.get(id) ?? "" }))]);
+      if (picked === "") { await addAnAccount(); return; }
       const provider = providers.find(({ id }) => id === picked);
       if (provider === undefined) return;
       const type = provider.auth.oauth !== undefined && provider.auth.apiKey?.login !== undefined
@@ -495,6 +532,7 @@ export async function runApp(options: AppOptions): Promise<void> {
         shell.note(error instanceof Error ? error.message : String(error), "error");
       }
     } },
+    "/accounts": { description: "Your accounts: add, sign in again, remove", run: accountsCommand },
     "/logout": { description: "Forget a provider's sign-in", run: async () => {
       const stored = await credentials.list();
       if (stored.length === 0) { shell.note("No provider is logged in."); return; }
