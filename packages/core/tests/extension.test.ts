@@ -1,4 +1,4 @@
-import { createModels, fauxProvider } from "@earendil-works/pi-ai";
+import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -91,6 +91,45 @@ for (const engine of [tesotaEngine]) {
     });
   });
 }
+
+describe("the scratch folder and the gate (#653)", () => {
+  test("a commit message in the scratch folder is never staged, and the receipt's changed files name only the change", async () => {
+    let receipts: unknown[] = [];
+    const probe: ExtensionFactory = (pi) => {
+      pi.on("agent_before_settle", (_event, ctx) => {
+        if (receipts.length === 0) receipts = ctx.sessionManager.getBranch().map(entryReceipt).filter((found) => found !== undefined);
+        return undefined;
+      });
+    };
+    const cwd = repository();
+    const base = git(cwd, "rev-parse", "HEAD");
+    const shell = process.platform === "win32" ? "powershell" : "bash";
+    let session: ReturnType<typeof createSession> | undefined;
+    const message = (): string => join(session?.scratch ?? "missing", "commit.txt");
+    const call = (tool: string, args: Record<string, string>) => () =>
+      fauxAssistantMessage([fauxToolCall(tool, args)], { stopReason: "toolUse" });
+    const faux = fauxProvider();
+    faux.setResponses([
+      call("write", { path: "notes.md", content: "# Notes\n\nMore.\n" }),
+      () => fauxAssistantMessage([fauxToolCall("write", { path: message(), content: "docs: add more\n" })], { stopReason: "toolUse" }),
+      () => fauxAssistantMessage([fauxToolCall(shell, { command: `git add -A; git -c user.name=t -c user.email=t@t commit -q -F "${message()}"` })],
+        { stopReason: "toolUse" }),
+      ...Array.from({ length: 8 }, () => fauxAssistantMessage("done"))]);
+    const models = createModels();
+    models.setProvider(faux.provider);
+    session = createSession({ cwd, models, model: faux.getModel(), extensions: [probe], verifier: (pi, request) => { tesota(pi, request); } });
+    open.push(session);
+    await session.prompt("add a line to the notes");
+    expect(git(cwd, "log", "-1", "--format=%s")).toBe("docs: add more");
+    expect(git(cwd, "show", "--name-only", "--format=", "HEAD")).toBe("notes.md");
+    expect(git(cwd, "status", "--porcelain", "--untracked-files=all")).toBe("");
+    await session.prompt("thanks");
+    expect(receipts).toHaveLength(1);
+    const [receipt] = receipts;
+    expect(receipt).toMatchObject({ base, changed: [{ path: "notes.md" }] });
+    expect(JSON.stringify(receipt)).not.toContain(".scratch");
+  });
+});
 
 describe("the thinking level on @tesota/core", () => {
   /** The level an extension reads and the reasoning the provider is asked for, for a model that reasons or not. */

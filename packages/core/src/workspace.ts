@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
 import { lockSession, SessionLockedError } from "./session-lock.ts";
 
@@ -53,6 +53,21 @@ export function checkoutRoot(folder: string): string {
     if (existsSync(join(at, ".git"))) return at;
     if (dirname(at) === at) return folder;
   }
+}
+
+/**
+ * Whether nothing in `folder` can enter the change of a session working in
+ * `cwd` (#653): it is outside both `cwd` and the tree of the repository
+ * holding it, or Git ignores it there. The gate reads only `cwd`'s tree,
+ * and no file Git ignores, so this holds whatever the remote, the branch or
+ * the commits.
+ */
+export function outsideChange(folder: string, cwd: string): boolean {
+  const at = canonical(folder);
+  const from = relative(canonical(checkoutRoot(cwd)), at);
+  // `..` as a whole name, so a folder in it named `..sessions` is still inside.
+  if (from === ".." || from.startsWith(`..${sep}`) || isAbsolute(from)) return true;
+  return gitIn(cwd, ["check-ignore", "-q", at]).ok;
 }
 
 /**

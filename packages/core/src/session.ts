@@ -1,6 +1,6 @@
 import type { ToolCall } from "@earendil-works/pi-ai";
 import { createHash, randomUUID } from "node:crypto";
-import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readSync, statSync } from "node:fs";
+import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readSync, realpathSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
 import { type FloorRefusal, interruptedReceipt, type ReceiptChild, receiptEntry } from "../../../src/receipt.ts";
@@ -25,7 +25,7 @@ import {
 import { lockSession, SessionLockedError } from "./session-lock.ts";
 import { outputPrefix } from "./tools/shell.ts";
 import { keepTail, maxBytes } from "./truncate.ts";
-import { bindWorkspace, reopenWorkspace, type Workspace } from "./workspace.ts";
+import { bindWorkspace, outsideChange, reopenWorkspace, type Workspace } from "./workspace.ts";
 import { clarificationText, type Clarification, type RequestInput } from "../../../src/clarification.ts";
 
 /** An amendment as the ledger keeps it; `delivered` once it entered the conversation. */
@@ -77,6 +77,8 @@ export interface EngineSession extends LoopSession {
   kept(): string | undefined;
   /** The agent types its subagents start with (#525). */
   readonly types: readonly AgentType[];
+  /** Its scratch folder (#653), removed when it is disposed; none when that place could enter its change. */
+  readonly scratch: string | undefined;
 }
 
 /**
@@ -86,7 +88,7 @@ export interface EngineSession extends LoopSession {
  */
 export type Verifier = (pi: ExtensionAPI, request: () => LedgerRequest | undefined) => void;
 
-export type SessionOptions = Omit<LoopOptions, "writer" | "resumed" | "verifier" | "branch" | "outputFolder"> & {
+export type SessionOptions = Omit<LoopOptions, "writer" | "resumed" | "verifier" | "branch" | "outputFolder" | "scratch"> & {
   readonly verifier: Verifier;
   /** Where the session's file goes; `~/.tesota/sessions/<project>` when not given. */
   readonly folder?: string;
@@ -110,6 +112,30 @@ export function sessionsFolder(cwd: string): string {
 
 const lockOf = (file: string): string => file.replace(/\.jsonl$/u, ".lock");
 const outputOf = (file: string): string => file.replace(/\.jsonl$/u, ".output");
+
+/**
+ * The scratch folder of the session in `file`, working in `cwd` (#653),
+ * made as it opens: beside its file, so a subagent, a session of its own,
+ * gets its own. A sessions folder is under Tesota's home, outside the
+ * project and never the system's shared temporary folder; one inside the
+ * repository's tree is used only when Git ignores it, so nothing in it
+ * enters the change. None otherwise.
+ */
+function scratchOf(file: string, cwd: string): string | undefined {
+  // Made first, so that Git matches a pattern for folders against it, and named by its real name once, so a link put
+  // in its place later moves nothing the floor allows.
+  mkdirSync(file.replace(/\.jsonl$/u, ".scratch"), { recursive: true });
+  const scratch = realpathSync.native(file.replace(/\.jsonl$/u, ".scratch"));
+  if (outsideChange(scratch, cwd)) return scratch;
+  removeScratch(scratch);
+  return undefined;
+}
+
+/** Removes a scratch folder; one a process still holds stays, and holds nothing of the change. */
+function removeScratch(scratch: string | undefined): void {
+  if (scratch === undefined) return;
+  try { rmSync(scratch, { recursive: true, force: true, maxRetries: 3 }); } catch { /* what a process still holds stays, outside the change */ }
+}
 
 /** What recovery tells the model about a job the session was running when it ended (#525). */
 const unknownJobText = (description: string, session: string): string => `Outcome unknown: the session ended while subagent `
@@ -445,6 +471,7 @@ function engineSession(file: string, release: () => void, entries: SessionEntry[
   };
   const request = (): LedgerRequest | undefined => ledgerOf(entries).at(-1);
   const id = basename(file, ".jsonl");
+  const scratch = scratchOf(file, workspace.cwd);
   // A session starts subagents while it is less than two below its top session (#525), counted across the top session's tree.
   const types = options.child?.types ?? agentTypes(workspace.cwd);
   const tree = options.child?.tree ?? { running: 0, limit: options.agentLimit ?? defaultAgentLimit };
@@ -454,11 +481,13 @@ function engineSession(file: string, release: () => void, entries: SessionEntry[
   try {
     loop = createLoop({ ...options, cwd: workspace.cwd, ...workspace.env === undefined ? {} : { env: workspace.env }, sessionId: id, verifier: (pi) => { options.verifier(pi, request); }, branch: () => branchOf(entries),
       writer: options.writer?.(recording) ?? recording, outputFolder: outputOf(file), sessionFile: file, ...opened ? { resumed: stateOf(entries) } : {},
+      ...scratch === undefined ? {} : { scratch },
       ...host === undefined ? {} : { jobTools: (jobs) => [agentTool(host, jobs)] },
       ...options.child === undefined ? {} : { instructions: options.child.instructions(workspace.cwd, workspace.branch) } });
   } catch (error) {
     // An extension or the verifier that throws as it registers leaves nothing open.
     written.close();
+    removeScratch(scratch);
     throw error;
   }
   let disposed: Promise<void> | undefined;
@@ -471,6 +500,7 @@ function engineSession(file: string, release: () => void, entries: SessionEntry[
     workspace: { cwd, checkout, ...worktree === undefined ? {} : { worktree }, ...branch === undefined ? {} : { branch } },
     kept: () => kept,
     types,
+    scratch,
     prompt: async (text, prompt) => {
       if (poisoned !== undefined) throw poisoned;
       return await loop.prompt(text, prompt);
@@ -480,6 +510,7 @@ function engineSession(file: string, release: () => void, entries: SessionEntry[
       return await loop.compact();
     },
     dispose: () => disposed ??= loop.dispose().finally(() => {
+      removeScratch(scratch);
       release();
       kept = workspace.release();
     }),
