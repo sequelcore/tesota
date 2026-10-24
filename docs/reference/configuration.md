@@ -55,7 +55,8 @@ each other's.
 
 ### `accounts`
 
-An array in your `settings.json`, never a project's. Each entry declares:
+An array in your `settings.json`, never a project's, that `tesota accounts`
+and the shell's `/accounts` and `/login` write for you. Each entry declares:
 
 | Key | Values |
 | --- | --- |
@@ -64,13 +65,15 @@ An array in your `settings.json`, never a project's. Each entry declares:
 | `folder` | Required absolute Claude Code configuration folder for `claude-code`; omitted for `openai-codex` |
 
 An invalid entry or repeated provider/name pair rejects the whole list and
-names `accounts` as invalid. Restart Tesota after editing it. A declaration
+names `accounts` as invalid. Restart Tesota after editing it by hand. A declaration
 creates the provider ID `<provider>@<name>` in the existing model selectors;
 the plain provider ID still names the default account. Claude instances set
 only `CLAUDE_CONFIG_DIR`, never `HOME`; ChatGPT instances use separate slots
 keyed by their full provider IDs in `auth.json`. No automatic switching or
 fallback takes place. [Models](../guides/models.md#several-accounts-of-one-provider)
-covers sign-in, account labels and duplicate-account warnings.
+covers adding, signing in and removing accounts, account labels and
+duplicate-account warnings. A Claude account Tesota adds lives in
+`~/.tesota/accounts/claude-code/<name>`, Claude Code's own folder for it.
 
 ## A project's files
 

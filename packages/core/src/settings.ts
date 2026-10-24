@@ -2,8 +2,8 @@ import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import type { GuardSetting } from "./agent-rule.ts";
 import type { Mode } from "./permission-rule.ts";
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { isAbsolute, join } from "node:path";
+import { mkdirSync, readFileSync } from "node:fs";
+import { dirname, isAbsolute, join } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
 import { withLock } from "./session-lock.ts";
 import { parseJson } from "../../../src/json.ts";
@@ -15,6 +15,9 @@ export type TuiMode = "fullscreen" | "inline";
 /** An explicitly chosen provider instance; declared only in the operator's settings. */
 export type Account = { readonly name: string; readonly provider: "claude-code"; readonly folder: string }
   | { readonly name: string; readonly provider: "openai-codex" };
+
+/** An account's name: one or more ASCII letters, digits, `_` or `-`. */
+export const accountName: RegExp = /^[A-Za-z0-9_-]+$/u;
 
 /** What the operator chose, kept between sessions (#443). */
 export interface Settings {
@@ -53,7 +56,7 @@ const checks: { readonly [Name in keyof Settings]-?: (value: unknown) => boolean
       const name: unknown = Reflect.get(item, "name");
       const provider: unknown = Reflect.get(item, "provider");
       const folder: unknown = Reflect.get(item, "folder");
-      if (typeof name !== "string" || !/^[A-Za-z0-9_-]+$/u.test(name)) return false;
+      if (typeof name !== "string" || !accountName.test(name)) return false;
       if (provider !== "openai-codex" && provider !== "claude-code") return false;
       if (provider === "claude-code" && (typeof folder !== "string" || !isAbsolute(folder))) return false;
       if (provider === "openai-codex" && folder !== undefined) return false;
@@ -85,13 +88,7 @@ export interface ReadSettings {
  * JSON is a failure, never read as empty.
  */
 export function readSettings(path: string = join(tesotaHome(), "settings.json")): ReadSettings {
-  let text: string;
-  try { text = readFileSync(path, "utf8"); } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { settings: {}, invalid: [] };
-    throw error;
-  }
-  const parsed: unknown = parseJson(text);
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error(`${path} does not hold settings.`);
+  const parsed = readFile(path);
   const settings: Record<string, unknown> = {};
   const invalid: string[] = [];
   for (const [name, check] of Object.entries(checks)) {
@@ -103,6 +100,18 @@ export function readSettings(path: string = join(tesotaHome(), "settings.json"))
   return { settings: settings as Settings, invalid };
 }
 
+/** The settings file's object as written, hooks and keys Tesota leaves out included; none when it does not exist. */
+function readFile(path: string): object {
+  let text: string;
+  try { text = readFileSync(path, "utf8"); } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+    throw error;
+  }
+  const parsed: unknown = parseJson(text);
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error(`${path} does not hold settings.`);
+  return parsed;
+}
+
 /** Writes the operator's settings, whole or not at all. */
 export function writeSettings(settings: Settings, path: string = join(tesotaHome(), "settings.json")): void {
   writeWholeJson(path, settings);
@@ -111,10 +120,19 @@ export function writeSettings(settings: Settings, path: string = join(tesotaHome
 /**
  * Writes `change` over the settings as they are now (#453): read, merged and
  * written under a lock, so two Tesotas saving at once each keep the other's
- * change. Waits up to about a second for another's save.
+ * change; a change made from the settings as they are then, such as an
+ * account added to the list, is given as a function of them. The rest of the
+ * file stays as written, the operator's hooks and any value Tesota leaves out
+ * included (#642). Waits up to about a second for another's save.
  */
-export function updateSettings(change: Partial<Settings>, path: string = join(tesotaHome(), "settings.json")): void {
-  withLock(`${path}.lock`, () => { writeSettings({ ...readSettings(path).settings, ...change }, path); });
+export function updateSettings(change: Partial<Settings> | ((current: Settings) => Partial<Settings>),
+  path: string = join(tesotaHome(), "settings.json")): void {
+  // The lock is beside the file, so a first save, as a first login's, makes their folder.
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  withLock(`${path}.lock`, () => {
+    const changed = typeof change === "function" ? change(readSettings(path).settings) : change;
+    writeWholeJson(path, { ...readFile(path), ...changed });
+  });
 }
 
 /** This installation's id, made and kept the first time a login asks for it. */
@@ -122,6 +140,6 @@ export function deviceId(path: string = join(tesotaHome(), "settings.json")): st
   const { settings } = readSettings(path);
   if (settings.deviceId !== undefined) return settings.deviceId;
   const made = randomUUID();
-  writeSettings({ ...settings, deviceId: made }, path);
+  updateSettings({ deviceId: made }, path);
   return made;
 }

@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { deviceId, readSettings, writeSettings } from "../src/settings.ts";
+import { deviceId, readSettings, updateSettings, writeSettings } from "../src/settings.ts";
 
 /** The operator's settings (#443), always in a temporary folder. */
 const fileIn = (): string => join(mkdtempSync(join(tmpdir(), "tesota-core-settings-")), "settings.json");
@@ -50,11 +50,26 @@ describe("the settings file", () => {
     expect(() => readSettings(path)).toThrow();
   });
 
+  test("saving a setting, an account or the installation's id keeps the rest of the file as written: hooks, invalid and unknown keys (#642)", () => {
+    const path = fileIn();
+    const others = { hooks: { PreToolUse: [{ matcher: "bash", hooks: [{ type: "command", command: "lint" }] }] }, agentLimit: 17, future: { kept: true } };
+    writeFileSync(path, JSON.stringify({ ...others, model: "openai/gpt-6-sol" }));
+    updateSettings({ permissionMode: "full" }, path);
+    updateSettings((current) => ({ accounts: [...current.accounts ?? [], { name: "work", provider: "openai-codex" }] }), path);
+    const id = deviceId(path);
+    expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({ ...others, model: "openai/gpt-6-sol", permissionMode: "full",
+      accounts: [{ name: "work", provider: "openai-codex" }], deviceId: id });
+  });
+
   test("the installation's id is made once and kept, beside the other settings", () => {
     const path = fileIn();
     writeSettings({ tuiMode: "inline" }, path);
     const id = deviceId(path);
     expect(id).toMatch(/^[0-9a-f-]{36}$/u);
+    // A first login's id, before the folder exists.
+    const fresh = join(mkdtempSync(join(tmpdir(), "tesota-core-settings-")), "home", "settings.json");
+    expect(readSettings(fresh).settings.deviceId).toBeUndefined();
+    expect(deviceId(fresh)).toBe(deviceId(fresh));
     expect(deviceId(path)).toBe(id);
     expect(readSettings(path).settings).toEqual({ tuiMode: "inline", deviceId: id });
   });

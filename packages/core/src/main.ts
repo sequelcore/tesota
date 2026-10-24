@@ -6,7 +6,8 @@ import manifest from "../package.json" with { type: "json" };
  * else, so startup stays within its budget as the engine grows; each other
  * command loads only what it needs. With no argument it opens the shell in
  * the current folder (#444); `-p` runs one request without it, and
- * `receipt` writes the last receipt for a pull request (#463). The
+ * `receipt` writes the last receipt for a pull request (#463), and
+ * `accounts` adds, lists and removes the operator's accounts (#642). The
  * `--measure-*` commands are what the budget check runs, and `__lsc` is
  * LemmaScript for the verifier in a binary (`lsc.ts`).
  */
@@ -46,6 +47,7 @@ else if (command === undefined) exitWith(import("./shell/app.ts").then(({ runApp
 else if (command === "-p" || command === "--print") {
   exitWith(import("./print.ts").then(({ runPrint }) => runPrint(rest, process.cwd(), output, flags)));
 }
+else if (command === "accounts") exitWith(import("./accounts.ts").then(({ accountsCommand }) => accountsCommand(rest, output)));
 else if (command === "receipt") {
   exitWith(Promise.all([import("../../../src/pull-request-receipt.ts"), import("./session-store.ts")])
     .then(([{ receiptCommand }, { sessionStore }]) => receiptCommand(rest, process.cwd(), sessionStore, output)));
@@ -65,7 +67,8 @@ else if (command === "__lsc") {
   });
 }
 else {
-  console.error(`Unknown argument ${command}. Use: tesota (the shell), tesota -p "<request>", tesota receipt [--json], tesota --version; ` +
+  console.error(`Unknown argument ${command}. Use: tesota (the shell), tesota -p "<request>", tesota receipt [--json], ` +
+    "tesota accounts [add <provider> <name> | login <account> | remove <account>], tesota --version; " +
     "the shell and -p take --open-cases-model <provider>/<id>|off and --claimcheck-model <provider>/<id>.");
   process.exitCode = 2;
 }

@@ -123,6 +123,8 @@ export interface Shell {
   note(text: string, tone?: "muted" | "error" | "warning"): void;
   /** Draws the footer again, as `status` now says it. */
   redraw(): void;
+  /** Gives the terminal to another program for as long as `work` runs, such as Claude Code's sign-in (#642), then draws the shell again. */
+  handOver<T>(work: () => Promise<T>): Promise<T>;
   /** Ends the shell, leaving the conversation in the terminal's scrollback; settles once it has. */
   stop(): void;
   /** Settles when the shell has stopped. */
@@ -651,6 +653,17 @@ export function startShell(options: ShellOptions): Shell {
     busy: (state) => { working(state); tui.requestRender(); },
     note,
     redraw: () => { drawFooter(); tui.requestRender(); },
+    handOver: async (work) => {
+      tui.stop();
+      // Ctrl+C reaches every process on the terminal: it is the other program's to cancel with, and must not end the shell.
+      const keep = (): void => undefined;
+      process.on("SIGINT", keep);
+      try { return await work(); } finally {
+        process.off("SIGINT", keep);
+        tui.start();
+        tui.requestRender(true);
+      }
+    },
     stop,
     stopped,
   };

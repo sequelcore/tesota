@@ -61,7 +61,62 @@ wasn't checked; OpenAI still refuses a model it doesn't serve.
 
 ## Several accounts of one provider
 
-Declare each account in your `~/.tesota/settings.json`, not a project's file:
+Add each account in one step, with its provider and a name of yours:
+
+```sh
+tesota accounts add claude-code personal
+tesota accounts add openai-codex work
+```
+
+In the shell, `/login` → **Add an account** does the same. Names contain
+letters, digits, `_` or `-`, and are unique within a provider.
+
+- **Claude:** Tesota makes the account's folder,
+  `~/.tesota/accounts/claude-code/<name>`, and starts your own Claude Code's
+  sign-in there (`claude auth login`, with `CLAUDE_CONFIG_DIR` set to that
+  folder). Sign in as Claude Code asks. Tesota records the account once
+  Claude Code says it is signed in, and records nothing when it isn't.
+- **ChatGPT:** Tesota runs its ChatGPT sign-in for the account's own slot,
+  `openai-codex@<name>`, then records the account.
+
+The account is then a provider like any other, in this shell at once and in
+every later run, with nothing to edit:
+
+```sh
+tesota -p "Review the change" --model claude-code@personal/claude-opus-5-5
+```
+
+`tesota accounts`, or `/accounts` in the shell, lists each account with the
+account it is signed in to, and flags `same account as …` when two
+identify the same one:
+
+```text
+claude-code (default)  owner@example.com
+claude-code@personal  owner@example.com · same account as claude-code  /home/you/.tesota/accounts/claude-code/personal
+openai-codex (default)  not signed in
+openai-codex@work  <ChatGPT account ID>
+```
+
+| To | Command line | Shell |
+| --- | --- | --- |
+| Sign one in again, keeping it | `tesota accounts login claude-code@personal` | `/accounts`, the account, **Sign in again** |
+| Remove one | `tesota accounts remove openai-codex@work` | `/accounts`, the account, **Remove** |
+
+Removing an account that your `model` setting, or the `model` of one of
+your agent types or the current project's, still names is refused, naming
+which: choose another account there first. Removing a ChatGPT account
+forgets its sign-in. Removing a Claude account deletes the folder Tesota
+made for it under `~/.tesota/accounts/claude-code`, unless another account
+uses it; a folder you declared yourself stays. Tesota adds a Claude account
+only in a folder it makes, never in one already there. While the `accounts`
+setting is invalid, adding and removing are refused, so it is never written
+over.
+
+### Declaring accounts by hand
+
+The accounts are the `accounts` list in your `~/.tesota/settings.json`, not
+a project's file, which you can also write yourself, for example to use a
+Claude Code folder you already have:
 
 ```json
 {
@@ -74,36 +129,24 @@ Declare each account in your `~/.tesota/settings.json`, not a project's file:
 ```
 
 Use an absolute folder for Claude Code (`C:/accounts/claude-personal` on
-Windows, for example). Names contain letters, digits, `_` or `-`, and are
-unique within a provider. Restart Tesota after changing the list.
+Windows, for example). Restart Tesota after editing the list by hand, then
+sign the account in with `tesota accounts login <provider>@<name>`.
 
-For Claude, sign in with Claude Code itself, using that folder:
+### How accounts sign in
 
-```sh
-CLAUDE_CONFIG_DIR=/absolute/path/to/claude-personal claude
-# Then /login in Claude Code
-```
-
-In PowerShell, set `$env:CLAUDE_CONFIG_DIR = 'C:/accounts/claude-personal'`
-before running `claude`. Tesota sets `CLAUDE_CONFIG_DIR` for that instance's
-Claude Code only. Named instances ignore ambient `ANTHROPIC_*` and
+Tesota sets `CLAUDE_CONFIG_DIR` to a Claude account's folder for that
+account's Claude Code only, for its sign-in, status and runs. Named instances ignore ambient `ANTHROPIC_*` and
 `CLAUDE_*` overrides so a shell token or API key cannot replace the folder's
 sign-in. Tesota never changes `HOME`, and never reads, copies or stores
 Claude Code's credentials. It asks `claude auth status` in that folder for
 sign-in status and the account label.
 
-For ChatGPT, run `/login` in Tesota and pick `openai-codex@work`. Each
-instance has its own credential slot in `~/.tesota/auth.json`; logging out
-of one does not sign another out. The plain provider ID remains the default
-account, separate from the named instances.
+Each ChatGPT account has its own credential slot in `~/.tesota/auth.json`;
+logging out of one does not sign another out. The plain provider ID remains
+the default account, separate from the named instances.
 
 Choose an account exactly as you choose a model: `/model`, `--model`, the
-saved `model`, an agent type's `model`, or the `agent` tool's `model`:
-
-```sh
-tesota -p "Review the change" --model claude-code@personal/claude-opus-5-5
-```
-
+saved `model`, an agent type's `model`, or the `agent` tool's `model`.
 For example, a type can name `openai-codex@work/gpt-6.1-sol`. Run receipts
 keep the account-qualified model. The model and login lists label instances
 with Claude's email or ChatGPT's account ID and flag `same account as …`

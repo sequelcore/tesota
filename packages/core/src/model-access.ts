@@ -21,20 +21,26 @@ export function engineModels(credentials: CredentialStore = fileCredentialStore(
   const models = createModels({ credentials });
   for (const provider of builtinProviders()) models.setProvider(provider.id === "anthropic" ? anthropicKeyOnly(provider) : provider);
   models.setProvider(claudeCodeProvider(models.getModels("anthropic")));
-  for (const account of accounts) {
-    const id = `${account.provider}@${account.name}`;
-    if (account.provider === "claude-code") {
-      models.setProvider(claudeCodeProvider(models.getModels("anthropic"), { id, configDir: account.folder }));
-    } else {
-      const provider = models.getProvider("openai-codex");
-      if (provider?.auth.oauth === undefined) throw new Error("pi-ai's Codex provider has no ChatGPT auth");
-      // Same pi-ai transport and OAuth flow, but auth resolves and refreshes under this instance's id only.
-      models.setProvider({ ...provider, id, name: id, auth: { oauth: provider.auth.oauth },
-        getModels: () => provider.getModels().map((model) => ({ ...model, provider: id })),
-        getAllModels: () => (provider.getAllModels?.() ?? provider.getModels()).map((model) => ({ ...model, provider: id })) });
-    }
-  }
+  for (const account of accounts) setAccountProvider(models, account);
   return models;
+}
+
+/** `account`'s provider ID, `<provider>@<name>`. */
+export const accountId = (account: Account): string => `${account.provider}@${account.name}`;
+
+/** Adds `account`'s provider instance to `models`, as `engineModels` does for each declared one and adding an account does (#642). */
+export function setAccountProvider(models: MutableModels, account: Account): void {
+  const id = accountId(account);
+  if (account.provider === "claude-code") {
+    models.setProvider(claudeCodeProvider(models.getModels("anthropic"), { id, configDir: account.folder }));
+    return;
+  }
+  const provider = models.getProvider("openai-codex");
+  if (provider?.auth.oauth === undefined) throw new Error("pi-ai's Codex provider has no ChatGPT auth");
+  // Same pi-ai transport and OAuth flow, but auth resolves and refreshes under this instance's id only.
+  models.setProvider({ ...provider, id, name: id, auth: { oauth: provider.auth.oauth },
+    getModels: () => provider.getModels().map((model) => ({ ...model, provider: id })),
+    getAllModels: () => (provider.getAllModels?.() ?? provider.getModels()).map((model) => ({ ...model, provider: id })) });
 }
 
 /** Non-secret labels for account pickers and runs. Identity comes from Claude Code's status or the ChatGPT credential's account id. */
@@ -45,7 +51,7 @@ export async function accountLabels(credentials: CredentialStore, accounts: read
   const instances: readonly { readonly id: string; readonly provider: Account["provider"]; readonly folder?: string }[] = [
     ...accounts.some(({ provider }) => provider === "claude-code") ? [{ id: "claude-code", provider: "claude-code" as const }] : [],
     ...accounts.some(({ provider }) => provider === "openai-codex") ? [{ id: "openai-codex", provider: "openai-codex" as const }] : [],
-    ...accounts.map((account) => ({ ...account, id: `${account.provider}@${account.name}` })),
+    ...accounts.map((account) => ({ ...account, id: accountId(account) })),
   ];
   for (const instance of instances) {
     let identity: string | undefined;

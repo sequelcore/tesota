@@ -12,7 +12,7 @@ import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
 import { claudeCodeProvider } from "../src/providers/claude-code.ts";
 import { engineModels } from "../src/model-access.ts";
 import { type Account, readSettings, writeSettings } from "../src/settings.ts";
-import { runApp } from "../src/shell/app.ts";
+import { type AppOptions, runApp } from "../src/shell/app.ts";
 import type { ScriptStep } from "./engine.ts";
 import { scriptedReply, signInWithChatGPT } from "./scripted.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
@@ -53,14 +53,16 @@ function scripted(replies: readonly ScriptStep[]): { models: MutableModels; cred
 }
 
 /** The app in a temporary folder, its settings and sessions there too, once it has drawn its first frame. */
-async function app(replies: readonly ScriptStep[] = [], { repository = false, earlier, mcp, projectMcp, skills = {}, served, model, claudeCode, accounts }:
+async function app(replies: readonly ScriptStep[] = [], { repository = false, earlier, mcp, projectMcp, skills = {}, served, model, claudeCode, accounts, claude }:
   { repository?: boolean;
     /** An earlier session of the folder that worked in its checkout, asked this and answered "earlier answer" (#595). */
     earlier?: string; mcp?: object; projectMcp?: object; skills?: Record<string, string>;
     /** Signed in to OpenAI with ChatGPT, which serves these models (#566), or whose list cannot be fetched. */
     served?: readonly string[] | "offline"; model?: string; accounts?: readonly Account[];
     /** Claude through Claude Code (#546), signed in there or not. */
-    claudeCode?: "signed in" | "signed out" } = {}) {
+    claudeCode?: "signed in" | "signed out";
+    /** Claude Code's sign-in and status in an account's folder (#642), faked. */
+    claude?: AppOptions["claude"] } = {}) {
   const terminal = new VirtualTerminal(100, 30);
   const { models, credentials } = scripted(replies);
   if (claudeCode !== undefined) {
@@ -101,7 +103,7 @@ async function app(replies: readonly ScriptStep[] = [], { repository = false, ea
       { type: "request", run: 1, text: earlier, origin: "interactive", at, base: { units: [] } },
       { type: "assistant", run: 1, message: fauxAssistantMessage("earlier answer") }].map((line) => JSON.stringify(line)).join("\n") + "\n");
   }
-  const running = runApp({ cwd, terminal, models, credentials, settingsPath, sessions }).finally(signOut);
+  const running = runApp({ cwd, terminal, models, credentials, settingsPath, sessions, claude }).finally(signOut);
   await terminal.until("tesota-core");
   return { terminal, credentials, settingsPath, sessions, running, cwd };
 }
@@ -240,11 +242,68 @@ describe("tesota-core", () => {
     } finally { send(terminal, "/quit"); await running; }
   });
 
+  /** Claude Code faked: a sign-in in a folder signs it in to `email`. */
+  const fakeClaude = (email: string) => {
+    const signIns: string[] = [];
+    const signedIn = new Set<string>();
+    return { signIns, claude: {
+      signIn: async (at: string) => { signIns.push(at); signedIn.add(at); },
+      status: async (at?: string) => at !== undefined && signedIn.has(at) ? { loggedIn: true, email } : { loggedIn: false },
+    } };
+  };
+  const choose = async (terminal: VirtualTerminal, item: string): Promise<void> => {
+    for (let down = 0; down < 40 && !(await terminal.screen()).join("\n").includes(`→ ${item}`); down++) terminal.type("\x1b[B");
+    terminal.type(enter);
+  };
+
+  test("/login adds a Claude account in one step: its folder, Claude Code's sign-in there, and its record (#642)", async () => {
+    const fake = fakeClaude("owner@example.test");
+    const { terminal, settingsPath, running } = await app([], { claude: fake.claude, model: "faux/faux-1" });
+    try {
+      send(terminal, "/login");
+      await terminal.until("Log in to");
+      await choose(terminal, "Add an account");
+      await terminal.until("Account of");
+      await choose(terminal, "Claude Code");
+      await terminal.until("Name the account");
+      send(terminal, "b");
+      expect(await terminal.until("Added claude-code@b")).toContain("owner@example.test");
+      const made = join(dirname(settingsPath), "accounts", "claude-code", "b");
+      expect(fake.signIns).toEqual([made]);
+      expect(readSettings(settingsPath).settings).toEqual({ model: "faux/faux-1", accounts: [{ name: "b", provider: "claude-code", folder: made }] });
+    } finally { send(terminal, "/quit"); await running; }
+  });
+
+  test("/accounts shows each account's sign-in and duplicates, signs one in again, and refuses to remove one in use (#642)", async () => {
+    const fake = fakeClaude("owner@example.test");
+    const b = folder("claude-b-");
+    const { terminal, settingsPath, running } = await app([], { claude: fake.claude, model: "openai-codex@work/gpt-6.1-sol",
+      accounts: [{ name: "work", provider: "openai-codex" }, { name: "b", provider: "claude-code", folder: b }] });
+    try {
+      send(terminal, "/accounts");
+      const listed = await terminal.until("Accounts");
+      expect(listed).toContain("account-work · same account as openai-codex");
+      expect(listed).toContain("claude-code@b");
+      await choose(terminal, "claude-code@b");
+      await terminal.until("Sign in again");
+      await choose(terminal, "Sign in again");
+      await terminal.until("claude-code@b: owner@example.test");
+      expect(fake.signIns).toEqual([b]);
+      send(terminal, "/accounts");
+      await terminal.until("Accounts");
+      await choose(terminal, "openai-codex@work");
+      await terminal.until("Remove");
+      await choose(terminal, "Remove");
+      await terminal.until("model setting");
+      expect(readSettings(settingsPath).settings.accounts).toHaveLength(2);
+    } finally { send(terminal, "/quit"); await running; }
+  });
+
   test("/model names an unsigned Claude instance and says how to sign in to its folder", async () => {
     const { terminal, running } = await app([], { accounts: [{ name: "b", provider: "claude-code", folder: folder("claude-b-") }] });
     try {
       send(terminal, "/model");
-      expect(await terminal.until("claude-code@b: not signed in")).toContain("CLAUDE_CONFIG_DIR");
+      expect(await terminal.until("claude-code@b: not signed in")).toContain("Sign it in again with /accounts");
       terminal.type("\x1b");
     } finally { terminal.type("\x1b"); send(terminal, "/quit"); await running; }
   });
