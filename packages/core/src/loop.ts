@@ -50,6 +50,8 @@ export interface LoopOptions {
   readonly writer: SessionWriter;
   /** The durable output folder beside the session's file, created on first use. */
   readonly outputFolder: string;
+  /** The session's scratch folder (#653), where file tools may write besides `cwd`; none when not given. */
+  readonly scratch?: string;
   /** The durable session file whose directory owns verification artifacts. */
   readonly sessionFile?: string;
   /** What a resumed session already holds; a new session starts empty. */
@@ -262,15 +264,18 @@ export function compactedHead(ledger: readonly HistoryMessage[], summary: string
 /**
  * The engine's system prompt in `cwd` with the active tools: what each
  * that has one says of itself, and their rules, trimmed and each once, in
- * Pi's form (#441).
+ * Pi's form (#441); and the session's `scratch` folder, when it has one (#653).
  */
-export function defaultPrompt(cwd: string, active: readonly EngineTool[]): string {
+export function defaultPrompt(cwd: string, active: readonly EngineTool[], scratch?: string): string {
   const listed = active.flatMap(({ name, promptSnippet }) => promptSnippet === undefined || promptSnippet.trim() === "" ? []
     : [`- ${name}: ${promptSnippet.replace(/\s+/gu, " ").trim()}`]);
   const rules = [...new Set(active.flatMap(({ promptGuidelines }) => promptGuidelines ?? []).map((rule) => rule.trim())
     .filter((rule) => rule !== ""))].map((rule) => `- ${rule}`);
   const explorers = active.filter(({ name }) => name === "ls" || name === "find" || name === "grep").map(({ name }) => name);
   return [`You are a coding agent working in ${cwd}. Use the tools to read, change and run what the request needs.`,
+    ...scratch === undefined ? [] : [`Write temporary files, such as a commit message, a probe script or a fixture, in ${scratch}: `
+      + "the session's own scratch folder, removed when the session ends and never part of the change. "
+      + `File tools may write only there and in ${cwd}; other writes are refused.`],
     ...explorers.length > 0 ? [`Use ${explorers.join(", ")} to explore.`
       + (active.some(({ name }) => name === "bash" || name === "powershell") ? " Use the shell to run commands." : "")] : [],
     ...listed.length > 0 ? [`Available tools:\n${listed.join("\n")}`] : [],
@@ -636,7 +641,7 @@ export function createLoop(options: LoopOptions): LoopSession {
   const available = skills(options.cwd);
   const instructions = options.systemPrompt === undefined ? instructionsOf(options, available) : "";
   const promptFor = (): string => options.systemPrompt
-    ?? [defaultPrompt(options.cwd, tools.activeTools()), instructions].filter((part) => part !== "").join("\n\n");
+    ?? [defaultPrompt(options.cwd, tools.activeTools(), options.scratch), instructions].filter((part) => part !== "").join("\n\n");
   const resumedCompaction = compactionAtStart(options);
   const margins = resumedCompaction.margins;
   /** The current run's request and delivered amendments, which a compaction keeps as given. */
@@ -783,7 +788,8 @@ export function createLoop(options: LoopOptions): LoopSession {
     const access = offered.find((tool) => tool.name === call.name)?.access ?? "run";
     const key = `${call.name}\n${JSON.stringify(call.arguments)}`;
     const present = permissions?.ask !== undefined;
-    const verdict = heightened(judge(call, access, options.cwd, permissions?.mode() ?? "full", permissions?.rules ?? [], present),
+    const verdict = heightened(judge(call, access, options.cwd, permissions?.mode() ?? "full", permissions?.rules ?? [], present,
+      options.scratch),
       access, run, present);
     let decision: "allow" | "deny" = verdict.decision === "deny" ? "deny" : "allow";
     let by: Decider = verdict.by;

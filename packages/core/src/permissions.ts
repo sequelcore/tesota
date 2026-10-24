@@ -1,10 +1,10 @@
 import type { ToolCall } from "@earendil-works/pi-ai";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
 import { parseJson } from "../../../src/json.ts";
-import { type Access, type Decision, decide, type Mode, type RuleVerdict, strongest } from "./permission-rule.ts";
+import { type Access, type Decision, decide, type Mode, type RuleVerdict, strongest, within, writable } from "./permission-rule.ts";
 import type { FloorRefusal } from "../../../src/receipt.ts";
 
 /** Rules as an operator or a project writes them (#449): `tool(pattern)`, or a tool's name alone, by verdict. */
@@ -118,10 +118,10 @@ const canonicalOnce = (path: string): string => {
   return found;
 };
 
-const inside = (path: string, folder: string): boolean => {
-  const from = relative(folder, path);
-  return from === "" || (!from.startsWith("..") && !isAbsolute(from));
-};
+/** A canonical path as its names from the root: on Windows split at either slash, elsewhere only at `/`, where `\` is part of a name. */
+const names = (path: string): string[] => path.split(process.platform === "win32" ? /[\\/]/u : /\//u).filter((name) => name !== "");
+
+const inside = (path: string, folder: string): boolean => within(names(path), names(folder));
 
 /** Commands that destroy what no request asks to destroy: a disk, the root or home folder, the system's. A net, not a guarantee. */
 const destructive: readonly RegExp[] = [
@@ -155,8 +155,8 @@ function subjectOf(call: ToolCall): string {
   return typeof said === "string" ? said : "";
 }
 
-/** Why the floor refuses `call`, if it does. */
-function floorReason(call: ToolCall, access: Access, cwd: string): string | undefined {
+/** Why the floor refuses `call`, if it does; a file tool writes only in `cwd` and the session's `scratch` folder (#653). */
+function floorReason(call: ToolCall, access: Access, cwd: string, scratch: string | undefined): string | undefined {
   const subject = subjectOf(call);
   if (shells.has(call.name)) {
     if (destructive.some((pattern) => pattern.test(subject))) return "it would destroy a disk, the root or a home folder";
@@ -167,7 +167,14 @@ function floorReason(call: ToolCall, access: Access, cwd: string): string | unde
   const asked = resolve(cwd, subject);
   const path = canonical(asked);
   if (secretPath(process.platform === "win32" ? asked.toLowerCase() : asked, path)) return "it is a secret: an .env file, SSH's keys or Tesota's credentials";
-  if (access === "write" && !inside(path, canonicalOnce(cwd))) return "it is outside the session's folder";
+  if (access === "write") {
+    const folder = names(canonicalOnce(cwd));
+    // The scratch folder as the session named it, by its real name, never resolved again: a link put in its place leads outside it.
+    const own = scratch === undefined ? folder : names(process.platform === "win32" ? scratch.toLowerCase() : scratch);
+    if (!writable(names(path), folder, own)) {
+      return `it is outside the session's folder${scratch === undefined ? "" : `. Write temporary files in the session's scratch folder, ${scratch}`}`;
+    }
+  }
   return undefined;
 }
 
@@ -183,10 +190,12 @@ const modeWords: Readonly<Record<Mode, string>> = { read: "read only", ask: "ask
 /**
  * Whether `call`, a tool that `access`es, may run in `cwd` (#449): the
  * floor, then the mode and the strongest matching rule, decided by the
- * proved rule (`decide`), with `present` saying whether someone can answer.
+ * proved rule (`decide`), with `present` saying whether someone can answer,
+ * and `scratch` the session's scratch folder by its real name, when it has one (#653).
  */
-export function judge(call: ToolCall, access: Access, cwd: string, mode: Mode, rules: Rules, present: boolean): Verdict {
-  const floor = floorReason(call, access, cwd);
+export function judge(call: ToolCall, access: Access, cwd: string, mode: Mode, rules: Rules, present: boolean,
+  scratch?: string): Verdict {
+  const floor = floorReason(call, access, cwd, scratch);
   const shell = shells.has(call.name);
   const subject = shell || subjectOf(call) === "" ? subjectOf(call) : relative(cwd, resolve(cwd, subjectOf(call))).split("\\").join("/");
   // When in doubt, deny and ask rules match more and allow rules less: a deny or ask rule that names the whole

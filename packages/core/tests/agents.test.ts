@@ -219,6 +219,25 @@ describe("the agent tool", () => {
     expect(git(cwd, "branch", "--list", child?.branch ?? "")).toContain(child?.branch ?? "missing");
   });
 
+  test("a writing child gets a scratch folder of its own, not its parent's, and writes there; it goes when the child ends (#653)", async () => {
+    const cwd = repository();
+    let childScratch = "";
+    const scratchIn = (context: Context): string => /in (\S+\.scratch)/u.exec(promptOf(context))?.[1] ?? "";
+    const parent = session({
+      delegate: [{ calls: [{ tool: "agent", args: { prompt: "probe", description: "probe", writes: true, wait: true } }] }, "done"],
+      probe: [(context) => { childScratch = scratchIn(context); return asMessage(
+        { calls: [{ tool: "write", args: { path: join(childScratch, "probe.ts"), content: "1\n" } }] }); },
+      (context) => fauxAssistantMessage(textOf(context.messages.at(-1)?.content ?? "").startsWith("Not run") ? "refused" : "probed")],
+    }, { cwd, permissions: { mode: () => "full", rules: [] }, branchGuard: "warn" });
+    await parent.prompt("delegate");
+    expect(childScratch).not.toBe("");
+    expect(childScratch).not.toBe(parent.scratch);
+    expect(parent.ledger()[0]?.children[0]).toMatchObject({ description: "probe", outcome: "completed" });
+    expect(parent.ledger()[0]?.children[0]?.floorRefusals ?? 0).toBe(0);
+    expect(existsSync(childScratch)).toBe(false);
+    expect(existsSync(parent.scratch ?? "")).toBe(true);
+  });
+
   test("what the floor refused a child reaches its parent's result, ledger and end, and binds the parent too (#622)", async () => {
     const cwd = repository();
     let told = "";

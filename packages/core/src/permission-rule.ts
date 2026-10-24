@@ -62,6 +62,34 @@ export function decide(floor: boolean, mode: Mode, access: Access, rule: RuleVer
 }
 
 /**
+ * Whether `path` is `folder` or inside it, each a canonical path as its
+ * names from the root: the folder's names begin the path's, whole, so
+ * `project-other` is not inside `project`.
+ */
+//@ ensures \result === (folder.length <= path.length && forall(j: nat, j < folder.length ==> path[j] === folder[j]))
+export function within(path: readonly string[], folder: readonly string[]): boolean {
+  if (folder.length > path.length) return false;
+  let k = 0;
+  while (k < folder.length) {
+    //@ invariant 0 <= k && k <= folder.length
+    //@ invariant forall(j: nat, j < k ==> path[j] === folder[j])
+    if (path[k] !== folder[k]) return false;
+    k = k + 1;
+  }
+  return true;
+}
+
+/**
+ * Whether the floor lets a file tool write at `path` (#449, #653): only in
+ * the session's folder or its scratch folder, each a canonical path as its
+ * names from the root.
+ */
+//@ ensures \result === ((folder.length <= path.length && forall(j: nat, j < folder.length ==> path[j] === folder[j])) || (scratch.length <= path.length && forall(j: nat, j < scratch.length ==> path[j] === scratch[j])))
+export function writable(path: readonly string[], folder: readonly string[], scratch: readonly string[]): boolean {
+  return within(path, folder) || within(path, scratch);
+}
+
+/**
  * A decision once Tesota's floor has refused a call earlier in the same
  * request (#622): a call that would be allowed and does more than read is
  * asked instead, or refused with no one `present`, since the floor is a net

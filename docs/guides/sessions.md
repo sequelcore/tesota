@@ -32,6 +32,16 @@ Long shell output stays beside the session file: `name.jsonl` keeps its
 output in `name.output/`. The folder is created on first use and kept when
 the session closes, so a "Full output" path still works after resuming.
 
+Each session also gets a scratch folder for temporary files, such as a
+commit message, a probe script or a fixture: `name.scratch/`, beside its
+file. The agent's instructions name it, and its file tools may write there
+as well as in the session's folder. It's outside the project, so it's
+never staged or part of the change the receipt lists, and it's removed
+when the session closes, then made again when it's resumed. A
+[subagent](subagents.md) is a session of its own, so it gets its own. When
+the sessions folder lies inside the project's repository and Git doesn't
+ignore it, the session gets no scratch folder.
+
 ## Answer the agent
 
 The agent can ask up to three questions with two to four choices each,

@@ -96,3 +96,31 @@ method strongest(matched: seq<RuleVerdict>) returns (res: RuleVerdict)
   }
   return found;
 }
+
+method within(path: seq<string>, folder: seq<string>) returns (res: bool)
+  ensures (res == ((|folder| <= |path|) && forall j: nat :: ((j < |folder|) ==> (path[j] == folder[j]))))
+{
+  if (|folder| > |path|) {
+    return false;
+  }
+  var k := 0;
+  while (k < |folder|)
+    invariant (0 <= k)
+    invariant (k <= |folder|)
+    invariant forall j: nat :: ((j < k) ==> (path[j] == folder[j]))
+  {
+    if (path[k] != folder[k]) {
+      return false;
+    }
+    k := (k + 1);
+  }
+  return true;
+}
+
+method writable(path: seq<string>, folder: seq<string>, scratch: seq<string>) returns (res: bool)
+  ensures (res == (((|folder| <= |path|) && forall j: nat :: ((j < |folder|) ==> (path[j] == folder[j]))) || ((|scratch| <= |path|) && forall j: nat :: ((j < |scratch|) ==> (path[j] == scratch[j])))))
+{
+  var i_t0 := within(path, folder);
+  var i_t1 := within(path, scratch);
+  return (i_t0 || i_t1);
+}

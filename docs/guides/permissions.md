@@ -27,7 +27,10 @@ treats every MCP tool as running something.
 
 No mode or rule allows these:
 
-- **Writing outside the session's folder.**
+- **Writing outside the session's folder and its
+  [scratch folder](sessions.md).** The refusal names the scratch folder,
+  so the agent knows where temporary files go; for the rest of that
+  request, writing there is asked like any other change.
 - **Touching a secret:** `.env` files, SSH's keys in `~/.ssh`, and Tesota's
   own sign-ins (`~/.tesota/auth.json`, `~/.tesota/mcp-auth.json`), by path or
   named in a command.
