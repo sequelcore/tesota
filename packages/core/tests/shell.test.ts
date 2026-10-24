@@ -11,6 +11,8 @@ import { createSurface, type Surface } from "../src/shell/surface.ts";
 import type { ClarificationQuestion } from "../../../src/clarification.ts";
 import { shellTheme } from "../../../src/theme.ts";
 import { readSessionFile } from "../src/session-file.ts";
+import { ModelViewer } from "../src/shell/model-viewer.ts";
+import { loadModelView } from "../../../src/model-view-process.ts";
 import type { ScriptStep } from "./engine.ts";
 import { accepts, scriptedReply } from "./scripted.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
@@ -32,7 +34,7 @@ const enter = "\r";
 
 function shellOn(script: readonly ScriptStep[], mode: TuiMode = "fullscreen", size: [number, number] = [80, 24],
   extra: { tokensPerSecond?: number; copy?: (text: string) => Promise<boolean>; commands?: readonly SlashCommand[]; surface?: Surface;
-    cwd?: string; command?: (text: string) => Promise<boolean>; answersQueriesAfterMs?: number } = {}) {
+    cwd?: string; command?: (text: string) => Promise<boolean>; answersQueriesAfterMs?: number; agents?: () => void } = {}) {
   const faux = fauxProvider({ tokensPerSecond: extra.tokensPerSecond ?? 400 });
   faux.setResponses(script.map(scriptedReply));
   const models = createModels();
@@ -698,4 +700,272 @@ describe("the shell", () => {
     expect(submitted).toEqual([[{ selected: [3] }, { selected: [3] }, { selected: [3] }]]);
     release();
   });
+});
+
+/** A real TLC capture of `fixtures/model-viewer/Lights.tla`: complete with `-continue`, or partial where TLC stopped at the first violation. */
+const lights = (kind: "complete" | "partial"): string => join(import.meta.dir, "fixtures", "model-viewer", `lights-${kind}.manifest.json`);
+const esc = "\x1b";
+
+/** Opens the graph viewer over `shell` as `/graph` does, through the real disposable worker; `loads` collects each load's signal. */
+function viewerOn(shell: Shell, terminal: VirtualTerminal, manifest = lights("complete"), loads: AbortSignal[] = []): void {
+  let hide = (): void => undefined;
+  const viewer = new ModelViewer({ theme: shellTheme("dark", "truecolor"), subject: "Lights.tla", rows: () => terminal.rows,
+    load: (request, signal) => { loads.push(signal); return loadModelView(manifest, request, signal); },
+    close: () => { hide(); }, redraw: () => { shell.redraw(); } });
+  hide = shell.overlay(viewer);
+}
+
+describe("the model graph viewer (#592)", () => {
+  test("each key acts on a small real TLC graph, read through its worker", async () => {
+    const { terminal, shell } = shellOn([], "fullscreen", [120, 40]);
+    viewerOn(shell, terminal);
+    let screen = await terminal.until("grouped by door > lamp");
+    expect(screen).toContain("Model graph · Lights.tla");
+    expect(screen).toContain("Complete exploration; exact counts · reached 8 · edges 16 · reported violating 2");
+    expect(screen).toContain("Grouped transitions are not an execution");
+    expect(screen).toContain("! BREAK 2");
+    // The first reported violation is selected, with its full variables.
+    expect(screen).toContain("State -7489905741496962076");
+    expect(screen).toContain("! BREAK DarkWhenLocked");
+    for (const variable of ['door = "locked"', 'lamp = "on"', "n = 0"]) expect(screen).toContain(variable);
+
+    terminal.type("+"); await terminal.until("detail 2/3");
+    expect(await terminal.until("Unlock→")).toContain("Lock→");
+    terminal.type("+"); await terminal.until("detail 3/3");
+    expect(await terminal.until("n ∈ {0, 1}")).toContain("4. ");
+    terminal.type("+"); terminal.type("-"); await terminal.until("detail 2/3");
+    terminal.type("-"); terminal.type("-"); await terminal.until("detail 1/3");
+
+    terminal.type("n"); screen = await terminal.until("State -752285075239298876");
+    expect(screen).toContain("! BREAK 2/2");
+    terminal.type("n"); await terminal.until("! BREAK 1/2");
+    terminal.type("p"); await terminal.until("State -752285075239298876");
+
+    terminal.type("t"); screen = await terminal.until("TLC concrete trace · 3 steps");
+    expect(screen).toContain("only execution shown");
+    expect(screen).not.toContain("grouped by");
+    expect(screen).toContain("<Lock");
+    // The trace's last state is the violating one TLC reported.
+    expect(screen).toContain("State -7489905741496962076");
+    terminal.type("t"); await terminal.until("grouped by door > lamp");
+
+    terminal.type("\t"); await terminal.until("State 3588016040887795817");
+
+    terminal.type("g"); await terminal.until("Group by");
+    terminal.type("zzz"); terminal.type(enter);
+    await terminal.until("Choose up to two distinct existing variables");
+    terminal.type(esc); await terminal.untilGone("Group by");
+    terminal.type("g"); await terminal.until("Group by");
+    terminal.type("n"); terminal.type(enter);
+    screen = await terminal.until("grouped by n ·");
+    expect(screen).toContain("n = 0");
+    expect(screen).toContain("4 members ! BREAK 1");
+
+    terminal.type(enter); screen = await terminal.until("within n = 0");
+    expect(screen).toContain("grouped by each state");
+    expect(screen).toContain("reached 4 · edges inside 6 · crossing 4");
+    terminal.type(esc); await terminal.until("grouped by n · all reached states");
+
+    terminal.type("/"); await terminal.until("Search reached states");
+    terminal.type('lamp = "on"'); terminal.type(enter);
+    await terminal.until("Match 1/4");
+    terminal.type(enter); await terminal.until("Match 2/4");
+    terminal.type(esc); await terminal.untilGone("Search reached states");
+    terminal.type(esc); await terminal.untilGone("Model graph");
+  }, 30_000);
+
+  test("keys, a drag and the wheel pan the graph, no further than it goes", async () => {
+    const { terminal, shell } = shellOn([], "fullscreen", [100, 14]);
+    viewerOn(shell, terminal);
+    await terminal.until("grouped by door > lamp");
+    // The initial state's group, at the drawing's top left.
+    terminal.type("+"); terminal.type("+"); terminal.type("\t"); await terminal.until("pan 0,0");
+    terminal.type("\x1b[C"); await terminal.until("pan 8,0");
+    terminal.type("\x1b[B"); await terminal.until("pan 8,3");
+    terminal.type("\x1b[D"); terminal.type("\x1b[A"); await terminal.until("pan 0,0");
+    terminal.type("\x1b[<0;30;10M"); terminal.type("\x1b[<32;22;8M"); terminal.type("\x1b[<0;22;8m");
+    await terminal.until("pan 8,2");
+    // The wheel pans too, no further than the drawing goes.
+    terminal.type("\x1b[<65;30;10M"); await terminal.until("pan 8,4");
+  });
+
+  test("a manifest's names reach the screen without their control sequences, and a full-width value keeps every character", async () => {
+    const { terminal, shell } = shellOn([], "fullscreen", [120, 40]);
+    const wide = Array.from({ length: 60 }, (_, k) => String.fromCodePoint(0x4e00 + k)).join("");
+    let hide = (): void => undefined;
+    // The real view, as a forged manifest would make it: a title-setting sequence in an invariant's name, a long full-width value.
+    hide = shell.overlay(new ModelViewer({ theme: shellTheme("dark", "truecolor"), subject: "Lights.tla", rows: () => terminal.rows,
+      load: async (request, signal) => {
+        const view = await loadModelView(lights("complete"), request, signal);
+        return { ...view, states: view.states.map((state) => state.breaks.length === 0 ? state
+          : { ...state, breaks: ["Dark\x1b]0;pwned\x07When"], valuation: `${state.valuation}\n/\\ s = "${wide}"` }) };
+      },
+      close: () => { hide(); }, redraw: () => { shell.redraw(); } }));
+    let screen = await terminal.until("grouped by door > lamp");
+    expect(screen).toContain("! BREAK Dark");
+    expect(terminal.written).not.toContain("\x1b]0;pwned");
+    for (const char of wide) expect(screen).toContain(char);
+    terminal.type("t");
+    screen = await terminal.until("TLC concrete trace · 3 steps");
+    expect(screen).toContain("! BREAK Dark");
+    expect(terminal.written).not.toContain("\x1b]0;pwned");
+    terminal.type(esc); terminal.type(esc);
+    await terminal.untilGone("Model graph");
+  });
+
+  test("partial counts read as lower bounds", async () => {
+    const { terminal, shell } = shellOn([], "fullscreen", [120, 40]);
+    viewerOn(shell, terminal, lights("partial"));
+    const screen = await terminal.until("grouped by door > lamp");
+    expect(screen).toContain("Partial exploration; counts are lower bounds · reached >=4 · edges >=4 · reported violating >=1");
+    expect(screen).toContain("! BREAK >=1");
+  });
+
+  test("Esc closes the viewer's own prompt, then the viewer, before a dialog under it, and a dialog opened over it waits", async () => {
+    const { terminal, shell } = shellOn([], "fullscreen", [120, 40]);
+    const picked = shell.pick("Choose a model", [{ value: "a", label: "first" }]);
+    await terminal.until("first");
+    viewerOn(shell, terminal);
+    await terminal.until("grouped by door > lamp");
+    const asked = shell.ask("Name the branch");
+    terminal.type("/"); await terminal.until("Search reached states");
+    terminal.type("x"); terminal.type(esc);
+    expect(await terminal.untilGone("Search reached states")).toContain("Model graph");
+    terminal.type(esc); await terminal.untilGone("Model graph");
+    terminal.type("abc"); terminal.type(enter);
+    expect(await asked).toBe("abc");
+    terminal.type(esc);
+    expect(await picked).toBeUndefined();
+  });
+
+  test("the shell keeps its reserved keys: Esc never stops the run under the viewer, Ctrl+T waits, Ctrl+C is the shell's", async () => {
+    let dashboards = 0;
+    const { terminal, shell, session } = shellOn(["a slow answer ".repeat(40)], "fullscreen", [120, 40],
+      { tokensPerSecond: 60, agents: () => { dashboards++; } });
+    terminal.type("go"); terminal.type(enter);
+    await terminal.until("Working");
+    viewerOn(shell, terminal);
+    await terminal.until("grouped by door > lamp");
+    terminal.type("\x1b[116;5u");
+    terminal.type(esc); await terminal.untilGone("Model graph");
+    expect(dashboards).toBe(0);
+    // With the viewer closed, the same key is the shell's again.
+    terminal.type("\x1b[116;5u");
+    expect(dashboards).toBe(1);
+    await settled(session);
+    expect(shown(await terminal.screen())).not.toContain("The run ended aborted");
+    viewerOn(shell, terminal);
+    await terminal.until("grouped by door > lamp");
+    terminal.type("\x1b[99;5u"); terminal.type("\x1b[99;5u");
+    await shell.stopped;
+  }, 30_000);
+
+  test("opens and closes again and again, a close stopping the worker still loading and giving the editor back", async () => {
+    const { terminal, shell } = shellOn([], "fullscreen", [120, 40]);
+    terminal.type("draft");
+    const before = await terminal.until("draft");
+    for (let round = 0; round < 3; round++) {
+      const loads: AbortSignal[] = [];
+      viewerOn(shell, terminal, lights("complete"), loads);
+      terminal.type(esc);
+      expect(loads.map((signal) => signal.aborted)).toEqual([true]);
+      expect(await terminal.untilGone("Model graph")).toEqual(before);
+      viewerOn(shell, terminal);
+      await terminal.until("grouped by door > lamp");
+      terminal.type(esc);
+      expect(await terminal.untilGone("Model graph")).toEqual(before);
+    }
+    terminal.type(" kept");
+    await terminal.until("draft kept");
+  }, 30_000);
+
+  test("Esc returns to the same transcript position, with the draft and the editor's focus", async () => {
+    const long = Array.from({ length: 60 }, (_, k) => `answer line ${k}`).join("\n\n");
+    const { terminal, shell, session } = shellOn([long], "fullscreen", [120, 40]);
+    terminal.type("go"); terminal.type(enter);
+    await settled(session);
+    terminal.type("\x1b[5~"); terminal.type("\x1b[5~");
+    terminal.type("keep me");
+    const before = await terminal.until("keep me");
+    expect(before).not.toContain("answer line 59");
+    viewerOn(shell, terminal);
+    await terminal.until("grouped by door > lamp");
+    terminal.type("\x1b[5~"); terminal.type("\x1b[6~"); terminal.type("\x1b[6~"); terminal.type("\x1b[<65;30;20M"); terminal.type("\x1b[<65;30;20M");
+    terminal.type(esc);
+    expect(await terminal.untilGone("Model graph")).toEqual(before);
+    terminal.type("!");
+    await terminal.until("keep me!");
+  }, 30_000);
+
+  test("a pending clarification stays underneath, untouched by the viewer's keys, and gets the keyboard back", async () => {
+    const { terminal, shell, session } = shellOn([], "fullscreen", [120, 40]);
+    const submitted: unknown[] = [];
+    const release = shell.askUser(session, choices, (answers) => { submitted.push(answers); return undefined; }, () => undefined);
+    await terminal.until("Submit answers");
+    viewerOn(shell, terminal);
+    await terminal.until("grouped by door > lamp");
+    terminal.type("2");
+    terminal.type(esc);
+    expect(await terminal.untilGone("Model graph")).toContain("[ ] complete");
+    for (const key of ["2", "\t", "\t", enter]) terminal.type(key);
+    expect(submitted).toEqual([[{ selected: [1] }]]);
+    release();
+  });
+
+  test("a session switch while it is open keeps it open; Esc lands on the shown session, its question and each draft", async () => {
+    const first = shellOn([], "fullscreen", [120, 40]);
+    const second = shellOn([]);
+    first.terminal.type("alpha draft");
+    await first.terminal.until("alpha draft");
+    const submitted: unknown[] = [];
+    const release = first.shell.askUser(second.session, choices, (answers) => { submitted.push(answers); return undefined; }, () => undefined);
+    viewerOn(first.shell, first.terminal);
+    await first.terminal.until("grouped by door > lamp");
+    first.shell.show(second.session);
+    first.terminal.type("+");
+    expect(await first.terminal.until("detail 2/3")).not.toContain("Submit answers");
+    first.terminal.type(esc);
+    await first.terminal.until("Submit answers");
+    for (const key of ["2", "\t", "\t", enter]) first.terminal.type(key);
+    expect(submitted).toEqual([[{ selected: [1] }]]);
+    release();
+    first.shell.show(first.session);
+    await first.terminal.until("alpha draft");
+  }, 30_000);
+});
+
+test("shell shutdown cancels an open model viewer's running worker", async () => {
+  const { shell, terminal } = shellOn([]);
+  let signal: AbortSignal | undefined;
+  let worker: ReturnType<typeof loadModelView> | undefined;
+  const viewer = new ModelViewer({ theme: shellTheme("dark", "truecolor"), subject: "Lights", rows: () => terminal.rows,
+    load: (request, active) => {
+      signal = active;
+      worker = loadModelView(lights("complete"), request, active);
+      return worker;
+    }, close: () => undefined, redraw: () => shell.redraw() });
+  shell.overlay(viewer);
+  shell.stop();
+  expect(signal?.aborted).toBe(true);
+  await expect(worker).rejects.toThrow();
+});
+
+test("late and replaced model overlays cannot escape shell shutdown", async () => {
+  const { shell, terminal } = shellOn([]);
+  const signals: AbortSignal[] = [];
+  const workers: ReturnType<typeof loadModelView>[] = [];
+  const make = () => new ModelViewer({ theme: shellTheme("dark", "truecolor"), subject: "Lights", rows: () => terminal.rows,
+    load: (request, signal) => {
+      signals.push(signal);
+      const worker = loadModelView(lights("complete"), request, signal);
+      workers.push(worker);
+      return worker;
+    }, close: () => undefined, redraw: () => shell.redraw() });
+  shell.overlay(make());
+  shell.overlay(make());
+  expect(signals[0]?.aborted).toBe(true);
+  shell.stop();
+  shell.overlay(make());
+  expect(signals.map(signal => signal.aborted)).toEqual([true, true, true]);
+  await Promise.all(workers.map(worker => expect(worker).rejects.toThrow()));
 });

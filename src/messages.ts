@@ -1,11 +1,13 @@
 import type { ExtensionAPI, MessageRenderer, Theme, ThemeColor } from "./contract.js";
 import { host } from "./host.js";
 import { Box, type Component, sliceByColumn, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { basename } from "node:path";
 import { terminalText } from "./terminal-text.js";
+import type { GraphCapture } from "./model-graph.js";
 import type { SentBack } from "./gate.js";
 import type { LedgerRow } from "./operations.js";
 import { ACCEPTANCE, commandFinding, contractFinding, DETAILS, type Finding, isReceipt, methodWidth, modelFinding, OPINIONS, proofFinding,
-  type Receipt, receiptChildLines, receiptClarificationLines, receiptRefusalLines, receiptDetailLines, receiptSummary, type SummaryGroup } from "./receipt.js";
+  type Receipt, type ReceiptGraph, type ReceiptGraphMessage, receiptChildLines, receiptClarificationLines, receiptRefusalLines, receiptDetailLines, receiptSummary, type SummaryGroup } from "./receipt.js";
 
 /** How the shell asks a message to be drawn: expanded or not, and how far in. */
 type RenderOptions = Parameters<MessageRenderer>[1];
@@ -82,6 +84,32 @@ function color(finding: Finding): ThemeColor {
   return finding.standing === "gap" ? "muted" : "success";
 }
 
+/** Compact adjacency notation: all concrete edges when it fits; never a nested viewport. */
+export function graphPreviewRows(capture: GraphCapture | undefined, width: number): string[] {
+  if (capture === undefined) return [cut("Graph unavailable: no capture", width)];
+  if (capture.status !== "captured") return [cut(terminalText(`Graph ${capture.status}: ${capture.reason}`), width)];
+  if (capture.preview === undefined) return [cut("Graph preview unavailable; open captured files beside the session", width)];
+  const preview = capture.preview;
+  const diagram: string[] = [];
+  let row = "| ";
+  for (const [index, entry] of preview.entries.entries()) {
+    const token = preview.kind === "trace" && index > 0 ? `-> ${entry}` : entry;
+    const gap = row === "| " ? "" : preview.kind === "trace" ? " " : "  ";
+    if (visibleWidth(row + gap + token) > width && row !== "| ") { diagram.push(row); row = "| "; }
+    row += `${row === "| " ? "" : gap}${token}`;
+  }
+  if (row !== "| ") diagram.push(row.trimEnd());
+  const stem = terminalText(basename(capture.manifest).replace(/\.manifest\.json$/u, ""));
+  const bound = preview.partial ? ">=" : "";
+  return [...preview.partial ? hang("Partial exploration; counts are lower bounds", width, 0) : [],
+    ...hang(`${bound}${preview.reached} reached · ${bound}${preview.violating} reported violating (not a safety verdict)`, width, 0),
+    ...hang(`${preview.kind === "trace" ? "Counterexample path" : "Reached graph"} (states in .txt order; ! = reported violation)`, width, 0),
+    ...diagram.length <= 6 && !preview.omitted && diagram.every((line) => visibleWidth(line) <= width) ? diagram
+      : preview.kind === "trace" ? [...diagram.slice(0, 5).map((line) => cut(line, width)), ...hang("Path continues; open graph files", width, 0)]
+        : hang("Diagram does not fit; open graph files", width, 0),
+    ...hang(`Open graph: /graph ${stem}`, width, 0), ...hang(`Files beside the session: ${stem}.dot, .mmd, .txt`, width, 0)];
+}
+
 /** The fewest columns the text beside the labels keeps; with fewer, expanded rows wrap under the glyph instead. */
 const TEXT_COLUMNS = 30;
 
@@ -131,7 +159,7 @@ function groupRows(theme: Theme, groups: readonly SummaryGroup[], width: number)
  * and never counted, then the request's context and the details. Ctrl+O
  * expands the context and the details, where every path is.
  */
-function receiptCard(theme: Theme, receipt: Receipt, options: RenderOptions): Component {
+function receiptCard(theme: Theme, receipt: Receipt, options: RenderOptions, graphs: readonly ReceiptGraph[] = []): Component {
   const summary = receiptSummary(receipt);
   const method = methodWidth(summary.methods);
   const opinions = options.expanded ? summary.opinions : summary.opinions.filter(({ quiet }) => quiet !== true);
@@ -144,6 +172,8 @@ function receiptCard(theme: Theme, receipt: Receipt, options: RenderOptions): Co
       ...wrapUnder(theme.fg(summary.tone, bold(summary.counts)), width, 0), theme.fg("muted", ACCEPTANCE), "",
       ...summary.methods.flatMap(({ glyph, method: name, text }) =>
         wrapUnder(`${tinted(theme, glyph)} ${theme.fg("text", name.padEnd(method))}${theme.fg("muted", terminalText(text))}`, width, method + 2)),
+      ...graphs.flatMap(({ subject, capture }) => ["", ...hang(terminalText(subject), width, 0),
+        ...graphPreviewRows(capture, width).map((line) => theme.fg("muted", line))]),
       ...found.length === 0 ? [] : ["", ...found],
       ...opinions.length === 0 ? [] : ["", ...wrapUnder(theme.fg("dim", bold(OPINIONS)), width, 0), ...groupRows(theme, opinions, width)],
       "",
@@ -223,6 +253,11 @@ function text(content: string | readonly { type: string; text?: string }[]): str
 export function registerMessages(pi: ExtensionAPI): void {
   pi.registerMessageRenderer("tesota-receipt", (message, options, theme) =>
     isReceipt(message.details) ? receiptCard(theme, message.details, options) : undefined);
+  pi.registerMessageRenderer("tesota-receipt-graphs", (message, options, theme) => {
+    const details = message.details as ReceiptGraphMessage | undefined;
+    return details !== undefined && isReceipt(details.receipt) && Array.isArray(details.graphs)
+      ? receiptCard(theme, details.receipt, options, details.graphs) : undefined;
+  });
   pi.registerMessageRenderer("tesota-ledger", (message, options, theme) =>
     isLedger(message.details) ? ledgerCard(theme, message.details, options) : undefined);
   pi.registerMessageRenderer("tesota-gate", (message, options, theme) =>

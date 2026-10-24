@@ -106,8 +106,12 @@ export const modelTool: ToolDefinition<typeof parameters, ModelCheck | undefined
     if (modelHeader(source) === undefined) {
       return text(`${path} has no tesota-model header, so it is no model Tesota checks. Start it with:\n\n${HEADER_FORMAT}`);
     }
-    const check = await checkModel(ctx.cwd, path, [], signal ?? new AbortController().signal, undefined, undefined, ctx.env);
-    return { content: [{ type: "text", text: modelToolReport(check) }], details: check,
+    const check = await checkModel(ctx.cwd, path, [], signal ?? new AbortController().signal, undefined, undefined, ctx.env,
+      ctx.sessionFile === undefined ? undefined : { sessionFile: ctx.sessionFile });
+    const artifacts = ctx.sessionFile === undefined ? "" : check.capture?.manifest === undefined
+      ? `\n\nGraph capture: ${check.capture?.status ?? "unavailable"}. ${check.capture?.status === "captured" ? "" : check.capture?.reason ?? ""}`
+      : `\n\nVerification artifacts beside the session file: ${check.capture.manifest}`;
+    return { content: [{ type: "text", text: `${modelToolReport(check)}${artifacts}` }], details: check,
       ...check.evidence.outcome === "passed" ? {} : { isError: true } };
   },
   renderCall,

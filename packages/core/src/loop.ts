@@ -50,6 +50,8 @@ export interface LoopOptions {
   readonly writer: SessionWriter;
   /** The durable output folder beside the session's file, created on first use. */
   readonly outputFolder: string;
+  /** The durable session file whose directory owns verification artifacts. */
+  readonly sessionFile?: string;
   /** What a resumed session already holds; a new session starts empty. */
   readonly resumed?: LoopState;
   /** The base of a request; the gate's units (`captureBase`) when not given. */
@@ -664,6 +666,7 @@ export function createLoop(options: LoopOptions): LoopSession {
     tools: { register: (tool) => { tools.register(tool, (signal) => host.context(signal)); }, active: tools.active,
       setActive: tools.setActive },
     branch: options.branch,
+    ...options.sessionFile === undefined ? {} : { sessionFile: options.sessionFile },
     contextUsage: usage,
     ...options.surface === undefined ? {} : { surface: options.surface },
   }, options.extensions ?? [], options.verifier);

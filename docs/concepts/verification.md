@@ -541,8 +541,9 @@ when the commands passed, and "not verified" otherwise.
 
 ## The receipt
 
-When nothing goes back, the run settles with a `tesota-receipt` session
-entry. It records the base, when the request started and settled,
+When nothing goes back, the run settles with a receipt session entry
+(`tesota-receipt`, or `tesota-receipt-graphs` when it carries graph preview
+metadata alongside the receipt). It records the base, when the request started and settled,
 Tesota's version and the model; each proof with its verdict and evidence;
 each measured contract; ClaimCheck; the open cases; each command; each
 exercise finding; the weakened evidence; what nothing verified; and the Git

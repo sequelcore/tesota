@@ -227,6 +227,8 @@ export interface ExtensionContext {
   readonly model: Model<Api> | undefined;
   readonly modelRegistry: ModelRegistry;
   readonly sessionManager: { getBranch(): readonly BranchEntry[] };
+  /** The durable session file; verification artifacts are written beside it. */
+  readonly sessionFile?: string;
   readonly signal: AbortSignal | undefined;
   /** What every process the session starts adds to Tesota's environment, such as a writing subagent's branch guard (#619). */
   readonly env?: Readonly<Record<string, string>>;

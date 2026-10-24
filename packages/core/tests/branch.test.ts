@@ -1,9 +1,22 @@
 import { fauxAssistantMessage, type ToolResultMessage } from "@earendil-works/pi-ai";
 import { expect, test } from "bun:test";
-import { entryReceipt } from "../../../src/receipt.ts";
+import { entryReceipt, receiptGraphEntry, receiptStanding } from "../../../src/receipt.ts";
+import { emptyReceipt } from "../../../tests/receipts.ts";
 import { branchOf } from "../src/branch.ts";
 import { repairText } from "../src/session.ts";
 import type { SessionEntry } from "../src/session-file.ts";
+
+test("graph-bearing transcript messages restore the same receipt standing without exporting metadata", () => {
+  const message = receiptGraphEntry("tui", emptyReceipt, [{ subject: "Counter.tla", capture: { status: "limited", reason: "limit" } }]);
+  const entries = JSON.parse(JSON.stringify([{ ...message, run: 1 }])) as SessionEntry[];
+  const restored = branchOf(entries).at(-1);
+  expect(restored).toBeDefined();
+  if (restored === undefined) return;
+  const receipt = entryReceipt(restored);
+  expect(receipt).toEqual(emptyReceipt);
+  expect(receiptStanding(receipt as typeof emptyReceipt)).toBe(receiptStanding(emptyReceipt));
+  expect(receipt).not.toHaveProperty("graphs");
+});
 
 /** The session's entries as Tesota reads them on Pi's branch (#441). */
 test("a fresh session has no branch entries", () => {

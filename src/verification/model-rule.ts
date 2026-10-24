@@ -37,6 +37,13 @@ export function tlcRun(cancelled: boolean, timedOut: boolean, started: boolean, 
   return "not_started";
 }
 
+/** TLC -continue can exit zero after reporting violations; its reports override a nominal pass. */
+//@ ensures run === "passed" && violated ==> \result === "violated"
+//@ ensures !(run === "passed" && violated) ==> \result === run
+export function reportedTlcRun(run: ModelRun, violated: boolean): ModelRun {
+  return run === "passed" && violated ? "violated" : run;
+}
+
 /**
  * A run as evidence states its outcome: a violation and a model TLC cannot
  * read both fail, so either goes back to the agent (`gateVerdict`); the rest

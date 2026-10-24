@@ -5,6 +5,7 @@ import { inFolder } from "./projects.js";
 import type { UncoveredLines } from "./proof-coverage.js";
 import type { ClaimCheckRun, ContractStrength } from "./proof-guarantees.js";
 import type { Counterexample, ModelCheck, ModelLink } from "./model-check.js";
+import type { GraphCapture } from "./model-graph.js";
 import type { ChangeLines, LineCount } from "./change-lines.js";
 import type { TestEdit, WeakenedTest } from "./test-edits.js";
 import type { CommandRun, TestExercise } from "./test-rung.js";
@@ -463,6 +464,9 @@ export interface ReceiptEntry { readonly type: string; readonly customType?: str
  * a message's details, or a custom entry's data from print mode (#427).
  */
 export function entryReceipt(entry: ReceiptEntry): unknown {
+  if (entry.customType === "tesota-receipt-graphs" && entry.type === "custom_message" && typeof entry.details === "object" && entry.details !== null) {
+    return Reflect.get(entry.details, "receipt");
+  }
   if (entry.customType !== "tesota-receipt") return undefined;
   return entry.type === "custom_message" ? entry.details : entry.type === "custom" ? entry.data : undefined;
 }
@@ -480,6 +484,26 @@ export function receiptEntry(mode: string | undefined, receipt: Receipt):
   { type: "custom_message"; customType: "tesota-receipt"; content: string; display: true; details: Receipt } {
   return mode === "print" ? { type: "custom", customType: "tesota-receipt", data: receipt }
     : { type: "custom_message", customType: "tesota-receipt", content: renderReceiptMessage(receipt), display: true, details: receipt };
+}
+
+/** Transcript metadata, kept outside receipt v2 and its exported evidence. */
+export interface ReceiptGraph { readonly subject: string; readonly capture?: GraphCapture; }
+export interface ReceiptGraphMessage { readonly receipt: Receipt; readonly graphs: readonly ReceiptGraph[]; }
+
+/** The graphs a session's receipts carry, the newest receipt's first: what `/graph` opens. */
+export function entryGraphs(entries: readonly ReceiptEntry[]): ReceiptGraph[] {
+  return [...entries].reverse().flatMap((entry) => {
+    const graphs = entry.customType === "tesota-receipt-graphs" && entry.type === "custom_message" && typeof entry.details === "object" && entry.details !== null
+      ? Reflect.get(entry.details, "graphs") : undefined;
+    return Array.isArray(graphs) ? graphs as ReceiptGraph[] : [];
+  });
+}
+
+/** A graph-bearing transcript message; print mode still records only receipt v2. */
+export function receiptGraphEntry(mode: string | undefined, receipt: Receipt, graphs: readonly ReceiptGraph[]):
+  ReturnType<typeof receiptEntry> | { type: "custom_message"; customType: "tesota-receipt-graphs"; content: string; display: true; details: ReceiptGraphMessage } {
+  return mode === "print" || graphs.length === 0 ? receiptEntry(mode, receipt) : { type: "custom_message", customType: "tesota-receipt-graphs",
+    content: renderReceiptMessage(receipt), display: true, details: { receipt, graphs } };
 }
 
 /** Which check a finding comes from. */

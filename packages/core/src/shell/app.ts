@@ -4,7 +4,8 @@ import { readdirSync, readFileSync, rmSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { tesotaHome } from "../../../../src/home.ts";
 import { provideHost } from "../../../../src/host.ts";
-import { isReceipt, type Receipt, receiptStanding } from "../../../../src/receipt.ts";
+import { entryGraphs, entryReceipt, isReceipt, type Receipt, receiptStanding } from "../../../../src/receipt.ts";
+import { terminalText } from "../../../../src/terminal-text.ts";
 import tesota from "../../../../src/tesota.ts";
 import { type AccountHands, accountRows, addAccount, type ClaudeCode, claudeOf, removeAccount, signInAgain } from "../accounts.ts";
 import { fileCredentialStore } from "../credentials.ts";
@@ -223,8 +224,8 @@ export async function runApp(options: AppOptions): Promise<void> {
     const ended = made.session.outcome();
     made.state = ended === undefined ? "idle" : "ended";
     if (ended === undefined) delete made.outcome; else made.outcome = ended;
-    const last = made.session.history().findLast((message) => message.role === "custom" && message.customType === "tesota-receipt");
-    const held = last?.role === "custom" ? last.details : undefined;
+    const last = made.session.history().findLast((message) => message.role === "custom" && entryReceipt({ ...message, type: "custom_message" }) !== undefined);
+    const held = last?.role === "custom" ? entryReceipt({ ...last, type: "custom_message" }) : undefined;
     if (isReceipt(held)) made.verification = receiptStanding(held as Receipt); else delete made.verification;
     made.unsubscribe = made.session.subscribe((event) => {
       if (event.type === "state") made.state = made.waiting.length > 0 || made.pendingQuestions > 0 ? "waiting" : event.state === "settling" ? "verifying" : "working";
@@ -238,7 +239,7 @@ export async function runApp(options: AppOptions): Promise<void> {
       } else if (event.type === "job") follows(made, event.details);
       else if (event.type === "message") {
         made.request ??= made.session.ledger()[0]?.text;
-        const receipt = event.message.role === "custom" && event.message.customType === "tesota-receipt" ? event.message.details : undefined;
+        const receipt = event.message.role === "custom" ? entryReceipt({ ...event.message, type: "custom_message" }) : undefined;
         if (isReceipt(receipt)) made.verification = receiptStanding(receipt as Receipt);
       }
     });
@@ -311,6 +312,44 @@ export async function runApp(options: AppOptions): Promise<void> {
     ...settings.thinkingLevel === undefined || settings.thinkingLevel === "off" ? [] : [settings.thinkingLevel]].join(" · ");
 
   let shell: Shell;
+  const terminal = options.terminal ?? new ProcessTerminal();
+  const mode = modeFor(settings);
+  /**
+   * `/graph` (#592): a graph the shown session's receipts captured, newest first or by its name, read through step 3a's
+   * disposable worker. It opens full-screen over the shell; with `--plain`, or in a terminal that cannot hold a full
+   * screen, its text rendering is appended to the conversation instead.
+   */
+  const graphCommand = async (args: string): Promise<void> => {
+    const words = args.split(/\s+/u).filter((word) => word !== "");
+    const plain = words.includes("--plain");
+    const named = words.find((word) => word !== "--plain");
+    const graphs = entryGraphs(attached.session.history().flatMap((message) => message.role === "custom" ? [{ ...message, type: "custom_message" }] : []));
+    const stem = (manifest: string): string => basename(manifest).replace(/\.manifest\.json$/u, "");
+    const graph = graphs.flatMap(({ subject, capture }) => capture?.status === "captured" ? [{ subject, manifest: capture.manifest }] : [])
+      .find(({ manifest }) => named === undefined || stem(manifest) === named);
+    if (graph === undefined) {
+      const newest = graphs[0];
+      shell.note(named !== undefined ? `No captured graph ${terminalText(named)} in this session.`
+        : newest === undefined ? "No captured graph in this session: a model check with TLC captures one."
+          : newest.capture === undefined || newest.capture.status === "captured" ? "Graph unavailable: no capture" : `Graph ${newest.capture.status}: ${terminalText(newest.capture.reason)}`,
+      "warning");
+      return;
+    }
+    const [{ appendOnlyText, fitsFullScreen, fullScreen, ModelViewer }, { loadModelView }] =
+      await Promise.all([import("./model-viewer.ts"), import("../../../../src/model-view-process.ts")]);
+    if (plain || mode === "inline" || !fitsFullScreen(terminal.columns, terminal.rows)) {
+      try { shell.note(appendOnlyText(await loadModelView(graph.manifest, {}, new AbortController().signal), graph.manifest)); } catch (error) {
+        shell.note(terminalText(error instanceof Error ? error.message : String(error)), "warning");
+        return;
+      }
+      // Said last, beside the prompt, where a short terminal still shows it.
+      if (!plain) shell.note(`The graph is above as text: this terminal cannot hold the full-screen viewer (the fullscreen shell, at least ${fullScreen.columns}×${fullScreen.rows}).`);
+      return;
+    }
+    let hide = (): void => undefined;
+    hide = shell.overlay(new ModelViewer({ theme, subject: graph.subject, rows: () => terminal.rows,
+      load: (request, signal) => loadModelView(graph.manifest, request, signal), close: () => { hide(); }, redraw: () => { shell.redraw(); } }));
+  };
   /** Opens the shown session again, as a change of model or thinking needs, once it has let go of its file. */
   const reopen = async (): Promise<void> => {
     const shown = attached;
@@ -577,6 +616,7 @@ export async function runApp(options: AppOptions): Promise<void> {
       });
     } },
     "/agents": { description: "Open the sessions dashboard", run: () => { agents(); return Promise.resolve(); } },
+    "/graph": { description: "Open a model graph a receipt captured", argumentHint: "[--plain] [name]", run: graphCommand },
     "/settings": { description: "Change terminal mode and thinking", run: async () => {
       const picked = await shell.pick("Settings", [
         { value: "mode", label: `Terminal: ${settings.tuiMode ?? "fullscreen"}`, description: "fullscreen or inline, from the next start" },
@@ -603,7 +643,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     "/quit": { description: "End the shell", run: () => { shell.stop(); return Promise.resolve(); } },
   };
 
-  shell = startShell({ terminal: options.terminal ?? new ProcessTerminal(), mode: modeFor(settings),
+  shell = startShell({ terminal, mode,
     fullRepaint: process.platform === "win32", theme, session: attached.session, status, surface: attached.surface,
     // The shown session's folder and statuses, whichever session that is (#455).
     footerData: footerData(() => attached.session.workspace.cwd, () => attached.surface.statuses, () => providers),

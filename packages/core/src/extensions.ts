@@ -12,6 +12,7 @@ export interface DrawingSurface {
 }
 
 export interface HostOptions {
+  readonly sessionFile?: string;
   readonly cwd: string;
   readonly mode: string;
   readonly models: Models;
@@ -108,6 +109,7 @@ export function createHost(options: HostOptions, extensions: readonly ExtensionF
   const context = (signal: AbortSignal | undefined): ExtensionContext => ({
     cwd: options.cwd, mode: options.mode, model: options.model, modelRegistry, signal, ui: options.surface?.ui ?? headless,
     sessionManager: { getBranch: options.branch },
+    ...options.sessionFile === undefined ? {} : { sessionFile: options.sessionFile },
     getContextUsage: options.contextUsage,
     ...options.env === undefined ? {} : { env: options.env },
   });

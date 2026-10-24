@@ -11,6 +11,7 @@
 | `tesota accounts add claude-code\|openai-codex <name>` | Adds an account in one step: its sign-in, then its record |
 | `tesota accounts login <provider>@<name>` | Signs an account in again |
 | `tesota accounts remove <provider>@<name>` | Removes an account no setting or agent type names |
+| `tesota graph --plain <manifest>` | Prints the captured model graph, its default grouping, full variables and TLC's concrete trace without a terminal UI |
 | `tesota --version` | Prints the version |
 
 | Option | For | |
@@ -18,6 +19,28 @@
 | `--model <provider>/<id>` | `-p` | The model for this run |
 | `--claimcheck-model <provider>/<id>` | the shell, `-p` | The model that restates contracts for the comparison with your request |
 | `--open-cases-model <provider>/<id>`, or `off` | the shell, `-p` | The model that lists the cases your request leaves open |
+
+### Captured model graphs
+
+Use the `.manifest.json` written beside a session by model checking. This
+command reads that capture; it never reruns TLC. A model can declare an
+ordered default grouping of up to two variables in a header comment:
+
+```tla
+(* @view groupBy: host, session *)
+```
+
+Without a valid declaration, grouping uses `pc`, then the variable with the
+fewest distinct reached values between 2 and 16 (name breaks ties). If none
+qualifies, states remain individual. Only reached groups appear. `! BREAK`
+counts members with reported violations, not the number of properties.
+Partial counts are lower bounds; zero reports do not establish safety.
+Grouped transitions are not an execution. Only TLC's concrete trace is.
+
+Parsing and grouping run in a disposable worker. Stopping the command stops
+that worker. Captures over the graph limits or viewer responses over 64 MiB
+are refused; the raw artifacts remain available. These viewer limits do not
+change verification results.
 
 ## Slash commands
 
@@ -31,6 +54,7 @@
 | `/new` | Start another session beside this one |
 | `/resume` | Open an earlier session of this folder |
 | `/agents` | Open the dashboard of sessions |
+| `/graph [--plain] [name]` | Open a [model graph](../guides/receipts.md#model-graph-previews) a receipt captured; `--plain` appends its text |
 | `/compact` | Summarize the older conversation |
 | `/mcp` | MCP servers: state, reconnect, sign in and out; also `/mcp login\|logout\|reconnect <server>` |
 | `/quit` | End the shell |
