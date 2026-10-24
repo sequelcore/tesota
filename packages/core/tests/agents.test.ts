@@ -431,7 +431,9 @@ describe("recovery", () => {
       const resumed = openSession(file, { ...routed({}), verifier: accepts });
       open.push(resumed);
       expect(entries(file).filter((entry) => entry.type === "job_end")).toMatchObject([{ job: job.job, outcome: "unknown" }]);
-      expect(resumed.history().at(-1)).toMatchObject({ role: "custom", customType: "tesota.job" });
+      // A subagent may change files, as the gate decides it (`toolMayChangeFiles`), so the run gets a receipt that verified nothing (#599).
+      expect(resumed.history().slice(-2)).toMatchObject([{ role: "custom", customType: "tesota.job" },
+        { role: "custom", customType: "tesota-receipt", details: { changed: "unreadable", proofs: [], tests: [] } }]);
       expect(entries(job.session).at(-1)).toMatchObject({ type: "run_end", outcome: "interrupted" });
       const once = [readFileSync(file, "utf8"), readFileSync(job.session, "utf8")];
       await resumed.dispose();

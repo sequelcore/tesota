@@ -526,12 +526,18 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     try {
       return await effect().runPromise(settle(ctx, event.reason === undefined ? {} : { unresolvedQuestion: event.reason }), ctx.signal === undefined ? {} : { signal: ctx.signal });
     } catch (error) {
-      if (ctx.signal?.aborted === true) return stopped(ctx, "the operator stopped the run while Tesota verified it");
+      if (ctx.signal?.aborted === true) {
+        return stopped(ctx, `the operator stopped the run while Tesota verified it; ${cutShort(progress.operations.unfinished())}`);
+      }
       progress.reset();
       throw error;
     }
   };
-  /** A run that ended before verification finished: after a tool that may change files, a receipt that verified nothing, and why. */
+  /**
+   * A run that ended before verification finished: after a tool that may
+   * change files, a receipt that verified nothing, why, and an inventory of
+   * what the run left (#599), read and never checked, or why it could not be read.
+   */
   const stopped = async (ctx: ExtensionContext, reason: string): Promise<SettleResult | undefined> => {
     if (!mayHaveChanged) {
       if (progress.status.step === "waiting" || "startedAt" in progress.status) progress.reset();
@@ -539,10 +545,17 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     }
     const begun = await start;
     const workspace = begun?.units.some(({ folder }) => folder !== "") ?? false;
+    const at = startedAt ?? new Date().toISOString();
+    // A stuck Git or a slow drive must not hold the stop: past the limit the inventory is abandoned, and says so.
+    const inventory = await effect().runPromise(effect().map(effect().timeoutOption(
+      effect().promise(async () => stoppedInventory(ctx.cwd, begun, await fingerprints, at)), STOP_INVENTORY_TIME_LIMIT_MS),
+    (read) => read._tag === "Some" ? read.value
+      : { changed: "unreadable" as const, lines: "unreadable" as const, reason: "the inventory ran past its time limit" }));
     const receipt: Receipt = { version: 2,
       repository: begun?.units.some(({ folder, repository }) => repository && begun.bases.has(folder)) ?? false,
-      base: workspace ? null : begun?.bases.get("") ?? null, startedAt: startedAt ?? new Date().toISOString(),
-      settledAt: new Date().toISOString(), engine: host().version, ...sessionModel(ctx), ...noEvidence, stopped: reason,
+      base: workspace ? null : begun?.bases.get("") ?? null, startedAt: at,
+      settledAt: new Date().toISOString(), engine: host().version, ...sessionModel(ctx), ...noEvidence,
+      ...inventory, stopped: reason,
       ...clarifications.length === 0 ? {} : { clarifications }, ...children.length === 0 ? {} : { children },
       ...floorRefusals.length === 0 ? {} : { floorRefusals } };
     progress.publish({ step: "settled", receipt });
@@ -844,14 +857,80 @@ interface ChangedUnit {
   readonly endState?: Receipt["endState"];
 }
 
+/** The paths that differ from H: those present, untracked included, and with them the deleted; nothing when Git cannot tell. */
+async function pathsFromBase(root: string, base: string | null): Promise<{ present: string[]; all: string[] } | undefined> {
+  const present = await changedFiles(root, base);
+  const deleted = base === null ? [] : await gitPaths(root, diffFrom(base, "--name-only", "--diff-filter=D"));
+  return present === undefined || deleted === undefined ? undefined : { present, all: [...new Set([...present, ...deleted])].sort() };
+}
+
 /** The whole diff against H, including deletions, for weakening even where attribution excludes inherited paths. */
 async function changesFromBase(root: string, base: string | null): Promise<{
   paths: string[]; changes: Awaited<ReturnType<typeof fileChanges>>;
 } | undefined> {
-  const paths = await changedFiles(root, base);
-  const deleted = base === null ? [] : await gitPaths(root, diffFrom(base, "--name-only", "--diff-filter=D"));
-  return paths === undefined || deleted === undefined ? undefined
-    : { paths: [...new Set([...paths, ...deleted])].sort(), changes: await fileChanges(root, base, paths) };
+  const paths = await pathsFromBase(root, base);
+  return paths === undefined ? undefined : { paths: paths.all, changes: await fileChanges(root, base, paths.present) };
+}
+
+/** How long a stopped run's inventory may read Git (#599) before the receipt says it ran past its limit. */
+export const STOP_INVENTORY_TIME_LIMIT_MS: number = 30_000;
+
+/** What a stopped run left in one unit, or why it could not be read. */
+type Inventory = Pick<UnitEvidence, "changed" | "lines" | "reason"> & Partial<Pick<UnitEvidence, "inherited" | "unmeasured" | "startState" | "endState">>;
+
+/**
+ * What a stopped run left in the unit at `folder` (#599), read and never
+ * run: each path changed, deleted or untracked as the request's captures
+ * attribute it, with its final blob and the captures' limits; `unreadable`,
+ * with why, when Git cannot tell, never an empty list.
+ */
+async function leftChanged(cwd: string, folder: string, base: string | null, fingerprint: Fingerprint | undefined, startedAt: string,
+  refs: readonly string[] | undefined): Promise<Inventory> {
+  const root = join(cwd, folder);
+  const captured = fingerprint === undefined ? undefined : await fingerprintedUnit(root, base, fingerprint, startedAt, refs);
+  const attribution = captured?.attribution ?? { eligible: true, changed: undefined, inherited: [], unmeasured: [] };
+  const start = captured?.facts.startState;
+  const end = captured?.facts.endState;
+  const facts = { inherited: attribution.inherited, unmeasured: attribution.unmeasured,
+    ...start === undefined ? {} : { startState: start }, ...end === undefined ? {} : { endState: end } };
+  const paths = !attribution.eligible ? [] : attribution.changed ?? (await pathsFromBase(root, base))?.all;
+  const changed = paths === undefined ? "unreadable"
+    : await recordedChanges(root, paths.filter((path) => !attribution.unmeasured.some((item) => item.path === path)));
+  if (changed === "unreadable") {
+    return { ...facts, changed, lines: "unreadable",
+      reason: end?.status === "unknown" ? end.reason : "Git could not read what changed when the run stopped" };
+  }
+  return { ...facts, changed, lines: await checks().changeLines(root, base, changed.map(({ path }) => path)) };
+}
+
+/** What a stopped run left (#599): the one unit's inventory, or each unit of a folder of repositories that changed or could not be read. */
+async function stoppedInventory(cwd: string, begun: Start | undefined, initial: ReadonlyMap<string, Fingerprint> | undefined, at: string):
+  Promise<Inventory | Pick<Receipt, "units" | "snapshot" | "tooLarge">> {
+  const units = begun?.units ?? [];
+  const left = new Map(await Promise.all(units.filter(({ folder }) => begun?.bases.has(folder) === true)
+    .map(async ({ folder }) => [folder, await leftChanged(cwd, folder, begun?.bases.get(folder) ?? null, initial?.get(folder), at,
+      begun?.refs.get(folder))] as const)));
+  // A folder Tesota snapshotted says so, with the files the snapshot left out for their size, which no inventory of it can list.
+  const read = (folder: string, repository: boolean): Inventory & Pick<UnitEvidence, "snapshot" | "tooLarge"> => {
+    const tooLarge = begun?.tooLarge.get(folder) ?? [];
+    return { ...repository || begun?.bases.has(folder) !== true ? {} : { snapshot: true as const },
+      ...tooLarge.length === 0 ? {} : { tooLarge },
+      ...left.get(folder) ?? { changed: "unreadable", lines: "unreadable",
+        reason: begun?.refused.get(folder) ?? "Tesota recorded no base for the request, so it cannot tell what changed" } };
+  };
+  const only = units.length === 1 && units[0]?.folder === "" ? units[0] : undefined;
+  if (!units.some(({ folder }) => folder !== "")) return read("", only?.repository ?? true);
+  return { units: units.flatMap(({ folder, repository }) => {
+    const found = read(folder, repository);
+    return Array.isArray(found.changed) && found.changed.length === 0 && found.tooLarge === undefined ? []
+      : [{ folder, repository, base: begun?.bases.get(folder) ?? null, ...noEvidence, ...found }];
+  }) };
+}
+
+/** What a stop cut short, as the receipt says it: no check runs after a stop, and none runs again. */
+function cutShort({ interrupted, notStarted }: ReturnType<GateOperations["unfinished"]>): string {
+  return [...interrupted.length === 0 ? [] : [`interrupted: ${interrupted.join(", ")}`],
+    ...notStarted.length === 0 ? [] : [`not started: ${notStarted.join(", ")}`], "no later check ran"].join("; ");
 }
 
 /** Each capture's facts and the committed paths since H; an unknown capture keeps verification against H. */

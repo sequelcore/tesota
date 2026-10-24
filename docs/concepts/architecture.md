@@ -43,7 +43,8 @@ A run is one request, from what you asked to its end:
      settle it with, it was sent back 32 times, or a blocking question exhausted
      its batch or repair allowance;
    - `interrupted`: the process ended during the run, as a resumed session
-     finds it.
+     finds it; one that may have changed files gets a receipt that verified
+     nothing and says what changed is unknown.
 
 The decision between those is a proved rule (`settle-rule.ts`): "the model
 stopped" never counts as "the work is done", and neither does a run whose

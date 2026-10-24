@@ -820,11 +820,12 @@ export function createLoop(options: LoopOptions): LoopSession {
     reply: number): Promise<ToolOutput> {
     if (signal.aborted) return stoppedCall;
     const selected = offered.find((tool) => tool.name === call.name);
-    writer.append({ type: "call_intent", run, callId: call.id, access: selected?.access ?? "run" });
-    writer.sync();
-    emit({ type: "call", call });
     const nativeQuestion = selected !== undefined && isNativeAskTool(selected);
     const readOnly = options.permissions?.mode() === "read";
+    writer.append({ type: "call_intent", run, callId: call.id, access: selected?.access ?? "run",
+      tool: { name: call.name, nativeQuestion, readOnly } });
+    writer.sync();
+    emit({ type: "call", call });
     await host.toolStart({ type: "tool_execution_start", toolCallId: call.id, toolName: call.name, args: call.arguments, nativeQuestion,
       readOnly }, signal, left);
     if (signal.aborted) return stoppedCall;

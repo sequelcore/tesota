@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -7,12 +7,13 @@ import { contentHash, type Evidence } from "../src/evidence.js";
 import type { ModelCheck } from "../src/model-check.js";
 import type { Clarification, RequestInput } from "../src/clarification.js";
 import { evidenceParts, evidenceText } from "../src/footer.js";
-import { changedFiles, GateProgress, type GateStatus, type RecordedRequest, registerGate, type SentBack } from "../src/gate.js";
+import { changedFiles, GateProgress, type GateStatus, type RecordedRequest, registerGate, type SentBack,
+  STOP_INVENTORY_TIME_LIMIT_MS } from "../src/gate.js";
 import { headCommit } from "../src/git.js";
 import { attributionResolved } from "../src/request-fingerprint.js";
 import { openCasesSystemPrompt } from "../src/open-cases.js";
 import { receiptMarkdown, subjectOf } from "../src/pull-request-receipt.js";
-import { receiptDecisions, receiptFindings, receiptSummary, renderReceipt, type Receipt } from "../src/receipt.js";
+import { receiptDecisions, receiptFindings, receiptStanding, receiptSummary, renderReceipt, type Receipt } from "../src/receipt.js";
 import { gateVerdict, keepsWorking, toolMayChangeFiles } from "../src/verification/gate-rule.js";
 import type { ProofOutcome } from "../src/verification/proof-outcome-rule.js";
 import { emptyReceipt } from "./receipts.js";
@@ -909,9 +910,11 @@ it("leaves a receipt verifying nothing when a run is stopped after a write start
   expect(settled?.continue).toBeUndefined();
   expect(entry(settled).customType).toBe("tesota-receipt");
   const receipt = entry(settled).details as Receipt;
+  const blob = spawnSync("git", ["hash-object", "src/rule.ts"], { cwd: root, encoding: "utf8" }).stdout.trim();
   expect(receipt).toMatchObject({ version: 2, repository: true, base: await headCommit(root), engine: "0.1.0",
     model: "provider/model", stopped: "the operator stopped the run before Tesota verified it",
-    proofs: [], tests: [], contracts: [], exercises: [], weakened: [], unverified: [], uncovered: [], changed: [] });
+    proofs: [], tests: [], contracts: [], exercises: [], weakened: [], unverified: [], uncovered: [],
+    changed: [{ path: "src/rule.ts", blob }] });
   expect(receipt.claimcheck).toBeUndefined();
   expect(receipt.openCases).toBeUndefined();
   expect(Date.parse(receipt.settledAt)).toBeGreaterThanOrEqual(Date.parse(receipt.startedAt));
@@ -930,6 +933,48 @@ it.each([
   const settled = await run.settle("error", reason);
   expect(settled?.continue).toBeUndefined();
   expect(entry(settled).details).toMatchObject({ stopped, repository: true, base: await headCommit(root), proofs: [], tests: [] });
+});
+
+it("says what changed could not be read when a stopped run's capture fails, never an empty inventory", async () => {
+  const root = project();
+  const run = gate(root);
+  await run.input();
+  await run.tool("write");
+  write(root, { "notes.md": "# Changed\n" });
+  renameSync(join(root, ".git"), join(root, ".git-gone"));
+  const receipt = entry(await run.settle("aborted")).details as Receipt;
+  expect(receipt).toMatchObject({ stopped: "the operator stopped the run before Tesota verified it", changed: "unreadable",
+    reason: expect.stringContaining("Git could not") });
+  expect(receiptStanding(receipt)).toBe("incomplete");
+  expect(renderReceipt(receipt)).toContain("Git could not");
+});
+
+it("settles a stop whose inventory Git never answers, saying the inventory ran past its time limit", async () => {
+  const root = project();
+  const run = gate(root);
+  await run.input();
+  await run.tool("write");
+  write(root, { "notes.md": "# Changed\n" });
+  const module = await import("../src/git.js");
+  const never = (): Promise<never> => new Promise(() => undefined);
+  const gitCalls = vi.spyOn(module, "git").mockImplementation(never);
+  const outputCalls = vi.spyOn(module, "gitOutput").mockImplementation(never);
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  try {
+    let settled: Settled | undefined;
+    let done = false;
+    void run.settle("aborted").then((result) => { settled = result; done = true; });
+    // The clock moves past the limit once the inventory waits on Git; real time moves only for what the gate loads.
+    for (const begun = performance.now(); !done && performance.now() - begun < 20_000;) {
+      await vi.advanceTimersByTimeAsync(STOP_INVENTORY_TIME_LIMIT_MS);
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    expect(gitCalls.mock.calls.length + outputCalls.mock.calls.length).toBeGreaterThan(0);
+    const receipt = entry(settled).details as Receipt;
+    expect(receipt).toMatchObject({ stopped: "the operator stopped the run before Tesota verified it", changed: "unreadable",
+      lines: "unreadable", reason: "the inventory ran past its time limit", proofs: [], tests: [] });
+    expect(receiptStanding(receipt)).toBe("incomplete");
+  } finally { vi.useRealTimers(); gitCalls.mockRestore(); outputCalls.mockRestore(); }
 });
 
 it("leaves no receipt when an aborted run only started a read", async () => {
@@ -1799,7 +1844,9 @@ it("shows a command that prints nothing with its exact command and growing time,
   expect(ops.line(performance.now())).not.toMatch(/%|remaining|estimat/iu);
   expect(ops.operations().filter(({ state }) => state === "planned").map(({ target }) => target)).toEqual(["bun run lint", "bun run test"]);
   controller.abort();
-  expect(entry(await settling).details).toMatchObject({ stopped: "the operator stopped the run while Tesota verified it" });
+  expect(entry(await settling).details).toMatchObject({ stopped: "the operator stopped the run while Tesota verified it; "
+    + "interrupted: project check bun run typecheck; not started: project check bun run lint, project check bun run test; "
+    + "no later check ran", changed: [{ path: "src/a.mjs", blob: expect.any(String) }] });
   expect(shape(run)).toEqual([["command", "bun run typecheck", "ended", "cancelled"], ["command", "bun run lint", "ended", "not_started"],
     ["command", "bun run test", "ended", "not_started"]]);
   expect(ops.operations().slice(1).map(({ startedAt }) => startedAt)).toEqual([undefined, undefined]);

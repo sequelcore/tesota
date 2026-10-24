@@ -168,6 +168,18 @@ export class GateOperations implements WorkingDetail, OperationSink {
 
   operations(): readonly Operation[] { return this.#all; }
 
+  /**
+   * What a stop cut short in the pass running (#599), named as the ledger
+   * names it: work that began and ended with no result of its own, and work
+   * planned that never began.
+   */
+  unfinished(): { readonly interrupted: readonly string[]; readonly notStarted: readonly string[] } {
+    const ops = this.#all.filter((op) => op.generation === this.#generation);
+    const name = (op: Operation): string => `${ran[op.method].toLowerCase()} ${op.unit === "" ? "" : `${op.unit}: `}${op.target}`;
+    return { interrupted: ops.filter((op) => op.state === "running" || op.result === "cancelled" || op.result === "interrupted").map(name),
+      notStarted: ops.filter((op) => op.state === "planned").map(name) };
+  }
+
   attempts(): readonly Attempt[] { return this.#attempts; }
 
   plan(spec: OperationSpec): string {
