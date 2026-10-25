@@ -112,7 +112,7 @@ and the unit's `folder` kept.
 | `base` | string or null | The commit `HEAD` named when the operator's request started, or Tesota's snapshot then. Null before the first commit and when nothing was verified |
 | `startedAt` | timestamp | When the operator's request started |
 | `settledAt` | timestamp | When the run settled |
-| `engine` | string | The version of Tesota the run used |
+| `engine` | string | The Tesota the run used. A released binary: its plain version. A build from source: the version, `+`, the first eight characters of the commit of Tesota's own checkout (never the workspace's), and `.dirty` when that checkout has changes, as `0.1.0-alpha.3+d4175524.dirty`; `+unknown` when Git can't read that commit. Read once, when the first receipt needs it |
 | `model` | string, optional | The session's model when the run settled, as `provider/id` |
 | `proofs` | Proof[] | Each changed file with contracts that was proved |
 | `contracts` | ContractStrength[] | Each contract the request added or changed in a file that proved |
