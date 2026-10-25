@@ -11,6 +11,7 @@ export function runHtml(html: string): { dom: JSDOM; errors: Error[] } {
       window.HTMLElement.prototype.getBoundingClientRect = () => ({ x: 0, y: 0, top: 0, left: 0, right: 1000, bottom: 600, width: 1000, height: 600, toJSON() {} });
       window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) as unknown as MediaQueryList;
       window.performance.mark = () => ({} as PerformanceMark);
+      window.structuredClone = structuredClone;
       // Only the external Canvas API is stubbed, not our model, DOM or Cytoscape.
       window.HTMLCanvasElement.prototype.getContext = (() => new Proxy({
         measureText: (text: string) => ({ width: text.length * 7 }),

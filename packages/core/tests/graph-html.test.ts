@@ -32,8 +32,8 @@ test("/graph --open writes beside the selected capture, prints its path and only
     ].map(v => JSON.stringify(v)).join("\n") + "\n");
     send("/resume"); await terminal.until("HTML graph request"); terminal.type("\r"); await terminal.until("HTML receipt");
     send("/graph --open lights-complete");
-    const path = join(root, "lights-complete.manifest.html");
-    await terminal.until("lights-complete.manifest.html");
+    const path = join(root, "lights-complete.html");
+    await terminal.until("lights-complete.html");
     expect(existsSync(path)).toBe(true);
     // The opener only records the path; it never launches a browser.
     expect(opened).toEqual([path]);

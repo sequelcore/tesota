@@ -51,7 +51,7 @@ it("writes a self-contained, CSP protected file beside the capture with escaped 
   const root = await mkdtemp(join(tmpdir(), "tesota-html-"));
   try {
     const path = writeHtml(await fixture(root));
-    expect(path).toBe(join(root, "capture.manifest.html"));
+    expect(path).toBe(join(root, "capture.html"));
     const html = await readFile(path, "utf8");
     const dom = new JSDOM(html);
     const policy = dom.window.document.querySelector('meta[http-equiv="Content-Security-Policy"]')?.getAttribute("content") ?? "";
@@ -77,23 +77,23 @@ it("writes a self-contained, CSP protected file beside the capture with escaped 
       expect(errors).toEqual([]);
       expect(doc.documentElement.dataset["rendered"]).toBe("true");
       expect(doc.querySelectorAll("style")).toHaveLength(1);
-      expect(node(doc, "#counts").textContent).toContain("reached >=2");
-      expect(node(doc, "#counts").textContent).toContain("reported violating >=1");
+      expect(node(doc, "#counts").textContent).toContain("reached ≥2");
+      expect(node(doc, "#counts").textContent).toContain("reported violating ≥1");
       const first = doc.querySelector<HTMLSelectElement>("#first");
       if (first === null) throw new Error("Missing grouping control");
       first.value = "x"; first.dispatchEvent(new page.window.Event("change"));
       expect(doc.querySelectorAll("#groups > div")).toHaveLength(2);
-      expect(node(doc, "#counts").textContent).toContain("reached >=2");
+      expect(node(doc, "#counts").textContent).toContain("reached ≥2");
       node<HTMLButtonElement>(doc, "#groups button").click();
-      expect(node(doc, "#groups").textContent).toContain("State 1");
-      const member = [...doc.querySelectorAll<HTMLButtonElement>("#groups button")].find(b => b.textContent === "State 1");
+      expect(node(doc, "#groups").textContent).toContain("state 1 of 1");
+      const member = [...doc.querySelectorAll<HTMLButtonElement>("#groups button")].find(b => b.textContent === "state 1 of 1");
       member?.click();
       expect(node(doc, "#details").textContent).toContain(attack.trim());
       expect(doc.querySelector("img")).toBeNull();
       node<HTMLButtonElement>(doc, "#trace-toggle").click();
       expect(doc.querySelector<HTMLElement>("#trace")?.hidden).toBe(false);
       expect(doc.querySelectorAll(".trace-step")).toHaveLength(2);
-      expect(node(doc, "#trace").textContent).toContain("Changed variables:");
+      expect(node(doc, "#trace").textContent).toContain("x 0 → 1");
       const canvas = node<HTMLElement & { _cyreg: { cy: Core } }>(doc, "#graph");
       expect(canvas._cyreg.cy.elements("node.trace").length).toBe(4);
       expect(canvas._cyreg.cy.elements("edge.trace").length).toBe(1);
@@ -140,9 +140,9 @@ it("renders the real 320-state fixture, conserves regrouped counts and expands a
         expect(doc.querySelectorAll("#groups > div")).toHaveLength(expected.groups.length);
         const labels = [...doc.querySelectorAll("#groups > div")].map(row => row.textContent);
         expected.groups.forEach((group, i) => {
-          expect(labels[i]).toContain(`${group.members.length} members`);
-          if (group.violating > 0) expect(labels[i]).toContain(`! BREAK ${group.violating}`);
-          else expect(labels[i]).not.toContain("! BREAK");
+          expect(labels[i]).toContain(`${group.members.length} ${group.members.length === 1 ? "state" : "states"}`);
+          if (group.violating > 0) expect(labels[i]).toContain(`⚠ breaks NoParkedWork · ${group.violating} ${group.violating === 1 ? "state" : "states"}`);
+          else expect(labels[i]).not.toContain("⚠ breaks");
         });
         expect(node(doc, "#counts").textContent).toContain("reached 320");
         expect(node(doc, "#counts").textContent).toContain("reported violating 60");
@@ -152,13 +152,37 @@ it("renders the real 320-state fixture, conserves regrouped counts and expands a
       node<HTMLButtonElement>(doc, "#groups button").click();
       const display = buildModelView(data.graph, data.reports, false, data.header, { projection: base.projection, expanded: [base.groups[0]?.id ?? ""] });
       const cy = (doc.querySelector("#graph") as HTMLElement & { _cyreg: { cy: Core } })._cyreg.cy;
-      expect(cy.edges().map(e => e.data("label")).sort()).toEqual(display.edges.map(e => `${e.action} ×${e.count}`).sort());
+      expect(cy.edges().map(e => e.data("label")).sort()).toEqual(display.edges.map(e => `${e.action}${e.count > 1 ? ` ×${e.count}` : ""}`).sort());
       expect(node(doc, "#groups button").textContent).toContain("Fold");
       node<HTMLButtonElement>(doc, "#groups button").click();
       expect(node(doc, "#groups button").textContent).toContain("Expand");
+      node<HTMLButtonElement>(doc, "#groups > div:last-child > button").click(); // unrelated manual expansion
+      expect(node(doc, "#groups > div:last-child > button").getAttribute("aria-expanded")).toBe("true");
       node<HTMLButtonElement>(doc, "#trace-toggle").click();
+      expect(doc.querySelectorAll('#groups button[aria-expanded="true"]')).toHaveLength(3);
       expect(doc.querySelectorAll(".trace-step")).toHaveLength(data.view.trace.length);
-      expect(node(doc, "#groups").textContent).toContain(`State ${data.view.trace[0].fingerprint}`);
+      expect(node(doc, "#groups").textContent).toContain("state 1 of");
+      const leaves = cy.nodes().filter(n => n.isChildless());
+      for (const leaf of leaves.filter(n => n.id().startsWith("s"))) {
+        expect(leaf.data("label")).toContain("host:");
+        expect(leaf.data("label")).toContain("session:");
+      }
+      expect(new Set(leaves.map(n => (n.scratch("breadthfirst") as { depth: number }).depth)).size).toBeGreaterThan(1);
+      expect(leaves.filter(n => n.hasClass("start")).map(n => n.data("members"))).toEqual([[data.view.trace[0].fingerprint]]);
+      for (const step of data.view.trace) expect(cy.$id(`s${step.fingerprint}`).length).toBe(1);
+      expect(cy.nodes().boundingBox().w).toBeLessThan(10_000);
+      expect(cy.nodes().boundingBox().h).toBeLessThan(10_000);
+      for (const parent of cy.nodes(":parent")) {
+        expect(parent.style("label")).toBe("");
+        expect(parent.style("border-width")).toBe("0px");
+        expect(parent.style("background-opacity")).toBe("0");
+      }
+      first.value = "age"; second.value = ""; first.dispatchEvent(new dom.window.Event("change"));
+      expect(doc.querySelectorAll('#groups button[aria-expanded="true"]')).toHaveLength(1);
+      expect(cy.nodes(":parent")).toHaveLength(1); // only age=0 holds failing-run states
+      expect(cy.nodes().filter(n => n.id().startsWith("s"))).toHaveLength(64); // 4 hosts × 4 sessions × 4 job counts
+      expect([...doc.querySelectorAll<HTMLButtonElement>("#groups button[aria-expanded]")].every(b => b.disabled)).toBe(true);
+      for (const step of data.view.trace) expect(cy.$id(`s${step.fingerprint}`).length).toBe(1);
       expect(errors).toEqual([]);
     } finally { dom.window.close(); }
   } finally { await rm(root, { recursive: true, force: true }); }
@@ -181,5 +205,87 @@ it("writes next to a manifest even when the operator supplied a path without an 
     const extensionless = join(root, "renamed");
     await copyFile(manifest, extensionless);
     expect(writeHtml(extensionless)).toBe(join(root, "renamed.html"));
+    const captureName = join(root, "session.jsonl.model-example.manifest.json");
+    await copyFile(manifest, captureName);
+    expect(writeHtml(captureName)).toBe(join(root, "session.jsonl.model-example.html"));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+it("summarizes only reported violations and distinguishes partial exploration", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tesota-html-summary-"));
+  try {
+    const manifest = await fixture(root);
+    const original = JSON.parse(await readFile(manifest, "utf8"));
+    for (const [violating, trace, partial, sentence, note] of [
+      [true, true, true, "TLC found a state that breaks Safe in 1 step from the start", "x: 1"],
+      [true, false, false, "TLC found a state that breaks Safe", "x: 1"],
+      [false, false, true, "TLC reported no broken rule in the states it reached", "exploration was partial, so this is not proof of safety"],
+      [false, false, false, "TLC reported no broken rule in the states it reached", ""],
+    ] as const) {
+      await writeFile(manifest, JSON.stringify({ ...original, exploration: partial ? "partial" : "complete",
+        graph: { trace: trace ? original.graph.trace : [], violations: violating ? { Safe: ["2"] } : {} } }));
+      const { dom, errors } = runHtml(await readFile(writeHtml(manifest), "utf8"));
+      try {
+        const doc = dom.window.document;
+        expect(errors).toEqual([]);
+        expect(node(doc, "#title").textContent).toBe(sentence);
+        expect(node(doc, "#summary-values").textContent).toContain(note);
+        expect(node(doc, "#caveats").textContent).toBe(`${partial ? "Partial exploration: counts are at least these numbers. " : ""}Arrows between groups are possible moves, not one run. Only the failing run is a real execution.`);
+        expect(node<HTMLButtonElement>(doc, "#trace-toggle").disabled).toBe(!trace);
+        if (!trace) {
+          const first = node<HTMLSelectElement>(doc, "#first");
+          first.value = "x"; first.dispatchEvent(new dom.window.Event("change"));
+          const cy = node<HTMLElement & { _cyreg: { cy: Core } }>(doc, "#graph")._cyreg.cy;
+          expect(cy.nodes(".start")).toHaveLength(0); // layout seeds must not invent initialization
+          expect(new Set(cy.nodes().map(n => (n.scratch("breadthfirst") as { depth: number }).depth)).size).toBe(2);
+          expect(cy.nodes()[0]?.data("label")).toContain(partial ? "≥1 state" : "1 state");
+        }
+      } finally { dom.window.close(); }
+    }
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+it("keeps readable text in nodes and a separate panel, and exports PNG through the canvas API", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tesota-html-controls-"));
+  try {
+    const { dom, errors } = runHtml(await readFile(writeHtml(await fixture(root)), "utf8"));
+    try {
+      const doc = dom.window.document;
+      const cy = node<HTMLElement & { _cyreg: { cy: Core } }>(doc, "#graph")._cyreg.cy;
+      expect(cy.nodes()).toHaveLength(1); // violating members do not become a child box
+      expect(cy.nodes()[0]?.data("label")).toContain("≥2 states\n⚠ breaks Safe · ≥1 state");
+      expect(cy.nodes()[0]?.style("shape")).toBe("round-rectangle");
+      expect(cy.nodes()[0]?.style("text-valign")).toBe("center");
+      expect(cy.nodes()[0]?.data("label")).toContain(attack.trim());
+      cy.nodes()[0]?.emit("tap");
+      expect(node(doc, "#details h2").textContent).toBe("Selected group");
+      expect(node(doc, "#details dd").textContent).toBe(attack.trim());
+      expect(node(doc, "#details button").textContent).toBe("Show its 2 states");
+      expect(doc.querySelector("img")).toBeNull();
+      expect(cy.edges()[0]?.data("label")).toBe(attack); // no ×1, even on a partial capture
+      expect(cy.edges()[0]?.style("text-background-opacity")).toBe("1");
+      expect(cy.edges()[0]?.style("text-background-color")).toBe("rgb(238,233,226)");
+      const css = doc.querySelector("style")?.textContent ?? "";
+      expect(css).toContain("height:100dvh");
+      expect(css).toContain("grid-template-columns:minmax(0,1fr) minmax(260px,340px)");
+      expect(node(doc, "#panel").contains(node(doc, "#groups"))).toBe(true);
+      const positions = cy.nodes().map(n => ({ ...n.position() }));
+      node<HTMLButtonElement>(doc, "#panel-toggle").click();
+      expect(node<HTMLElement>(doc, "#panel").hidden).toBe(true);
+      expect(cy.nodes().map(n => n.position())).toEqual(positions);
+      node<HTMLButtonElement>(doc, "#panel-toggle").click();
+      expect(node<HTMLElement>(doc, "#panel").hidden).toBe(false);
+      expect(cy.nodes().map(n => n.position())).toEqual(positions);
+      const exports: unknown[] = [], downloads: string[] = [];
+      const blob = new dom.window.Blob(["png"], { type: "image/png" });
+      cy.png = ((options: unknown) => { exports.push(options); return blob; }) as typeof cy.png;
+      dom.window.URL.createObjectURL = value => { expect(value).toBe(blob); return "blob:viewer-export"; };
+      dom.window.URL.revokeObjectURL = () => {};
+      dom.window.HTMLAnchorElement.prototype.click = function () { downloads.push(this.download, this.href); };
+      node<HTMLButtonElement>(doc, "#download-png").click();
+      expect(exports).toEqual([{ output: "blob", full: true, scale: 2, bg: "#faf8f4" }]);
+      expect(downloads).toEqual(["__script__img_onerror_alert_1_______.png", "blob:viewer-export"]);
+      expect(errors).toEqual([]);
+    } finally { dom.window.close(); }
   } finally { await rm(root, { recursive: true, force: true }); }
 });
