@@ -85,8 +85,9 @@ it("writes a self-contained, CSP protected file beside the capture with escaped 
       expect(doc.querySelectorAll("#groups > div")).toHaveLength(2);
       expect(node(doc, "#counts").textContent).toContain("reached ≥2");
       node<HTMLButtonElement>(doc, "#groups button").click();
-      expect(node(doc, "#groups").textContent).toContain("state 1 of 1");
-      const member = [...doc.querySelectorAll<HTMLButtonElement>("#groups button")].find(b => b.textContent === "state 1 of 1");
+      expect(node(doc, "#groups").textContent).not.toContain("state 1 of 1");
+      const member = [...doc.querySelectorAll<HTMLButtonElement>("#groups button")].find(b => b.textContent === "state");
+      expect(member).toBeDefined();
       member?.click();
       expect(node(doc, "#details").textContent).toContain(attack.trim());
       expect(doc.querySelector("img")).toBeNull();
@@ -97,6 +98,7 @@ it("writes a self-contained, CSP protected file beside the capture with escaped 
       const canvas = node<HTMLElement & { _cyreg: { cy: Core } }>(doc, "#graph");
       expect(canvas._cyreg.cy.elements("node.trace").length).toBe(4);
       expect(canvas._cyreg.cy.elements("edge.trace").length).toBe(1);
+      expect(canvas._cyreg.cy.nodes().filter(n => n.isChildless()).map(n => n.data("label")).join("\n")).not.toContain("state 1 of 1");
       assertSearchAndNavigation(page, canvas._cyreg.cy);
       expect(errors).toEqual([]);
     } finally { page.window.close(); }
@@ -176,6 +178,7 @@ it("renders the real 320-state fixture, conserves regrouped counts and expands a
         expect(parent.style("label")).toBe("");
         expect(parent.style("border-width")).toBe("0px");
         expect(parent.style("background-opacity")).toBe("0");
+        expect(parent.style("underlay-opacity")).toBe("0");
       }
       first.value = "age"; second.value = ""; first.dispatchEvent(new dom.window.Event("change"));
       expect(doc.querySelectorAll('#groups button[aria-expanded="true"]')).toHaveLength(1);
@@ -230,7 +233,8 @@ it("summarizes only reported violations and distinguishes partial exploration", 
         expect(errors).toEqual([]);
         expect(node(doc, "#title").textContent).toBe(sentence);
         expect(node(doc, "#summary-values").textContent).toContain(note);
-        expect(node(doc, "#caveats").textContent).toBe(`${partial ? "Partial exploration: counts are at least these numbers. " : ""}Arrows between groups are possible moves, not one run. Only the failing run is a real execution.`);
+        expect(node(doc, "#caveats").textContent).toBe(partial ? "Partial exploration: counts are at least these numbers." : "");
+        expect(node(doc, "#explainer").textContent).toContain("Arrows between groups are possible moves, not one run. Only the failing run is a real execution.");
         expect(node<HTMLButtonElement>(doc, "#trace-toggle").disabled).toBe(!trace);
         if (!trace) {
           const first = node<HTMLSelectElement>(doc, "#first");
@@ -289,7 +293,7 @@ it("keeps readable text in nodes and a separate panel, and exports PNG through t
     } finally { dom.window.close(); }
   } finally { await rm(root, { recursive: true, force: true }); }
 });
-it("shows verbatim rule text safely beside every broken-rule presentation and keeps group marks in a row", async () => {
+it("keeps verbatim rule text safely in the summary and panel, not in nodes, and keeps group marks in a row", async () => {
   const root = await mkdtemp(join(tmpdir(), "tesota-html-rule-"));
   try {
     const manifest = await fixture(root);
@@ -302,19 +306,28 @@ it("shows verbatim rule text safely beside every broken-rule presentation and ke
       const doc = dom.window.document;
       expect(node(doc, "#summary-rules code").textContent).toBe(definition);
       expect(node(doc, "#summary-rules").textContent).toBe(`Rule, from the model: ${definition}`);
-      expect(node(doc, "#explainer").textContent).toBe("TLC, the model checker, tried every order of the model's actions it could reach. Each box is a situation the system can be in, called a state.");
+      expect(node(doc, "#explainer").textContent).toBe("TLC, the model checker, tried every order of the model's actions it could reach. Each box is a situation the system can be in, called a state. Arrows between groups are possible moves, not one run. Only the failing run is a real execution.");
       expect([...doc.querySelectorAll(".legend p")].slice(0, 4).map(p => p.textContent)).toEqual([
         "Box: a situation (state) · start: where it begins", "Arrow: a possible move, not a story",
         "⚠: breaks a rule", "Highlighted path: the failing run, a real story",
       ]);
       const cy = node<HTMLElement & { _cyreg: { cy: Core } }>(doc, "#graph")._cyreg.cy;
-      expect(cy.nodes()[0]?.data("label")).toContain(`Rule, from the model: ${definition}`);
+      expect(cy.nodes()[0]?.data("label")).toContain("⚠ breaks Safe");
+      expect(cy.nodes()[0]?.data("label")).not.toContain(definition);
+      expect(cy.nodes()[0]?.style("font-family")).toBe("system-ui");
+      expect([...doc.querySelectorAll("header > *")].map(e => e.id)).toEqual([
+        "title", "summary-values", "summary-rules", "explainer", "caveats", "counts",
+      ]);
       const row = node(doc, "#groups > div");
       expect(row.classList.contains("group-row")).toBe(true);
       expect(row.querySelector(":scope > .break")?.textContent).toContain("⚠ breaks Safe");
       expect(row.querySelector("code")?.textContent).toBe(definition);
       node<HTMLButtonElement>(doc, "#trace-toggle").click();
       expect(node(doc, "#trace .rule-definition code").textContent).toBe(definition);
+      for (const leaf of cy.nodes().filter(n => n.isChildless())) {
+        expect(leaf.data("label")).not.toContain(definition);
+        expect(leaf.style("font-family")).toBe("system-ui");
+      }
       node<HTMLButtonElement>(doc, ".trace-step:last-of-type").click();
       expect(node(doc, "#details .rule-definition code").textContent).toBe(definition);
       expect(doc.querySelector("img")).toBeNull();
@@ -335,6 +348,36 @@ it("never invents definition text from inherited object properties", async () =>
     try {
       expect(node(dom.window.document, "#title").textContent).toContain("breaks toString");
       expect(dom.window.document.querySelectorAll(".rule-definition")).toHaveLength(0);
+      expect(errors).toEqual([]);
+    } finally { dom.window.close(); }
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+it("keeps a violating group's error border and text while trace and search highlights are shown", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tesota-html-error-trace-"));
+  try {
+    const { dom, errors } = runHtml(await readFile(writeHtml(await fixture(root)), "utf8"));
+    try {
+      const doc = dom.window.document;
+      const cy = node<HTMLElement & { _cyreg: { cy: Core } }>(doc, "#graph")._cyreg.cy;
+      expect(cy.nodes(".break")).toHaveLength(1);
+      node<HTMLButtonElement>(doc, "#trace-toggle").click();
+      expect(cy.nodes(".break.trace")).toHaveLength(2); // structural group and violating member
+      const bad = cy.nodes(".break.trace").filter(n => n.isChildless());
+      expect(bad).toHaveLength(1);
+      expect(bad[0]?.data("members")).toEqual(["2"]);
+      expect(bad[0]?.data("label")).toContain("⚠ breaks Safe");
+      const search = node<HTMLInputElement>(doc, "#search");
+      for (const query of ["", "Safe"]) {
+        search.value = query; search.dispatchEvent(new dom.window.Event("input"));
+        expect(bad[0]?.hasClass("break")).toBe(true);
+        expect(bad[0]?.style("border-color")).toBe("rgb(162,61,72)");
+        expect(bad[0]?.style("color")).toBe("rgb(162,61,72)");
+        expect(bad[0]?.style("border-width")).toBe("2px");
+        expect(bad[0]?.style("underlay-color")).toBe("rgb(113,86,126)");
+        expect(bad[0]?.style("underlay-opacity")).toBe("0.15");
+      }
+      expect(cy.edges(".trace")[0]?.style("line-color")).toBe("rgb(113,86,126)");
       expect(errors).toEqual([]);
     } finally { dom.window.close(); }
   } finally { await rm(root, { recursive: true, force: true }); }

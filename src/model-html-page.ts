@@ -19,7 +19,7 @@ const states = (n: number): string => `${count(n)} ${n === 1 ? "state" : "states
 // Display only: exact TLC values are retained in the inspection panel.
 const plain = (value: string): string => value.replace(/^"(.*)"$/su, "$1");
 const values = (entries: readonly (readonly [string, string])[]): string => entries.map(([k, v]) => `${k}: ${plain(v)}`).join(" · ");
-const stateLabel = (g: ViewGroup, index: number): string => `state ${index + 1} of ${g.members.length}`;
+const stateLabel = (g: ViewGroup, index: number): string => g.members.length > 1 ? `state ${index + 1} of ${g.members.length}` : "state";
 const label = (g: ViewGroup): string => g.path.length === 0
   ? values(Object.entries(view.states.find(s => s.fingerprint === g.members[0])?.variables ?? {}))
   : values(g.path);
@@ -81,13 +81,13 @@ function elements(): cytoscape.ElementDefinition[] {
   for (const [i, group] of view.groups.entries()) {
     const gid = `g${i}`;
     if (!expanded.has(group.id)) nodeIds.set(group.id, gid);
-    const text = `${initial(group) ? "start\n" : ""}${label(group)}\n${states(group.members.length)}${group.violating ? `\n⚠ breaks ${rules(group)} · ${states(group.violating)}${ruleText(rules(group).split(", ")).map(text => `\n${text}`).join("")}` : ""}`;
+    const text = `${initial(group) ? "start\n" : ""}${label(group)}\n${states(group.members.length)}${group.violating ? `\n⚠ breaks ${rules(group)} · ${states(group.violating)}` : ""}`;
     nodes.push({ data: { id: gid, label: text, members: group.members, group: group.id }, classes: `${group.violating ? "break" : ""} ${initial(group) ? "start" : ""}` });
     for (const [index, id] of group.members.entries()) {
       if (!expanded.has(group.id)) continue;
       nodeIds.set(id, `s${id}`);
       const state = view.states.find(s => s.fingerprint === id);
-      nodes.push({ data: { id: `s${id}`, parent: gid, label: `${id === view.trace[0]?.fingerprint ? "start\n" : ""}${stateLabel(group, index)}\n${label(group)}${state?.breaks.length ? `\n⚠ breaks ${state.breaks.join(", ")}${ruleText(state.breaks).map(text => `\n${text}`).join("")}` : ""}`, members: [id], group: group.id }, classes: `${state?.breaks.length ? "break" : ""} ${id === view.trace[0]?.fingerprint ? "start" : ""}` });
+      nodes.push({ data: { id: `s${id}`, parent: gid, label: `${id === view.trace[0]?.fingerprint ? "start\n" : ""}${group.members.length > 1 ? `${stateLabel(group, index)}\n` : ""}${label(group)}${state?.breaks.length ? `\n⚠ breaks ${state.breaks.join(", ")}` : ""}`, members: [id], group: group.id }, classes: `${state?.breaks.length ? "break" : ""} ${id === view.trace[0]?.fingerprint ? "start" : ""}` });
     }
   }
   // The model owns mixed expansion too: folded groups retain aggregated multiplicities.
@@ -98,19 +98,20 @@ function elements(): cytoscape.ElementDefinition[] {
 }
 function styleGraph(): void {
   const c = colors();
-  cy.style().selector("node").style({ shape: "round-rectangle", "background-color": c.bg, color: c.fg, label: "data(label)", "text-wrap": "wrap", "text-max-width": "260px", width: "label", height: "label", padding: "12px", "text-valign": "center", "text-halign": "center", "font-family": "monospace", "font-size": 14, "border-color": c.accent, "border-width": 1 })
-    .selector("edge").style({ label: "data(label)", color: c.fg, "line-color": c.fg, "line-opacity": .45, "target-arrow-color": c.fg, "arrow-scale": 1.2, "target-arrow-shape": "triangle", "curve-style": "bezier", "control-point-step-size": 80, "font-size": 12, "text-background-color": c.bg, "text-background-opacity": 1, "text-background-padding": "3px", "text-background-shape": "roundrectangle" })
+  cy.style().selector("node").style({ shape: "round-rectangle", "background-color": c.bg, color: c.fg, label: "data(label)", "text-wrap": "wrap", "text-max-width": "260px", width: "label", height: "label", padding: "12px", "text-valign": "center", "text-halign": "center", "font-family": "system-ui", "font-size": 14, "border-color": c.accent, "border-width": 1 })
+    .selector("edge").style({ label: "data(label)", color: c.fg, "line-color": c.fg, "line-opacity": .45, "target-arrow-color": c.fg, "arrow-scale": 1.2, "target-arrow-shape": "triangle", "font-family": "system-ui", "curve-style": "bezier", "control-point-step-size": 80, "font-size": 12, "text-background-color": c.bg, "text-background-opacity": 1, "text-background-padding": "3px", "text-background-shape": "roundrectangle" })
     .selector(".start").style({ "border-width": 3 })
-    .selector(".break").style({ "border-color": c.error, "border-width": 2, "background-color": c.error, "background-opacity": .12 })
-    .selector(".start.break").style({ "border-width": 3 })
     .selector(".trace").style({ "border-color": c.accent, "border-width": 5, "line-color": c.accent, "line-opacity": 1, "target-arrow-color": c.accent, width: 5 })
-    .selector("node.trace").style({ width: "label" })
+    .selector("node.trace").style({ width: "label", "underlay-color": c.accent, "underlay-opacity": .15, "underlay-padding": 6 })
     .selector(".match").style({ "border-color": c.accent, "border-width": 3, "border-style": "dashed", "line-color": c.accent, "line-opacity": 1, "line-style": "dashed" })
     .selector("edge.match").style({ width: 5 })
+    // Error identity wins over trace/search; the trace remains visible as an accent underlay.
+    .selector(".break").style({ color: c.error, "border-color": c.error, "border-width": 2, "background-color": c.error, "background-opacity": .12 })
+    .selector(".start.break").style({ "border-width": 3 })
     .selector(":selected").style({ "overlay-color": c.accent, "overlay-opacity": .15, "overlay-padding": 6 })
     // Expanded members follow execution depth, not group clusters. Keep structural parents
     // for membership/search, but draw no enclosing box that could imply false membership.
-    .selector(":parent").style({ label: "", "background-opacity": 0, "border-width": 0, "overlay-opacity": 0, padding: "0px", events: "no" }).update();
+    .selector(":parent").style({ label: "", "background-opacity": 0, "border-width": 0, "overlay-opacity": 0, "underlay-opacity": 0, padding: "0px", events: "no" }).update();
 }
 function search(): void {
   const query = get<HTMLInputElement>("search").value.toLocaleLowerCase();
@@ -142,7 +143,7 @@ function summary(): void {
   get("summary-rules").replaceChildren();
   appendRules(get("summary-rules"), example?.breaks ?? []);
   get("summary-values").textContent = example === undefined ? (view.partial ? "exploration was partial, so this is not proof of safety" : "") : values(Object.entries(example.variables));
-  get("caveats").textContent = `${view.partial ? "Partial exploration: counts are at least these numbers. " : ""}Arrows between groups are possible moves, not one run. Only the failing run is a real execution.`;
+  get("caveats").textContent = view.partial ? "Partial exploration: counts are at least these numbers." : "";
   get("counts").textContent = `${data.model} · reached ${states(view.states.length)} · reported violating ${states(view.violations.length)}`;
 }
 function layoutGraph(): void {
