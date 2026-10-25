@@ -1,10 +1,13 @@
 import { conservesCounts, partitionWeights } from "./verification/group-count-rule.js";
-import { stateVariables, type ReachedGraph, type TraceState } from "./model-graph.js";
+import type { ReachedGraph, TraceState } from "./model-graph.js";
+import { stateVariables } from "./model-state.js";
 
 export interface ViewRequest {
   readonly projection?: readonly string[];
   /** Fingerprints obtained by drilling into a reached group. */
   readonly members?: readonly string[];
+  /** Project these groups as individual states; all other groups keep their edge multiplicities. */
+  readonly expanded?: readonly string[];
   readonly search?: string;
 }
 export interface ViewState {
@@ -33,6 +36,7 @@ export interface ModelView {
   readonly violations: readonly string[];
   readonly matches: readonly string[];
   readonly plain: string;
+  readonly ruleDefinitions?: Readonly<Record<string, string>>;
 }
 
 /** A count as a partial graph allows reading it: a lower bound. */
@@ -58,7 +62,7 @@ export function adjacentViolation(view: ModelView, current: string | undefined, 
   return ids[index < 0 ? (direction === 1 ? 0 : ids.length - 1) : (index + direction + ids.length) % ids.length];
 }
 
-export function buildModelView(graph: ReachedGraph, reports: { readonly trace: readonly TraceState[]; readonly violations: Readonly<Record<string, readonly string[]>> },
+export function buildModelView(graph: ReachedGraph, reports: { readonly trace: readonly TraceState[]; readonly violations: Readonly<Record<string, readonly string[]>>; readonly ruleDefinitions?: Readonly<Record<string, string>> },
   partial: boolean, header: string, request: ViewRequest): ModelView {
   const ids = new Set(graph.states.map(s => s.fingerprint));
   if ([...reports.trace.map(s => s.fingerprint), ...Object.values(reports.violations).flat()].some(id => !ids.has(id))) {
@@ -73,9 +77,11 @@ export function buildModelView(graph: ReachedGraph, reports: { readonly trace: r
   if (scope !== undefined && [...scope].some(id => !ids.has(id))) throw new Error("Unknown drill member");
   const states = all.filter(s => scope === undefined || scope.has(s.fingerprint));
   const groups = new Map<string, ViewGroup>(), membership = new Map<string, string>();
+  const expanded = new Set(request.expanded);
   for (const state of states) {
-    const path = projection.map(k => [k, state.variables[k] ?? "(missing)"] as const);
-    const id = projection.length === 0 ? state.fingerprint : JSON.stringify(path);
+    let path = projection.map(k => [k, state.variables[k] ?? "(missing)"] as const);
+    let id = projection.length === 0 ? state.fingerprint : JSON.stringify(path);
+    if (expanded.has(id)) { id = state.fingerprint; path = []; }
     let group = groups.get(id);
     if (group === undefined) { group = { id, path, members: [], violating: 0 }; groups.set(id, group); }
     group.members.push(state.fingerprint);
@@ -94,7 +100,7 @@ export function buildModelView(graph: ReachedGraph, reports: { readonly trace: r
     throw new Error("Projection did not conserve members, violations and edge multiplicities");
   }
   const query = request.search?.toLocaleLowerCase() ?? "";
-  const base = { workerPid: process.pid, partial, projection, variables, states, groups: [...groups.values()], edges, boundary,
+  const base = { workerPid: process.pid, ruleDefinitions: reports.ruleDefinitions ?? {}, partial, projection, variables, states, groups: [...groups.values()], edges, boundary,
     trace: reports.trace, violations: states.filter(s => s.breaks.length > 0).map(s => s.fingerprint),
     matches: query === "" ? [] : states.filter(s => `${s.fingerprint}\n${s.valuation}\n${s.breaks.join(" ")}`.toLocaleLowerCase().includes(query)).map(s => s.fingerprint) };
   return { ...base, plain: renderModelView(base) };

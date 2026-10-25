@@ -8,7 +8,9 @@ results, not actions. `tesota` runs on its own engine, `@tesota/core` on Bun
 `src/` is the verification layer, written against the contract in
 `src/contract.ts`. Model access stays in `pi-ai` and the terminal in
 `pi-tui`; it does not build its own sandbox, verifier or surfaces beyond the
-terminal shell, and adds no capability without a consumer that exists today.
+terminal shell. A static file it writes and the system browser opens, with
+nothing left running, is not such a surface. It adds no capability without a
+consumer that exists today.
 Keep changes scoped to the issue being worked on.
 
 - Historical provenance is `4257ee9fce034cfe8e50dce3dbe3afb12f468094`;

@@ -67,7 +67,7 @@ it("draws the whole nine-state graph in at most six diagram rows", async () => {
 it("names /graph with the capture's stem, and finds a session's graphs newest receipt first", async () => {
   const capture = await captured();
   const name = basename(capture.status === "captured" ? capture.manifest : "").replace(/\.manifest\.json$/u, "");
-  expect(graphPreviewRows(capture, 200)).toContain(`Open graph: /graph ${name}`);
+  expect(graphPreviewRows(capture, 200)).toContain(`Open graph: /graph ${name} · o inside it for the browser`);
   const entry = (subject: string) => ({ type: "custom_message", customType: "tesota-receipt-graphs", details: { receipt: {}, graphs: [{ subject, capture }] } });
   expect(entryGraphs([entry("old"), { type: "custom_message", customType: "tesota-receipt", details: {} }, entry("new")]).map((graph) => graph.subject))
     .toEqual(["new", "old"]);

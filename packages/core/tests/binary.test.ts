@@ -13,7 +13,9 @@ import { build } from "../scripts/build.ts";
  * the repository can be found.
  */
 const roots: string[] = [];
-afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true, maxRetries: 3 }); });
+// Windows can hold a binary that just exited, and the worker it started from the same file, for a moment longer
+// than three quick retries: CI failed with EBUSY here (#593). Wait up to about five seconds before giving up.
+afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true, maxRetries: 25, retryDelay: 200 }); });
 
 function folder(prefix: string): string {
   const root = mkdtempSync(join(tmpdir(), prefix));

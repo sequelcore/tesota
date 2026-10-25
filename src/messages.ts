@@ -107,7 +107,7 @@ export function graphPreviewRows(capture: GraphCapture | undefined, width: numbe
     ...diagram.length <= 6 && !preview.omitted && diagram.every((line) => visibleWidth(line) <= width) ? diagram
       : preview.kind === "trace" ? [...diagram.slice(0, 5).map((line) => cut(line, width)), ...hang("Path continues; open graph files", width, 0)]
         : hang("Diagram does not fit; open graph files", width, 0),
-    ...hang(`Open graph: /graph ${stem}`, width, 0), ...hang(`Files beside the session: ${stem}.dot, .mmd, .txt`, width, 0)];
+    ...hang(`Open graph: /graph ${stem} · o inside it for the browser`, width, 0), ...hang(`Files beside the session: ${stem}.dot, .mmd, .txt`, width, 0)];
 }
 
 /** The fewest columns the text beside the labels keeps; with fewer, expanded rows wrap under the glyph instead. */

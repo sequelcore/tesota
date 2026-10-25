@@ -25,7 +25,8 @@ violations is not a safety verdict. A missing or limited capture says so;
 the graph never changes the verification verdict.
 
 **Open graph** names the `/graph <name>` command that opens the capture
-full-screen; its `.dot`, `.mmd` and `.txt` files stay beside the session. A
+full-screen, then `o` inside it for the browser; its `.dot`, `.mmd` and `.txt`
+files stay beside the session. A
 preview that does not fit has no scroll region of its own: open the graph.
 
 `/graph` opens the newest graph the shown session's receipts captured, or the
@@ -40,6 +41,41 @@ with the draft kept. A question that arrives while it is open waits under it.
 Counts follow the capture: a partial exploration's are lower bounds.
 `/graph --plain`, the inline shell, and a terminal smaller than 40×12 append
 the graph's text rendering to the conversation instead.
+
+### Explore a capture in the browser
+
+Use `/graph` for the newest capture, or `/graph <name>` for a named one,
+then press `o` in the text viewer. It writes a self-contained HTML file beside
+the capture, shows its absolute path in the viewer's status line and opens
+the system browser. Nothing stays running in Tesota to serve the page.
+If opening the browser fails, the written path stays in the status line.
+
+For SSH or headless use:
+
+```sh
+tesota graph --html /path/to/capture.manifest.json
+```
+
+This prints `/path/to/capture.html` without opening a browser.
+Copy the file to a machine with a browser and open it directly. All code,
+Cytoscape.js and graph data are inline: no server, CDN or network is needed.
+The file contains the full captured variables; treat it like the capture
+when sharing it. Writing it again replaces the HTML file.
+
+Beside a broken rule, **Rule, from the model:** shows its captured TLA+
+definition as text, not an English interpretation. Definitions longer than
+400 characters end in `…`. A definition is omitted when it cannot be found
+unambiguously in that model file or its content binding cannot be checked.
+The text viewer shows the same definition under the selected state's `! BREAK`.
+
+The page uses the same grouping and conserved counts as the text viewer.
+Choose up to two variables, expand or fold groups, inspect each state's
+variables, or search by state, action, property or value. `! BREAK` counts
+reported violating members; it does not label every member of a mixed group
+as violating. Partial counts remain lower bounds, and zero reports never
+establish safety. Toggle TLC's concrete trace to see the only execution
+shown, with its steps and changed variables. Mouse pan and zoom, arrow keys
+and `+`/`-` with the graph focused, and system light/dark themes work offline.
 
 ## For a pull request
 

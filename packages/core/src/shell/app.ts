@@ -34,6 +34,8 @@ import type { QuestionResponder } from "../questions.ts";
 export interface AppOptions {
   readonly cwd: string;
   readonly terminal?: Terminal;
+  /** System browser boundary; tests supply a recorder instead of launching a browser. */
+  readonly openGraphFile?: (path: string) => Promise<void>;
   /** The operator's credentials; the engine's own file when not given. */
   readonly credentials?: CredentialStore;
   /** The models over those credentials; the engine's when not given. */
@@ -322,6 +324,9 @@ export async function runApp(options: AppOptions): Promise<void> {
   const graphCommand = async (args: string): Promise<void> => {
     const words = args.split(/\s+/u).filter((word) => word !== "");
     const plain = words.includes("--plain");
+    if (words.filter(word => word !== "--plain").length > 1 || words.some(word => word.startsWith("--") && word !== "--plain")) {
+      shell.note("Use: /graph [--plain] [name]", "warning"); return;
+    }
     const named = words.find((word) => word !== "--plain");
     const graphs = sessionGraphs(attached.session.history());
     const stem = (manifest: string): string => basename(manifest).replace(/\.manifest\.json$/u, "");
@@ -335,7 +340,7 @@ export async function runApp(options: AppOptions): Promise<void> {
       "warning");
       return;
     }
-    const [{ appendOnlyText, fitsFullScreen, fullScreen, ModelViewer }, { loadModelView }] =
+    const [{ appendOnlyText, fitsFullScreen, fullScreen, ModelViewer }, { loadModelView, writeModelViewHtml, openGraphHtml }] =
       await Promise.all([import("./model-viewer.ts"), import("../../../../src/model-view-process.ts")]);
     if (plain || mode === "inline" || !fitsFullScreen(terminal.columns, terminal.rows)) {
       try { shell.note(appendOnlyText(await loadModelView(graph.manifest, {}, new AbortController().signal), graph.manifest)); } catch (error) {
@@ -348,7 +353,13 @@ export async function runApp(options: AppOptions): Promise<void> {
     }
     let hide = (): void => undefined;
     hide = shell.overlay(new ModelViewer({ theme, subject: graph.subject, rows: () => terminal.rows,
-      load: (request, signal) => loadModelView(graph.manifest, request, signal), close: () => { hide(); }, redraw: () => { shell.redraw(); } }));
+      load: (request, signal) => loadModelView(graph.manifest, request, signal),
+      browser: async (signal, written) => {
+        const path = await writeModelViewHtml(graph.manifest, signal);
+        written(path);
+        if (signal.aborted) return;
+        await (options.openGraphFile ?? openGraphHtml)(path);
+      }, close: () => { hide(); }, redraw: () => { shell.redraw(); } }));
   };
   /** Opens the shown session again, as a change of model or thinking needs, once it has let go of its file. */
   const reopen = async (): Promise<void> => {
