@@ -1016,38 +1016,40 @@ for (const mode of ["fullscreen", "inline"] as const) test(`empty stage stays ou
   surface.ui.setEditorComponent((tui, look) => new BarEditor(tui, look, () => theme));
   const { terminal, session, shell } = shellOn(["A reply."], mode, [100, 40], { surface });
   const opening = await terminal.until("Shows evidence");
-  expect(opening.split("\n").slice(0, 3)).toEqual([
+  expect(opening.split("\n").slice(0, 3).map((row) => row.slice(21))).toEqual([
     expect.stringMatching(/^Tesota v/u), "scripted model · /work/shop", "Shows evidence that the change does what you asked.",
   ]);
   await new Promise((resolve) => setTimeout(resolve, 60));
-  expect(shown(await terminal.screen())).toMatch(/[\u2801-\u28ff]/u);
-  for (let step = 0; step < 95; step++) {
+  expect(shown(await terminal.screen())).toMatch(/▀{49}/u);
+  for (let step = 0; step < 9; step++) {
     now += 100;
     ticks.shift()?.();
     await new Promise((resolve) => setTimeout(resolve, 20));
     await terminal.screen();
   }
   const faded = await terminal.screen();
-  const artRow = faded.findIndex((line) => /[\u2801-\u28ff]/u.test(line));
-  const artColumn = faded[artRow]!.search(/[\u2801-\u28ff]/u);
+  const artRow = faded.findIndex((line) => /▀{49}/u.test(line));
+  const artColumn = faded[artRow]!.search(/▀{49}/u);
   const cell = (await terminal.drawn()).getLine(artRow)?.getCell(artColumn);
   const color = cell?.getFgColor() ?? 0;
-  expect(Math.max(color >> 16 & 255, color >> 8 & 255, color & 255)).toBeLessThan(80);
+  expect(Math.max(color >> 16 & 255, color >> 8 & 255, color & 255)).toBeLessThan(110);
   terminal.type("typing a draft");
-  expect(await terminal.until("typing a draft")).toMatch(/[\u2801-\u28ff]/u);
+  expect(await terminal.until("typing a draft")).toMatch(/▀{49}/u);
   if (mode === "fullscreen") {
     terminal.type(`\x1b[<0;${artColumn + 1};${artRow + 1}M`);
     terminal.type(`\x1b[<0;${artColumn + 1};${artRow + 1}m`);
     await new Promise((resolve) => setTimeout(resolve, 30));
     const replay = (await terminal.drawn()).getLine(artRow)?.getCell(artColumn)?.getFgColor() ?? 0;
-    expect(Math.max(replay >> 16 & 255, replay >> 8 & 255, replay & 255)).toBeGreaterThan(80);
+    expect(replay).toBe(color);
+    now += 150; ticks.shift()?.();
+    expect(shown(await terminal.screen())).not.toBe(shown(faded));
   }
   terminal.type(enter);
   await settled(session);
-  expect(shown(await terminal.screen())).not.toMatch(/[\u2801-\u28ff]/u);
+  expect(shown(await terminal.screen())).not.toMatch(/▀{49}/u);
   expect(shown(await terminal.screen())).toContain("A reply.");
   shell.stop();
-  expect(shown(await terminal.scrollback())).not.toMatch(/[\u2801-\u28ff]/u);
+  expect(shown(await terminal.scrollback())).not.toMatch(/▀{49}/u);
 });
 
 for (const mode of ["fullscreen", "inline"] as const) test(`quitting an untouched session leaves no tree in scrollback (${mode})`, async () => {
@@ -1059,9 +1061,9 @@ for (const mode of ["fullscreen", "inline"] as const) test(`quitting an untouche
   const { terminal, shell } = shellOn([], mode, [100, 40], { surface });
   await terminal.until("Shows evidence");
   await new Promise((resolve) => setTimeout(resolve, 100));
-  expect(shown(await terminal.screen())).toMatch(/[\u2801-\u28ff]/u);
+  expect(shown(await terminal.screen())).toMatch(/▀{49}/u);
   shell.stop();
-  expect(shown(await terminal.scrollback())).not.toMatch(/[\u2801-\u28ff]/u);
+  expect(shown(await terminal.scrollback())).not.toMatch(/▀{49}/u);
 });
 
 test("a late light-background reply repaints existing user bands", async () => {
@@ -1088,14 +1090,14 @@ test("inline handoff clears the live tree before another program writes", async 
     terminalRows: () => tui.terminal.rows, stageShare: 1 / 2, requestRender: () => tui.requestRender(),
   }), tui));
   const { terminal, shell } = shellOn([], "inline", [100, 40], { surface });
-  await terminal.until("⣿");
+  await terminal.until("▀".repeat(49));
   await shell.handOver(async () => {
     terminal.write("other program\r\n".repeat(50));
-    expect(shown(await terminal.scrollback())).not.toMatch(/[\u2801-\u28ff]/u);
+    expect(shown(await terminal.scrollback())).not.toMatch(/▀{49}/u);
   });
   await terminal.until("Shows evidence");
   shell.stop();
-  expect(shown(await terminal.scrollback())).not.toMatch(/[\u2801-\u28ff]/u);
+  expect(shown(await terminal.scrollback())).not.toMatch(/▀{49}/u);
 });
 
 test("a resumed conversation never draws the empty stage", async () => {
@@ -1110,6 +1112,31 @@ test("a resumed conversation never draws the empty stage", async () => {
   const resumed = startShell({ terminal, session, surface, mode: "fullscreen", fullRepaint: false,
     theme: surface.theme, status: () => "resumed" });
   open.push({ session, shell: resumed });
-  expect(await terminal.until("Existing reply.")).not.toMatch(/[\u2801-\u28ff]/u);
+  expect(await terminal.until("Existing reply.")).not.toMatch(/▀{49}/u);
   shell.stop();
+});
+
+test("a real header click rustles the live mark, including after first activity", async () => {
+  provideHost(shellHost());
+  const surface = createSurface(shellTheme("dark", "truecolor"));
+  let now = 0;
+  let redraw: () => void = () => undefined;
+  const ticks: (() => void)[] = [];
+  surface.ui.setHeader((tui, look) => { redraw = () => tui.renderNow(); return mountWelcomeHeader(new WelcomeHeader("/work/shop", look, {
+    terminalRows: () => 40, stageShare: 0.5, requestRender: () => tui.renderNow(), now: () => now,
+    setTimer: (callback) => { ticks.push(callback); return () => undefined; },
+  }), tui); });
+  const { terminal, session } = shellOn(["A reply."], "fullscreen", [100, 40], { surface });
+  await terminal.until("Tesota v");
+  now = 800; ticks.shift()?.();
+  const resting = (await terminal.screen()).slice(0, 4);
+  for (const active of [false, true]) {
+    if (active) { terminal.type("go"); terminal.type(enter); await settled(session); }
+    terminal.type("\x1b[<0;6;2M"); terminal.type("\x1b[<0;6;2m");
+    redraw(); await terminal.screen();
+    now += 200; ticks.shift()?.();
+    expect((await terminal.screen()).slice(0, 4)).not.toEqual(resting);
+    now += 800; ticks.shift()?.();
+    expect((await terminal.screen()).slice(0, 4)).toEqual(resting);
+  }
 });

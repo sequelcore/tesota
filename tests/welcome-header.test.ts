@@ -10,7 +10,7 @@ import { shellTheme } from "../src/theme.js";
 import { mountWelcomeHeader, WELCOME_FRAME_MS, WELCOME_SCENE_MS, WELCOME_TAGLINE,
   WelcomeHeader, themeMarkColors, type WelcomeHeaderOptions } from "../src/welcome-header.js";
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-const braille = /[\u2801-\u28ff]/u;
+const braille = /[▀▄█]/u;
 
 function theme(name: string, mode: TerminalColorMode = "truecolor"): Theme {
   return shellTheme(name === "tesota-light" ? "light" : "dark", mode);
@@ -92,38 +92,37 @@ it("shows a folder under the home folder from ~, as the footer does", () => {
   expect(written).not.toContain(homedir());
 });
 
-it("keeps the transcript header left aligned in three rows, with the tree separate", () => {
+it("keeps the header at four rows, with the 19-column mark beside the three text rows", () => {
   const { view } = header();
   const plain = view.render(100).map(stripTerminalSequences);
-  expect(plain).toHaveLength(3);
-  expect(plain[0]).toMatch(/^Tesota (v\d|dev)/u);
-  expect(plain.slice(1)).toEqual(["C:\\work\\tesota", WELCOME_TAGLINE]);
-  expect(plain.some((line) => braille.test(line))).toBe(false);
+  expect(plain).toHaveLength(4);
+  expect(plain[0]!.slice(21)).toMatch(/^Tesota (v\d|dev)/u);
+  expect(plain.slice(1, 3).map((row) => row.slice(21))).toEqual(["C:\\work\\tesota", WELCOME_TAGLINE]);
+  expect(plain[3]!.slice(21).trim()).toBe("");
   const art = view.renderStage(100).map(stripTerminalSequences).filter((line) => braille.test(line));
-  expect(art.length).toBeGreaterThanOrEqual(8);
-  const left = Math.min(...art.map((line) => line.search(/\S/u)));
-  const right = Math.max(...art.map((line) => line.trimEnd().length));
-  expect(Math.abs(left - (100 - right))).toBeLessThanOrEqual(6);
+  expect(art).toHaveLength(9);
+  expect(art.at(-1)).toBe(" ".repeat(25) + "▀".repeat(49));
 });
 
 it("keeps the folder's last segment when the model and folder share a narrow row", () => {
   const { view } = header({ model: () => "a-long-model-name" });
-  const row = stripTerminalSequences(view.render(40)[1]!);
+  const row = stripTerminalSequences(view.render(61)[1]!.slice(0)).slice(21);
   expect(row).toBe("a-long-model-name · C:\\work\\tesota");
-  const narrow = stripTerminalSequences(view.render(28)[1]!);
+  const narrow = stripTerminalSequences(view.render(49)[1]!.slice(0)).slice(21);
   expect(narrow).toBe("a-long-model-name · …\\tesota");
 });
 
-it("plays the wind once, frame by frame, then rests in its first pose and asks for no more frames", () => {
+it("rustles once in under a second, then returns exactly to static and schedules nothing", () => {
   const { view, timers, tick, renders } = header();
-  const start = stage(view.renderStage(100));
+  const start = view.renderStage(100);
+  expect(WELCOME_SCENE_MS).toBeLessThan(1000);
   expect(timers).toHaveLength(1);
-  for (let step = 0; step < 40; step++) tick();
-  expect(stage(view.renderStage(100))).not.toBe(start);
+  tick(); tick(); tick();
+  expect(view.renderStage(100)).not.toEqual(start);
   while (view.moving) tick();
-  expect(renders()).toBeGreaterThanOrEqual(WELCOME_SCENE_MS / WELCOME_FRAME_MS);
+  expect(renders()).toBe(WELCOME_SCENE_MS / WELCOME_FRAME_MS);
   timers.length = 0;
-  expect(stage(view.renderStage(100))).toBe(start);
+  expect(view.renderStage(100)).toEqual(start);
   expect(timers).toEqual([]);
 });
 
@@ -162,60 +161,49 @@ it("sets Tesota's name in bold above the muted version, whatever color support t
   expect(title).toContain("\x1b[1mTesota\x1b[22m ");
 });
 
-it("keeps the tree to its share of the terminal, drops it where it would not fit, and never draws past the width", () => {
-  const rows = (lines: readonly string[]): number => lines.filter((line) => braille.test(line)).length;
-  const third = rows(header({ terminalRows: () => 36 }).view.renderStage(100));
-  const half = rows(header({ terminalRows: () => 36, stageShare: 1 / 2 }).view.renderStage(100));
-  expect(third).toBeLessThanOrEqual(12);
-  expect(half).toBeLessThanOrEqual(18);
-  expect(half).toBeGreaterThan(third);
-  const short = header({ terminalRows: () => 12 }).view.renderStage(100);
-  expect(short.some((line) => braille.test(line))).toBe(false);
-  expect(header({ terminalRows: () => 12 }).view.render(100).map(stripTerminalSequences).join("\n")).toContain("Tesota ");
+it("centers a fixed 49-column, nine-row splash, omits it if it cannot fit, and never overflows", () => {
+  for (const width of [60, 100, 200]) {
+    const art = header().view.renderStage(width).map(stripTerminalSequences);
+    const ground = art.find((row) => row.includes("▀".repeat(49)))!;
+    expect(ground).toBe(" ".repeat(Math.floor((width - 49) / 2)) + "▀".repeat(49));
+    expect(art.filter((line) => braille.test(line))).toHaveLength(9);
+  }
   for (const width of [4, 20, 40, 64, 200]) {
     expect(header().view.renderStage(width).every((line) => visibleWidth(line) <= width)).toBe(true);
+    expect(header().view.render(width).every((line) => visibleWidth(line) <= width)).toBe(true);
   }
+  expect(header({ terminalRows: () => 12 }).view.renderStage(100)).toEqual([]);
+  expect(header().view.renderStage(48)).toEqual([]);
 });
 
-it("plays again with the tumbleweed when the resting tree is clicked, and comes back to rest", () => {
+it("restarts on every splash click, adds a falling leaf, and restores the exact static frame", () => {
   const { view, region, timers, tick, rest } = header();
-  const resting = stage(region.emptyState.render(100));
+  const resting = view.renderStage(100);
   rest();
   const [x, y] = center(region.emptyState.render(100));
-  timers.length = 0;
   expect(region.emptyState.handleMouse(click(x, y))).toEqual({ handled: true, render: true });
   expect(view.moving).toBe(true);
-  region.emptyState.render(100);
-  expect(timers).toHaveLength(1);
-  // A few seconds in, frame by frame, the tumbleweed is on the stage, where the wind alone would not put it.
-  const wind = header();
-  wind.view.renderStage(100);
-  for (let step = 0; step < 50; step++) { tick(); wind.tick(); }
-  expect(stage(region.emptyState.render(100))).not.toBe(stage(wind.view.renderStage(100)));
-  rest();
-  timers.length = 0;
-  expect(stage(region.emptyState.render(100))).toBe(resting);
+  view.renderStage(100);
+  const opening = header(); opening.view.renderStage(100);
+  for (let step = 0; step < 8; step++) { tick(); opening.tick(); }
+  expect(stage(view.renderStage(100))).not.toBe(stage(opening.view.renderStage(100)));
+  rest(); timers.length = 0;
+  expect(view.renderStage(100)).toEqual(resting);
   expect(timers).toEqual([]);
 });
 
-it("does nothing new when the tree is clicked while it plays, the opening or a replay", () => {
-  const clicked = header();
-  const untouched = header();
-  for (const scene of [clicked, untouched]) scene.view.renderStage(100);
-  const [x, y] = center(clicked.region.emptyState.render(100));
-  for (let step = 0; step < 20; step++) { clicked.tick(); untouched.tick(); }
-  expect(clicked.region.emptyState.handleMouse(click(x, y))).toEqual({ handled: true, render: true });
-  for (let step = 0; step < 20; step++) { clicked.tick(); untouched.tick(); }
-  expect(stage(clicked.view.renderStage(100))).toBe(stage(untouched.view.renderStage(100)));
-
-  for (const scene of [clicked, untouched]) {
-    scene.rest();
-    scene.region.emptyState.handleMouse(click(x, y));
-  }
-  for (let step = 0; step < 30; step++) { clicked.tick(); untouched.tick(); }
-  clicked.region.emptyState.handleMouse(click(x, y));
-  for (let step = 0; step < 30; step++) { clicked.tick(); untouched.tick(); }
-  expect(stage(clicked.view.renderStage(100))).toBe(stage(untouched.view.renderStage(100)));
+it("restarts even mid-gesture and rustles on each header mark click, not on its text", () => {
+  const { view, tick, rest } = header();
+  view.render(100); view.renderStage(100);
+  for (let step = 0; step < 8; step++) tick();
+  expect(view.clickHeader(click(5, 1))).toEqual({ handled: true, render: true });
+  for (let step = 0; step < 8; step++) tick();
+  expect(view.moving).toBe(true);
+  view.clickHeader(click(5, 1));
+  rest();
+  expect(view.clickHeader(click(22, 1))).toBeUndefined();
+  expect(view.clickHeader(click(5, 1))).toEqual({ handled: true, render: true });
+  expect(view.moving).toBe(true);
 });
 
 it("leaves other gestures, and clicks beside the tree, to their usual owner", () => {
@@ -224,8 +212,16 @@ it("leaves other gestures, and clicks beside the tree, to their usual owner", ()
   const lines = region.emptyState.render(100);
   const [x, y] = center(lines);
   const text = lines.length;
-  for (const event of [click(x, y, { button: "right" }), click(x, y, { ctrl: true }), click(x, y, { type: "press" }),
-    click(1, y), click(x, text)]) {
+  // A plain left press claims routing only; it never starts motion.
+  expect(region.emptyState.handleMouse(click(x, y, { type: "press" }))).toEqual({ handled: true });
+  expect(view.moving).toBe(false);
+  region.render(100);
+  expect(region.handleMouse?.(click(5, 1, { type: "press" }))).toEqual({ handled: true });
+  expect(view.moving).toBe(false);
+  for (const event of [click(x, y, { button: "right" }), click(x, y, { ctrl: true }),
+    click(x, y, { type: "press", shift: true }), click(x, y, { type: "press", alt: true }),
+    click(x, y, { type: "press", ctrl: true }), click(x, y, { type: "press", button: "right" }),
+    click(1, y, { type: "press" }), click(1, y), click(x, text)]) {
     expect(region.emptyState.handleMouse(event)).toBeUndefined();
   }
   expect(view.moving).toBe(false);
@@ -312,7 +308,7 @@ it.each([["Tesota Dark", "tesota-dark"], ["Tesota Light", "tesota-light"]])(
   });
 
 
-it.each([{ NO_COLOR: "1" }, { TERM: "ansi", COLORTERM: "" }])("uses a dim static fallback without extended colors: %j", (env) => {
+it.each([{ NO_COLOR: "1" }, { TERM: "ansi", COLORTERM: "" }])("uses a default-foreground static silhouette without extended colors: %j", (env) => {
   for (const [key, value] of Object.entries(env)) vi.stubEnv(key, value);
   try {
     let now = 0;
@@ -323,24 +319,39 @@ it.each([{ NO_COLOR: "1" }, { TERM: "ansi", COLORTERM: "" }])("uses a dim static
     view.renderStage(100);
     while (view.moving) { now += 100; view.renderStage(100); }
     const faded = view.renderStage(100).join("\n");
-    expect(faded).toContain("\x1b[2m");
+    expect(faded).not.toContain("\x1b[2m");
+    expect(view.moving).toBe(false);
     expect(faded).not.toContain("\x1b[38;");
     expect(faded).not.toContain("\x1b[48;");
     expect(faded).toMatch(braille);
   } finally { vi.unstubAllEnvs(); }
 });
 
-it("fades each lit cell toward the background after the scene, then stops scheduling", () => {
-  const { view, tick, timers } = header();
+it("keeps the splash at 30% throughout opening, click, and rest", () => {
+  const { view, rest } = header();
   const start = view.renderStage(100).join("\n");
-  while (view.moving) tick();
-  for (let step = 0; step < 8; step++) tick();
-  const faded = view.renderStage(100).join("\n");
-  expect(stripTerminalSequences(faded)).toBe(stripTerminalSequences(start));
-  // eslint-disable-next-line no-control-regex -- inspect terminal foreground SGRs
-  const colors = (text: string) => [...text.matchAll(/\x1b\[38;2;(\d+);(\d+);(\d+)m/gu)].map((match) => match.slice(1).map(Number));
-  expect(colors(faded)).toEqual(colors(start).map((rgb) => rgb.map((channel) => Math.round(32 + (channel - 32) * 0.18))));
-  timers.length = 0;
-  view.renderStage(100);
-  expect(timers).toEqual([]);
+  // Canopy success [154,176,143], blended 30% over [32,32,32].
+  expect(start).toContain("\x1b[38;2;69;75;65m");
+  rest();
+  expect(view.renderStage(100).join("\n")).toBe(start);
+  const [x, y] = center(view.renderStage(100)); view.click(click(x, y));
+  expect(view.renderStage(100).join("\n")).toBe(start);
+});
+
+
+it("draws the first static frame immediately even when mounted, without waiting for a timer", () => {
+  const { region } = header();
+  expect(region.emptyState.renderIn(100, 20).join("\n")).toMatch(braille);
+});
+
+it("does not schedule or replay motion in no-color mode", () => {
+  vi.stubEnv("NO_COLOR", "1");
+  try {
+    const { view, timers } = header();
+    view.render(100); const start = view.renderStage(100);
+    expect(view.moving).toBe(false); expect(timers).toEqual([]);
+    expect(view.clickHeader(click(5, 1))).toBeUndefined();
+    const [x, y] = center(start); expect(view.click(click(x, y))).toBeUndefined();
+    expect(view.renderStage(100)).toEqual(start);
+  } finally { vi.unstubAllEnvs(); }
 });

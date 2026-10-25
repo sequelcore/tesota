@@ -193,10 +193,10 @@ const turnRows = 40;
 /** The shell as it opens: compact header, faint centered palo fierro, input band and footer. */
 async function welcome(appearance: Appearance): Promise<void> {
   const app = await shell(project(shop), [], appearance, welcomeRows);
-  // The scene plays once, then rests; the tree is drawn at rest.
+  // The sub-second rustle ends at the exact static grid, still at 30% opacity.
   await new Promise((resolve) => setTimeout(resolve, WELCOME_SCENE_MS + 1000));
   await write(app.terminal, "tesota-welcome", appearance, welcomeRows,
-    "Tesota's shell as it opens: name, model, folder and purpose at the top left, a faint palo fierro in the empty space, then the input band and footer.");
+    "Tesota's shell as it opens: a pixel ironwood beside the name, model, folder and purpose, a 30%-opacity ironwood and armless seedling in the empty space, then the input band and footer.");
   await quit(app);
 }
 
@@ -223,7 +223,7 @@ async function turn(appearance: Appearance): Promise<void> {
   await app.terminal.until("receipt ·", 120_000);
   await new Promise((resolve) => setTimeout(resolve, 500));
   await write(app.terminal, "tesota-turn", appearance, turnRows,
-    "A verified turn in Tesota: the request, the agent's two file writes and its answer, then Tesota's receipt card saying nothing needs you, the tests pass and the new test exercises the change.");
+    "A verified turn in Tesota: a blooming pixel ironwood in the header, the request, two file writes and the answer, then the receipt card with the passing tests and the new test exercising the change.");
   await quit(app);
 }
 

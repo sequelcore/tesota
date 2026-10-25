@@ -18,13 +18,17 @@ terminal selects and copies as usual.
 
 ## The screen
 
-- **The header:** Tesota's name and version, the model and folder, and its
-  purpose, in three rows at the top left.
-- **The empty stage:** the palo fierro plays once in the free space between
-  the header and input, then fades to a faint pose. It stays while you type
-  and disappears when you send a message. It never enters scrollback or
-  appears over a resumed conversation. In fullscreen, clicking the resting
-  tree replays the scene with a tumbleweed.
+- **The header:** a four-row pixel ironwood beside Tesota's name and version,
+  the model and folder, and its purpose. Blossoms follow the latest receipt's
+  `verified` standing; a new request clears them. The receipt's text remains
+  the primary signal.
+- **The empty stage:** a fixed pixel ironwood and armless saguaro seedling,
+  centered between the header and input at 30% opacity. It stays while you
+  type and disappears when you send a message. It never enters scrollback
+  or appears over a resumed conversation. The crown rustles once at opening;
+  clicking either mark restarts the rustle and drops one leaf. Each gesture
+  ends within a second, with nothing moving otherwise or while working.
+  Without extended colors, the marks are static default-foreground silhouettes.
 - **The input:** a full-width band with a `›` prompt, like your messages in
   the conversation. Without background-color support, both use plain rows
   and the prompt. Enter sends; while the agent works, Enter

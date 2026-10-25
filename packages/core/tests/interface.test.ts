@@ -14,8 +14,8 @@ import { VirtualTerminal } from "./virtual-terminal.ts";
 
 /**
  * Tesota's own interface in the engine's shell (#446), as the operator sees
- * it: the welcome header with its tree, the barred editor, the evidence
- * footer, the tumbleweed while the agent works, the receipt card, and the
+ * it: the pixel-mark header, the input band, the evidence
+ * footer, the working orb, the receipt card, and the
  * theme for the terminal's background. Pi is not loaded for any of it.
  */
 const folder = (prefix: string): string => mkdtempSync(join(tmpdir(), prefix));
@@ -82,11 +82,12 @@ describe("Tesota's interface on the engine", () => {
 
   test("the empty stage draws the palo fierro, and the input band and evidence footer sit below", async () => {
     const { terminal, running, branch } = await app([]);
-    // The scene starts after the first frame, so startup never waits for its rasterization.
-    await terminal.until("⣿");
+    // The fixed half-block grid is present on the first frame.
+    await terminal.until("▀".repeat(49));
     const screen = await terminal.screen();
     expect(screen.join("\n")).toContain("Shows evidence that the change does what you asked.");
-    expect(screen.filter((line) => /[⠁-⣿]/u.test(line)).length).toBeGreaterThan(4);
+    expect(screen.filter((line) => /[▀▄█]/u.test(line))).toHaveLength(13);
+    expect(screen.slice(0, 4).every((line) => /[▀▄█]/u.test(line))).toBe(true);
     expect(screen.filter((line) => line.startsWith("› "))).toHaveLength(1);
     expect(screen.join("\n")).not.toContain("▌");
     // The footer is one row: the evidence, and the permission mode (#449), a status it never drops; this temporary folder's long
