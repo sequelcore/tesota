@@ -6,6 +6,8 @@
 | --- | --- |
 | `tesota` | Opens the shell in the current folder |
 | `tesota -p "<request>"` | Runs one request without the shell ([Print mode](../guides/print-mode.md)) |
+| `tesota -p -c "<text>"` | Continues this folder's most recently changed session: the answer to its question, or a follow-up ([Continuing a session](../guides/print-mode.md#continuing-a-session)) |
+| `tesota -p --resume <session> "<text>"` | The same for the session with that id; also `-r` |
 | `tesota receipt [--json] [--owner <login or email>]` | Writes the last receipt for a pull request, or as an in-toto Statement ([Receipts](../guides/receipts.md)) |
 | `tesota accounts` | Lists your accounts, each with the account it is signed in to ([Several accounts](../guides/models.md#several-accounts-of-one-provider)) |
 | `tesota accounts add claude-code\|openai-codex <name>` | Adds an account in one step: its sign-in, then its record |

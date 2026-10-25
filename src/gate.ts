@@ -1,7 +1,7 @@
 import type * as Effect from "effect/Effect";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { BranchEntry, ExtensionAPI, ExtensionContext, SettleEvent, SettleResult } from "./contract.js";
+import type { BranchEntry, EntryDraft, ExtensionAPI, ExtensionContext, SettleEvent, SettleResult } from "./contract.js";
 import { clarificationText, type Clarification, type RequestInput } from "./clarification.js";
 import { type ChangeStatus, type ChangedFile, changedLines } from "./diff-lines.js";
 import { currentContent, type Evidence } from "./evidence.js";
@@ -16,7 +16,7 @@ import { inFolder, owningProjects, suggestChecks } from "./projects.js";
 import { proofReport } from "./prove-tool.js";
 import { entryReceipt, type FloorRefusal, inUnit, isReceipt, type ModelResult, noEvidence, type Receipt, type ReceiptChild, receiptEntry, receiptGraphEntry,
   type UnitEvidence } from "./receipt.js";
-import { attributionResolved, captureFingerprint, compareFingerprints, type Fingerprint, historyFacts, pathBlobs, refTips } from "./request-fingerprint.js";
+import { attributionResolved, captureFingerprint, compareFingerprints, type Fingerprint, historyFacts, pathBlobs, refTips, type UnmeasuredPath } from "./request-fingerprint.js";
 import { takeSnapshot } from "./snapshot.js";
 import type { CommandRun } from "./test-rung.js";
 import type { FileChange } from "./verification-changes.js";
@@ -471,6 +471,12 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     children = [];
     floorRefusals = [];
     start = undefined;
+    // A request that continues one that ended on its question (#651) is measured from that one's start: what it changed is its own.
+    const restored = restoredStart(recorded?.()?.continues?.start);
+    if (restored !== undefined) {
+      fingerprints = Promise.resolve(restored);
+      mayHaveChanged = true;
+    }
     progress.operations.beginRun(`request-${requestNumber += 1}`);
     progress.waiting();
     // On the engine the ledger holds the request and its start; the gate reads them as it settles.
@@ -514,7 +520,9 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
       const result = await verify(event, ctx);
       closed = result?.continue === true ? "returned_to_agent"
         : event.outcome !== "completed" || ctx.signal?.aborted === true ? "stopped" : "settled";
-      return result;
+      // A run that ends on its question keeps its start fingerprints, for the run that answers it to restore (#651).
+      const prints = event.outcome === "completed" && event.reason !== undefined && result?.continue !== true ? await fingerprints : undefined;
+      return prints === undefined ? result : { ...result, entries: [...result?.entries ?? [], savedStart(prints)] };
     } finally { progress.operations.closeAttempt(closed); }
   });
   const verify = async (event: SettleEvent, ctx: ExtensionContext): Promise<SettleResult | undefined> => {
@@ -801,12 +809,54 @@ export interface RecordedRequest {
   /** The calls Tesota's floor refused in the run (#622). */
   readonly refusals?: readonly FloorRefusal[];
   readonly base: { readonly units: readonly RecordedUnit[] };
+  /** The earlier request this one continues (#651), and what the gate saved as it ended on its question (`savedStart`). */
+  readonly continues?: { readonly run: number; readonly start?: unknown };
 }
 
 type RecordedUnit =
   | { readonly folder: string; readonly kind: "commit"; readonly commit: string | null; readonly refs?: readonly string[] }
   | { readonly folder: string; readonly kind: "snapshot"; readonly commit: string; readonly tooLarge: readonly string[] }
   | { readonly folder: string; readonly kind: "refused"; readonly reason: string };
+
+/**
+ * The `custom` entry the gate records as a run ends on an unresolved
+ * question (#651): the start fingerprints it measured the request from, by
+ * folder, which the run that continues the request restores (`restoredStart`).
+ */
+const requestStartType = "tesota-request-start";
+
+function savedStart(prints: ReadonlyMap<string, Fingerprint>): EntryDraft {
+  return { type: "custom", customType: requestStartType, data: { fingerprints: [...prints].map(([folder, print]) =>
+    [folder, print.status === "known" ? { ...print, blobs: [...print.blobs] } : print]) } };
+}
+
+const isText = (value: unknown): value is string => typeof value === "string";
+
+/** One saved fingerprint read back, or none when it is not one. */
+function savedFingerprint(value: unknown): Fingerprint | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const print = value as Record<string, unknown>;
+  if (print["status"] === "unknown") return isText(print["reason"]) ? { status: "unknown", reason: print["reason"] } : undefined;
+  const { head, branch, blobs, unmeasured } = print;
+  if (print["status"] !== "known" || !(head === null || isText(head)) || !isText(branch) || !Array.isArray(blobs) || !Array.isArray(unmeasured)) return undefined;
+  const pairs = blobs.filter((pair): pair is [string, string | null] => Array.isArray(pair) && pair.length === 2 && isText(pair[0])
+    && (pair[1] === null || isText(pair[1])));
+  const paths = unmeasured.filter((item): item is UnmeasuredPath => typeof item === "object" && item !== null
+    && isText((item as Record<string, unknown>)["path"]) && isText((item as Record<string, unknown>)["reason"]));
+  return pairs.length !== blobs.length || paths.length !== unmeasured.length ? undefined
+    : { status: "known", head, branch, blobs: new Map(pairs), unmeasured: paths };
+}
+
+/** The start fingerprints a request that ended on its question saved (`savedStart`); none when nothing was saved, or what was is not that. */
+function restoredStart(data: unknown): ReadonlyMap<string, Fingerprint> | undefined {
+  const saved = typeof data === "object" && data !== null ? (data as Record<string, unknown>)["fingerprints"] : undefined;
+  if (!Array.isArray(saved)) return undefined;
+  const prints = saved.flatMap((pair): [string, Fingerprint][] => {
+    const print = Array.isArray(pair) && pair.length === 2 && isText(pair[0]) ? savedFingerprint(pair[1]) : undefined;
+    return print === undefined ? [] : [[pair[0] as string, print]];
+  });
+  return prints.length === saved.length ? new Map(prints) : undefined;
+}
 
 /** The start `begin` would have built, from the bases the ledger recorded; a refused unit is verified by nothing, with its reason. */
 function recordedStart(base: RecordedRequest["base"]): Start {

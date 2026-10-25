@@ -9,7 +9,7 @@ import * as Option from "effect/Option";
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { type Base, captureBase } from "./base.ts";
-import type { BranchEntry, EntryDraft, ExtensionFactory, RunOutcome, Session, SessionOutcome, ToolDefinition } from "../../../src/contract.ts";
+import type { BranchEntry, EntryDraft, ExtensionFactory, PromptOptions, RunOutcome, Session, SessionOutcome, ToolDefinition } from "../../../src/contract.ts";
 import { contextUsage, estimateTokens } from "./context-usage.ts";
 import { conversationMessage } from "./conversation.ts";
 import { createHost, type DrawingSurface, type PhaseResult } from "./extensions.ts";
@@ -195,8 +195,24 @@ export type SessionEvent =
   | { readonly type: "job"; readonly job: string; readonly callId: string; readonly state: "running" | "ended"; readonly details: JsonValue }
   | { readonly type: "ended"; readonly outcome: SessionOutcome };
 
+/** The `custom` entry that links a run to the one it continues (#651), recorded with its request. */
+export const continuesType = "tesota.continues";
+
+/**
+ * The earlier run a request continues (#651), one that ended on an
+ * unresolved question: the new run is measured from that run's base, and
+ * the operator's answer is its clarification, never permission.
+ */
+export interface Continuation {
+  readonly run: number;
+  readonly base: Base;
+  readonly clarification: Clarification;
+}
+
 /** The engine's session as the loop runs it: the contract's, its conversation, and its events. */
 export interface LoopSession extends Session {
+  /** The contract's prompt; `continues` starts a run that continues an earlier one (#651) instead of taking a new base. */
+  prompt(text: string, options?: PromptOptions & { readonly continues?: Continuation }): Promise<void>;
   /** The conversation in order, as the model and the shell see it. */
   history(): readonly HistoryMessage[];
   /** Input not yet taken by the model, in arrival order. */
@@ -1217,7 +1233,8 @@ export function createLoop(options: LoopOptions): LoopSession {
   }
 
   /** A run: its request and base are synced into the ledger before the model hears of it, and its end before it reports. */
-  async function start(run: number, text: string, origin: Origin, signal: AbortSignal, skill: StartedSkill | undefined): Promise<void> {
+  async function start(run: number, text: string, origin: Origin, signal: AbortSignal, skill: StartedSkill | undefined,
+    continues: Continuation | undefined): Promise<void> {
     const at = new Date().toISOString();
     const asked: HistoryMessage = { role: "user", content: text, timestamp: Date.parse(at) };
     const instructed = skill === undefined ? undefined : skillMessage(skill, Date.parse(at));
@@ -1225,8 +1242,12 @@ export function createLoop(options: LoopOptions): LoopSession {
     // number is given again and the input that waited for it is refused, as the file reader requires.
     const written = (async () => {
       let captured: Base;
-      try { captured = await base(options.cwd, signal); } catch (error) { closed = true; throw error; }
+      try { captured = continues?.base ?? await base(options.cwd, signal); } catch (error) { closed = true; throw error; }
       writer.append({ type: "request", run, text, origin, at, base: captured, ...skill === undefined ? {} : { skill } });
+      // The run it continues and the answer go in with the request, before anything runs.
+      if (continues !== undefined) {
+        writer.append({ type: "custom", run, customType: continuesType, data: { run: continues.run, clarification: continues.clarification } });
+      }
       runs = run;
       // The run's input is counted from its request and its skill on, before input that came while it starts takes its place.
       ledger = instructed === undefined ? [asked] : [asked, instructed];
@@ -1291,7 +1312,7 @@ export function createLoop(options: LoopOptions): LoopSession {
   }
 
   return {
-    async prompt(text, { streamingBehavior, source = "interactive" } = {}) {
+    async prompt(text, { streamingBehavior, source = "interactive", continues } = {}) {
       if (questionFailure !== undefined) throw questionFailure;
       if (disposed !== undefined) throw new Error(disposedReason);
       const admission = new AbortController();
@@ -1316,7 +1337,7 @@ export function createLoop(options: LoopOptions): LoopSession {
       // Only the operator starts a skill by name; an extension's text is never their request.
       const skill = source === "extension" ? undefined : startedSkill(text, available);
       if (running !== undefined) {
-        if (streamingBehavior === undefined) throw new Error("A prompt is already running; steer it, queue a follow-up, abort it or wait.");
+        if (streamingBehavior === undefined || continues !== undefined) throw new Error("A prompt is already running; steer it, queue a follow-up, abort it or wait.");
         // A skill started during a run waits for the run's turns to end, as a follow-up; it never steers them.
         await amend(text, skill === undefined ? streamingBehavior : "followUp", source, controller?.signal, skill);
         return;
@@ -1327,7 +1348,7 @@ export function createLoop(options: LoopOptions): LoopSession {
       closed = false;
       emit({ type: "state", state: "working" });
       const run = runs + 1;
-      const current = start(run, text, source, controller.signal, skill);
+      const current = start(run, text, source, controller.signal, skill, continues);
       running = current;
       try {
         await current;
