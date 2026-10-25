@@ -95,3 +95,41 @@ method partlyHolds(standings: seq<Standing>) returns (res: bool)
   }
   return false;
 }
+
+method runStanding(changed: bool, stopped: bool, decisions: int, failed: bool, passed: int, gaps: int, proved: seq<bool>, tested: seq<bool>, exercised: seq<bool>) returns (res: string)
+  requires (passed >= 0)
+  requires (decisions >= 0)
+  requires (gaps >= 0)
+  requires (|tested| == |proved|)
+  requires (|exercised| == |proved|)
+  ensures ((res == "verified") <==> (((((!(stopped) && (decisions == 0)) && changed) && (passed > 0)) && (gaps == 0)) && forall k: nat :: ((k < |proved|) ==> (proved[k] || (tested[k] && exercised[k])))))
+  ensures ((res == "failed") <==> ((stopped || (decisions > 0)) && failed))
+  ensures ((res == "unchanged") <==> ((!(stopped) && (decisions == 0)) && !(changed)))
+  ensures ((res == "unverified") <==> (((!(stopped) && (decisions == 0)) && changed) && (passed == 0)))
+  ensures ((res == "incomplete") <==> (((stopped || (decisions > 0)) && !(failed)) || ((((!(stopped) && (decisions == 0)) && changed) && (passed > 0)) && ((gaps > 0) || exists k: nat :: (((k < |proved|) && !(proved[k])) && !((tested[k] && exercised[k])))))))
+{
+  if (stopped || (decisions > 0)) {
+    return (if failed then "failed" else "incomplete");
+  }
+  if !(changed) {
+    return "unchanged";
+  }
+  if (passed == 0) {
+    return "unverified";
+  }
+  if (gaps > 0) {
+    return "incomplete";
+  }
+  var k := 0;
+  while (k < |proved|)
+    invariant (0 <= k)
+    invariant (k <= |proved|)
+    invariant forall j: nat :: ((j < k) ==> (proved[j] || (tested[j] && exercised[j])))
+  {
+    if (!(proved[k]) && !((tested[k] && exercised[k]))) {
+      return "incomplete";
+    }
+    k := (k + 1);
+  }
+  return "verified";
+}

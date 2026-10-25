@@ -4,7 +4,8 @@ import { rmSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { tesotaHome } from "../../../../src/home.ts";
 import { provideHost } from "../../../../src/host.ts";
-import { entryReceipt, isReceipt, type Receipt, receiptStanding, sessionGraphs } from "../../../../src/receipt.ts";
+import { entryReceipt, isReceipt, isStanding, type Receipt, type ReceiptStanding, receiptStanding, sessionGraphs, standingWords }
+  from "../../../../src/receipt.ts";
 import { terminalText } from "../../../../src/terminal-text.ts";
 import tesota from "../../../../src/tesota.ts";
 import { type AccountHands, accountRows, addAccount, type ClaudeCode, claudeOf, removeAccount, signInAgain } from "../accounts.ts";
@@ -223,7 +224,7 @@ export async function runApp(options: AppOptions): Promise<void> {
       else if (event.type === "ended") {
         made.state = "ended";
         made.outcome = event.outcome;
-        if (made !== attached) shell.note(`“${firstLine(made.request)}” ended ${event.outcome}${made.verification === undefined ? "" : `, ${made.verification}`}.`);
+        if (made !== attached) shell.note(`“${firstLine(made.request)}” ended ${event.outcome}${made.verification === undefined ? "" : `, ${standingWords[made.verification]}`}.`);
         // What the floor refused shows at every request's end, whatever else happened (#622).
         const refused = lastFloorNotice(peekSessionFile(made.session.file).entries);
         if (refused !== undefined) shell.note(refused.trimEnd());
@@ -243,7 +244,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     const ended = outcome !== "running";
     children.set(session, { parent, row: { id: session, request: `↳ ${String(description ?? "")}`, state: ended ? "ended" : "working",
       ...ended ? { outcome: String(outcome) } : {},
-      ...verification === "verified" || verification === "incomplete" || verification === "failed" ? { verification } : {},
+      ...isStanding(verification) ? { verification } : {},
       workspace: typeof branch === "string" ? branch : writes === true ? "its worktree" : "reads", attached: false,
       startedAt: children.get(session)?.row.startedAt ?? Date.now() } });
   };
@@ -695,7 +696,7 @@ interface Live {
   readonly surface: Surface;
   state: SessionRow["state"];
   outcome?: string;
-  verification?: "verified" | "incomplete" | "failed";
+  verification?: ReceiptStanding;
   request?: string | undefined;
   readonly startedAt: number;
   /** Questions it holds for the operator: put when it is shown, refused when it closes. */

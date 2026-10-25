@@ -1,5 +1,5 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
-import { entryReceipt, isReceipt, type Receipt, receiptStanding, renderReceipt } from "../../../src/receipt.ts";
+import { entryReceipt, isReceipt, type Receipt, type ReceiptStanding, receiptStanding, renderReceipt, standingWords } from "../../../src/receipt.ts";
 import { type AgentType, agentCatalog } from "./agents.ts";
 import { admitChild, branchGuard, childMode, type GuardAdmission } from "./agent-rule.ts";
 import { branchOf } from "./branch.ts";
@@ -37,7 +37,7 @@ export interface ChildReport {
   /** How the child's run ended, `unknown` when the process ended first; `running` until it ends. */
   readonly outcome: string;
   /** Where the child's receipt stands, when its run settled with one. */
-  readonly verification?: "verified" | "incomplete" | "failed";
+  readonly verification?: ReceiptStanding;
   /** The limit that stopped it, when one did. */
   readonly limited?: "turns" | "time";
   readonly session: string;
@@ -89,7 +89,7 @@ async function modelFor(parent: Parent, request: AgentRequest, type: AgentType |
 function endText(report: ChildReport, said: string | undefined, receipt: Receipt | undefined, failure: string | undefined): string {
   const stopped = report.limited === "turns" ? ` after ${childLimits.turns} replies, its limit`
     : report.limited === "time" ? ` after ${childLimits.minutes} minutes, its limit` : "";
-  return [`Subagent "${report.description}" ended ${report.outcome}${stopped}${report.verification === undefined ? "" : `, ${report.verification}`}.`,
+  return [`Subagent "${report.description}" ended ${report.outcome}${stopped}${report.verification === undefined ? "" : `, ${standingWords[report.verification]}`}.`,
     ...failure === undefined ? [] : [`It failed: ${failure}`],
     // What the floor refused it binds this run too: the same effect is not to be reached another way (#622).
     ...report.floorRefusals === undefined ? [] : [`Tesota's floor refused ${report.floorRefusals} of its calls; no one can allow `

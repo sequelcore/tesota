@@ -572,8 +572,10 @@ request.
   `Verifying…`. It listens only while shown, and lets go when the session
   switches or the shell stops.
   It leads with `!` when anything needs you, by the same count as the
-  receipt, `○` when nothing does but something is unverified, and `✓`
-  otherwise, in the receipt's color. It is one row: at the right the
+  receipt, `✓` only when the receipt stands `verified`
+  ([Standing](../receipt-v2.md#standing)), and `○` otherwise, in the
+  receipt's color; with nothing else to list it says why, such as
+  `unverified` or `nothing to verify`. It is one row: at the right the
   folder, the model, the context % and the permission mode. As the terminal
   narrows it drops the folder, then the model, shortens the evidence, then
   drops the context % (`footerLayout`, proved); the permission mode stays.
