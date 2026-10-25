@@ -37,6 +37,7 @@ export interface AppOptions {
   readonly terminal?: Terminal;
   /** System browser boundary; tests supply a recorder instead of launching a browser. */
   readonly openGraphFile?: (path: string) => Promise<void>;
+  readonly openSignInPage?: (url: string) => Promise<void>;
   /** The operator's credentials; the engine's own file when not given. */
   readonly credentials?: CredentialStore;
   /** The models over those credentials; the engine's when not given. */
@@ -330,7 +331,7 @@ export async function runApp(options: AppOptions): Promise<void> {
       "warning");
       return;
     }
-    const [{ appendOnlyText, fitsFullScreen, fullScreen, ModelViewer }, { loadModelView, writeModelViewHtml, openGraphHtml }] =
+    const [{ appendOnlyText, fitsFullScreen, fullScreen, ModelViewer }, { loadModelView, writeModelViewHtml, openBrowser }] =
       await Promise.all([import("./model-viewer.ts"), import("../../../../src/model-view-process.ts")]);
     if (plain || mode === "inline" || !fitsFullScreen(terminal.columns, terminal.rows)) {
       try { shell.note(appendOnlyText(await loadModelView(graph.manifest, {}, new AbortController().signal), graph.manifest)); } catch (error) {
@@ -348,7 +349,7 @@ export async function runApp(options: AppOptions): Promise<void> {
         const path = await writeModelViewHtml(graph.manifest, signal);
         written(path);
         if (signal.aborted) return;
-        await (options.openGraphFile ?? openGraphHtml)(path);
+        await (options.openGraphFile ?? openBrowser)(path);
       }, close: () => { hide(); }, redraw: () => { shell.redraw(); } }));
   };
   /** Opens the shown session again, as a change of model or thinking needs, once it has let go of its file. */
@@ -385,26 +386,22 @@ export async function runApp(options: AppOptions): Promise<void> {
     });
     hide = shell.overlay(dashboard);
   };
-  /** The link or code the sign-in last gave, shown with its next question so the dialog never hides it. */
-  let given: string | undefined;
   const interaction: AuthInteraction = {
     prompt: async (prompt) => {
-      const message = given === undefined ? prompt.message : `${given}\n${prompt.message}`;
-      given = undefined;
-      const answer = prompt.type === "select" ? await shell.pick(message, prompt.options.map(({ id, label: text, description }) =>
-        ({ value: id, label: text, ...description === undefined ? {} : { description } })))
-        : await shell.ask(message, { secret: prompt.type === "secret", ...prompt.placeholder === undefined ? {} : { placeholder: prompt.placeholder } });
+      const answer = prompt.type === "select" ? await shell.pick(prompt.message, prompt.options.map(({ id, label, description }) =>
+        ({ value: id, label, ...description === undefined ? {} : { description } })))
+        : await shell.ask(prompt.message, { secret: prompt.type === "secret", ...prompt.placeholder === undefined ? {} : { placeholder: prompt.placeholder } });
       if (answer === undefined) throw new Error("Login cancelled");
       return answer;
     },
     notify: (event) => {
-      if (event.type === "auth_url" || event.type === "device_code") {
-        given = event.type === "auth_url" ? `Open ${event.url}${event.instructions === undefined ? "" : ` — ${event.instructions}`}`
-          : `Enter ${event.userCode} at ${event.verificationUri}`;
-        shell.note(given);
-      } else shell.note(event.message);
+      if (event.type !== "auth_url" && event.type !== "device_code") shell.note(event.message);
     },
   };
+  const browserSignIn = <T,>(work: (interaction: AuthInteraction) => Promise<T>): Promise<T> => shell.handOver(async () => {
+    const { terminalSignIn } = await import("./sign-in.ts");
+    return terminalSignIn(work, { terminal, ...options.openSignInPage === undefined ? {} : { open: options.openSignInPage } });
+  });
   const claude = claudeOf(options.claude);
   /** The accounts as this shell manages them (#642): Claude Code's sign-in gets the terminal while it runs. */
   const hands: AccountHands = { settingsPath, models, credentials, interaction, cwd: options.cwd,
@@ -424,7 +421,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     if (provider === undefined) return;
     const name = await shell.ask("Name the account: letters, digits, _ or -", { placeholder: "work" });
     if (name === undefined || name.trim() === "") return;
-    await accountStep(() => addAccount(hands, provider, name.trim()));
+    await accountStep(() => provider === "openai-codex" ? browserSignIn((interaction) => addAccount({ ...hands, interaction }, provider, name.trim())) : addAccount(hands, provider, name.trim()));
   };
   /** `/accounts` (#642): each account with what it is signed in to; one picked is signed in again or removed. */
   const accountsCommand = async (): Promise<void> => {
@@ -434,7 +431,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     if (picked === undefined) return;
     if (picked === "") { await addAnAccount(); return; }
     const action = await shell.pick(picked, [{ value: "login", label: "Sign in again" }, { value: "remove", label: "Remove" }]);
-    if (action === "login") await accountStep(() => signInAgain(hands, picked));
+    if (action === "login") await accountStep(() => picked.startsWith("openai-codex") ? browserSignIn((interaction) => signInAgain({ ...hands, interaction }, picked)) : signInAgain(hands, picked));
     else if (action === "remove") await accountStep(() => removeAccount(hands, picked));
   };
   /** A project's hooks run its own commands: they run only once the operator trusts them as they are now (#457). */
@@ -516,7 +513,13 @@ export async function runApp(options: AppOptions): Promise<void> {
   const serverAction = async (servers: McpServers, action: string, name: string): Promise<void> => {
     try {
       if (action === "reconnect") await servers.reconnect(name);
-      else if (action === "login") await servers.signIn(name, (page) => { shell.note(`Open ${page.href} to sign in to ${name}.`); }, new AbortController().signal);
+      else if (action === "login") {
+        await shell.handOver(async () => {
+          const { terminalSignIn } = await import("./sign-in.ts");
+          await terminalSignIn(async (_interaction, show, signal) => servers.signIn(name, (page) => { show(page.href); }, signal),
+            { terminal, ...options.openSignInPage === undefined ? {} : { open: options.openSignInPage } });
+        });
+      }
       else if (action === "logout") await servers.signOut(name);
       else { shell.note(`/mcp ${action} is not an MCP action: login, logout or reconnect.`, "warning"); return; }
       const now = servers.status().find((server) => server.name === name);
@@ -566,7 +569,9 @@ export async function runApp(options: AppOptions): Promise<void> {
         : provider.auth.oauth !== undefined ? "oauth" : "api_key";
       if (type !== "oauth" && type !== "api_key") return;
       try {
-        await models.login(provider.id, type, interaction, loginOptions(options.settingsPath));
+        const login = (interaction: AuthInteraction) => models.login(provider.id, type, interaction, loginOptions(options.settingsPath));
+        if (type === "oauth") await browserSignIn(login);
+        else await login(interaction);
         shell.note(model === undefined ? `Logged in to ${provider.name}. Choose a model with /model.` : `Logged in to ${provider.name}.`);
       } catch (error) {
         shell.note(error instanceof Error ? error.message : String(error), "error");
