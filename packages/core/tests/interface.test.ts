@@ -14,8 +14,8 @@ import { VirtualTerminal } from "./virtual-terminal.ts";
 
 /**
  * Tesota's own interface in the engine's shell (#446), as the operator sees
- * it: the welcome header with its tree, the barred editor, the evidence
- * footer, the tumbleweed while the agent works, the receipt card, and the
+ * it: the pixel-mark header, the input band, the evidence
+ * footer, the working orb, the receipt card, and the
  * theme for the terminal's background. Pi is not loaded for any of it.
  */
 const folder = (prefix: string): string => mkdtempSync(join(tmpdir(), prefix));
@@ -39,7 +39,7 @@ async function app(script: readonly ScriptStep[], tokensPerSecond = 400) {
   writeFileSync(settingsPath, JSON.stringify({ permissionMode: "full" }));
   const running = runApp({ cwd, terminal, models, credentials, settingsPath,
     sessions: folder("tesota-core-interface-sessions-") });
-  await terminal.until("Tesota (v");
+  await terminal.until("Tesota v");
   terminal.type("/model");
   terminal.type(enter);
   await terminal.until("Model");
@@ -62,30 +62,34 @@ describe("Tesota's interface on the engine", () => {
   beforeAll(() => { setCapabilityOverrides({ trueColor: true }); });
   afterAll(() => { setCapabilityOverrides({}); });
 
-  test("slash suggestions open above the barred editor, as Claude Code and Codex do, and Tab completes one", async () => {
+  test("slash suggestions open above the input band, as Claude Code and Codex do, and Tab completes one", async () => {
     const { terminal, running } = await app([]);
     try {
       terminal.type("/");
       await terminal.until("Choose the model");
       const screen = await terminal.screen();
       const suggestion = screen.findIndex((line) => /model\s+Choose the model/u.test(line));
-      expect(suggestion).toBeLessThan(screen.findIndex((line) => line.startsWith("▌")));
+      expect(suggestion).toBeLessThan(screen.findIndex((line) => line.startsWith("› ")));
       expect(screen[suggestion]).toMatch(/^\s+→ model/u);
       terminal.type("res");
       await terminal.until("Open an earlier session");
       terminal.type("\t");
-      expect(await terminal.untilGone("Open an earlier session")).toContain("▌  /resume");
+      expect(await terminal.untilGone("Open an earlier session")).toContain("› /resume");
     } finally {
       await quit(terminal, running);
     }
   });
 
-  test("the welcome header draws the palo fierro, and the barred editor and evidence footer sit below", async () => {
+  test("the empty stage draws the palo fierro, and the input band and evidence footer sit below", async () => {
     const { terminal, running, branch } = await app([]);
+    // The fixed half-block grid is present on the first frame.
+    await terminal.until("▀".repeat(49));
     const screen = await terminal.screen();
     expect(screen.join("\n")).toContain("Shows evidence that the change does what you asked.");
-    expect(screen.filter((line) => /[⠁-⣿]/u.test(line)).length).toBeGreaterThan(4);
-    expect(screen.filter((line) => line.startsWith("▌")).length).toBeGreaterThanOrEqual(3);
+    expect(screen.filter((line) => /[▀▄█]/u.test(line))).toHaveLength(13);
+    expect(screen.slice(0, 4).every((line) => /[▀▄█]/u.test(line))).toBe(true);
+    expect(screen.filter((line) => line.startsWith("› "))).toHaveLength(1);
+    expect(screen.join("\n")).not.toContain("▌");
     // The footer is one row: the evidence, and the permission mode (#449), a status it never drops; this temporary folder's long
     // path is the first thing it drops, so the branch shows only in a wider terminal.
     expect(screen.at(-1)).toContain("● ready");
@@ -130,9 +134,10 @@ describe("Tesota's interface on the engine", () => {
     await new Promise((resolve) => setTimeout(resolve, 200));
     terminal.type("x");
     await new Promise((resolve) => setTimeout(resolve, 100));
-    // The editor's bar, drawn again as the operator types, in tesota-light's border color #9c86a5 instead of the dark #8f7a99.
-    expect(terminal.written.slice(0, before)).toContain("38;2;143;122;153");
-    expect(terminal.written.slice(before)).toContain("38;2;156;134;165");
+    // The input band follows the same light theme, background and text, rather than the removed bar.
+    expect(terminal.written.slice(0, before)).toContain("48;2;47;42;53");
+    expect(terminal.written.slice(before)).toContain("48;2;228;217;233");
+    expect(terminal.written.slice(before)).toContain("38;2;36;33;31");
     await quit(terminal, running);
   });
 });

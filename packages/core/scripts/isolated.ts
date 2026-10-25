@@ -24,6 +24,7 @@ try {
   code = Bun.spawnSync(command, { stdio: ["inherit", "inherit", "inherit"], env: { ...process.env, TESOTA_ISOLATED: root,
     HOME: home, USERPROFILE: home, TMPDIR: temporary, TEMP: temporary, TMP: temporary } }).exitCode ?? 1;
 } finally {
-  rmSync(root, { recursive: true, force: true, maxRetries: 3 });
+  // Longer than a test's own cleanup: a binary a test built may still be held by Windows for a while (#593).
+  rmSync(root, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 });
 }
 process.exit(code);

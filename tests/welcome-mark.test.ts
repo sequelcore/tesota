@@ -1,21 +1,48 @@
+import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
-import { MARK_MAX_COLUMNS, type MarkColors, markLighting, renderMark } from "../src/welcome-mark.js";
+import { MARK_GRIDS, markPixels, renderMark, type MarkName } from "../src/welcome-mark.js";
 
-/** The tesota-dark theme's colors for the mark, from its success, warning, muted, accent and foreground roles. */
-const dark: MarkColors = { foliage: [154, 176, 143], wood: [199, 181, 138], rim: [198, 168, 210], foreground: [242, 238, 230] };
-const light = markLighting([22, 21, 26], false, dark);
+// Independent approved oracle, copied verbatim from the owner's final file.
+const fixture = readFileSync(new URL("./fixtures/tesota-mark-final.txt", import.meta.url), "utf8");
+const grids = [...fixture.matchAll(/^# (small|small-bloom|favicon|large|large-bloom)\r?\n([.gGptsk\r\n]+)/gmu)]
+  .map((match) => [match[1] as MarkName, match[2]!.trim().split(/\r?\n/u)] as const);
 
-it("plays the scene and rests in the pose it started from", () => {
-  const start = renderMark(60, 21, 0, light);
-  expect(start.some((cell) => cell.dots !== 0)).toBe(true);
-  expect(renderMark(60, 21, 1, light)).toEqual(start);
-  for (const moment of [0.25, 0.5, 0.75]) expect(renderMark(60, 21, moment, light)).not.toEqual(start);
-  expect(() => renderMark(MARK_MAX_COLUMNS + 1, 21, 0, light)).toThrow(RangeError);
+it.each(grids)("renders every pixel of %s in half blocks, padding ragged rows", (name, raw) => {
+  const width = Math.max(...raw.map((row) => row.length));
+  const expected = raw.map((row) => row.padEnd(width, "."));
+  expect(MARK_GRIDS[name]).toEqual(expected);
+  const cells = renderMark(name);
+  const actual: string[] = [];
+  for (const row of cells) {
+    actual.push(row.map((cell) => cell.top).join(""), row.map((cell) => cell.bottom).join(""));
+    for (const cell of row) expect(cell.glyph).toBe(cell.top === "." ? cell.bottom === "." ? " " : "▄"
+      : cell.bottom === "." ? "▀" : cell.top === cell.bottom ? "█" : "▀");
+  }
+  expect(actual.slice(0, expected.length)).toEqual(expected);
+  if (expected.length % 2) expect(actual.at(-1)).toBe(".".repeat(width));
 });
 
-it("blows the tumbleweed through only when asked, and has it gone again when the scene rests", () => {
-  const rest = renderMark(60, 21, 0, light);
-  expect(renderMark(60, 21, 0.35, light, true)).not.toEqual(renderMark(60, 21, 0.35, light));
-  expect(renderMark(60, 21, 1, light, true)).toEqual(rest);
-  expect(renderMark(60, 21, 0.9, light, true)).toEqual(renderMark(60, 21, 0.9, light));
+it("keeps the silhouette, including protruding blossoms, without color", () => {
+  const silhouette = (name: MarkName) => renderMark(name, 0, false, false).map((row) => row.map((cell) => cell.glyph).join(""));
+  expect(silhouette("small")).toEqual(["  ▄▄███▄▄████▄▄▄▄  ", "▄█████████████████▀", " ▀▀▀███▀▀▀▀▀▀▀     ", "    ▄█▄            "]);
+  expect(silhouette("small-bloom")).not.toEqual(silhouette("small"));
+  for (const name of Object.keys(MARK_GRIDS) as MarkName[]) {
+    const pixels = markPixels(name);
+    const cells = renderMark(name, 0, false, false);
+    for (const [y, row] of cells.entries()) for (const [x, cell] of row.entries()) {
+      expect(cell.glyph).toBe(pixels[y * 2]?.[x] !== "." ? pixels[y * 2 + 1]?.[x] !== undefined && pixels[y * 2 + 1]?.[x] !== "." ? "█" : "▀"
+        : pixels[y * 2 + 1]?.[x] !== undefined && pixels[y * 2 + 1]?.[x] !== "." ? "▄" : " ");
+    }
+  }
+});
+
+it.each(["small", "small-bloom", "large", "large-bloom"] as const)("rustles %s twice, drops one leaf only on click, and restores every pixel", (name) => {
+  const start = markPixels(name);
+  expect(markPixels(name, 1, true)).toEqual(start);
+  expect(markPixels(name, 0, true)).toEqual(start);
+  for (const progress of [0.15, 0.35, 0.55, 0.75]) expect(markPixels(name, progress)).not.toEqual(start);
+  expect(markPixels(name, 0.5, true)).not.toEqual(markPixels(name, 0.5, false));
+  for (const [y, row] of start.entries()) for (const [x, ink] of [...row].entries()) {
+    if (ink === "t" || ink === "s" || ink === "k") expect(markPixels(name, 0.5)[y]?.[x]).toBe(ink);
+  }
 });

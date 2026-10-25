@@ -8,12 +8,13 @@ import { hasTlc, modelTool } from "./model-tool.js";
 import { suggestChecks } from "./projects.js";
 import { annotated, hasContracts, proveTool } from "./prove-tool.js";
 import { readiness } from "./verification/footer-rule.js";
+import { receiptStanding } from "./receipt.js";
 import { mountWelcomeHeader, ORB_FRAME_MS, orbFrames, WelcomeHeader } from "./welcome-header.js";
 
 /**
- * Tesota, as Pi and the engine's shell load it (#446): it puts the palo fierro in Pi's header
+ * Tesota, as Pi and the engine's shell load it (#446): it mounts the compact header and empty-stage palo fierro
  * (`WelcomeHeader`) and a turning orb in Pi's working indicator
- * (`orbFrames`), draws the input with a bar down its edge (`BarEditor`) over
+ * (`orbFrames`), draws the input as a full-width prompt band (`BarEditor`) over
  * a footer that shows the gate's evidence (`EvidenceFooter`), offers `prove`
  * where there are contracts or once the agent writes one, and `check_model`
  * where TLC is installed, holds a run open
@@ -36,7 +37,9 @@ export default function tesota(pi: ExtensionAPI, recorded?: () => RecordedReques
     const listed = (pi.getSettings().quietStartup ?? false) === false;
     ctx.ui.setHeader((tui, theme) => mountWelcomeHeader(new WelcomeHeader(ctx.cwd, theme,
       { requestRender: () => tui.requestRender(), terminalRows: () => tui.terminal.rows,
-        stageShare: listed ? 1 / 3 : 1 / 2 }), tui));
+        stageShare: listed ? 1 / 3 : 1 / 2, model: () => ctx.model?.id ?? "no model",
+        standing: () => progress.status.step === "settled" ? receiptStanding(progress.status.receipt) : "none",
+        working: () => progress.status.step !== "ready" && progress.status.step !== "settled" }), tui));
     // One turning orb for all work phases; the loader changes only its label.
     if (ctx.mode === "tui") ctx.ui.setWorkingIndicator({ frames: orbFrames(ctx.ui.theme), intervalMs: ORB_FRAME_MS });
     ctx.ui.setEditorComponent((tui, theme) => new BarEditor(tui, theme, () => ctx.ui.theme));

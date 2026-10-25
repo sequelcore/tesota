@@ -3,7 +3,7 @@ import {
   type SlashCommand,
   Spacer, type Terminal, type TerminalColors, Text, TruncatedText, TuiAltScreen, type TuiAltScreenOptions, TuiMainScreen, VStack,
 } from "@earendil-works/pi-tui";
-import { type FooterData, QUESTION_STATUS, type WorkingDetail } from "../../../../src/contract.ts";
+import { type FooterData, type Mounted, QUESTION_STATUS, type WorkingDetail } from "../../../../src/contract.ts";
 import type { SessionEvent } from "../loop.ts";
 import type { EngineSession } from "../session.ts";
 import type { TuiMode } from "../settings.ts";
@@ -167,6 +167,10 @@ export function startShell(options: ShellOptions): Shell {
     get renderers() { return surface?.renderers ?? none; }, get tools() { return surface?.tools ?? none; },
     // The shown session's folder, its worktree when it has one (#453), never the process's.
     expanded: () => expanded, get cwd() { return session.workspace.cwd; } });
+  transcript.load(session.history());
+  let activity = session.history().length > 0;
+  let handedOver = false;
+  let mountedHeader: Mounted | undefined;
   const header = new Container();
   document.addChild(header);
   // A blank row between the header and the conversation's first entry.
@@ -208,15 +212,29 @@ export function startShell(options: ShellOptions): Shell {
   const statusRow: Component = { render: (width) => questions.length > 0 ? [] : status.render(width), invalidate: () => { status.invalidate(); } };
   // A blank row always above the input, so the conversation's last card never touches it.
   const dock: readonly Component[] = [new Spacer(1), pending, statusRow, editorSlot, footerSlot];
+  // This decoration belongs to the live viewport, not the document exported to scrollback.
+  const liveDocument = new Container();
+  liveDocument.addChild(document);
+  liveDocument.addChild({
+    render: (width) => {
+      const stage = mountedHeader?.emptyState;
+      if (activity || handedOver || stage === undefined) { stage?.pause(); return []; }
+      const free = Math.max(0, terminal.rows - document.render(width).length
+        - dock.reduce((rows, component) => rows + component.render(width).length, 0));
+      return stage.renderIn(width, free);
+    },
+    handleMouse: (event) => activity ? undefined : mountedHeader?.emptyState?.handleMouse?.(event),
+    invalidate: () => mountedHeader?.emptyState?.invalidate(),
+  });
   if (tui instanceof TuiAltScreen) {
     tui.setLayoutRoot(new VStack([
-      { component: new ScrollView(document, { follow: "end", primary: true, overscroll: "chain" }), basis: 0, grow: 1, shrink: 1, minSize: 1 },
+      { component: new ScrollView(liveDocument, { follow: "end", primary: true, overscroll: "chain" }), basis: 0, grow: 1, shrink: 1, minSize: 1 },
       // The footer never gives up its row: what waits for the operator, and the mode, show however tall a question is.
       { component: new VStack(dock.map((component) => ({ component, shrink: component === footerSlot ? 0 : 1, minSize: 0 }))), basis: "auto", grow: 0, shrink: 1,
         minSize: 1 },
     ]));
   } else {
-    tui.addChild(document);
+    tui.addChild(liveDocument);
     for (const component of dock) tui.addChild(component);
   }
 
@@ -314,9 +332,11 @@ export function startShell(options: ShellOptions): Shell {
   const mountHeader = (): void => {
     if (mounted.header === surface?.header && header.children.length > 0) return;
     mounted.header = surface?.header;
+    mountedHeader?.dispose?.();
     header.clear();
-    header.addChild(surface?.header === undefined ? new Text(theme.fg("dim", `tesota-core · ${session.workspace.cwd}`), 1, 1)
-      : surface.header(tui, theme));
+    mountedHeader = surface?.header === undefined ? new Text(theme.fg("dim", `tesota-core · ${session.workspace.cwd}`), 1, 1)
+      : surface.header(tui, theme);
+    header.addChild(mountedHeader);
   };
   const mountEditor = (): void => {
     if (mounted.editor === surface?.editor && editorSlot.children.length > 0) return;
@@ -402,6 +422,10 @@ export function startShell(options: ShellOptions): Shell {
     tui.requestRender();
   };
   const onEvent = (event: SessionEvent): void => {
+    if (event.type === "message" || event.type === "reply" || event.type === "call") {
+      activity = true;
+      mountedHeader?.emptyState?.pause();
+    }
     if (event.type === "pending") drawPending();
     else if (event.type === "message") transcript.add(event.message);
     else if (event.type === "reply") transcript.stream(event.partial);
@@ -424,6 +448,8 @@ export function startShell(options: ShellOptions): Shell {
   let unsubscribe = session.subscribe(onEvent);
 
   const send = (text: string, behavior?: "steer" | "followUp"): void => {
+    activity = true;
+    mountedHeader?.emptyState?.pause();
     session.prompt(text, behavior === undefined ? {} : { streamingBehavior: behavior }).catch((error: unknown) => {
       working(undefined);
       note(error instanceof Error ? error.message : String(error), "error");
@@ -453,6 +479,7 @@ export function startShell(options: ShellOptions): Shell {
     const appearance = (next: "light" | "dark"): void => {
       if (next === theme.appearance) return;
       theme.use(next);
+      tui.invalidate();
       tui.requestRender(true);
     };
     const background = ({ background: color }: TerminalColors): void => {
@@ -476,10 +503,14 @@ export function startShell(options: ShellOptions): Shell {
     visibleClarification = undefined;
     unsubscribe();
     unwatch();
+    mountedHeader?.dispose?.();
     unfollow();
     watchDetail(false);
     for (const dispose of disposers.splice(0)) dispose();
     loader.stop();
+    // Inline has no alternate buffer to discard: erase the live-only stage before leaving it behind.
+    activity = true;
+    if (tui instanceof TuiMainScreen) tui.renderNow();
     tui.stop({ preserveScreen: false });
     if (tui instanceof TuiAltScreen) {
       // The conversation stays in the terminal's scrollback, as the inline shell leaves it. Drawn without
@@ -598,6 +629,7 @@ export function startShell(options: ShellOptions): Shell {
       unsubscribe();
       drafts.set(session, editor.getText());
       session = next;
+      activity = session.history().length > 0;
       editor.setAutocompleteProvider(autocomplete());
       unsubscribe = session.subscribe(onEvent);
       if (nextSurface !== undefined && nextSurface !== surface) {
@@ -667,12 +699,16 @@ export function startShell(options: ShellOptions): Shell {
     note,
     redraw: () => { drawFooter(); tui.requestRender(); },
     handOver: async (work) => {
+      handedOver = true;
+      mountedHeader?.emptyState?.pause();
+      if (tui instanceof TuiMainScreen) tui.renderNow();
       tui.stop();
       // Ctrl+C reaches every process on the terminal: it is the other program's to cancel with, and must not end the shell.
       const keep = (): void => undefined;
       process.on("SIGINT", keep);
       try { return await work(); } finally {
         process.off("SIGINT", keep);
+        handedOver = false;
         tui.start();
         tui.requestRender(true);
       }

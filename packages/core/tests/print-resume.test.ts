@@ -251,3 +251,15 @@ describe("what resuming refuses", () => {
     expect(refused.error).toContain("-c and --resume");
   });
 });
+
+test("print output and its piped sinks and session log contain no terminal mark", async () => {
+  const cwd = repository();
+  const print = printer(["An ordinary answer."]);
+  const result = await print(["Answer without changing files."], cwd);
+  expect(result.code).toBe(0);
+  expect(result.out).toContain("An ordinary answer.");
+  expect(result.out + result.error).not.toMatch(/[▀▄█⠁-⣿]/u);
+  for (const file of sessionsOf(cwd)) {
+    expect(JSON.stringify(readSessionFile(file).entries)).not.toMatch(/[▀▄█⠁-⣿]/u);
+  }
+});
