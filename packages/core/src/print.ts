@@ -12,6 +12,7 @@ import type { McpServers } from "./mcp.ts";
 import { type McpServerConfig, readMcpConfig } from "./mcp-config.ts";
 import { unusedModels } from "./agents.ts";
 import { accountLabels, engineModels, runnableModel } from "./model-access.ts";
+import { startingModel } from "./resume-model-rule.ts";
 import { loadRules } from "./permissions.ts";
 import { askedSessions, createSession, type EngineSession, openSession, type OpenOptions, pendingQuestion, sessionsFolder } from "./session.ts";
 import { lastFloorNotice, peekSessionFile, SessionFileError } from "./session-file.ts";
@@ -77,6 +78,30 @@ function sessionNamed(cwd: string, named: Named | undefined): { file?: string } 
   }
   const file = asked.map((each) => ({ each, changed: statSync(each).mtimeMs })).sort((a, b) => b.changed - a.changed)[0]?.each;
   return file === undefined ? { refused: "No session in this folder to continue; start one with tesota -p \"<request>\"." } : { file };
+}
+
+/**
+ * The model the run starts on, or none, saying why (#651). A continued
+ * session keeps the model it last ran on, account included, unless `--model`
+ * says otherwise, which is said on standard error; one that cannot run now is
+ * refused, not replaced.
+ */
+async function modelFor(models: MutableModels, explicit: string | undefined, file: string | undefined, setting: string | undefined,
+  write: PrintOutput): Promise<Exclude<Awaited<ReturnType<typeof runnableModel>>, string> | undefined> {
+  const last = file === undefined ? undefined : peekSessionFile(file).entries.findLast((entry) => entry.type === "assistant")?.message;
+  const lastModel = last === undefined ? "" : `${last.provider}/${last.model}`;
+  const chosen = startingModel(explicit ?? "", lastModel, setting ?? "");
+  if (chosen === "") { write.error("No model: run tesota, then /login and /model.\n"); return undefined; }
+  // A model the sign-in does not serve is refused here rather than at the first request (#566).
+  const runnable = await runnableModel(models, chosen);
+  if (typeof runnable === "string") {
+    write.error(explicit === undefined && lastModel !== ""
+      ? `Not run: the session last ran on ${lastModel}, which cannot run now: ${runnable} Use --model <provider>/<id> to choose another.\n`
+      : `Not run: ${runnable}\n`);
+    return undefined;
+  }
+  if (explicit !== undefined && lastModel !== "" && explicit !== lastModel) write.error(`Continuing on ${explicit}; the session last ran on ${lastModel}.\n`);
+  return runnable;
 }
 
 /**
@@ -165,11 +190,8 @@ export async function runPrint(args: readonly string[], cwd: string, write: Prin
   const accounts = settings.accounts ?? [];
   models ??= engineModels(fileCredentialStore(), accounts);
   for (const [id, label] of await accountLabels(fileCredentialStore(), accounts)) write.error(`${id}: ${label}\n`);
-  const chosen = asked.model ?? settings.model;
-  if (chosen === undefined) { write.error("No model: run tesota, then /login and /model.\n"); return 1; }
-  // A model the sign-in does not serve is refused here rather than at the first request (#566).
-  const runnable = await runnableModel(models, chosen);
-  if (typeof runnable === "string") { write.error(`Not run: ${runnable}\n`); return 1; }
+  const runnable = await modelFor(models, asked.model, named.file, settings.model, write);
+  if (runnable === undefined) return 1;
   const { model, unchecked } = runnable;
   if (unchecked !== undefined) write.error(`${unchecked}\n`);
   provideHost(shellHost());
