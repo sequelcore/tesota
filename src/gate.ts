@@ -5,7 +5,7 @@ import type { BranchEntry, ExtensionAPI, ExtensionContext, SettleEvent, SettleRe
 import { clarificationText, type Clarification, type RequestInput } from "./clarification.js";
 import { type ChangeStatus, type ChangedFile, changedLines } from "./diff-lines.js";
 import { currentContent, type Evidence } from "./evidence.js";
-import { git, gitOutput, headCommit } from "./git.js";
+import { git, gitOutput, gitStopped, headCommit } from "./git.js";
 import { engineName } from "./engine-name.js";
 import { host } from "./host.js";
 import type { ModelCheck } from "./model-check.js";
@@ -63,8 +63,8 @@ function effect(): typeof import("./gate-checks.js")["gateEffect"] {
   return loaded.gateEffect;
 }
 
-async function gitPaths(root: string, args: readonly string[]): Promise<string[] | undefined> {
-  return (await git(root, [...args, "-z"]))?.split("\0").filter((path) => path !== "");
+async function gitPaths(root: string, args: readonly string[], signal?: AbortSignal): Promise<string[] | undefined> {
+  return (await git(root, [...args, "-z"], undefined, signal))?.split("\0").filter((path) => path !== "");
 }
 
 /** `git diff` from `base`, relative to the project, as this module reads it whatever the operator's Git configuration. */
@@ -78,12 +78,12 @@ function diffFrom(base: string, ...options: string[]): string[] {
  * untracked, relative to it; every tracked file when `base` is null, before
  * the repository's first commit. A commit made since `base` hides nothing.
  * Deleted files are left out, and so is everything outside a Git repository
- * (`undefined`).
+ * (`undefined`), or once `signal` stops Git.
  */
-export async function changedFiles(root: string, base: string | null): Promise<string[] | undefined> {
-  const tracked = base === null ? await gitPaths(root, ["ls-files", "--cached"])
-    : await gitPaths(root, diffFrom(base, "--name-only", "--diff-filter=d"));
-  const untracked = await gitPaths(root, ["ls-files", "--others", "--exclude-standard"]);
+export async function changedFiles(root: string, base: string | null, signal?: AbortSignal): Promise<string[] | undefined> {
+  const tracked = base === null ? await gitPaths(root, ["ls-files", "--cached"], signal)
+    : await gitPaths(root, diffFrom(base, "--name-only", "--diff-filter=d"), signal);
+  const untracked = await gitPaths(root, ["ls-files", "--others", "--exclude-standard"], signal);
   return tracked === undefined || untracked === undefined ? undefined : [...new Set([...tracked, ...untracked])].sort();
 }
 
@@ -93,10 +93,10 @@ export async function changedFiles(root: string, base: string | null): Promise<s
  * tell. A pull request's commit holds the receipt's content exactly where its
  * blobs match (`changedAfter`).
  */
-async function recordedChanges(root: string, changed: readonly string[]): Promise<Receipt["changed"]> {
-  const prefix = await git(root, ["rev-parse", "--show-prefix"]);
+async function recordedChanges(root: string, changed: readonly string[], signal?: AbortSignal): Promise<Receipt["changed"]> {
+  const prefix = await git(root, ["rev-parse", "--show-prefix"], undefined, signal);
   if (prefix === undefined) return "unreadable";
-  const blobs = await pathBlobs(root, changed, prefix.trimEnd());
+  const blobs = await pathBlobs(root, changed, prefix.trimEnd(), signal);
   return blobs === undefined ? "unreadable" : [...blobs].map(([path, blob]) => ({ path, blob }))
     .sort((a, b) => a.path < b.path ? -1 : 1);
 }
@@ -547,11 +547,15 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     const begun = await start;
     const workspace = begun?.units.some(({ folder }) => folder !== "") ?? false;
     const at = startedAt ?? new Date().toISOString();
-    // A stuck Git or a slow drive must not hold the stop: past the limit the inventory is abandoned, and says so.
+    // A stuck Git or a slow drive must not hold the stop: past the limit the inventory is abandoned, and says so. Its Git
+    // is stopped, with every process it started, before the stop reports.
+    const reading = new AbortController();
     const inventory = await effect().runPromise(effect().map(effect().timeoutOption(
-      effect().promise(async () => stoppedInventory(ctx.cwd, begun, await fingerprints, at)), STOP_INVENTORY_TIME_LIMIT_MS),
+      effect().promise(async () => stoppedInventory(ctx.cwd, begun, await fingerprints, at, reading.signal)), STOP_INVENTORY_TIME_LIMIT_MS),
     (read) => read._tag === "Some" ? read.value
       : { changed: "unreadable" as const, lines: "unreadable" as const, reason: "the inventory ran past its time limit" }));
+    reading.abort();
+    await gitStopped(reading.signal);
     const receipt: Receipt = { version: 2,
       repository: begun?.units.some(({ folder, repository }) => repository && begun.bases.has(folder)) ?? false,
       base: workspace ? null : begun?.bases.get("") ?? null, startedAt: at,
@@ -863,9 +867,9 @@ interface ChangedUnit {
 }
 
 /** The paths that differ from H: those present, untracked included, and with them the deleted; nothing when Git cannot tell. */
-async function pathsFromBase(root: string, base: string | null): Promise<{ present: string[]; all: string[] } | undefined> {
-  const present = await changedFiles(root, base);
-  const deleted = base === null ? [] : await gitPaths(root, diffFrom(base, "--name-only", "--diff-filter=D"));
+async function pathsFromBase(root: string, base: string | null, signal?: AbortSignal): Promise<{ present: string[]; all: string[] } | undefined> {
+  const present = await changedFiles(root, base, signal);
+  const deleted = base === null ? [] : await gitPaths(root, diffFrom(base, "--name-only", "--diff-filter=D"), signal);
   return present === undefined || deleted === undefined ? undefined : { present, all: [...new Set([...present, ...deleted])].sort() };
 }
 
@@ -887,34 +891,34 @@ type Inventory = Pick<UnitEvidence, "changed" | "lines" | "reason"> & Partial<Pi
  * What a stopped run left in the unit at `folder` (#599), read and never
  * run: each path changed, deleted or untracked as the request's captures
  * attribute it, with its final blob and the captures' limits; `unreadable`,
- * with why, when Git cannot tell, never an empty list.
+ * with why, when Git cannot tell, never an empty list. `signal` stops its Git.
  */
 async function leftChanged(cwd: string, folder: string, base: string | null, fingerprint: Fingerprint | undefined, startedAt: string,
-  refs: readonly string[] | undefined): Promise<Inventory> {
+  refs: readonly string[] | undefined, signal: AbortSignal): Promise<Inventory> {
   const root = join(cwd, folder);
-  const captured = fingerprint === undefined ? undefined : await fingerprintedUnit(root, base, fingerprint, startedAt, refs);
+  const captured = fingerprint === undefined ? undefined : await fingerprintedUnit(root, base, fingerprint, startedAt, refs, signal);
   const attribution = captured?.attribution ?? { eligible: true, changed: undefined, inherited: [], unmeasured: [] };
   const start = captured?.facts.startState;
   const end = captured?.facts.endState;
   const facts = { inherited: attribution.inherited, unmeasured: attribution.unmeasured,
     ...start === undefined ? {} : { startState: start }, ...end === undefined ? {} : { endState: end } };
-  const paths = !attribution.eligible ? [] : attribution.changed ?? (await pathsFromBase(root, base))?.all;
+  const paths = !attribution.eligible ? [] : attribution.changed ?? (await pathsFromBase(root, base, signal))?.all;
   const changed = paths === undefined ? "unreadable"
-    : await recordedChanges(root, paths.filter((path) => !attribution.unmeasured.some((item) => item.path === path)));
+    : await recordedChanges(root, paths.filter((path) => !attribution.unmeasured.some((item) => item.path === path)), signal);
   if (changed === "unreadable") {
     return { ...facts, changed, lines: "unreadable",
       reason: end?.status === "unknown" ? end.reason : "Git could not read what changed when the run stopped" };
   }
-  return { ...facts, changed, lines: await checks().changeLines(root, base, changed.map(({ path }) => path)) };
+  return { ...facts, changed, lines: await checks().changeLines(root, base, changed.map(({ path }) => path), signal) };
 }
 
 /** What a stopped run left (#599): the one unit's inventory, or each unit of a folder of repositories that changed or could not be read. */
-async function stoppedInventory(cwd: string, begun: Start | undefined, initial: ReadonlyMap<string, Fingerprint> | undefined, at: string):
-  Promise<Inventory | Pick<Receipt, "units" | "snapshot" | "tooLarge">> {
+async function stoppedInventory(cwd: string, begun: Start | undefined, initial: ReadonlyMap<string, Fingerprint> | undefined, at: string,
+  signal: AbortSignal): Promise<Inventory | Pick<Receipt, "units" | "snapshot" | "tooLarge">> {
   const units = begun?.units ?? [];
   const left = new Map(await Promise.all(units.filter(({ folder }) => begun?.bases.has(folder) === true)
     .map(async ({ folder }) => [folder, await leftChanged(cwd, folder, begun?.bases.get(folder) ?? null, initial?.get(folder), at,
-      begun?.refs.get(folder))] as const)));
+      begun?.refs.get(folder), signal)] as const)));
   // A folder Tesota snapshotted says so, with the files the snapshot left out for their size, which no inventory of it can list.
   const read = (folder: string, repository: boolean): Inventory & Pick<UnitEvidence, "snapshot" | "tooLarge"> => {
     const tooLarge = begun?.tooLarge.get(folder) ?? [];
@@ -940,17 +944,17 @@ function cutShort({ interrupted, notStarted }: ReturnType<GateOperations["unfini
 
 /** Each capture's facts and the committed paths since H; an unknown capture keeps verification against H. */
 async function fingerprintedUnit(root: string, base: string | null, start: Fingerprint, startedAt: string,
-  refs: readonly string[] | undefined): Promise<{
+  refs: readonly string[] | undefined, signal?: AbortSignal): Promise<{
   attribution: ReturnType<typeof compareFingerprints>;
   facts: Pick<ChangedUnit, "startState" | "endState">;
 }> {
-  let end = await captureFingerprint(root);
+  let end = await captureFingerprint(root, signal);
   const committed = end.status !== "known" || end.head === null ? []
-    : base === null ? await gitPaths(root, ["ls-tree", "-r", "--name-only", end.head])
-      : await gitPaths(root, [...diffFrom(base, "--name-only"), end.head]);
+    : base === null ? await gitPaths(root, ["ls-tree", "-r", "--name-only", end.head], signal)
+      : await gitPaths(root, [...diffFrom(base, "--name-only"), end.head], signal);
   if (committed === undefined) end = { status: "unknown", reason: "Git could not read the files committed since the admission base" };
   const compared = compareFingerprints(start, end, committed ?? []);
-  const history = end.status === "known" && end.head !== base ? await historyFacts(root, base, start, end, startedAt, refs) : undefined;
+  const history = end.status === "known" && end.head !== base ? await historyFacts(root, base, start, end, startedAt, refs, signal) : undefined;
   const facts = { startState: start.status === "unknown" ? start : { status: "known" as const, head: start.head },
     endState: end.status === "unknown" ? end : { status: "known" as const, head: end.head, ...history === undefined ? {} : { history } } };
   return { attribution: { ...compared, eligible: compared.eligible || !attributionResolved(base, facts.startState, facts.endState, true) }, facts };

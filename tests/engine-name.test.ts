@@ -1,8 +1,8 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { engineOf } from "../src/engine-name.js";
 
 const scratch = mkdtempSync(join(tmpdir(), "tesota-engine-"));
@@ -43,6 +43,40 @@ describe("the engine a receipt names (#639)", () => {
     mkdirSync(folder);
     expect(await engineOf("0.1.0-alpha.3", { released: false, folder })).toBe("0.1.0-alpha.3+unknown");
   });
+
+  it("says unknown at its limit when Git hangs, and stops that Git with every process it started (#648)", async () => {
+    const { folder } = checkout("hanging");
+    // A clean filter that never answers holds Git's status of the changed file; it records its parent, itself and its child.
+    const pids = join(folder, ".git", "pids");
+    writeFileSync(join(folder, ".git", "hang.cjs"), "const { spawn } = require('child_process');\n" +
+      "const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });\n" +
+      `require('fs').writeFileSync(${JSON.stringify(pids)}, JSON.stringify([process.ppid, process.pid, child.pid]));\n` +
+      "setInterval(() => {}, 1000);\n");
+    execFileSync("git", ["config", "filter.hang.clean", `"${process.execPath.replaceAll("\\", "/")}" "${join(folder, ".git", "hang.cjs").replaceAll("\\", "/")}"`], { cwd: folder });
+    writeFileSync(join(folder, ".gitattributes"), "a.txt filter=hang\n");
+    // Same size as "a\n", so Git must read the content, through the filter, to know whether it changed.
+    writeFileSync(join(folder, "a.txt"), "b\n");
+    const alive = (pid: number): boolean => { try { process.kill(pid, 0); return true; } catch { return false; } };
+    let started: number[] = [];
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      let named: string | undefined;
+      void engineOf("0.1.0-alpha.3", { released: false, folder }).then((engine) => { named = engine; });
+      for (const begun = performance.now(); started.length === 0 && performance.now() - begun < 20_000;) {
+        try { started = existsSync(pids) ? JSON.parse(readFileSync(pids, "utf8")) as number[] : []; } catch { /* still being written */ }
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+      expect(started).toHaveLength(3);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(named).toBe("0.1.0-alpha.3+unknown");
+      vi.useRealTimers();
+      for (const end = Date.now() + 5_000; started.some(alive) && Date.now() < end;) await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(started.filter(alive)).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+      for (const pid of started) { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } }
+    }
+  }, 40_000);
 
   it("keeps a released binary's plain version", async () => {
     const { folder } = checkout("released");

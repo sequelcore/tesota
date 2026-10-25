@@ -11,12 +11,12 @@ const ownFolder = fileURLToPath(new URL("..", import.meta.url));
  * from source, the version plus the commit of `folder`, Tesota's own checkout,
  * and `.dirty` when it has changes, or `+unknown` when Git can't read it.
  */
-async function read(version: string, from: { released: boolean; folder: string }): Promise<string> {
+async function read(version: string, from: { released: boolean; folder: string }, signal: AbortSignal): Promise<string> {
   if (from.released) return version;
-  const prefix = await gitOutput(from.folder, ["rev-parse", "--show-prefix"]);
-  const commit = typeof prefix === "string" && prefix.trim() === "" ? await gitOutput(from.folder, ["rev-parse", "--short=8", "HEAD"]) : undefined;
+  const prefix = await gitOutput(from.folder, ["rev-parse", "--show-prefix"], undefined, signal);
+  const commit = typeof prefix === "string" && prefix.trim() === "" ? await gitOutput(from.folder, ["rev-parse", "--short=8", "HEAD"], undefined, signal) : undefined;
   if (typeof commit !== "string" || commit.trim() === "") return `${version}+unknown`;
-  const changes = await gitOutput(from.folder, ["status", "--porcelain", "--untracked-files=all"]);
+  const changes = await gitOutput(from.folder, ["status", "--porcelain", "--untracked-files=all"], undefined, signal);
   return `${version}+${commit.trim()}${typeof changes !== "string" || changes.trim() !== "" ? ".dirty" : ""}`;
 }
 
@@ -24,9 +24,11 @@ async function read(version: string, from: { released: boolean; folder: string }
 const lookupLimitMs = 10_000;
 
 export async function engineOf(version: string, from: { released: boolean; folder: string }): Promise<string> {
+  // At the limit the engine is `+unknown`, and the Git still running is stopped with every process it started (#648).
+  const stop = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const unknown = new Promise<string>((resolve) => { timer = setTimeout(() => { resolve(`${version}+unknown`); }, lookupLimitMs); });
-  try { return await Promise.race([read(version, from), unknown]); } finally { clearTimeout(timer); }
+  const unknown = new Promise<string>((resolve) => { timer = setTimeout(() => { stop.abort(); resolve(`${version}+unknown`); }, lookupLimitMs); });
+  try { return await Promise.race([read(version, from, stop.signal), unknown]); } finally { clearTimeout(timer); }
 }
 
 let named: Promise<string> | undefined;
