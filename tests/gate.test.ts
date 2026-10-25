@@ -1429,7 +1429,8 @@ it("settles a change of comments and blank lines alone with a receipt and footer
   const settled = entry(await run.settle());
   expect(facts(settled.content)).toBe("  no code       nothing to verify: the changes are comments or blank lines only\n  changed lines implementation +3 -0");
   expect((settled.details as Receipt).commentsOnly).toBe(true);
-  expect(evidenceText(evidenceParts(run.progress.status), "full")).toBe("✓ receipt · nothing to verify, comments only");
+  // Nothing verified it, so the footer does not mark it verified (#668).
+  expect(evidenceText(evidenceParts(run.progress.status), "full")).toBe("○ receipt · nothing to verify, comments only");
 });
 
 it("lists every file in a repository whose first commit the agent made", async () => {

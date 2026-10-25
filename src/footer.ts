@@ -3,8 +3,8 @@ import { sep } from "node:path";
 import { type ContextUsage, type FooterData, QUESTION_STATUS, type Theme, type ThemeColor } from "./contract.js";
 import { type Component, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { GateProgress, GateStatus, Tally } from "./gate.js";
-import { addedAssumptions, allEvidence, type Finding, type Receipt, receiptDecisions, receiptFindings, receiptTone, type UnitEvidence,
-  verified } from "./receipt.js";
+import { addedAssumptions, allEvidence, coveredCount, type Finding, type Receipt, receiptDecisions, receiptFindings, type ReceiptStanding, receiptStanding,
+  receiptTone, type UnitEvidence, unverifiedWhy, verified } from "./receipt.js";
 import { elapsedTime, type EvidenceLevel, footerLayout } from "./verification/footer-rule.js";
 
 /** One piece of the evidence row, in its words, its shorter words and its glyph form; an empty form is left out. */
@@ -91,7 +91,7 @@ function receiptParts(settled: Receipt): EvidencePart[] {
   const unproved = passed && receipt.tests.length > 0 ? "not proved" : "not verified";
   const unchanged = receipt.exercises.filter(({ sensitivity }) => sensitivity === "passes_on_base").length;
   const findings = receiptFindings(settled);
-  const unchecked = uncheckedGaps(findings, receipt);
+  const unchecked = uncheckedGaps(findings, receipt, coveredCount(settled));
   const listed = [
     ...tallyParts({ proved, notProved: receipt.proofs.length - proved,
       ...receipt.tests.length === 0 ? {} : { tests: passed ? "pass" : "fail" }, weak }, assumed),
@@ -112,21 +112,28 @@ function receiptParts(settled: Receipt): EvidencePart[] {
       : weakening > 0 ? [part(`${weakening} may weaken the evidence`, `${weakening} may weaken`, `weakens ${weakening}`, "warning")] : [],
     ...plain > 0 ? [part(`${plural(plain, "folder", "folders")} not verified, no Git`, `${plain} no Git`, `no Git ${plain}`, "warning")] : [],
   ];
-  // A change of comments alone leaves nothing to list, as the receipt says.
-  const nothing = listed.length === 0 && receipt.commentsOnly === true
-    ? [part("nothing to verify, comments only", "nothing to verify", "no code", "muted")] : [];
-  return [receiptHead(settled, findings), ...listed, ...nothing];
+  const standing = receiptStanding(settled);
+  return [receiptHead(settled, findings, standing), ...listed, ...listed.length > 0 ? [] : nothingListed(settled, standing)];
+}
+
+/** Why the row lists nothing else (#668): a change of comments alone, nothing verified, or nothing changed. */
+function nothingListed(settled: Receipt, standing: ReceiptStanding): EvidencePart[] {
+  if (allEvidence(settled).commentsOnly === true) return [part("nothing to verify, comments only", "nothing to verify", "no code", "muted")];
+  if (standing === "unverified") return [part(`unverified, ${unverifiedWhy(settled)}`, "unverified", "unverified", "warning")];
+  return standing === "unchanged" ? [part("nothing to verify, nothing changed", "nothing to verify", "nothing", "muted")] : [];
 }
 
 /**
  * The row's first word, with the receipt's count and color in the
  * conversation (`receiptTone`): `!` when something needs the operator, `✓`
- * only when nothing is a gap either, `○` for gaps, as the receipt marks them.
+ * only when the receipt is verified (`receiptStanding`), `○` otherwise, in
+ * the muted color when nothing changed.
  */
-function receiptHead(settled: Receipt, findings: readonly Finding[]): EvidencePart {
+function receiptHead(settled: Receipt, findings: readonly Finding[], standing: ReceiptStanding): EvidencePart {
   const tone = receiptTone(findings);
   if (receiptDecisions(settled) > 0) return part("! receipt", "! receipt", "!", tone);
-  return tone === "success" ? part("✓ receipt", "✓ receipt", "✓", tone) : part("○ receipt", "○ receipt", "○", tone);
+  if (standing === "verified") return part("✓ receipt", "✓ receipt", "✓", "success");
+  return part("○ receipt", "○ receipt", "○", standing === "unchanged" ? "muted" : "warning");
 }
 
 /**
@@ -134,11 +141,12 @@ function receiptHead(settled: Receipt, findings: readonly Finding[]): EvidencePa
  * measured or a test not checked, so amber always says why: every gap but
  * the uncovered lines, unverified files and models possibly stale counted
  * on their own, and the coverage left unchecked because Git could not show
- * the change, named with its weakening.
+ * the change, named with its weakening. The `covered` unverified files are
+ * no gap (`coveredCount`), so only the others are taken off.
  */
-function uncheckedGaps(findings: readonly Finding[], receipt: UnitEvidence): number {
+function uncheckedGaps(findings: readonly Finding[], receipt: UnitEvidence, covered: number): number {
   return findings.filter(({ standing }) => standing === "gap").length
-    - receipt.uncovered.filter(({ lines }) => lines.length > 0).length - receipt.unverified.length
+    - receipt.uncovered.filter(({ lines }) => lines.length > 0).length - (receipt.unverified.length - covered)
     - (receipt.models ?? []).filter(({ staleness }) => staleness !== "current").length
     - (typeof receipt.weakened === "string" && receipt.proofs.length > 0 ? 1 : 0);
 }

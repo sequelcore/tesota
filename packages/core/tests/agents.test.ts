@@ -212,10 +212,13 @@ describe("the agent tool", () => {
     expect(childCwd).not.toBe(parent.workspace.cwd);
     expect(readFileSync(join(childCwd, "b.txt"), "utf8")).toBe("b\n");
     const [child] = parent.ledger()[0]?.children ?? [];
-    expect(child).toMatchObject({ description: "write b", writes: true, outcome: "completed", verification: "verified" });
+    // Its receipt records no change and no evidence, so it claims no standing (#668).
+    expect(child).toMatchObject({ description: "write b", writes: true, outcome: "completed" });
+    expect(child?.verification).toBeUndefined();
     expect(child?.branch).toMatch(/^tesota\//u);
     const result = parent.history().find((message) => message.role === "toolResult");
     expect(result?.role === "toolResult" && textOf(result.content)).toContain("Tesota receipt");
+    expect(result?.role === "toolResult" && textOf(result.content)).toContain('Subagent "write b" ended completed, nothing to verify.');
     expect(git(cwd, "branch", "--list", child?.branch ?? "")).toContain(child?.branch ?? "missing");
   });
 

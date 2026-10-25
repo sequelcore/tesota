@@ -4,6 +4,7 @@ import { type CustomMessage, type HistoryMessage, jobType } from "../loop.ts";
 import type { MessageRenderer, ToolDrawing } from "./surface.ts";
 import type { ShellTheme } from "../../../../src/theme.ts";
 import { terminalText } from "../../../../src/terminal-text.ts";
+import { isStanding, standingWords } from "../../../../src/receipt.ts";
 
 /** How extensions draw their messages and tool calls (#446), and whether drawings are expanded. */
 export interface Drawings {
@@ -95,7 +96,7 @@ function childLine(details: unknown, theme: ShellTheme): string | undefined {
 function childStanding(details: unknown, theme: ShellTheme): string {
   const { outcome, verification, limited } = (details ?? {}) as Record<string, unknown>;
   if (outcome === "running") return theme.fg("accent", "working");
-  return `${String(outcome)}${typeof verification === "string" ? `, ${verification}` : ""}${typeof limited === "string" ? ` (${limited} limit)` : ""}`;
+  return `${String(outcome)}${isStanding(verification) ? `, ${standingWords[verification]}` : ""}${typeof limited === "string" ? ` (${limited} limit)` : ""}`;
 }
 
 /** An edit's replacements as removed and added lines; arguments the model malformed draw none. */

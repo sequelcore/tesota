@@ -655,7 +655,8 @@ describe("a run that ends before the gate verifies it", () => {
     const cwd = repository();
     const session = gated(cwd, [{ tool: "write", args: { path: "new.txt", content: "new\n" } }, "done"]);
     await session.prompt("write new.txt");
-    expect(receiptStanding(receiptOf(session)!)).toBe("verified");
+    // Nothing checks new.txt, so its run is unverified, never verified (#668).
+    expect(receiptStanding(receiptOf(session)!)).toBe("unverified");
     open.splice(open.indexOf(session), 1);
     await session.dispose();
     // The process died: before settling, nothing after the write's result was written; after it, the run's end was not.

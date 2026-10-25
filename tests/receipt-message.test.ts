@@ -2,8 +2,8 @@ import { expect, it } from "vitest";
 import { noEvidence, receiptFindings, receiptStanding, renderReceipt, renderReceiptMessage } from "../src/receipt.js";
 import { emptyReceipt } from "./receipts.js";
 
-it("says a receipt in one word: verified when clean, failed when a check failed, even in a unit, incomplete otherwise (#455)", () => {
-  expect(receiptStanding(emptyReceipt)).toBe("verified");
+it("says a receipt in one word: nothing to claim when nothing changed, failed when a check failed, even in a unit, incomplete otherwise (#455, #668)", () => {
+  expect(receiptStanding(emptyReceipt)).toBe("unchanged");
   expect(receiptStanding({ ...emptyReceipt, stopped: "the operator stopped the run" })).toBe("incomplete");
   const failing = { command: "npm test", verdict: "send_back" as const, evidence: { verifier: "command" as const, claim: "the tests pass",
     limits: "", outcome: "failed" as const, output: "1 failed", durationMs: 1, files: [], contentHash: "" } };
