@@ -1,5 +1,5 @@
 import cytoscape from "cytoscape";
-import { buildModelView, type ViewGroup } from "./model-view.js";
+import { NO_BROKEN_RULE, displayValue, boundedCount, stateCount, groupValues, groupLabel, groupRules, brokenRules, ruleText, RULE_PREFIX, SELECTED_STATE, PARTIAL_EXPLORATION, buildModelView, type ViewGroup } from "./model-view.js";
 import { stateVariables } from "./model-state.js";
 import type { HtmlModel } from "./model-html.js";
 
@@ -14,16 +14,12 @@ const colors = (): { bg: string; fg: string; error: string; accent: string } => 
     error: style.getPropertyValue("--error").trim(), accent: style.getPropertyValue("--accent").trim() };
 };
 const cy = cytoscape({ container: get("graph"), elements: [], layout: { name: "grid" }, minZoom: .05, maxZoom: 5 });
-const count = (n: number): string => `${view.partial ? "≥" : ""}${n}`;
-const states = (n: number): string => `${count(n)} ${n === 1 ? "state" : "states"}`;
-// Display only: exact TLC values are retained in the inspection panel.
-const plain = (value: string): string => value.replace(/^"(.*)"$/su, "$1");
-const values = (entries: readonly (readonly [string, string])[]): string => entries.map(([k, v]) => `${k}: ${plain(v)}`).join(" · ");
+const count = (n: number): string => boundedCount(view.partial, n);
+const states = (n: number): string => stateCount(view.partial, n);
+const values = groupValues;
 const stateLabel = (g: ViewGroup, index: number): string => g.members.length > 1 ? `state ${index + 1} of ${g.members.length}` : "state";
-const label = (g: ViewGroup): string => g.path.length === 0
-  ? values(Object.entries(view.states.find(s => s.fingerprint === g.members[0])?.variables ?? {}))
-  : values(g.path);
-const rules = (g: ViewGroup): string => [...new Set(view.states.filter(s => g.members.includes(s.fingerprint)).flatMap(s => s.breaks))].join(", ");
+const label = (g: ViewGroup): string => groupLabel(view, g);
+const rules = (g: ViewGroup): string => groupRules(view, g).join(", ");
 // A starting state is known only when TLC supplied a trace; topology is not evidence of initialization.
 const initial = (g: ViewGroup): boolean => view.trace[0] !== undefined && g.members.includes(view.trace[0].fingerprint);
 function button(text: string, action: () => void): HTMLButtonElement {
@@ -32,17 +28,10 @@ function button(text: string, action: () => void): HTMLButtonElement {
 function paragraph(text: string, className = ""): HTMLParagraphElement {
   const p = document.createElement("p"); p.textContent = text; p.className = className; return p;
 }
-function ruleText(names: readonly string[]): string[] {
-  return [...new Set(names)].flatMap(name => {
-    const definitions = data.reports.ruleDefinitions;
-    const definition = definitions !== undefined && Object.hasOwn(definitions, name) ? definitions[name] : undefined;
-    return definition === undefined ? [] : [`Rule, from the model: ${definition}`];
-  });
-}
 function appendRules(parent: HTMLElement, names: readonly string[]): void {
-  for (const text of ruleText(names)) {
-    const p = paragraph("Rule, from the model: ", "rule-definition"), code = document.createElement("code");
-    code.textContent = text.slice("Rule, from the model: ".length); p.append(code); parent.append(p);
+  for (const text of ruleText(names, data.reports.ruleDefinitions)) {
+    const p = paragraph(RULE_PREFIX, "rule-definition"), code = document.createElement("code");
+    code.textContent = text.slice(RULE_PREFIX.length); p.append(code); parent.append(p);
   }
 }
 function variables(entries: readonly (readonly [string, string])[]): HTMLDListElement {
@@ -61,8 +50,8 @@ function details(id: string): void {
   if (state === undefined) return;
   openPanel();
   const panel = get("details"); panel.replaceChildren();
-  const title = document.createElement("h2"); title.textContent = "Selected state";
-  panel.append(title, paragraph(state.breaks.length ? `⚠ Breaks ${state.breaks.join(", ")}` : "No broken rule reported for this state", state.breaks.length ? "break" : ""),
+  const title = document.createElement("h2"); title.textContent = SELECTED_STATE;
+  panel.append(title, paragraph(state.breaks.length ? brokenRules(state.breaks) : NO_BROKEN_RULE, state.breaks.length ? "break" : ""),
   );
   appendRules(panel, state.breaks);
   panel.append(variables(Object.entries(state.variables)), paragraph(`TLC id ${id}`, "secondary"));
@@ -71,7 +60,7 @@ function groupDetails(group: ViewGroup): void {
   openPanel(); const panel = get("details"); panel.replaceChildren();
   const title = document.createElement("h2"); title.textContent = "Selected group";
   panel.append(title, variables(group.path), paragraph(states(group.members.length)));
-  if (group.violating) panel.append(paragraph(`⚠ breaks ${rules(group)} · ${states(group.violating)}`, "break"));
+  if (group.violating) panel.append(paragraph(`${brokenRules(groupRules(view, group))} · ${states(group.violating)}`, "break"));
   appendRules(panel, rules(group).split(", "));
   panel.append(button(`Show its ${group.members.length} ${group.members.length === 1 ? "state" : "states"}`, () => { expanded.add(group.id); render(); }));
 }
@@ -81,13 +70,13 @@ function elements(): cytoscape.ElementDefinition[] {
   for (const [i, group] of view.groups.entries()) {
     const gid = `g${i}`;
     if (!expanded.has(group.id)) nodeIds.set(group.id, gid);
-    const text = `${initial(group) ? "start\n" : ""}${label(group)}\n${states(group.members.length)}${group.violating ? `\n⚠ breaks ${rules(group)} · ${states(group.violating)}` : ""}`;
+    const text = `${initial(group) ? "start\n" : ""}${label(group)}\n${states(group.members.length)}${group.violating ? `\n${brokenRules(groupRules(view, group))} · ${states(group.violating)}` : ""}`;
     nodes.push({ data: { id: gid, label: text, members: group.members, group: group.id }, classes: `${group.violating ? "break" : ""} ${initial(group) ? "start" : ""}` });
     for (const [index, id] of group.members.entries()) {
       if (!expanded.has(group.id)) continue;
       nodeIds.set(id, `s${id}`);
       const state = view.states.find(s => s.fingerprint === id);
-      nodes.push({ data: { id: `s${id}`, parent: gid, label: `${id === view.trace[0]?.fingerprint ? "start\n" : ""}${group.members.length > 1 ? `${stateLabel(group, index)}\n` : ""}${label(group)}${state?.breaks.length ? `\n⚠ breaks ${state.breaks.join(", ")}` : ""}`, members: [id], group: group.id }, classes: `${state?.breaks.length ? "break" : ""} ${id === view.trace[0]?.fingerprint ? "start" : ""}` });
+      nodes.push({ data: { id: `s${id}`, parent: gid, label: `${id === view.trace[0]?.fingerprint ? "start\n" : ""}${group.members.length > 1 ? `${stateLabel(group, index)}\n` : ""}${label(group)}${state?.breaks.length ? `\n${brokenRules(state.breaks)}` : ""}`, members: [id], group: group.id }, classes: `${state?.breaks.length ? "break" : ""} ${id === view.trace[0]?.fingerprint ? "start" : ""}` });
     }
   }
   // The model owns mixed expansion too: folded groups retain aggregated multiplicities.
@@ -143,7 +132,7 @@ function summary(): void {
   get("summary-rules").replaceChildren();
   appendRules(get("summary-rules"), example?.breaks ?? []);
   get("summary-values").textContent = example === undefined ? (view.partial ? "exploration was partial, so this is not proof of safety" : "") : values(Object.entries(example.variables));
-  get("caveats").textContent = view.partial ? "Partial exploration: counts are at least these numbers." : "";
+  get("caveats").textContent = view.partial ? `${PARTIAL_EXPLORATION}.` : "";
   get("counts").textContent = `${data.model} · reached ${states(view.states.length)} · reported violating ${states(view.violations.length)}`;
 }
 function layoutGraph(): void {
@@ -192,7 +181,7 @@ function render(): void {
     expand.setAttribute("aria-expanded", String(expanded.has(group.id))); expand.disabled = traceVisible;
     if (traceVisible) expand.title = "Hide the failing run to fold groups";
     row.append(expand);
-    if (group.violating > 0) row.append(paragraph(`⚠ breaks ${rules(group)} · ${states(group.violating)}`, "break"));
+    if (group.violating > 0) row.append(paragraph(`${brokenRules(groupRules(view, group))} · ${states(group.violating)}`, "break"));
     appendRules(row, rules(group).split(", "));
     if (expanded.has(group.id)) for (const [i, id] of group.members.entries()) row.append(button(stateLabel(group, i), () => { details(id); cy.$id(`s${id}`).select(); }));
     groups.append(row);
@@ -258,9 +247,9 @@ const title = document.createElement("h2"); title.textContent = "The failing run
 let previous: ReadonlyMap<string, string> = new Map();
 for (const [i, step] of view.trace.entries()) {
   const vars = stateVariables(step.valuation.split(/\r?\n/u));
-  const changed = [...vars].filter(([k, v]) => previous.get(k) !== v).map(([k, v]) => i === 0 ? `${k} ${plain(v)}` : `${k} ${plain(previous.get(k) ?? "(missing)")} → ${plain(v)}`).join(", ");
+  const changed = [...vars].filter(([k, v]) => previous.get(k) !== v).map(([k, v]) => i === 0 ? `${k} ${displayValue(v)}` : `${k} ${displayValue(previous.get(k) ?? "(missing)")} → ${displayValue(v)}`).join(", ");
   const broken = view.states.find(s => s.fingerprint === step.fingerprint)?.breaks ?? [];
-  const item = button(`${i + 1}. ${i === 0 ? "Start" : step.action.replace(/ line \d+.*$/u, "")}: ${changed || "no variables changed"}${broken.length ? ` ⚠ breaks ${broken.join(", ")}` : ""}`, () => {
+  const item = button(`${i + 1}. ${i === 0 ? "Start" : step.action.replace(/ line \d+.*$/u, "")}: ${changed || "no variables changed"}${broken.length ? ` ${brokenRules(broken)}` : ""}`, () => {
     details(step.fingerprint); cy.nodes().unselect(); cy.$id(`s${step.fingerprint}`).select();
   });
   item.className = "trace-step"; trace.append(item); appendRules(trace, broken); previous = vars;

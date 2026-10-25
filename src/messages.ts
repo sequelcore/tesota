@@ -4,6 +4,7 @@ import { Box, type Component, sliceByColumn, truncateToWidth, visibleWidth, wrap
 import { basename } from "node:path";
 import { terminalText } from "./terminal-text.js";
 import type { GraphCapture } from "./model-graph.js";
+import { PARTIAL_EXPLORATION, stateCount } from "./model-view.js";
 import type { SentBack } from "./gate.js";
 import type { LedgerRow } from "./operations.js";
 import { ACCEPTANCE, commandFinding, contractFinding, DETAILS, type Finding, isReceipt, methodWidth, modelFinding, OPINIONS, proofFinding,
@@ -100,9 +101,8 @@ export function graphPreviewRows(capture: GraphCapture | undefined, width: numbe
   }
   if (row !== "| ") diagram.push(row.trimEnd());
   const stem = terminalText(basename(capture.manifest).replace(/\.manifest\.json$/u, ""));
-  const bound = preview.partial ? ">=" : "";
-  return [...preview.partial ? hang("Partial exploration; counts are lower bounds", width, 0) : [],
-    ...hang(`${bound}${preview.reached} reached · ${bound}${preview.violating} reported violating (not a safety verdict)`, width, 0),
+  return [...preview.partial ? hang(PARTIAL_EXPLORATION, width, 0) : [],
+    ...hang(`${stateCount(preview.partial, preview.reached)} reached · ${stateCount(preview.partial, preview.violating)} reported violating (not a safety verdict)`, width, 0),
     ...hang(`${preview.kind === "trace" ? "Counterexample path" : "Reached graph"} (states in .txt order; ! = reported violation)`, width, 0),
     ...diagram.length <= 6 && !preview.omitted && diagram.every((line) => visibleWidth(line) <= width) ? diagram
       : preview.kind === "trace" ? [...diagram.slice(0, 5).map((line) => cut(line, width)), ...hang("Path continues; open graph files", width, 0)]

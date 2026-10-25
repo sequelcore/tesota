@@ -1,5 +1,5 @@
 import { createModels, fauxProvider } from "@earendil-works/pi-ai";
-import { Editor, type SlashCommand } from "@earendil-works/pi-tui";
+import { Editor, sliceByColumn, visibleWidth, type SlashCommand } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -715,6 +715,20 @@ function viewerOn(shell: Shell, terminal: VirtualTerminal, manifest = lights("co
   hide = shell.overlay(viewer);
 }
 
+/** Read whole box interiors across wrapped rows, excluding the neighboring panel. */
+function graphBoxes(screen: string): string[] {
+  const rows = screen.split("\n");
+  return rows.flatMap((row, y) => [...row.matchAll(/┌─+┐/gu)].map(match => {
+    const x = visibleWidth(row.slice(0, match.index)), w = visibleWidth(match[0]);
+    const body: string[] = [];
+    for (const next of rows.slice(y + 1)) {
+      if (sliceByColumn(next, x, 1) === "└") break;
+      body.push(sliceByColumn(next, x + 1, w - 2).trim());
+    }
+    return body.join(" ");
+  }));
+}
+
 describe("the model graph viewer (#592)", () => {
   test("each key acts on a small real TLC graph, read through its worker", async () => {
     const { terminal, shell } = shellOn([], "fullscreen", [120, 40]);
@@ -722,11 +736,11 @@ describe("the model graph viewer (#592)", () => {
     let screen = await terminal.until("grouped by door > lamp");
     expect(screen).toContain("Model graph · Lights.tla");
     expect(screen).toContain("Complete exploration; exact counts · reached 8 · edges 16 · reported violating 2");
-    expect(screen).toContain("Grouped transitions are not an execution");
-    expect(screen).toContain("! BREAK 2");
+    expect(screen).toContain("Arrows between groups are possible moves, not one run");
+    expect(graphBoxes(screen).some(box => box.includes("2 states · ⚠ breaks DarkWhenLocked · 2 states"))).toBe(true);
     // The first reported violation is selected, with its full variables.
-    expect(screen).toContain("State -7489905741496962076");
-    expect(screen).toContain("! BREAK DarkWhenLocked");
+    expect(screen).toContain("TLC id -7489905741496962076");
+    expect(screen).toContain("⚠ breaks DarkWhenLocked");
     for (const variable of ['door = "locked"', 'lamp = "on"', "n = 0"]) expect(screen).toContain(variable);
 
     terminal.type("+"); await terminal.until("detail 2/3");
@@ -736,20 +750,20 @@ describe("the model graph viewer (#592)", () => {
     terminal.type("+"); terminal.type("-"); await terminal.until("detail 2/3");
     terminal.type("-"); terminal.type("-"); await terminal.until("detail 1/3");
 
-    terminal.type("n"); screen = await terminal.until("State -752285075239298876");
-    expect(screen).toContain("! BREAK 2/2");
-    terminal.type("n"); await terminal.until("! BREAK 1/2");
-    terminal.type("p"); await terminal.until("State -752285075239298876");
+    terminal.type("n"); screen = await terminal.until("TLC id -752285075239298876");
+    expect(screen).toContain("⚠ breaks DarkWhenLocked · 2/2");
+    terminal.type("n"); await terminal.until("⚠ breaks DarkWhenLocked · 1/2");
+    terminal.type("p"); await terminal.until("TLC id -752285075239298876");
 
     terminal.type("t"); screen = await terminal.until("TLC concrete trace · 3 steps");
     expect(screen).toContain("only execution shown");
     expect(screen).not.toContain("grouped by");
     expect(screen).toContain("<Lock");
     // The trace's last state is the violating one TLC reported.
-    expect(screen).toContain("State -7489905741496962076");
+    expect(screen).toContain("TLC id -7489905741496962076");
     terminal.type("t"); await terminal.until("grouped by door > lamp");
 
-    terminal.type("\t"); await terminal.until("State 3588016040887795817");
+    terminal.type("\t"); await terminal.until("TLC id 3588016040887795817");
 
     terminal.type("g"); await terminal.until("Group by");
     terminal.type("zzz"); terminal.type(enter);
@@ -759,9 +773,9 @@ describe("the model graph viewer (#592)", () => {
     terminal.type("n"); terminal.type(enter);
     screen = await terminal.until("grouped by n ·");
     expect(screen).toContain("n = 0");
-    expect(screen).toContain("4 members ! BREAK 1");
+    expect(graphBoxes(screen).some(box => box.includes("4 states · ⚠ breaks DarkWhenLocked · 1 state"))).toBe(true);
 
-    terminal.type(enter); screen = await terminal.until("within n = 0");
+    terminal.type(enter); screen = await terminal.until("within n: 0");
     expect(screen).toContain("grouped by each state");
     expect(screen).toContain("reached 4 · edges inside 6 · crossing 4");
     terminal.type(esc); await terminal.until("grouped by n · all reached states");
@@ -786,7 +800,22 @@ describe("the model graph viewer (#592)", () => {
     terminal.type("\x1b[<0;30;10M"); terminal.type("\x1b[<32;22;8M"); terminal.type("\x1b[<0;22;8m");
     await terminal.until("pan 8,2");
     // The wheel pans too, no further than the drawing goes.
-    terminal.type("\x1b[<65;30;10M"); await terminal.until("pan 8,4");
+    terminal.type("\x1b[<65;30;10M"); await terminal.until("pan 8,5");
+    let last = 5;
+    for (let step = 0; step < 30; step++) {
+      terminal.type("\x1b[<65;30;10M");
+      const screen = (await terminal.screen()).join("\n");
+      const next = Number(/pan 8,(\d+)/u.exec(screen)?.[1]);
+      expect(next).toBeGreaterThanOrEqual(last);
+      expect(next - last).toBeLessThanOrEqual(3);
+      if (next === last) {
+        terminal.type("\x1b[<65;30;10M");
+        expect((await terminal.screen()).join("\n")).toContain(`pan 8,${last}`);
+        return;
+      }
+      last = next;
+    }
+    throw new Error("Wheel panning did not stop at the drawing's edge");
   });
 
   test("a manifest's names reach the screen without their control sequences, and a full-width value keeps every character", async () => {
@@ -802,12 +831,12 @@ describe("the model graph viewer (#592)", () => {
       },
       close: () => { hide(); }, redraw: () => { shell.redraw(); } }));
     let screen = await terminal.until("grouped by door > lamp");
-    expect(screen).toContain("! BREAK Dark");
+    expect(screen).toContain("⚠ breaks Dark");
     expect(terminal.written).not.toContain("\x1b]0;pwned");
     for (const char of wide) expect(screen).toContain(char);
     terminal.type("t");
     screen = await terminal.until("TLC concrete trace · 3 steps");
-    expect(screen).toContain("! BREAK Dark");
+    expect(screen).toContain("⚠ breaks Dark");
     expect(terminal.written).not.toContain("\x1b]0;pwned");
     terminal.type(esc); terminal.type(esc);
     await terminal.untilGone("Model graph");
@@ -817,8 +846,8 @@ describe("the model graph viewer (#592)", () => {
     const { terminal, shell } = shellOn([], "fullscreen", [120, 40]);
     viewerOn(shell, terminal, lights("partial"));
     const screen = await terminal.until("grouped by door > lamp");
-    expect(screen).toContain("Partial exploration; counts are lower bounds · reached >=4 · edges >=4 · reported violating >=1");
-    expect(screen).toContain("! BREAK >=1");
+    expect(screen).toContain("Partial exploration: counts are at least these numbers · reached ≥4 · edges ≥4 · reported violating ≥1");
+    expect(graphBoxes(screen).some(box => box.includes("≥1 state · ⚠ breaks DarkWhenLocked · ≥1 state"))).toBe(true);
   });
 
   test("Esc closes the viewer's own prompt, then the viewer, before a dialog under it, and a dialog opened over it waits", async () => {

@@ -1,7 +1,7 @@
 import { type Component, Input, type KeyId, matchesKey, sliceByColumn, type TuiMouseEvent, type TuiMouseEventResult, truncateToWidth,
   visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { ThemeColor } from "../../../../src/contract.ts";
-import { adjacentViolation, boundedCount, type ModelView, type ViewGroup, type ViewRequest, type ViewState } from "../../../../src/model-view.ts";
+import { COMPLETE_EXPLORATION, ZERO_REPORTS, NO_BROKEN_RULE, adjacentViolation, boundedCount, stateCount, groupLabel, groupRules, groupValues, brokenRules, ruleText, PARTIAL_EXPLORATION, GROUPED_MOVES, SELECTED_STATE, type ModelView, type ViewGroup, type ViewRequest, type ViewState } from "../../../../src/model-view.ts";
 import { terminalText } from "../../../../src/terminal-text.ts";
 import type { ShellTheme } from "../../../../src/theme.ts";
 
@@ -29,12 +29,12 @@ export function appendOnlyText(view: ModelView, manifest: string, limit = 400): 
   return [...lines.slice(0, limit), ...lines.length > limit ? [`… ${lines.length - limit} more lines: tesota graph --plain ${oneLine(manifest)}`] : []].join("\n");
 }
 
-// Each detail level's box width, height and the gap between ranks, as the prototype drew them.
-const widths = [24, 34, 44] as const, heights = [4, 5, 6] as const, gaps = [4, 12, 16] as const;
+// Keep the layout's ranks and detail-dependent gaps; size each box to its displayed text.
+const gaps = [4, 12, 16] as const;
 const header = 3;
 const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
-interface Box { readonly group: ViewGroup; readonly number: number; readonly x: number; readonly y: number }
+interface Box { readonly group: ViewGroup; readonly number: number; readonly x: number; readonly y: number; readonly w: number; readonly h: number }
 interface Layout { readonly boxes: readonly Box[]; readonly width: number; readonly height: number; readonly byGroup: ReadonlyMap<string, Box> }
 interface Line { readonly text: string; readonly role: ThemeColor }
 interface Saved { readonly request: ViewRequest; readonly view: ModelView; readonly selected: string | undefined; readonly pan: readonly [number, number]; readonly within: string }
@@ -60,19 +60,30 @@ function ranks(view: ModelView): { readonly rank: ReadonlyMap<string, number>; r
 }
 
 /** Each group's box, a column a rank. */
-function layout(view: ModelView, detail: number): Layout {
-  const { rank, deepest } = ranks(view);
-  const w = widths[detail] ?? 24, h = heights[detail] ?? 4, gap = gaps[detail] ?? 4;
+function layout(view: ModelView, detail: number, canvasWidth: number): Layout {
+  const { rank } = ranks(view);
+  const gap = gaps[detail] ?? 4;
+  const maxWidth = Math.max(12, Math.floor(canvasWidth * 0.4));
   const columns = new Map<number, ViewGroup[]>();
   for (const group of view.groups) { const r = rank.get(group.id) ?? 0; columns.set(r, [...columns.get(r) ?? [], group]); }
   const boxes: Box[] = [];
-  let tallest = 0;
+  let x = 0, height = 0;
   for (const r of [...columns.keys()].sort((a, b) => a - b)) {
-    const column = columns.get(r) ?? [];
-    tallest = Math.max(tallest, column.length);
-    column.forEach((group, row) => { boxes.push({ group, number: boxes.length + 1, x: r * (w + gap), y: row * (h + 1) }); });
+    let y = 0, columnWidth = 0;
+    for (const group of columns.get(r) ?? []) {
+      const number = boxes.length + 1;
+      const label = `${number}. ${oneLine(groupLabel(view, group))}`;
+      const summary = groupSummary(view, group);
+      const w = Math.min(maxWidth, Math.max(12, visibleWidth(label) + 2, visibleWidth(oneLine(summary)) + 2));
+      const h = Math.min(2, wrapped(label, w - 2).length) + wrapped(summary, w - 2).length + detail + 2;
+      boxes.push({ group, number, x, y, w, h });
+      columnWidth = Math.max(columnWidth, w);
+      y += h + 1;
+    }
+    height = Math.max(height, y - 1);
+    x += columnWidth + gap;
   }
-  return { boxes, width: Math.max(0, (deepest + 1) * (w + gap) - gap), height: Math.max(0, tallest * (h + 1) - 1),
+  return { boxes, width: Math.max(0, x - gap), height,
     byGroup: new Map(boxes.map((box) => [box.group.id, box])) };
 }
 
@@ -82,7 +93,8 @@ const assignments = (valuation: string): string[] => terminalText(valuation).spl
  * Text a manifest or a worker gave, made safe for one row: control sequences removed, lines joined. Every such
  * string reaches the screen through it: a manifest's names and values are untrusted.
  */
-const oneLine = (text: string): string => terminalText(text).replace(/\s*\n\s*/gu, " ");
+const oneLine = (text: string): string => terminalText(text).replace(/\s*\n\s*/gu, " ").replace(/\t/gu, "   ");
+const groupSummary = (view: ModelView, group: ViewGroup): string => `${stateCount(view.partial, group.members.length)}${group.violating > 0 ? ` · ${brokenRules(groupRules(view, group))} · ${stateCount(view.partial, group.violating)}` : ""}`;
 /** `text` in at most `width` terminal columns, marked where cut; padded to `width` when `pad`. */
 const fit = (text: string, width: number, pad = false): string => truncateToWidth(oneLine(text), Math.max(0, width), "…", pad);
 /** `text` in rows of at most `width` terminal columns, every character kept. */
@@ -95,8 +107,8 @@ const wrapped = (text: string, width: number): string[] => {
  * The full-screen model graph (#592), mounted through the shell's overlay as
  * the dashboard is. It holds only what step 3a's worker returns: each regroup,
  * drill and search is one more disposable worker. Counts on a partial graph
- * read as lower bounds, a group's `! BREAK` counts its reported violating
- * members, and only TLC's trace is called an execution.
+ * read as lower bounds, a group's warning counts its reported violating
+ * states, and only TLC's trace is called an execution.
  */
 export class ModelViewer implements Component {
   #view: ModelView | undefined;
@@ -118,7 +130,8 @@ export class ModelViewer implements Component {
   #reveal = true;
   #drag: { readonly x: number; readonly y: number; readonly pan: readonly [number, number] } | undefined;
   #canvas = { x: 0, y: header, w: 1, h: 1 };
-  #layout: { readonly view: ModelView; readonly detail: number; readonly layout: Layout } | undefined;
+  #offset: readonly [number, number] = [0, 0];
+  #layout: { readonly view: ModelView; readonly detail: number; readonly width: number; readonly layout: Layout } | undefined;
 
   readonly options: ModelViewerOptions;
 
@@ -171,7 +184,9 @@ export class ModelViewer implements Component {
   #state(id: string | undefined): ViewState | undefined { return this.#view?.states.find((state) => state.fingerprint === id); }
   #count(n: number): string { return boundedCount(this.#view?.partial ?? false, n); }
   #layoutOf(view: ModelView): Layout {
-    if (this.#layout?.view !== view || this.#layout.detail !== this.#detail) this.#layout = { view, detail: this.#detail, layout: layout(view, this.#detail) };
+    if (this.#layout?.view !== view || this.#layout.detail !== this.#detail || this.#layout.width !== this.#canvas.w) {
+      this.#layout = { view, detail: this.#detail, width: this.#canvas.w, layout: layout(view, this.#detail, this.#canvas.w) };
+    }
     return this.#layout.layout;
   }
 
@@ -224,7 +239,7 @@ export class ModelViewer implements Component {
     const group = view?.groups.find((each) => each.members.includes(this.#selected ?? ""));
     if (view === undefined || group === undefined) return;
     if (group.path.length === 0) { this.#notice = "Each group here is one reached state; its variables are on the side."; return; }
-    const within = [this.#within, group.path.map(([name, value]) => `${name} = ${value}`).join(" › ")].filter((part) => part !== "").join(" › ");
+    const within = [this.#within, groupValues(group.path)].filter((part) => part !== "").join(" › ");
     const request = { projection: [], members: group.members };
     const saved: Saved = { request: this.#request, view, selected: this.#selected, pan: this.#pan, within: this.#within };
     this.#load(request, (inner) => {
@@ -234,7 +249,7 @@ export class ModelViewer implements Component {
       this.#within = within;
       this.#search = undefined;
       this.#pan = [0, 0];
-      this.#notice = `${this.#count(group.members.length)} reached members of the group; ${this.#count(inner.boundary)} edges cross its boundary.`;
+      this.#notice = `${stateCount(view.partial, group.members.length)} reached in the group; ${this.#count(inner.boundary)} edges cross its boundary.`;
     }, (reason) => { this.#notice = reason; });
   }
 
@@ -275,10 +290,10 @@ export class ModelViewer implements Component {
     const view = this.#view;
     if (view === undefined) return;
     const next = adjacentViolation(view, this.#selected, direction);
-    if (next === undefined) { this.#notice = "TLC reported no violating state here; zero reports do not establish safety."; return; }
+    if (next === undefined) { this.#notice = `TLC reported no violating state here; ${ZERO_REPORTS}.`; return; }
     if (this.#trace !== undefined) this.#toggleTrace();
     this.#select(next);
-    this.#notice = `! BREAK ${view.violations.indexOf(next) + 1}/${view.violations.length} · ${(this.#state(next)?.breaks ?? []).join(", ")}`;
+    this.#notice = `${brokenRules(this.#state(next)?.breaks ?? [])} · ${view.violations.indexOf(next) + 1}/${view.violations.length}`;
   }
 
   #step(direction: 1 | -1): void {
@@ -315,6 +330,7 @@ export class ModelViewer implements Component {
     ["p", () => { this.#jump(-1); }],
     ["t", () => { this.#toggleTrace(); }],
     ["o", () => { this.#browser(); }],
+    ["f", () => { this.#pan = [0, 0]; this.#reveal = false; }],
     ["enter", () => { if (this.#trace === undefined) this.#drill(); }],
     ["tab", () => { this.#step(1); }],
     ["shift+tab", () => { this.#step(-1); }],
@@ -374,8 +390,8 @@ export class ModelViewer implements Component {
       if (step !== undefined && y % 3 !== 2) { this.#selected = step.fingerprint; this.#panelTop = 0; }
       return;
     }
-    const w = widths[this.#detail] ?? 24, h = heights[this.#detail] ?? 4;
-    const box = this.#layoutOf(view).boxes.find((each) => x >= each.x && x < each.x + w && y >= each.y && y < each.y + h);
+    x -= this.#offset[0]; y -= this.#offset[1];
+    const box = this.#layoutOf(view).boxes.find((each) => x >= each.x && x < each.x + each.w && y >= each.y && y < each.y + each.h);
     if (box === undefined) return;
     this.#selected = box.group.members.find((id) => (this.#state(id)?.breaks.length ?? 0) > 0) ?? box.group.members[0];
     this.#panelTop = 0;
@@ -389,33 +405,48 @@ export class ModelViewer implements Component {
     const view = this.#view;
     const title = `Model graph · ${oneLine(this.options.subject)}`;
     const bottom = this.#bottom(width);
-    const bodyHeight = Math.max(1, rows - header - bottom.length);
+    let bodyHeight = Math.max(1, rows - header - bottom.length);
     if (view === undefined) {
       const said = this.#error === undefined ? "Reading the graph in its own worker…" : `The graph could not be read: ${oneLine(this.#error)}`;
       return this.#frame([theme.fg("accent", theme.bold(title)), theme.fg(this.#error === undefined ? "muted" : "error", said), "",
         ...Array.from({ length: bodyHeight }, () => ""), ...bottom], width, rows);
     }
+    const reached = view.edges.reduce((sum, edge) => sum + edge.count, 0);
+    const counts = [view.partial ? PARTIAL_EXPLORATION : COMPLETE_EXPLORATION,
+      `reached ${this.#count(view.states.length)}`,
+      this.#parents.length === 0 ? `edges ${this.#count(reached + view.boundary)}` : `edges inside ${this.#count(reached)} · crossing ${this.#count(view.boundary)}`,
+      `reported violating ${this.#count(view.violations.length)}${view.violations.length === 0 ? ` (${ZERO_REPORTS})` : ""}`].join(" · ");
+    const grouping = view.projection.length === 0 ? "each state" : oneLine(view.projection.join(" > "));
+    const top = this.#trace !== undefined
+      ? [`${title} · TLC concrete trace`, counts, `TLC concrete trace · ${view.trace.length} ${view.trace.length === 1 ? "step" : "steps"} · the only execution shown, not regrouped or filtered`]
+      : [`${title} · grouped by ${grouping} · ${this.#within === "" ? "all reached states" : `within ${oneLine(this.#within)}`}`, counts,
+        `${GROUPED_MOVES}${view.trace.length > 0 ? " t shows the failing run, a real execution." : ""}`];
     const side = width >= 72;
+    const topLines = this.#heading(view, top, width, rows - bottom.length - (side ? 3 : 4));
+    bodyHeight = Math.max(1, rows - topLines.length - bottom.length);
     const panelWidth = side ? Math.min(44, Math.max(28, Math.floor(width * 0.34))) : width;
     const panelHeight = side ? bodyHeight : Math.min(8, Math.floor(bodyHeight / 2));
-    this.#canvas = { x: 0, y: header, w: side ? width - panelWidth - 1 : width, h: side ? bodyHeight : Math.max(1, bodyHeight - panelHeight - 1) };
+    this.#canvas = { x: 0, y: topLines.length, w: side ? width - panelWidth - 1 : width, h: side ? bodyHeight : Math.max(1, bodyHeight - panelHeight - 1) };
     const canvas = this.#trace !== undefined ? this.#traceCanvas(view) : this.#graphCanvas(view);
     const panel = this.#panel(view, panelWidth, panelHeight);
     const body = side
       ? canvas.map((row, at) => `${row}${theme.fg("borderMuted", "│")}${panel[at] ?? ""}`)
       : [...canvas, theme.fg("borderMuted", "─".repeat(width)), ...panel];
-    const reached = view.edges.reduce((sum, edge) => sum + edge.count, 0);
-    const counts = [view.partial ? "Partial exploration; counts are lower bounds" : "Complete exploration; exact counts",
-      `reached ${this.#count(view.states.length)}`,
-      this.#parents.length === 0 ? `edges ${this.#count(reached + view.boundary)}` : `edges inside ${this.#count(reached)} · crossing ${this.#count(view.boundary)}`,
-      `reported violating ${this.#count(view.violations.length)}${view.violations.length === 0 ? " (zero reports do not establish safety)" : ""}`].join(" · ");
-    const grouping = view.projection.length === 0 ? "each state" : oneLine(view.projection.join(" > "));
-    const top = this.#trace !== undefined
-      ? [`${title} · TLC concrete trace`, counts, `TLC concrete trace · ${view.trace.length} steps · the only execution shown, not regrouped or filtered`]
-      : [`${title} · grouped by ${grouping} · ${this.#within === "" ? "all reached states" : `within ${oneLine(this.#within)}`}`, counts,
-        "Grouped transitions are not an execution; t shows TLC's concrete trace."];
-    return this.#frame([theme.fg("accent", theme.bold(top[0] ?? "")), theme.fg(view.partial ? "warning" : "muted", top[1] ?? ""),
-      theme.fg("muted", top[2] ?? ""), ...body, ...bottom], width, rows);
+    const footer = this.#bottom(width);
+    return this.#frame([...topLines.map(line => theme.fg(line.role, line.text)), ...body].slice(0, rows - footer.length).concat(footer), width, rows);
+  }
+
+  /** Wrap semantic header lines without losing their roles or crowding out the body and keys. */
+  #heading(view: ModelView, top: readonly string[], width: number, limit: number): Line[] {
+    const rows: Line[] = [...top.map((text, at): Line => ({ text, role: at === 0 ? "accent" : view.partial && at === 1 ? "warning" : "muted" })),
+      ...ruleText(view.states.flatMap(state => state.breaks), view.ruleDefinitions).map((text): Line => ({ text, role: "error" }))]
+      .flatMap(line => wrapped(line.text, width).map(text => ({ ...line, text })));
+    const shown = rows.slice(0, Math.max(1, limit));
+    if (shown.length < rows.length) {
+      const last = shown.at(-1);
+      if (last !== undefined) shown[shown.length - 1] = { ...last, text: fit(`${last.text}…`, width) };
+    }
+    return shown;
   }
 
   #frame(lines: readonly string[], width: number, rows: number): string[] {
@@ -425,11 +456,14 @@ export class ModelViewer implements Component {
   /** The notice or the open prompt, then the keys. */
   #bottom(width: number): string[] {
     const { theme } = this.options;
-    const keys = theme.fg("dim", fit(`o browser · detail ${this.#detail + 1}/3 · pan ${this.#pan[0]},${this.#pan[1]} · arrows/drag pan · +/- detail · g group · Enter drill · `
-      + "n/p break · t trace · / search · Tab state · PgUp/PgDn variables · Esc back", width));
+    const hints = ["arrows/drag pan", "+/- detail", "g group", "Enter drill", "n/p break", "t trace", "/ search", "Tab state", "PgUp/PgDn variables"];
+    let keyText = "o browser · f fit · Esc back";
+    hints.unshift(`detail ${this.#detail + 1}/3`, `pan ${this.#pan[0]},${this.#pan[1]}`);
+    for (const hint of hints) if (visibleWidth(`${keyText} · ${hint}`) <= width) keyText += ` · ${hint}`;
+    const keys = theme.fg("dim", keyText);
     const prompt = this.#prompt;
     if (prompt === undefined) return [...wrapped(this.#notice, width).map(line =>
-      theme.fg(this.#notice.startsWith("!") ? "error" : "muted", line)), keys];
+      theme.fg(this.#notice.startsWith("!") || this.#notice.startsWith("⚠") ? "error" : "muted", line)), keys];
     const asked = prompt.kind === "group"
       ? `Group by: up to two variables, comma-separated; empty for each state (now ${oneLine(this.#view?.projection.join(", ") ?? "") || "each state"})`
       : "Search reached states: a fingerprint, a variable's value or an invariant; Enter for the next match";
@@ -438,19 +472,18 @@ export class ModelViewer implements Component {
 
   #graphCanvas(view: ModelView): string[] {
     const placed = this.#layoutOf(view);
-    const w = widths[this.#detail] ?? 24, h = heights[this.#detail] ?? 4;
     const selectedBox = placed.boxes.find((box) => box.group.members.includes(this.#selected ?? ""));
-    this.#settlePan(placed.width, placed.height, selectedBox === undefined ? undefined : { x: selectedBox.x, y: selectedBox.y, w, h });
+    this.#settlePan(placed.width, placed.height, selectedBox);
     const { w: cw, h: ch } = this.#canvas;
-    const [left, top] = this.#pan;
+    this.#offset = [Math.max(0, Math.floor((cw - placed.width) / 2)), Math.max(0, Math.floor((ch - placed.height) / 2))];
+    const left = this.#pan[0] - this.#offset[0], top = this.#pan[1] - this.#offset[1];
     const cells = Array.from({ length: ch }, () => Array.from({ length: cw }, () => ({ char: " ", role: "text" as ThemeColor })));
     const put = (x: number, y: number, text: string, role: ThemeColor): void => {
       const row = cells[y - top];
       if (row === undefined) return;
       // A cell a terminal column: a wide character takes two, the second left empty, and is blanked where the canvas cuts it.
-      let column = Math.max(0, x - left);
-      const clipped = sliceByColumn(oneLine(text), Math.max(0, left - x), cw - column);
-      for (const { segment: char } of graphemes.segment(clipped)) {
+      let column = x - left;
+      for (const { segment: char } of graphemes.segment(oneLine(text))) {
         const span = visibleWidth(char);
         if (span === 0) continue;
         const cell = row[column], rest = span === 2 ? row[column + 1] : undefined;
@@ -460,6 +493,7 @@ export class ModelViewer implements Component {
       }
     };
     for (const box of placed.boxes) {
+      const { w, h } = box;
       if (box.x + w <= left || box.x >= left + cw || box.y + h <= top || box.y >= top + ch) continue;
       const selected = box === selectedBox, breaking = box.group.violating > 0;
       const border: ThemeColor = selected ? "accent" : breaking ? "error" : "border";
@@ -476,11 +510,13 @@ export class ModelViewer implements Component {
 
   #boxLines(view: ModelView, placed: Layout, box: Box): Line[] {
     const { group } = box;
-    const label = group.path.length === 0 ? group.members[0] ?? "" : group.path.map(([name, value]) => `${name} = ${value}`).join(" › ");
+    const label = groupLabel(view, group);
     const breaking = group.violating > 0;
-    const lines: Line[] = [{ text: `${breaking ? "! " : ""}${box.number}. ${terminalText(label)}`, role: breaking ? "error" : "text" },
-      { text: `${this.#count(group.members.length)} member${group.members.length === 1 ? "" : "s"}${breaking ? ` ! BREAK ${this.#count(group.violating)}` : ""}`,
-        role: breaking ? "error" : "muted" }];
+    const labelRows = wrapped(`${box.number}. ${label}`, box.w - 2);
+    const lines: Line[] = labelRows.slice(0, 2).map((text, at) => ({
+      text: at === 1 && labelRows.length > 2 ? fit(`${text}…`, box.w - 2) : text,
+      role: breaking ? "error" : "text" }));
+    lines.push(...wrapped(groupSummary(view, group), box.w - 2).map(text => ({ text, role: breaking ? "error" as const : "muted" as const })));
     if (this.#detail >= 1) {
       const out = view.edges.filter((edge) => edge.from === group.id).map((edge) =>
         `${terminalText(edge.action)}→${edge.to === group.id ? "self" : placed.byGroup.get(edge.to)?.number ?? "?"}${edge.count > 1 || view.partial ? ` ×${this.#count(edge.count)}` : ""}`);
@@ -502,7 +538,7 @@ export class ModelViewer implements Component {
       const breaks = this.#state(step.fingerprint)?.breaks ?? [];
       const selected = step.fingerprint === this.#selected;
       return [{ text: `${selected ? "▶" : " "} ${at + 1}. ${step.fingerprint} <${terminalText(step.action)}>`, role: selected ? "accent" : "text" },
-        { text: breaks.length > 0 ? `     ! BREAK ${breaks.join(", ")}` : "", role: "error" },
+        { text: breaks.length > 0 ? `     ${brokenRules(breaks)}` : "", role: "error" },
         { text: at < view.trace.length - 1 ? "     ↓" : "", role: "muted" }];
     });
     const at = view.trace.findIndex(({ fingerprint }) => fingerprint === this.#selected);
@@ -547,16 +583,13 @@ export class ModelViewer implements Component {
     const breaks = state?.breaks ?? [];
     const group = this.#trace === undefined ? view.groups.find((each) => each.members.includes(id)) : undefined;
     const placed = this.#layoutOf(view);
-    const lines: Line[] = [{ text: `State ${id}`, role: "accent" },
-      breaks.length > 0 ? { text: `! BREAK ${breaks.join(", ")}`, role: "error" } : { text: "No violation reported for this state", role: "muted" },
-      ...breaks.flatMap(name => {
-        const definitions = view.ruleDefinitions;
-        const definition = definitions !== undefined && Object.hasOwn(definitions, name) ? definitions[name] : undefined;
-        return definition === undefined ? [] : [{ text: "Rule, from the model:", role: "muted" as ThemeColor },
-          ...terminalText(definition).split("\n").map(text => ({ text, role: "text" as ThemeColor }))];
-      }),
+    const lines: Line[] = [{ text: SELECTED_STATE, role: "accent" },
+      breaks.length > 0 ? { text: brokenRules(breaks), role: "error" } : { text: state === undefined ? "No report available for this state in this view" : NO_BROKEN_RULE, role: "muted" },
+      { text: `TLC id ${id}`, role: "muted" },
+      ...ruleText(breaks, view.ruleDefinitions).map(text => ({ text, role: "text" as ThemeColor })),
+      ...group === undefined ? [] : [{ text: groupLabel(view, group), role: "text" as ThemeColor }],
       ...step === undefined ? [] : [{ text: `TLC trace step ${view.trace.indexOf(step) + 1}: ${terminalText(step.action)}`, role: "muted" as ThemeColor }],
-      ...group === undefined ? [] : [{ text: `In group ${placed.byGroup.get(group.id)?.number ?? "?"}: ${this.#count(group.members.length)} members`, role: "muted" as ThemeColor }],
+      ...group === undefined ? [] : [{ text: `In group ${placed.byGroup.get(group.id)?.number ?? "?"}: ${stateCount(view.partial, group.members.length)}`, role: "muted" as ThemeColor }],
       { text: "", role: "text" }, { text: "Variables", role: "text" },
       ...assignments(valuation).map((text) => ({ text: `  ${text}`, role: "text" as ThemeColor }))];
     if (group !== undefined) {
@@ -566,6 +599,7 @@ export class ModelViewer implements Component {
           text: `  ${terminalText(edge.action)} → ${edge.to === group.id ? "itself" : placed.byGroup.get(edge.to)?.number ?? "?"} ×${this.#count(edge.count)}`,
           role: "muted" as ThemeColor })));
     }
+    lines.push({ text: "", role: "muted" }, { text: "Keys: arrows/drag pan · f fit · +/- detail · g group · Enter drill · n/p break · t trace · / search · Tab/Shift+Tab state · PgUp/PgDn variables · o browser · Esc back", role: "muted" });
     const rows = lines.flatMap((line) => wrapped(line.text, width - 1).map((text) => theme.fg(line.role, ` ${text}`)));
     this.#panelTop = Math.min(this.#panelTop, Math.max(0, rows.length - height));
     return rows.slice(this.#panelTop, this.#panelTop + height);

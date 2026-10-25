@@ -3,9 +3,53 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 import { captureGraph } from "../src/model-graph.js";
-import { defaultProjection, adjacentViolation, buildModelView } from "../src/model-view.js";
+import { groupLabel, boundedCount, stateCount, groupValues, brokenRules, ruleText, PARTIAL_EXPLORATION, GROUPED_MOVES, defaultProjection, adjacentViolation, buildModelView } from "../src/model-view.js";
 import { loadModelView } from "../src/model-view-process.js";
 import { conservesCounts } from "../src/verification/group-count-rule.js";
+
+it("shares page wording without changing exact model values or inventing missing rules", () => {
+  expect(boundedCount(true, 4)).toBe("≥4");
+  expect(stateCount(false, 1)).toBe("1 state");
+  expect(stateCount(true, 4)).toBe("≥4 states");
+  expect(stateCount(true, 1)).toBe("≥1 state");
+  expect(groupValues([["door", '"open"'], ["lamp", '"off"']])).toBe("door: open · lamp: off");
+  expect(brokenRules(["DarkWhenLocked"])).toBe("⚠ breaks DarkWhenLocked");
+  expect(ruleText(["Safe"], { Safe: "x = 0" })).toEqual(["Rule, from the model: x = 0"]);
+  expect(ruleText(["Safe"], {})).toEqual([]);
+  expect(PARTIAL_EXPLORATION).toBe("Partial exploration: counts are at least these numbers");
+  expect(GROUPED_MOVES).toBe("Arrows between groups are possible moves, not one run.");
+});
+
+it("plain output includes captured rule text and never invents it", () => {
+  const graph = { states: [{ fingerprint: "1", valuation: '/\\ x = "open"' }], edges: [{ from: "1", to: "1", action: "Go\x1b[2J\x07" }] };
+  const reports = { trace: [], violations: { Safe: ["1"] }, ruleDefinitions: { Safe: 'x = "closed"\x1b[2J\x07' } };
+  const plain = buildModelView(graph, reports, true, "", {}).plain;
+  expect(plain).toContain('Rule, from the model: x = "closed"');
+  expect(plain).toContain("Reached state");
+  expect(plain).toContain("TLC id 1");
+  expect(buildModelView(graph, { trace: [], violations: { Safe: ["1"] } }, true, "", {}).plain).not.toContain("Rule, from the model:");
+});
+
+it("graph --plain sanitizes captured rule text before writing to the terminal", async () => {
+  const { readFile, copyFile } = await import("node:fs/promises");
+  const { fileURLToPath } = await import("node:url");
+  const { runProcess } = await import("../src/process.js");
+  const root = await mkdtemp(join(tmpdir(), "tesota-plain-controls-"));
+  try {
+    const base = new URL("../packages/core/tests/fixtures/model-viewer/", import.meta.url);
+    const data = JSON.parse(await readFile(new URL("lights-partial.manifest.json", base), "utf8"));
+    data.binding = { modelHash: "bound" };
+    data.ruleDefinitions = { modelHash: "bound", properties: { DarkWhenLocked: 'door = "locked"\x1b[2J\x07' } };
+    const manifest = join(root, "capture.manifest.json");
+    await writeFile(manifest, JSON.stringify(data));
+    await copyFile(new URL("lights-partial.dot", base), join(root, "lights-partial.dot"));
+    const run = await runProcess("bun", [fileURLToPath(new URL("../packages/core/src/main.ts", import.meta.url)), "graph", "--plain", manifest], root, new AbortController().signal, 30_000);
+    expect(run.exitCode).toBe(0);
+    expect(run.stdout).toContain('Rule, from the model: door = "locked"');
+    expect(run.stdout).not.toContain("\x1b");
+    expect(run.stdout).not.toContain("\x07");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
 
 it("rejects a regrouping that loses any member, violation or edge multiplicity", () => {
   expect(conservesCounts([1, 1, 1], [1, 0, 1], [1, 1, 1], [2, 1], [1, 1], [3])).toBe(true);
@@ -29,9 +73,9 @@ it("projects only reached groups, conserves counts, marks any bad member and sto
     expect(view.projection).toEqual(["pc"]);
     expect(view.groups.map(g => [g.members.length, g.violating])).toEqual([[2, 1], [1, 0]]);
     expect(view.edges.reduce((n, e) => n + e.count, 0)).toBe(3);
-    expect(view.plain).toContain("! BREAK >=1");
-    expect(view.plain).toContain("lower bounds");
-    expect(view.plain).toContain("not an execution");
+    expect(view.plain).toContain("⚠ breaks Safe · ≥1 state");
+    expect(view.plain).toContain("counts are at least these numbers");
+    expect(view.plain).toContain("possible moves, not one run");
     expect(view.plain).not.toMatch(/(?:zero|0) reports (?:mean|establish|prove) (?:the model is )?safe/iu);
     expect(view.plain).toContain("zero reports do not establish safety");
     expect(view.plain).toContain("Safe");
@@ -92,7 +136,7 @@ it("conserves the real continued 320-state graph under every ordered projection"
       expect(new Set(grouped.groups.flatMap(g => g.members)).size).toBe(320);
       for (const group of grouped.groups) {
         expect(group.members.length).toBeGreaterThan(0);
-        expect(grouped.plain.split("Full reached states:")[0]?.includes(`${group.id}: ${group.members.length} members ! BREAK`)).toBe(group.violating > 0);
+        expect(grouped.plain.split("Full reached states:")[0]?.includes(`${groupLabel(grouped, group)}: ${group.members.length} ${group.members.length === 1 ? "state" : "states"} · ⚠ breaks`)).toBe(group.violating > 0);
       }
     }
     // Abort after this real worker starts returning a large model, not before spawn.
@@ -115,7 +159,7 @@ it("conserves the real continued 320-state graph under every ordered projection"
     expect(plain.exitCode).toBe(0);
     expect(Buffer.concat(plainChunks).toString("utf8")).toBe(`${view.plain}\n`);
     expect(plain.stdout).toContain("reported violating 60");
-    expect(plain.stdout).toContain("! BREAK");
+    expect(plain.stdout).toContain("⚠ breaks");
     const cancelled = new AbortController(); cancelled.abort();
     await expect(loadModelView(manifest, {}, cancelled.signal)).rejects.toThrow(/cancelled/u);
   } finally { await rm(root, { recursive: true, force: true }); }

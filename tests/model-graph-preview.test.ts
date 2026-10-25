@@ -28,9 +28,9 @@ it("draws a failing run as its concrete counterexample, not the reached ring", a
 
 it("labels stopped exploration partial and every count a lower bound", async () => {
   const rows = graphPreviewRows(await captured("9 distinct states found"), 80).join("\n");
-  expect(rows).toContain("Partial exploration; counts are lower bounds");
-  expect(rows).toContain(">=9 reached");
-  expect(rows).toContain(">=0 reported violating (not a safety verdict)");
+  expect(rows).toContain("Partial exploration: counts are at least these numbers");
+  expect(rows).toContain("≥9 states reached");
+  expect(rows).toContain("≥0 states reported violating (not a safety verdict)");
 });
 
 it("reports absent, failed, limited and unavailable captures in one line", () => {
@@ -46,15 +46,15 @@ it("keeps narrow previews within width without clipping counts or hiding omissio
     const rows = graphPreviewRows(capture, width);
     expect(rows.every((row) => row.length <= width)).toBe(true);
     expect(rows.filter((row) => row.startsWith("| ")).length).toBeLessThanOrEqual(6);
-    expect(rows.join(" ")).toContain("9 reached");
+    expect(rows.join(" ")).toContain("9 states reached");
   }
   expect(graphPreviewRows(capture, 32).filter((row) => row.startsWith("| ")).join(" ")).toContain("9 -> 1");
 });
 
 it("draws the whole nine-state graph in at most six diagram rows", async () => {
   const rows = graphPreviewRows(await captured(), 80);
-  expect(rows.join("\n")).toContain("9 reached");
-  expect(rows.join("\n")).toContain("0 reported violating (not a safety verdict)");
+  expect(rows.join("\n")).toContain("9 states reached");
+  expect(rows.join("\n")).toContain("0 states reported violating (not a safety verdict)");
   const diagram = rows.filter((row) => row.startsWith("| "));
   expect(diagram.length).toBeGreaterThan(0);
   expect(diagram.length).toBeLessThanOrEqual(6);

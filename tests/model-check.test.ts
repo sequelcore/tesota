@@ -255,7 +255,7 @@ it.skipIf(!withTlc)("captures the nine reached states beside the session from th
   const manifest = JSON.parse(readFileSync(check.capture?.manifest ?? "", "utf8"));
   expect(manifest.graph.states).toHaveLength(9);
   const preview = graphPreviewRows(check.capture, 80);
-  expect(preview.join("\n")).toContain("9 reached");
+  expect(preview.join("\n")).toContain("9 states reached");
   expect(preview.filter((row) => row.startsWith("| ")).length).toBeGreaterThan(0);
   expect(preview.filter((row) => row.startsWith("| ")).length).toBeLessThanOrEqual(6);
   expect(readFileSync(join(root, manifest.artifacts.txt.file), "utf8")).toContain(`1: ${manifest.graph.states[0].fingerprint}\n`);
@@ -282,8 +282,8 @@ it.skipIf(!withTlc)("labels an early failing exploration and its counts partial"
   expect(manifest.graph.trace).toHaveLength(5);
   const preview = graphPreviewRows(check.capture, 80).join("\n");
   expect(preview).toContain("Counterexample path");
-  expect(preview).toContain("Partial exploration; counts are lower bounds");
-  expect(preview).toContain(">=1 reported violating");
+  expect(preview).toContain("Partial exploration: counts are at least these numbers");
+  expect(preview).toContain("≥1 state reported violating");
 }, 120_000);
 
 const ring = (base: string): Record<string, string> => ({

@@ -41,7 +41,34 @@ export interface ModelView {
 
 /** A count as a partial graph allows reading it: a lower bound. */
 export function boundedCount(partial: boolean, count: number): string {
-  return `${partial ? ">=" : ""}${count}`;
+  return `${partial ? "≥" : ""}${count}`;
+}
+
+export const PARTIAL_EXPLORATION = "Partial exploration: counts are at least these numbers";
+export const GROUPED_MOVES = "Arrows between groups are possible moves, not one run.";
+export const RULE_PREFIX = "Rule, from the model: ";
+export const SELECTED_STATE = "Selected state";
+export const COMPLETE_EXPLORATION = "Complete exploration; exact counts";
+export const ZERO_REPORTS = "zero reports do not establish safety";
+export const NO_BROKEN_RULE = "No broken rule reported for this state";
+
+/** Display wording only; inspection retains the exact TLC values. */
+export function stateCount(partial: boolean, count: number): string {
+  return `${boundedCount(partial, count)} ${count === 1 ? "state" : "states"}`;
+}
+export const displayValue = (value: string): string => value.replace(/^"(.*)"$/su, "$1");
+export function groupValues(entries: readonly (readonly [string, string])[]): string {
+  return entries.map(([name, value]) => `${name}: ${displayValue(value)}`).join(" · ");
+}
+export function brokenRules(names: readonly string[]): string { return `⚠ breaks ${names.join(", ")}`; }
+export function ruleText(names: readonly string[], definitions: Readonly<Record<string, string>> = {}): string[] {
+  return [...new Set(names)].flatMap(name => Object.hasOwn(definitions, name) ? [`${RULE_PREFIX}${definitions[name]}`] : []);
+}
+export function groupLabel(view: Pick<ModelView, "states">, group: ViewGroup): string {
+  return groupValues(group.path.length === 0 ? Object.entries(view.states.find(s => s.fingerprint === group.members[0])?.variables ?? {}) : group.path);
+}
+export function groupRules(view: Pick<ModelView, "states">, group: ViewGroup): string[] {
+  return [...new Set(view.states.filter(s => group.members.includes(s.fingerprint)).flatMap(s => s.breaks))];
 }
 
 export function defaultProjection(states: readonly ViewState[], header: string): string[] {
@@ -125,13 +152,15 @@ function projectEdges(graph: ReachedGraph, membership: ReadonlyMap<string, strin
 /** No layout, terminal controls or claim that a quotient path is an execution. */
 export function renderModelView(view: Omit<ModelView, "plain">): string {
   const count = (n: number): string => boundedCount(view.partial, n);
-  return [view.partial ? "Partial exploration; counts are lower bounds" : "Complete exploration; exact counts",
-    `Reached ${count(view.states.length)}; reported violating ${count(view.violations.length)} (zero reports do not establish safety)`,
-    "Grouped transitions are not an execution. Only TLC's concrete trace is an execution.",
-    ...view.groups.map(g => `${g.id}: ${count(g.members.length)} members${g.violating > 0 ? ` ! BREAK ${count(g.violating)}` : ""}`),
-    ...view.edges.map(e => `${e.from} -> ${e.to} [${e.action}] x${count(e.count)}`),
+  const groupName = (id: string): string => `Group ${view.groups.findIndex(group => group.id === id) + 1}`;
+  return [view.partial ? PARTIAL_EXPLORATION : COMPLETE_EXPLORATION,
+    `Reached ${count(view.states.length)}; reported violating ${count(view.violations.length)} (${ZERO_REPORTS})`,
+    `${GROUPED_MOVES} Only TLC's concrete trace is an execution.`,
+    ...ruleText(view.states.flatMap(state => state.breaks), view.ruleDefinitions),
+    ...view.groups.map(g => `${groupName(g.id)} · ${groupLabel(view, g)}: ${stateCount(view.partial, g.members.length)}${g.violating > 0 ? ` · ${brokenRules(groupRules(view, g))} · ${stateCount(view.partial, g.violating)}` : ""}`),
+    ...view.edges.map(e => `${groupName(e.from)} -> ${groupName(e.to)} [${e.action}] x${count(e.count)}`),
     `Boundary edges: ${count(view.boundary)}`, "Full reached states:",
-    ...view.states.map(s => `${s.fingerprint}${s.breaks.length > 0 ? ` ! BREAK ${s.breaks.join(", ")}` : ""}\n${s.valuation}`),
+    ...view.states.map(s => `Reached state${s.breaks.length > 0 ? ` · ${brokenRules(s.breaks)}` : ""}\nTLC id ${s.fingerprint}\n${ruleText(s.breaks, view.ruleDefinitions).join("\n")}\n${s.valuation}`),
     "TLC concrete trace (not regrouped or filtered):", ...view.trace.map((s, i) => `${i + 1}. ${s.fingerprint} <${s.action}>\n${s.valuation}`),
     `Search matches: ${view.matches.join(", ")}`].join("\n");
 }
