@@ -14,7 +14,7 @@ const editorTheme: EditorTheme = { borderColor: (text) => `\x1b[35m${text}\x1b[3
   selectedText: plain, description: plain, scrollInfo: plain, noMatch: plain } };
 
 function editor(text: string, rows = 40) {
-  const view = new BarEditor(tui(rows), editorTheme, () => theme);
+  const view = new BarEditor(tui(rows), theme.editor, () => theme);
   view.focused = true;
   view.setText(text);
   return view;
@@ -118,7 +118,13 @@ it("selects a suggestion by clicking its row above the band", async () => {
   ], process.cwd()));
   view.handleInput("/");
   await new Promise((resolve) => setTimeout(resolve, 200));
-  const rows = view.render(60).map(stripTerminalSequences);
+  const painted = view.render(60);
+  const rows = painted.map(stripTerminalSequences);
+  expect(rows[0]).toMatch(/^  › help/u);
+  expect(visibleWidth(painted[0]!)).toBe(60);
+  expect(painted[0]!.startsWith(theme.getBgAnsi("selectedBg"))).toBe(true);
+  expect(painted[0]!.endsWith(` \x1b[49m`)).toBe(true);
+  expect(painted[1]).not.toContain(theme.getBgAnsi("selectedBg"));
   const y = rows.findIndex((row) => row.includes("Resume a session"));
   expect(y).toBeGreaterThanOrEqual(0);
   expect(view.handleMouse({ type: "click", button: "left", x: 5, y, screenX: 5, screenY: y,

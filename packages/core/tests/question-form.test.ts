@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { TuiMainScreen } from "@earendil-works/pi-tui";
+import { stripTerminalSequences, TuiMainScreen, visibleWidth } from "@earendil-works/pi-tui";
 import { VirtualTerminal } from "./virtual-terminal.ts";
 import type { ClarificationQuestion } from "../../../src/clarification.ts";
 import { shellTheme } from "../../../src/theme.ts";
@@ -32,6 +32,19 @@ test.each(["dark", "light"] as const)("%s question has no stray reverse-video ba
   const { view } = form(appearance);
   const lines = ansi(view);
   expect(lines.filter((line) => line.includes("<ESC>[7m"))).toEqual([]);
+});
+
+test.each(["dark", "light"] as const)("%s question fills only the focused choice's inner width", (appearance) => {
+  const { view } = form(appearance);
+  const theme = shellTheme(appearance, "truecolor");
+  const rows = view.render(60);
+  const selected = rows.find((line) => stripTerminalSequences(line).startsWith("▌ › "))!;
+  expect(visibleWidth(selected)).toBe(60);
+  expect(selected).toContain(`${theme.getBgAnsi("selectedBg")}${theme.selectList.selectedPrefix("› ")}`);
+  // ScrollView reserves its own final column for the scrollbar, outside the list's width.
+  expect(selected).toContain(" \x1b[49m");
+  const unselected = rows.find((line) => line.includes("2. [ ] B"))!;
+  expect(unselected).not.toContain(theme.getBgAnsi("selectedBg"));
 });
 
 test("Down traverses choices, text and Submit; Up traverses them in reverse without changing answers", () => {

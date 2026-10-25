@@ -1,6 +1,7 @@
 import { Editor, type EditorTheme, truncateToWidth, type TUI, type TuiMouseEvent, type TuiMouseEventResult, visibleWidth }
   from "@earendil-works/pi-tui";
 import type { Theme } from "./contract.js";
+import { listRow } from "./theme.js";
 
 /** Pi's border hooks return these in place of its border lines, so the frame can find the rows between them. */
 const TOP = "\u{F8FF}tesota-top";
@@ -60,7 +61,7 @@ export class BarEditor extends Editor {
     this.#suggestions = suggestions.length;
     this.#textRows = end - 1;
     return [
-      ...suggestions.map((line) => `${" ".repeat(LEFT)}${line}`),
+      ...suggestions.map((line) => listRow(theme, line, width, LEFT)),
       padding(this.#above, "↑"),
       ...lines.slice(1, end).map((line, row) => band(`${row === 0 ? "› " : "  "}${row === 0 ? hint(line) : line}`)),
       padding(this.#below, "↓"),
