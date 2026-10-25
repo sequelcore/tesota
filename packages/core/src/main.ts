@@ -69,7 +69,7 @@ else if (command === "__lsc") {
   });
 }
 else {
-  console.error(`Unknown argument ${command}. Use: tesota (the shell), tesota -p "<request>", tesota receipt [--json], ` +
+  console.error(`Unknown argument ${command}. Use: tesota (the shell), tesota -p [-c | --resume <session>] "<request>", tesota receipt [--json], ` +
     "tesota accounts [add <provider> <name> | login <account> | remove <account>], tesota --version; " +
     "the shell and -p take --open-cases-model <provider>/<id>|off and --claimcheck-model <provider>/<id>.");
   process.exitCode = 2;

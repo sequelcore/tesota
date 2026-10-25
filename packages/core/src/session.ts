@@ -1,6 +1,6 @@
 import type { ToolCall } from "@earendil-works/pi-ai";
 import { createHash, randomUUID } from "node:crypto";
-import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readSync, realpathSync, rmSync, statSync } from "node:fs";
+import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, realpathSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
 import { type FloorRefusal, interruptedReceipt, type ReceiptChild, receiptEntry } from "../../../src/receipt.ts";
@@ -14,7 +14,8 @@ import { agentHost, type AgentTree, defaultAgentLimit, maxDepth } from "./childr
 import type { GuardSetting } from "./agent-rule.ts";
 import type { StartedSkill } from "./instructions.ts";
 import {
-  compactedHead, createLoop, type HistoryMessage, jobMessage, type LoopOptions, type LoopSession, type LoopState, skillMessage, toolResult,
+  compactedHead, type Continuation, continuesType, createLoop, type HistoryMessage, jobMessage, type LoopOptions, type LoopSession, type LoopState, skillMessage,
+  toolResult,
 } from "./loop.ts";
 import { agentTool } from "./tools/agent.ts";
 import { noEffect, notRun, outcomeUnknown, repairs } from "./reconcile-rule.ts";
@@ -26,7 +27,8 @@ import { lockSession, SessionLockedError } from "./session-lock.ts";
 import { outputPrefix } from "./tools/shell.ts";
 import { keepTail, maxBytes } from "./truncate.ts";
 import { bindWorkspace, outsideChange, reopenWorkspace, type Workspace } from "./workspace.ts";
-import { clarificationText, type Clarification, type RequestInput } from "../../../src/clarification.ts";
+import { clarificationText, type Clarification, type ClarificationQuestion, type RequestInput } from "../../../src/clarification.ts";
+import { validateQuestions } from "./questions-schema.ts";
 
 /** An amendment as the ledger keeps it; `delivered` once it entered the conversation. */
 export interface LedgerAmendment {
@@ -53,6 +55,11 @@ export interface LedgerRequest {
   readonly children: readonly ReceiptChild[];
   /** The calls Tesota's floor refused in the run (#622), in order. */
   readonly refusals: readonly FloorRefusal[];
+  /**
+   * The earlier run this one continues (#651), and what the verifier saved as
+   * that run ended on its question (`requestStartType`), for it to restore.
+   */
+  readonly continues?: { readonly run: number; readonly start?: unknown };
 }
 
 /** What makes a session a child of another (#525): its parent, where it works, the tree it counts in, its types and instructions. */
@@ -79,6 +86,13 @@ export interface EngineSession extends LoopSession {
   readonly types: readonly AgentType[];
   /** Its scratch folder (#653), removed when it is disposed; none when that place could enter its change. */
   readonly scratch: string | undefined;
+  /**
+   * The operator's reply to where the session stands (#651): when its last
+   * run ended on an unresolved question, the answer to it, which starts a run
+   * that continues that request (`continuation`); otherwise a follow-up, a
+   * new request as the shell sends one.
+   */
+  reply(text: string): Promise<void>;
 }
 
 /**
@@ -388,8 +402,24 @@ function conversation(entries: readonly SessionEntry[]): Pick<LoopState, "histor
   return { history, ledger, ...compacted === undefined ? {} : { compacted } };
 }
 
-/** The ledger: each request with its amendments, from the ledger entries and the deliveries alone. */
+/**
+ * The ledger: each request with its amendments, from the ledger entries and
+ * the deliveries alone. A request that continues an earlier one (#651) holds
+ * that one's amendments and clarifications first, since it is the same
+ * request, then its own.
+ */
 function ledgerOf(entries: readonly SessionEntry[]): LedgerRequest[] {
+  const ledger = ownLedgerOf(entries);
+  const inputs = new Map<number, readonly RequestInput[]>();
+  return ledger.map((request) => {
+    const all = [...request.continues === undefined ? [] : inputs.get(request.continues.run) ?? [], ...request.inputs];
+    inputs.set(request.run, all);
+    return { ...request, inputs: all };
+  });
+}
+
+/** Each request with only the amendments and clarifications given in its own run. */
+function ownLedgerOf(entries: readonly SessionEntry[]): LedgerRequest[] {
   const withdrawn = new Set(entries.flatMap((entry) => entry.type === "withdrawn" ? [entry.amendment] : []));
   const delivered = new Set(entries.flatMap((entry) => entry.type === "delivered" ? [entry.amendment] : []));
   return entries.flatMap((entry) => entry.type !== "request" ? [] : [{
@@ -400,10 +430,103 @@ function ledgerOf(entries: readonly SessionEntry[]): LedgerRequest[] {
     }]),
     inputs: entries.flatMap((input): RequestInput[] => (input.type === "active_tools" || input.run !== entry.run) ? []
       : input.type === "amendment" ? withdrawn.has(input.id) ? [] : [{ kind: "amendment", origin: input.origin, text: input.text }]
-        : input.type === "clarification" ? [{ kind: "clarification", clarification: input.clarification }] : []),
+        : input.type === "clarification" ? [{ kind: "clarification", clarification: input.clarification }]
+          : input.type === "custom" ? continuedFrom(input).map(({ clarification }): RequestInput => ({ kind: "clarification", clarification })) : []),
     children: entries.flatMap((ended) => ended.type === "job_end" && ended.run === entry.run ? childOf(ended.details) : []),
     refusals: floorRefusals(entries, entry.run),
+    ...continuesOf(entries, entry.run),
   }]);
+}
+
+/**
+ * What the gate records as a run ends on an unresolved question (#651): the
+ * start fingerprints it measures the request from, its own data, which the
+ * run that continues it restores.
+ */
+const requestStartType = "tesota-request-start";
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
+
+/** The run a `tesota.continues` entry names and the answer it carries (#651); none for any other entry. */
+function continuedFrom(entry: SessionEntry): { run: number; clarification: Clarification }[] {
+  if (entry.type !== "custom" || entry.customType !== continuesType || !isRecord(entry.data)) return [];
+  const { run, clarification } = entry.data;
+  return typeof run === "number" && Number.isInteger(run) && isRecord(clarification) && Number.isInteger(clarification["reply"])
+    && typeof clarification["callId"] === "string" && typeof clarification["at"] === "string" && Array.isArray(clarification["questions"])
+    && Array.isArray(clarification["answers"]) ? [{ run, clarification: clarification as unknown as Clarification }] : [];
+}
+
+/** The earlier run that run `run` continues, and what the gate saved as that run ended (#651); nothing for a run that continues none. */
+function continuesOf(entries: readonly SessionEntry[], run: number): Pick<LedgerRequest, "continues"> {
+  const linked = entries.flatMap((entry) => entry.type === "custom" && entry.run === run ? continuedFrom(entry) : [])[0];
+  if (linked === undefined) return {};
+  const saved = entries.findLast((entry) => entry.type === "custom" && entry.run === linked.run && entry.customType === requestStartType);
+  return { continues: { run: linked.run, ...saved?.type === "custom" && saved.data !== undefined ? { start: saved.data } : {} } };
+}
+
+const unresolvedPrefix = "Unresolved question: ";
+
+/**
+ * The question the session's last run ended on (#599), and the batch an
+ * answer settles (#651): the `ask_user` call the end reason names, or, for a
+ * question asked in prose, a batch of that one question, without options or
+ * a call. None when the last run ended otherwise.
+ */
+export function pendingQuestion(entries: readonly SessionEntry[]):
+  Pick<Clarification, "reply" | "callId" | "questions"> & { readonly run: number } | undefined {
+  const run = entries.filter((entry) => entry.type === "request").length;
+  const end = entries.findLast((entry) => entry.type === "run_end");
+  if (run === 0 || end?.type !== "run_end" || end.run !== run || end.reason?.startsWith(unresolvedPrefix) !== true) return undefined;
+  const reason = end.reason;
+  const replies = entries.flatMap((entry) => entry.type === "assistant" && entry.run === run ? [entry.message] : []);
+  for (let reply = replies.length - 1; reply >= 0; reply -= 1) {
+    const call = replies[reply]?.content.findLast((part) => part.type === "toolCall" && part.name === "ask_user"
+      && reason.startsWith(`${unresolvedPrefix}${JSON.stringify(part.arguments)}`));
+    const questions = call?.type === "toolCall" && isRecord(call.arguments) ? call.arguments["questions"] : undefined;
+    if (call?.type === "toolCall" && validateQuestions(questions) === undefined) {
+      return { run, reply, callId: call.id, questions: questions as unknown as readonly ClarificationQuestion[] };
+    }
+  }
+  return { run, reply: Math.max(0, replies.length - 1), callId: "", questions: [{ question: reason.slice(unresolvedPrefix.length), options: [] }] };
+}
+
+/**
+ * The run that `answer` starts when the session's last run ended on an
+ * unresolved question (#651): the earlier request's text, its base, and the
+ * answer as the operator's clarification of the pending batch, the same
+ * text for each of its questions. It qualifies the request and grants
+ * nothing: every permission and the floor stay as they are. None when no
+ * question is pending.
+ */
+export function continuation(entries: readonly SessionEntry[], answer: string):
+  { readonly text: string; readonly continues: Continuation } | undefined {
+  const pending = pendingQuestion(entries);
+  const request = pending === undefined ? undefined : ledgerOf(entries).find(({ run }) => run === pending.run);
+  if (pending === undefined || request === undefined) return undefined;
+  const { run, reply, callId, questions } = pending;
+  const clarification: Clarification = { reply, callId, at: new Date().toISOString(), questions,
+    answers: questions.map(() => ({ selected: [], text: answer })) };
+  return { text: `${request.text}\n\nTesota: this continues request ${run}, which ended on an unresolved question, from the same base. `
+    + `The operator's answer follows; it clarifies the request and grants no permission.\n\n${clarificationText(clarification)}`,
+  continues: { run, base: request.base, clarification } };
+}
+
+/** The first request of the session in `file`, to name it in `/resume`; none for a session never asked anything. */
+export function firstRequest(file: string): string | undefined {
+  try {
+    for (const line of readFileSync(file, "utf8").split("\n")) {
+      const entry = JSON.parse(line) as { type?: string; text?: string };
+      if (entry.type === "request" && typeof entry.text === "string") return entry.text.split("\n")[0] ?? "";
+    }
+  } catch { /* a session being written, or not one */ }
+  return undefined;
+}
+
+/** The sessions in `folder` that were asked something, newest first, each with its first request: those `/resume` and `tesota -p -c` choose from. */
+export function askedSessions(folder: string): { readonly file: string; readonly request: string }[] {
+  if (!existsSync(folder)) return [];
+  return readdirSync(folder).filter((name) => name.endsWith(".jsonl")).sort().reverse().map((name) => join(folder, name))
+    .flatMap((file) => { const request = firstRequest(file); return request === undefined ? [] : [{ file, request }]; });
 }
 
 
@@ -504,6 +627,11 @@ function engineSession(file: string, release: () => void, entries: SessionEntry[
     prompt: async (text, prompt) => {
       if (poisoned !== undefined) throw poisoned;
       return await loop.prompt(text, prompt);
+    },
+    reply: async (text) => {
+      if (poisoned !== undefined) throw poisoned;
+      const continued = continuation(entries, text);
+      return await (continued === undefined ? loop.prompt(text) : loop.prompt(continued.text, { continues: continued.continues }));
     },
     compact: async () => {
       if (poisoned !== undefined) throw poisoned;

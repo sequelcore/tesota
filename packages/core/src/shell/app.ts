@@ -1,6 +1,6 @@
 import type { Api, AuthInteraction, CredentialStore, Model, ModelThinkingLevel, MutableModels } from "@earendil-works/pi-ai";
 import { getTerminalColorMode, ProcessTerminal, type Terminal } from "@earendil-works/pi-tui";
-import { readdirSync, readFileSync, rmSync } from "node:fs";
+import { rmSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { tesotaHome } from "../../../../src/home.ts";
 import { provideHost } from "../../../../src/host.ts";
@@ -17,7 +17,7 @@ import type { HistoryMessage } from "../loop.ts";
 import type { McpServers, startMcp } from "../mcp.ts";
 import { readMcpConfig } from "../mcp-config.ts";
 import { loadRules } from "../permissions.ts";
-import { createSession, type EngineSession, openSession, sessionsFolder, type Verifier } from "../session.ts";
+import { askedSessions, createSession, type EngineSession, firstRequest, openSession, sessionsFolder, type Verifier } from "../session.ts";
 import { checkoutRoot } from "../workspace.ts";
 import { anyHooks, type Hooks, joinHooks } from "../hooks.ts";
 import { lastFloorNotice, peekSessionFile } from "../session-file.ts";
@@ -92,17 +92,6 @@ export function confirmation(call: { name: string; arguments: unknown }, reason:
 const modeFor = (settings: Settings): "fullscreen" | "inline" =>
   process.platform === "win32" && (process.env["SSH_CONNECTION"] ?? process.env["SSH_CLIENT"]) !== undefined ? "inline"
     : settings.tuiMode ?? "fullscreen";
-
-/** The first request of the session in `file`, to name it in `/resume`; none for a session never asked anything. */
-function firstRequest(file: string): string | undefined {
-  try {
-    for (const line of readFileSync(file, "utf8").split("\n")) {
-      const entry = JSON.parse(line) as { type?: string; text?: string };
-      if (entry.type === "request" && typeof entry.text === "string") return entry.text.split("\n")[0] ?? "";
-    }
-  } catch { /* a session being written, or not one */ }
-  return undefined;
-}
 
 /**
  * `tesota-core`: the engine's shell in the current folder (#444), on the
@@ -602,9 +591,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     } },
     "/resume": { description: "Open an earlier session", run: async () => {
       const running = new Set(lives.map((each) => each.session.file));
-      const asked = readdirSync(folder).filter((name) => name.endsWith(".jsonl")).sort().reverse()
-        .map((name) => join(folder, name)).filter((file) => !running.has(file))
-        .flatMap((file) => { const request = firstRequest(file); return request === undefined ? [] : [{ file, request }]; });
+      const asked = askedSessions(folder).filter(({ file }) => !running.has(file));
       if (asked.length === 0) { shell.note("No other session in this folder."); return; }
       const picked = await shell.pick("Resume", asked.map(({ file, request }) => ({ value: file, label: request,
         description: basename(file).slice(0, 19) })));
