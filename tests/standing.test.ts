@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { noEvidence, type Receipt, receiptStanding } from "../src/receipt.js";
+import { noEvidence, type Receipt, receiptStanding, receiptSummary, renderReceipt } from "../src/receipt.js";
 import type { Evidence } from "../src/evidence.js";
 import { emptyReceipt } from "./receipts.js";
 
@@ -61,6 +61,25 @@ describe("the receipt's standing (#668)", () => {
     expect(receiptStanding({ ...tested, exercises: [{ ...noticing, sensitivity: "passes_on_base" }] })).toBe("incomplete");
     expect(receiptStanding({ ...tested, stopped: "the operator stopped the run" })).toBe("incomplete");
     expect(receiptStanding({ ...tested, unresolvedQuestion: "Which behavior?" })).toBe("incomplete");
+  });
+
+  it("leaves a covered file out of the summary's limits, and still says no proof covers it", () => {
+    const summary = receiptSummary(tested);
+    expect(summary.counts).not.toMatch(/verification limit(?!s)|[1-9]\d* verification limits/u);
+    expect(summary.counts).toContain("no verification limits");
+    expect(summary.tone).toBe("success");
+    expect(summary.limits).toEqual([]);
+    expect(summary.notes).toContainEqual(expect.objectContaining({ glyph: "·", title: "src/add.ts: tested and exercised; no proof covers it" }));
+    const text = renderReceipt(tested);
+    expect(text.split("\n")[1]).not.toMatch(/[1-9]\d* verification limit/u);
+    expect(text).toContain("src/add.ts: tested and exercised; no proof covers it");
+  });
+
+  it("still counts an uncovered file as a verification limit", () => {
+    const summary = receiptSummary({ ...tested, exercises: [] });
+    expect(summary.counts).toContain("1 verification limit");
+    expect(summary.tone).toBe("warning");
+    expect(summary.limits).toContainEqual(expect.objectContaining({ items: ["src/add.ts"] }));
   });
 
   it("reads each unit of a folder of repositories on its own", () => {

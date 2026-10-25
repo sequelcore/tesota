@@ -81,6 +81,16 @@ export function methodStanding(held: number, partly: number, failed: number, run
 }
 
 /**
+ * Whether one changed path is covered (#668), in the standing and the
+ * receipt's summary alike: it proved, or it was tested and exercised, as
+ * `runStanding` reads each of them from the receipt.
+ */
+//@ ensures \result <==> (proved || (tested && exercised))
+export function pathCovered(proved: boolean, tested: boolean, exercised: boolean): boolean {
+  return proved || (tested && exercised);
+}
+
+/**
  * Where a run's verification stands (#668), one meaning on every surface:
  * `failed` when it stopped or something needs the operator (`decisions`) and
  * a check failed, `incomplete` when either holds without a failed check;
@@ -97,7 +107,7 @@ export function methodStanding(held: number, partly: number, failed: number, run
  * exercises: its unit lists exactly that one path as unproved, records at
  * least one exercise, and every exercise is `fails_then_passes`, so a test
  * noticed the change, and nothing else unproved could be what it noticed.
- * A path is covered when it proved, or was tested and exercised. `gaps`
+ * A path is covered (`pathCovered`) when it proved, or was tested and exercised. `gaps`
  * counts the receipt's other gaps, besides those unproved paths.
  */
 //@ requires passed >= 0 && decisions >= 0 && gaps >= 0
@@ -117,7 +127,7 @@ export function runStanding(changed: boolean, stopped: boolean, decisions: numbe
   while (k < proved.length) {
     //@ invariant 0 <= k && k <= proved.length
     //@ invariant forall(j: nat, j < k ==> (proved[j] || (tested[j] && exercised[j])))
-    if (!proved[k] && !(tested[k] && exercised[k])) return "incomplete";
+    if (!pathCovered(proved[k] === true, tested[k] === true, exercised[k] === true)) return "incomplete";
     k = k + 1;
   }
   return "verified";

@@ -162,6 +162,11 @@ not checked, a model not checked or attribution unresolved, and a `changed`
 that is `unreadable`, since then nothing shows every changed path covered.
 
 A green summary means `verified`: one that verified nothing is amber.
+The summary reads coverage from the same rule (`pathCovered`), so a file
+that is covered though no proof covers it is no verification limit: it
+is neither counted nor amber, and shows as a muted line, such as
+`add.js: tested and exercised; no proof covers it`. A file that isn't
+covered stays a limit.
 
 ### Clarification
 

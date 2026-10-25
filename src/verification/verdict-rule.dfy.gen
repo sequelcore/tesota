@@ -57,6 +57,16 @@ lemma methodStanding_ensures(held: int, partly: int, failed: int, runs: int)
 {
 }
 
+function pathCovered(proved: bool, tested: bool, exercised: bool): bool
+{
+  (proved || (tested && exercised))
+}
+
+lemma pathCovered_ensures(proved: bool, tested: bool, exercised: bool)
+  ensures (pathCovered(proved, tested, exercised) <==> (proved || (tested && exercised)))
+{
+}
+
 method decisions(standings: seq<Standing>) returns (res: int)
   ensures (0 <= res)
   ensures (res <= |standings|)
@@ -126,7 +136,8 @@ method runStanding(changed: bool, stopped: bool, decisions: int, failed: bool, p
     invariant (k <= |proved|)
     invariant forall j: nat :: ((j < k) ==> (proved[j] || (tested[j] && exercised[j])))
   {
-    if (!(proved[k]) && !((tested[k] && exercised[k]))) {
+    var i_t0 := pathCovered((proved[k] == true), (tested[k] == true), (exercised[k] == true));
+    if !(i_t0) {
       return "incomplete";
     }
     k := (k + 1);

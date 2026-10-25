@@ -149,7 +149,7 @@ it("explains unknown start states and unmeasured paths in both card views", () =
 });
 
 it("counts a receipt's limits, amber, and keeps green for one with none", () => {
-  const gapped: Receipt = { ...clean, unverified: ["notes.md"] };
+  const gapped: Receipt = { ...clean, exercises: [], unverified: ["notes.md"] };
   const rows = text(shown("tesota-receipt", gapped, 120));
   expect(rows[1]).toBe("No review flags · 1 verification limit");
   expect(rows).toContain("○ No proof covers 1 changed file");
@@ -157,6 +157,18 @@ it("counts a receipt's limits, amber, and keeps green for one with none", () => 
     content: "", details: receipt }, { expanded: false, outputPad: 1 }, theme)?.render(120)[2] ?? "";
   expect(colored(gapped)).toContain(theme.fg("warning", "\x1b[1mNo review flags · 1 verification limit\x1b[22m"));
   expect(colored(clean)).toContain(theme.fg("success", "\x1b[1mNo review flags · no verification limits\x1b[22m"));
+});
+
+it("leaves a file tested and exercised out of the limits, green, and says muted that no proof covers it", () => {
+  const covered: Receipt = { ...clean, unverified: ["notes.md"] };
+  const rows = text(shown("tesota-receipt", covered, 120));
+  expect(rows[1]).toBe("No review flags · no verification limits");
+  expect(rows).not.toContain("○ No proof covers 1 changed file");
+  expect(rows).toContain("· notes.md: tested and exercised; no proof covers it");
+  const lines = renderers().get("tesota-receipt")?.({ customType: "tesota-receipt", content: "", details: covered },
+    { expanded: false, outputPad: 1 }, theme)?.render(120) ?? [];
+  expect(lines[2]).toContain(theme.fg("success", "\x1b[1mNo review flags · no verification limits\x1b[22m"));
+  expect(lines.join("\n")).toContain(theme.fg("muted", "notes.md: tested and exercised; no proof covers it"));
 });
 
 it("shows a stopped receipt as not verified in both card views, with no method claimed", () => {

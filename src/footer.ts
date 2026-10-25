@@ -3,7 +3,7 @@ import { sep } from "node:path";
 import { type ContextUsage, type FooterData, QUESTION_STATUS, type Theme, type ThemeColor } from "./contract.js";
 import { type Component, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { GateProgress, GateStatus, Tally } from "./gate.js";
-import { addedAssumptions, allEvidence, type Finding, type Receipt, receiptDecisions, receiptFindings, type ReceiptStanding, receiptStanding,
+import { addedAssumptions, allEvidence, coveredCount, type Finding, type Receipt, receiptDecisions, receiptFindings, type ReceiptStanding, receiptStanding,
   receiptTone, type UnitEvidence, unverifiedWhy, verified } from "./receipt.js";
 import { elapsedTime, type EvidenceLevel, footerLayout } from "./verification/footer-rule.js";
 
@@ -91,7 +91,7 @@ function receiptParts(settled: Receipt): EvidencePart[] {
   const unproved = passed && receipt.tests.length > 0 ? "not proved" : "not verified";
   const unchanged = receipt.exercises.filter(({ sensitivity }) => sensitivity === "passes_on_base").length;
   const findings = receiptFindings(settled);
-  const unchecked = uncheckedGaps(findings, receipt);
+  const unchecked = uncheckedGaps(findings, receipt, coveredCount(settled));
   const listed = [
     ...tallyParts({ proved, notProved: receipt.proofs.length - proved,
       ...receipt.tests.length === 0 ? {} : { tests: passed ? "pass" : "fail" }, weak }, assumed),
@@ -141,11 +141,12 @@ function receiptHead(settled: Receipt, findings: readonly Finding[], standing: R
  * measured or a test not checked, so amber always says why: every gap but
  * the uncovered lines, unverified files and models possibly stale counted
  * on their own, and the coverage left unchecked because Git could not show
- * the change, named with its weakening.
+ * the change, named with its weakening. The `covered` unverified files are
+ * no gap (`coveredCount`), so only the others are taken off.
  */
-function uncheckedGaps(findings: readonly Finding[], receipt: UnitEvidence): number {
+function uncheckedGaps(findings: readonly Finding[], receipt: UnitEvidence, covered: number): number {
   return findings.filter(({ standing }) => standing === "gap").length
-    - receipt.uncovered.filter(({ lines }) => lines.length > 0).length - receipt.unverified.length
+    - receipt.uncovered.filter(({ lines }) => lines.length > 0).length - (receipt.unverified.length - covered)
     - (receipt.models ?? []).filter(({ staleness }) => staleness !== "current").length
     - (typeof receipt.weakened === "string" && receipt.proofs.length > 0 ? 1 : 0);
 }
