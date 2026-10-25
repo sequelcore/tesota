@@ -75,6 +75,15 @@ test("a deletion counts no added lines and a final newline adds no phantom line"
   expect(plain(transcript, 80)).toEqual([" ✓ edit a.txt +0 −2"]);
 });
 
+test("an edit whose arguments the model malformed still draws, so a session that holds one resumes", () => {
+  // Seen on resume: the model sent `edits` as a string, and drawing the call threw, losing the session.
+  for (const edits of ["[{\"oldText\">one\", \"newText\": \"x\"}]", null, 3, { oldText: "one" }, [null, "one", { oldText: 1 }]]) {
+    const transcript = new Transcript(theme);
+    transcript.start({ type: "toolCall", id: "edit", name: "edit", arguments: { path: "a.txt", edits } });
+    expect(plain(transcript, 80).join("\n")).toContain("edit a.txt");
+  }
+});
+
 test("a search shows its pattern and where it looks", () => {
   const transcript = new Transcript(theme);
   transcript.start({ type: "toolCall", id: "grep", name: "grep", arguments: { pattern: "quesillo", path: "notes" } });
