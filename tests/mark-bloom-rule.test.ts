@@ -8,7 +8,7 @@ import { stripTerminalSequences } from "@earendil-works/pi-tui";
 import type { Receipt } from "../src/receipt.js";
 import { emptyReceipt } from "./receipts.js";
 
-it.each(["verified", "incomplete", "failed", "none"] as const)("blooms iff standing is verified: %s", (standing) => {
+it.each(["verified", "incomplete", "unverified", "unchanged", "failed", "none"] as const)("blooms iff standing is verified: %s", (standing) => {
   expect(markBlooms(standing)).toBe(standing === "verified");
 });
 
@@ -27,5 +27,5 @@ it("reads the receipt standing in the header and resets on the next request", ()
   const expected = (bloom: boolean) => renderMark(bloom ? "small-bloom" : "small").map((row) => row.map((cell) => cell.glyph).join(""));
   expect(mark()).toEqual(expected(false));
   standing = receiptStanding(receipt); expect(mark()).toEqual(expected(true));
-  for (const other of ["incomplete", "failed", "none"] as const) { standing = other; expect(mark()).toEqual(expected(false)); }
+  for (const other of ["incomplete", "unverified", "unchanged", "failed", "none"] as const) { standing = other; expect(mark()).toEqual(expected(false)); }
 });
