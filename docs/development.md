@@ -200,9 +200,9 @@ with `Effect.runPromise(effect, { signal })`.
 - **A verification step that is interrupted is awaited.** `Effect.promise`
   abandons its promise when interrupted. A gate step that started processes
   aborts them and waits, as the gate's `step` does, so no check runs after
-  Tesota reports. A stopped run's inventory runs no check, only Git, which
-  can't be stopped (`gitOutput`): past its time limit it is abandoned, and
-  a stuck Git may outlive the receipt.
+  Tesota reports. A stopped run's inventory runs no check, only Git: past
+  its time limit it is abandoned, and its Git is stopped with every process
+  it started (`gitStopped`) before the receipt.
 - **The operator's stop interrupts the model's turns, as Codex's does**
   (`step` in `packages/core/src/loop.ts`). Each step a turn waits on (a
   reply, a call, a summary) is told by the run's signal and gets a short

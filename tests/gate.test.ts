@@ -977,6 +977,50 @@ it("settles a stop whose inventory Git never answers, saying the inventory ran p
   } finally { vi.useRealTimers(); gitCalls.mockRestore(); outputCalls.mockRestore(); }
 });
 
+it("stops the Git a stopped run's inventory abandons at its limit, with every process Git started", async () => {
+  const root = project();
+  const run = gate(root);
+  await run.input();
+  await run.tool("write");
+  // A clean filter that never answers holds Git's status of the changed file; it records its parent, itself and its child.
+  const pids = join(root, ".git", "pids");
+  writeFileSync(join(root, ".git", "hang.cjs"), "const { spawn } = require('child_process');\n" +
+    "const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });\n" +
+    `require('fs').writeFileSync(${JSON.stringify(pids)}, JSON.stringify([process.ppid, process.pid, child.pid]));\n` +
+    "setInterval(() => {}, 1000);\n");
+  git(root, "config", "filter.hang.clean", `"${process.execPath.replaceAll("\\", "/")}" "${join(root, ".git", "hang.cjs").replaceAll("\\", "/")}"`);
+  write(root, { ".gitattributes": "* filter=hang\n", "notes.md": "# Changed\n" });
+  const alive = (pid: number): boolean => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  let started: number[] = [];
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  try {
+    let settled: Settled | undefined;
+    let done = false;
+    void run.settle("aborted").then((result) => { settled = result; done = true; });
+    // The clock moves past the limit only once Git hangs in the filter.
+    for (const begun = performance.now(); !existsSync(pids) && performance.now() - begun < 20_000;) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    for (const begun = performance.now(); started.length === 0 && performance.now() - begun < 5_000;) {
+      try { started = JSON.parse(readFileSync(pids, "utf8")) as number[]; } catch { await new Promise((resolve) => setImmediate(resolve)); }
+    }
+    expect(started).toHaveLength(3);
+    // One limit passes; the stop then settles in real time, once Git's processes are stopped.
+    await vi.advanceTimersByTimeAsync(STOP_INVENTORY_TIME_LIMIT_MS);
+    for (const begun = performance.now(); !done && performance.now() - begun < 20_000;) await new Promise((resolve) => setImmediate(resolve));
+    expect(done).toBe(true);
+    expect(entry(settled).details).toMatchObject({ changed: "unreadable", lines: "unreadable",
+      reason: "the inventory ran past its time limit" });
+    vi.useRealTimers();
+    // On Windows the stop settles only after the tree is gone; elsewhere the group's kill is delivered at once.
+    for (const end = Date.now() + 2_000; started.some(alive) && Date.now() < end;) await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(started.filter(alive)).toEqual([]);
+  } finally {
+    vi.useRealTimers();
+    for (const pid of started) { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } }
+  }
+}, 60_000);
+
 it("leaves no receipt when an aborted run only started a read", async () => {
   const run = gate(project());
   await run.input();

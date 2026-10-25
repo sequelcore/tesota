@@ -52,21 +52,22 @@ function statusPaths(status: string, prefix: string): { paths: string[]; untrack
 }
 
 /** Count nested untracked files together, without treating a tracked ancestor as an untracked directory. */
-async function crowdedDirectories(root: string, paths: readonly string[]): Promise<ReadonlySet<string> | undefined> {
+async function crowdedDirectories(root: string, paths: readonly string[], signal?: AbortSignal): Promise<ReadonlySet<string> | undefined> {
   const counts = new Map<string, number>();
   for (const path of paths) {
     for (let dir = posix.dirname(path); dir !== "."; dir = posix.dirname(dir)) counts.set(dir, (counts.get(dir) ?? 0) + 1);
   }
   const candidates = [...counts].filter(([, count]) => count >= 200).map(([dir]) => dir);
   if (candidates.length === 0) return new Set();
-  const tracked = await git(root, ["ls-files", "--cached", "-z"]);
+  const tracked = await git(root, ["ls-files", "--cached", "-z"], undefined, signal);
   if (tracked === undefined) return undefined;
   const files = tracked.split("\0");
   return new Set(candidates.filter((dir) => !files.some((path) => path.startsWith(`${dir}/`))));
 }
 
 /** Blob IDs without writing objects, refs or the index. Git's quoted stdin paths preserve spaces, newlines and non-ASCII names. */
-export async function pathBlobs(root: string, paths: readonly string[], prefix: string): Promise<Map<string, string | null> | undefined> {
+export async function pathBlobs(root: string, paths: readonly string[], prefix: string,
+  signal?: AbortSignal): Promise<Map<string, string | null> | undefined> {
   const blobs = new Map<string, string | null>();
   const present: string[] = [];
   for (const path of paths) {
@@ -79,24 +80,25 @@ export async function pathBlobs(root: string, paths: readonly string[], prefix: 
   if (present.length === 0) return blobs;
   const quoted = present.map((path) => `"${[...prefix + path].map((char) => char === '"' || char === "\\" ? `\\${char}`
     : char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127 ? `\\${char.charCodeAt(0).toString(8).padStart(3, "0")}` : char).join("")}"`);
-  const output = await git(root, ["hash-object", "--stdin-paths"], quoted.join("\n") + "\n");
+  const output = await git(root, ["hash-object", "--stdin-paths"], quoted.join("\n") + "\n", signal);
   const ids = output?.trim().split(/\r?\n/u);
   if (ids?.length !== present.length) return undefined;
   for (const [k, path] of present.entries()) blobs.set(path, ids[k] ?? null);
   return blobs;
 }
 
-/** The repository just before a tool or verification, with optional index refreshes disabled. */
-export async function captureFingerprint(root: string): Promise<Fingerprint> {
-  const prefix = await git(root, ["rev-parse", "--show-prefix"]);
-  const status = await git(root, ["--no-optional-locks", "status", "--porcelain=v2", "-z", "--untracked-files=all", "--branch", "--", "."]);
+/** The repository just before a tool or verification, with optional index refreshes disabled; `signal` stops its Git. */
+export async function captureFingerprint(root: string, signal?: AbortSignal): Promise<Fingerprint> {
+  const prefix = await git(root, ["rev-parse", "--show-prefix"], undefined, signal);
+  const status = await git(root, ["--no-optional-locks", "status", "--porcelain=v2", "-z", "--untracked-files=all", "--branch", "--", "."],
+    undefined, signal);
   if (status === undefined) return { status: "unknown", reason: "Git could not read the fingerprint's status" };
   if (prefix === undefined) return { status: "unknown", reason: "Git could not read the fingerprint's folder" };
   const listed = statusPaths(status, prefix.trimEnd());
   if (listed === undefined) return { status: "unknown", reason: "the index has unresolved conflicts" };
   const oid = status.split("\0").find((field) => field.startsWith("# branch.oid "))?.slice(13);
   if (oid === undefined) return { status: "unknown", reason: "Git could not read the fingerprint's HEAD" };
-  const crowded = await crowdedDirectories(root, listed.untracked);
+  const crowded = await crowdedDirectories(root, listed.untracked, signal);
   if (crowded === undefined) return { status: "unknown", reason: "Git could not read the untracked directories" };
   const untracked = new Set(listed.untracked);
   const unmeasured: UnmeasuredPath[] = [];
@@ -116,7 +118,7 @@ export async function captureFingerprint(root: string): Promise<Fingerprint> {
     }
     measured.push(path);
   }
-  const blobs = await pathBlobs(root, measured, prefix.trimEnd());
+  const blobs = await pathBlobs(root, measured, prefix.trimEnd(), signal);
   return blobs === undefined ? { status: "unknown", reason: "Git could not hash the fingerprint's paths" }
     : { status: "known", head: oid === "(initial)" ? null : oid,
       branch: status.split("\0").find((field) => field.startsWith("# branch.head "))?.slice(14) ?? "", blobs, unmeasured };
@@ -138,14 +140,14 @@ export async function refTips(root: string, base: string | null): Promise<readon
  * `refs` are the tips `refTips` recorded at admission: a ref the request moved or created withholds nothing.
  */
 export async function historyFacts(root: string, base: string | null, start: Fingerprint, end: Fingerprint,
-  startedAt: string, refs: readonly string[] | undefined): Promise<HistoryFacts | undefined> {
+  startedAt: string, refs: readonly string[] | undefined, signal?: AbortSignal): Promise<HistoryFacts | undefined> {
   if (base === null || refs === undefined || start.status !== "known" || end.status !== "known" || end.head === null) return undefined;
   // H descends to HEAD exactly when it is their merge base; no common ancestor at all is a failed read.
-  const ancestor = await git(root, ["merge-base", base, end.head]);
-  const range = await git(root, ["log", "--no-show-signature", "--format=%H %ct", `${base}..${end.head}`]);
+  const ancestor = await git(root, ["merge-base", base, end.head], undefined, signal);
+  const range = await git(root, ["log", "--no-show-signature", "--format=%H %ct", `${base}..${end.head}`], undefined, signal);
   // Subtract every starting tip in one history walk, read from stdin so no count of refs passes the command line's limit.
   // A tip whose object is gone fails the walk: starting refs that cannot be read resolve nothing.
-  const unshared = await git(root, ["rev-list", "--stdin", `${base}..${end.head}`], refs.map((tip) => `^${tip}\n`).join(""));
+  const unshared = await git(root, ["rev-list", "--stdin", `${base}..${end.head}`], refs.map((tip) => `^${tip}\n`).join(""), signal);
   if (ancestor === undefined || range === undefined || unshared === undefined) return undefined;
   const exclusiveIds = new Set(unshared.trim().split(/\r?\n/u).filter(Boolean));
   let exclusive = true;

@@ -49,9 +49,9 @@ export function numstatRecords(output: string): Map<string, LineCount | "binary"
 }
 
 /** The paths of `paths` the repository marks as generated (`linguist-generated` in `.gitattributes`); none when Git cannot tell. */
-async function generatedPaths(root: string, paths: readonly string[]): Promise<ReadonlySet<string>> {
+async function generatedPaths(root: string, paths: readonly string[], signal?: AbortSignal): Promise<ReadonlySet<string>> {
   if (paths.length === 0) return new Set();
-  const output = await gitOutput(root, ["check-attr", "-z", "--stdin", "linguist-generated"], `${paths.join("\0")}\0`);
+  const output = await gitOutput(root, ["check-attr", "-z", "--stdin", "linguist-generated"], `${paths.join("\0")}\0`, signal);
   if (output === undefined || output === "too_large") return new Set();
   const fields = output.split("\0");
   const generated = new Set<string>();
@@ -83,17 +83,18 @@ async function untrackedLines(path: string): Promise<LineCount | "binary" | "gon
  * added whole; a file Git calls binary, or an untracked one with a NUL byte,
  * goes to `binary`. A changed file Git finds no different from the base,
  * such as one the request restored, counts nothing. `unreadable` when Git
- * cannot show the change or a file cannot be read.
+ * cannot show the change or a file cannot be read, or `signal` stopped Git.
  */
-export async function changeLines(root: string, base: string | null, changed: readonly string[]): Promise<ChangeLines | "unreadable"> {
+export async function changeLines(root: string, base: string | null, changed: readonly string[],
+  signal?: AbortSignal): Promise<ChangeLines | "unreadable"> {
   const numstat = base === null ? "" : await gitOutput(root, ["-c", "core.quotePath=false", "diff", "--numstat", "-z", "--no-renames",
-    "--no-ext-diff", "--no-textconv", "--relative", base]);
-  const untracked = base === null ? "" : await gitOutput(root, ["ls-files", "--others", "--exclude-standard", "-z"]);
+    "--no-ext-diff", "--no-textconv", "--relative", base], undefined, signal);
+  const untracked = base === null ? "" : await gitOutput(root, ["ls-files", "--others", "--exclude-standard", "-z"], undefined, signal);
   if (numstat === undefined || numstat === "too_large" || untracked === undefined || untracked === "too_large") return "unreadable";
   const counted = numstatRecords(numstat);
   const fresh = new Set(untracked.split("\0"));
   const wanted = [...new Set(changed)].sort();
-  const generated = await generatedPaths(root, wanted);
+  const generated = await generatedPaths(root, wanted, signal);
   const totals: Record<ChangeCategory, { added: number; removed: number }> = {
     implementation: { added: 0, removed: 0 }, tests: { added: 0, removed: 0 }, other: { added: 0, removed: 0 } };
   const binary: string[] = [];
@@ -102,7 +103,7 @@ export async function changeLines(root: string, base: string | null, changed: re
     if (count === undefined) {
       // Before the first commit every file is new; after it, one Git lists in neither is as the base has it, when the
       // base has it: a new file the request then ignored is in neither, and still counts whole.
-      if (base !== null && !fresh.has(path) && (await gitOutput(root, ["cat-file", "-t", `${base}:./${path}`]))?.trim() === "blob") continue;
+      if (base !== null && !fresh.has(path) && (await gitOutput(root, ["cat-file", "-t", `${base}:./${path}`], undefined, signal))?.trim() === "blob") continue;
       const read = await untrackedLines(join(root, path));
       if (read === "unreadable") return "unreadable";
       if (read === "gone") continue;
