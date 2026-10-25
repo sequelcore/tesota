@@ -1,5 +1,5 @@
 import type { AssistantMessage, ToolCall, ToolResultMessage } from "@earendil-works/pi-ai";
-import { type Component, Container, Markdown, Text, truncateToWidth } from "@earendil-works/pi-tui";
+import { type Component, Container, Markdown, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { type CustomMessage, type HistoryMessage, jobType } from "../loop.ts";
 import type { MessageRenderer, ToolDrawing } from "./surface.ts";
 import type { ShellTheme } from "../../../../src/theme.ts";
@@ -43,9 +43,13 @@ function prefixedText(text: string, prefix: string): Component {
     truncateToWidth(`${MARGIN}${index === 0 ? prefix : "  "}${line}`, width)), () => { body.invalidate(); });
 }
 
-/** The operator's message, with a quiet prompt and no background; an answer quotes the agent's words, so controls are removed. */
+/** The operator's full-width prompt band; quoted terminal controls never reach the terminal. */
 function userView(text: string, theme: ShellTheme): Component {
-  return prefixedText(theme.fg("userMessageText", terminalText(text)), theme.bold(theme.fg("dim", "› ")));
+  return cached((width) => {
+    const body = prefixedText(theme.fg("userMessageText", terminalText(text)), theme.bold(theme.fg(theme.appearance === "light" ? "muted" : "dim", "› ")));
+    return body.render(width).map((line) => theme.bg("userMessageBg",
+      line + " ".repeat(Math.max(0, width - visibleWidth(line)))));
+  });
 }
 
 /** A reply: its thinking, quieter, then its text as Markdown. */

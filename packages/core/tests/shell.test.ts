@@ -7,9 +7,12 @@ import { join } from "node:path";
 import type { TuiMode } from "../src/settings.ts";
 import { createSession, type EngineSession } from "../src/session.ts";
 import { type Shell, startShell } from "../src/shell/shell.ts";
-import { createSurface, type Surface } from "../src/shell/surface.ts";
+import { provideHost } from "../../../src/host.ts";
+import { createSurface, shellHost, type Surface } from "../src/shell/surface.ts";
 import type { ClarificationQuestion } from "../../../src/clarification.ts";
 import { shellTheme } from "../../../src/theme.ts";
+import { BarEditor } from "../../../src/editor.ts";
+import { mountWelcomeHeader, WelcomeHeader } from "../../../src/welcome-header.ts";
 import { readSessionFile } from "../src/session-file.ts";
 import { ModelViewer } from "../src/shell/model-viewer.ts";
 import { loadModelView } from "../../../src/model-view-process.ts";
@@ -153,7 +156,7 @@ describe("the shell", () => {
       screen.findIndex((line) => line.includes("Hello from the engine.")));
   });
 
-  test("an operator message has a dim prompt, aligned continuation and no background", async () => {
+  test("an operator message has a dim prompt, aligned continuation and a full-width band", async () => {
     const { terminal, session } = shellOn(["answered"]);
     terminal.type("\x1b[200~first line\nsecond line\x1b[201~");
     terminal.type(enter);
@@ -166,7 +169,7 @@ describe("the shell", () => {
     expect(buffer.getLine(buffer.viewportY + row)?.getCell(3)?.getFgColor()).toBe(0xf2eee6);
     for (let line = row; line < row + 2; line++) {
       for (let column = 0; column < terminal.columns; column++) {
-        expect(buffer.getLine(buffer.viewportY + line)?.getCell(column)?.isBgDefault()).toBe(true);
+        expect(buffer.getLine(buffer.viewportY + line)?.getCell(column)?.getBgColor()).toBe(0x2f2a35);
       }
     }
   });
@@ -997,4 +1000,116 @@ test("late and replaced model overlays cannot escape shell shutdown", async () =
   shell.overlay(make());
   expect(signals.map(signal => signal.aborted)).toEqual([true, true, true]);
   await Promise.all(workers.map(worker => expect(worker).rejects.toThrow()));
+});
+
+
+for (const mode of ["fullscreen", "inline"] as const) test(`empty stage stays outside the conversation and vanishes on first activity (${mode})`, async () => {
+  provideHost(shellHost());
+  const theme = shellTheme("dark", "truecolor");
+  const surface = createSurface(theme);
+  let now = 0;
+  const ticks: (() => void)[] = [];
+  surface.ui.setHeader((tui, look) => mountWelcomeHeader(new WelcomeHeader("/work/shop", look, {
+    terminalRows: () => tui.terminal.rows, stageShare: 1 / 2, requestRender: () => tui.requestRender(), now: () => now,
+    model: () => "scripted model", setTimer: (callback) => { ticks.push(callback); return () => undefined; },
+  }), tui));
+  surface.ui.setEditorComponent((tui, look) => new BarEditor(tui, look, () => theme));
+  const { terminal, session, shell } = shellOn(["A reply."], mode, [100, 40], { surface });
+  const opening = await terminal.until("Shows evidence");
+  expect(opening.split("\n").slice(0, 3)).toEqual([
+    expect.stringMatching(/^Tesota v/u), "scripted model · /work/shop", "Shows evidence that the change does what you asked.",
+  ]);
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  expect(shown(await terminal.screen())).toMatch(/[\u2801-\u28ff]/u);
+  for (let step = 0; step < 95; step++) {
+    now += 100;
+    ticks.shift()?.();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await terminal.screen();
+  }
+  const faded = await terminal.screen();
+  const artRow = faded.findIndex((line) => /[\u2801-\u28ff]/u.test(line));
+  const artColumn = faded[artRow]!.search(/[\u2801-\u28ff]/u);
+  const cell = (await terminal.drawn()).getLine(artRow)?.getCell(artColumn);
+  const color = cell?.getFgColor() ?? 0;
+  expect(Math.max(color >> 16 & 255, color >> 8 & 255, color & 255)).toBeLessThan(80);
+  terminal.type("typing a draft");
+  expect(await terminal.until("typing a draft")).toMatch(/[\u2801-\u28ff]/u);
+  if (mode === "fullscreen") {
+    terminal.type(`\x1b[<0;${artColumn + 1};${artRow + 1}M`);
+    terminal.type(`\x1b[<0;${artColumn + 1};${artRow + 1}m`);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    const replay = (await terminal.drawn()).getLine(artRow)?.getCell(artColumn)?.getFgColor() ?? 0;
+    expect(Math.max(replay >> 16 & 255, replay >> 8 & 255, replay & 255)).toBeGreaterThan(80);
+  }
+  terminal.type(enter);
+  await settled(session);
+  expect(shown(await terminal.screen())).not.toMatch(/[\u2801-\u28ff]/u);
+  expect(shown(await terminal.screen())).toContain("A reply.");
+  shell.stop();
+  expect(shown(await terminal.scrollback())).not.toMatch(/[\u2801-\u28ff]/u);
+});
+
+for (const mode of ["fullscreen", "inline"] as const) test(`quitting an untouched session leaves no tree in scrollback (${mode})`, async () => {
+  provideHost(shellHost());
+  const surface = createSurface(shellTheme("dark", "truecolor"));
+  surface.ui.setHeader((tui, look) => mountWelcomeHeader(new WelcomeHeader("/work/shop", look, {
+    terminalRows: () => tui.terminal.rows, stageShare: 1 / 2, requestRender: () => tui.requestRender(),
+  }), tui));
+  const { terminal, shell } = shellOn([], mode, [100, 40], { surface });
+  await terminal.until("Shows evidence");
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  expect(shown(await terminal.screen())).toMatch(/[\u2801-\u28ff]/u);
+  shell.stop();
+  expect(shown(await terminal.scrollback())).not.toMatch(/[\u2801-\u28ff]/u);
+});
+
+test("a late light-background reply repaints existing user bands", async () => {
+  const look = shellTheme("dark", "truecolor");
+  const surface = createSurface(look);
+  const { terminal, session } = shellOn(["Reply."], "fullscreen", [100, 40], { surface });
+  terminal.type("hello");
+  terminal.type(enter);
+  await settled(session);
+  const row = (await terminal.screen()).findIndex((line) => line.includes("› hello"));
+  expect((await terminal.drawn()).getLine(row)?.getCell(3)?.getBgColor()).toBe(0x2f2a35);
+  terminal.type("\x1b]11;rgb:eded/eded/e5e5\x1b\\");
+  terminal.type("\x1b[?62;c");
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const cell = (await terminal.drawn()).getLine(row)?.getCell(3);
+  expect(cell?.getBgColor()).toBe(0xe4d9e9);
+  expect(cell?.getFgColor()).toBe(0x24211f);
+});
+
+test("inline handoff clears the live tree before another program writes", async () => {
+  provideHost(shellHost());
+  const surface = createSurface(shellTheme("dark", "truecolor"));
+  surface.ui.setHeader((tui, look) => mountWelcomeHeader(new WelcomeHeader("/work/shop", look, {
+    terminalRows: () => tui.terminal.rows, stageShare: 1 / 2, requestRender: () => tui.requestRender(),
+  }), tui));
+  const { terminal, shell } = shellOn([], "inline", [100, 40], { surface });
+  await terminal.until("⣿");
+  await shell.handOver(async () => {
+    terminal.write("other program\r\n".repeat(50));
+    expect(shown(await terminal.scrollback())).not.toMatch(/[\u2801-\u28ff]/u);
+  });
+  await terminal.until("Shows evidence");
+  shell.stop();
+  expect(shown(await terminal.scrollback())).not.toMatch(/[\u2801-\u28ff]/u);
+});
+
+test("a resumed conversation never draws the empty stage", async () => {
+  provideHost(shellHost());
+  const { session, shell } = shellOn(["Existing reply."]);
+  await session.prompt("Existing request.");
+  const surface = createSurface(shellTheme("dark", "truecolor"));
+  surface.ui.setHeader((tui, look) => mountWelcomeHeader(new WelcomeHeader("/work/shop", look, {
+    terminalRows: () => 40, stageShare: 1 / 2, requestRender: () => tui.requestRender(),
+  }), tui));
+  const terminal = new VirtualTerminal(100, 40);
+  const resumed = startShell({ terminal, session, surface, mode: "fullscreen", fullRepaint: false,
+    theme: surface.theme, status: () => "resumed" });
+  open.push({ session, shell: resumed });
+  expect(await terminal.until("Existing reply.")).not.toMatch(/[\u2801-\u28ff]/u);
+  shell.stop();
 });

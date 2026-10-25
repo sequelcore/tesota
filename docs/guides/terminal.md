@@ -18,9 +18,16 @@ terminal selects and copies as usual.
 
 ## The screen
 
-- **The header:** the palo fierro, Tesota's name, the folder and its
-  purpose. A click on the resting tree plays the scene again.
-- **The input:** a filled block. Enter sends; while the agent works, Enter
+- **The header:** Tesota's name and version, the model and folder, and its
+  purpose, in three rows at the top left.
+- **The empty stage:** the palo fierro plays once in the free space between
+  the header and input, then fades to a faint pose. It stays while you type
+  and disappears when you send a message. It never enters scrollback or
+  appears over a resumed conversation. In fullscreen, clicking the resting
+  tree replays the scene with a tumbleweed.
+- **The input:** a full-width band with a `›` prompt, like your messages in
+  the conversation. Without background-color support, both use plain rows
+  and the prompt. Enter sends; while the agent works, Enter
   steers the run and Alt+Enter queues a follow-up. Pending messages show
   above it, labeled with when they will be delivered. Alt+Up (Alt+Q on
   Windows) returns them to the input to edit or withdraw; stopping the run

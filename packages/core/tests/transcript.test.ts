@@ -7,7 +7,7 @@ import { Transcript } from "../src/shell/transcript.ts";
 const theme = shellTheme("dark", "truecolor");
 const plain = (transcript: Transcript, width: number): string[] => transcript.render(width).map((line) => stripTerminalSequences(line).trimEnd());
 
-test("operator messages start at the replies' column and wrap with a two-column indent, no padding rows or background", () => {
+test("operator messages wrap under the prompt inside a full-width band without padding rows", () => {
   const transcript = new Transcript(theme);
   transcript.add({ role: "user", content: "abcdefghijklm\nnext", timestamp: 0 });
   expect(plain(transcript, 10)).toEqual([" › abcdefg", "   hijklm", "   next"]);
@@ -15,7 +15,39 @@ test("operator messages start at the replies' column and wrap with a two-column 
   for (const width of [1, 2, 6, 10, 80]) {
     const rows = transcript.render(width);
     expect(rows.every((row) => visibleWidth(row) <= width)).toBe(true);
-    expect(rows.join("\n")).not.toContain("\x1b[48;");
+    expect(rows.every((row) => visibleWidth(row) === width)).toBe(true);
+    expect(rows.join("\n")).toContain(theme.getBgAnsi("userMessageBg"));
+  }
+});
+
+test("operator bands keep readable text and prompt colors when the theme changes", () => {
+  const look = shellTheme("dark", "truecolor");
+  const transcript = new Transcript(look);
+  transcript.add({ role: "user", content: "hello", timestamp: 0 });
+  expect(transcript.render(40)[0]).toContain("\x1b[48;2;47;42;53m");
+  look.use("light");
+  transcript.invalidate();
+  const row = transcript.render(40)[0]!;
+  expect(row).toContain("\x1b[48;2;228;217;233m");
+  expect(row).toContain(look.fg("muted", "› "));
+  expect(row).toContain(look.fg("userMessageText", "hello"));
+});
+
+for (const env of [{ NO_COLOR: "1" }, { TERM: "ansi", COLORTERM: "" }]) test(`operator messages keep the prompt and wrapping without a background: ${JSON.stringify(env)}`, () => {
+  const before = Object.fromEntries(Object.keys(env).map((key) => [key, process.env[key]]));
+  Object.assign(process.env, env);
+  try {
+    const look = shellTheme("dark", "256color");
+    const transcript = new Transcript(look);
+    transcript.add({ role: "user", content: "abcdefghijklm\nnext", timestamp: 0 });
+    expect(plain(transcript, 10)).toEqual([" › abcdefg", "   hijklm", "   next"]);
+    expect(transcript.render(10).join("\n")).not.toContain("\x1b[48;");
+    expect(look.getBgAnsi("userMessageBg")).toBe("");
+  } finally {
+    for (const [key, value] of Object.entries(before)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   }
 });
 

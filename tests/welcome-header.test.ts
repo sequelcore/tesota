@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripTerminalSequences, type TerminalColorMode, type TerminalColors, type TerminalColorScheme, type TuiMouseEvent,
   visibleWidth } from "@earendil-works/pi-tui";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import type { Theme } from "../src/contract.js";
 import { shellTheme } from "../src/theme.js";
 import { mountWelcomeHeader, WELCOME_FRAME_MS, WELCOME_SCENE_MS, WELCOME_TAGLINE,
@@ -28,7 +28,7 @@ function header(options: Partial<WelcomeHeaderOptions> & { name?: string } = {})
   const tick = (): void => {
     clock.now += WELCOME_FRAME_MS;
     timers.shift()?.();
-    view.render(100);
+    view.renderStage(100);
   };
   /** Plays the scene to its end, frame by frame. */
   const rest = (): void => { while (view.moving) tick(); };
@@ -92,29 +92,38 @@ it("shows a folder under the home folder from ~, as the footer does", () => {
   expect(written).not.toContain(homedir());
 });
 
-it("draws the tree centered above Tesota's name, folder and purpose", () => {
-  const lines = header().view.render(100);
-  const plain = lines.map((line) => stripTerminalSequences(line));
-  const art = plain.filter((line) => braille.test(line));
+it("keeps the transcript header left aligned in three rows, with the tree separate", () => {
+  const { view } = header();
+  const plain = view.render(100).map(stripTerminalSequences);
+  expect(plain).toHaveLength(3);
+  expect(plain[0]).toMatch(/^Tesota (v\d|dev)/u);
+  expect(plain.slice(1)).toEqual(["C:\\work\\tesota", WELCOME_TAGLINE]);
+  expect(plain.some((line) => braille.test(line))).toBe(false);
+  const art = view.renderStage(100).map(stripTerminalSequences).filter((line) => braille.test(line));
   expect(art.length).toBeGreaterThanOrEqual(8);
   const left = Math.min(...art.map((line) => line.search(/\S/u)));
   const right = Math.max(...art.map((line) => line.trimEnd().length));
   expect(Math.abs(left - (100 - right))).toBeLessThanOrEqual(6);
-  const name = plain.findIndex((line) => /^\s+Tesota \((v\d|dev)/u.test(line));
-  expect(name).toBeGreaterThan(plain.findLastIndex((line) => braille.test(line)));
-  expect(plain.slice(name + 1).map((line) => line.trim())).toEqual(["C:\\work\\tesota", WELCOME_TAGLINE]);
+});
+
+it("keeps the folder's last segment when the model and folder share a narrow row", () => {
+  const { view } = header({ model: () => "a-long-model-name" });
+  const row = stripTerminalSequences(view.render(40)[1]!);
+  expect(row).toBe("a-long-model-name · C:\\work\\tesota");
+  const narrow = stripTerminalSequences(view.render(28)[1]!);
+  expect(narrow).toBe("a-long-model-name · …\\tesota");
 });
 
 it("plays the wind once, frame by frame, then rests in its first pose and asks for no more frames", () => {
   const { view, timers, tick, renders } = header();
-  const start = stage(view.render(100));
+  const start = stage(view.renderStage(100));
   expect(timers).toHaveLength(1);
   for (let step = 0; step < 40; step++) tick();
-  expect(stage(view.render(100))).not.toBe(start);
+  expect(stage(view.renderStage(100))).not.toBe(start);
   while (view.moving) tick();
   expect(renders()).toBeGreaterThanOrEqual(WELCOME_SCENE_MS / WELCOME_FRAME_MS);
   timers.length = 0;
-  expect(stage(view.render(100))).toBe(start);
+  expect(stage(view.renderStage(100))).toBe(start);
   expect(timers).toEqual([]);
 });
 
@@ -130,10 +139,10 @@ it("colors the tree from the active theme's roles, and follows a change of theme
   const view = new WelcomeHeader("work", following, { requestRender: () => undefined, terminalRows: () => 60,
     stageShare: 1 / 3, setTimer: () => () => undefined });
   const art = (lines: readonly string[]): string => lines.filter((line) => braille.test(line)).join("");
-  const dark = art(view.render(100));
+  const dark = art(view.renderStage(100));
   expect(dark).toContain("\x1b[38;2;");
   active.current = theme("tesota-light");
-  const light = art(view.render(100));
+  const light = art(view.renderStage(100));
   expect(stripTerminalSequences(light)).toBe(stripTerminalSequences(dark));
   expect(light).not.toBe(dark);
 });
@@ -141,7 +150,7 @@ it("colors the tree from the active theme's roles, and follows a change of theme
 it("draws the tree in 256 colors where the theme's terminal has no truecolor", () => {
   const art = (mode: TerminalColorMode): string => new WelcomeHeader("work", theme("tesota-dark", mode),
     { requestRender: () => undefined, terminalRows: () => 60, stageShare: 1 / 3, setTimer: () => () => undefined })
-    .render(100).filter((line) => braille.test(line)).join("");
+    .renderStage(100).filter((line) => braille.test(line)).join("");
   const indexed = art("256color");
   expect(indexed).toContain("\x1b[38;5;");
   expect(indexed).not.toContain("\x1b[38;2;");
@@ -149,88 +158,88 @@ it("draws the tree in 256 colors where the theme's terminal has no truecolor", (
 });
 
 it("sets Tesota's name in bold above the muted version, whatever color support the terminal reports", () => {
-  const title = header().view.render(100).find((line) => stripTerminalSequences(line).includes("Tesota ("))!;
+  const title = header().view.render(100).find((line) => stripTerminalSequences(line).includes("Tesota "))!;
   expect(title).toContain("\x1b[1mTesota\x1b[22m ");
 });
 
 it("keeps the tree to its share of the terminal, drops it where it would not fit, and never draws past the width", () => {
   const rows = (lines: readonly string[]): number => lines.filter((line) => braille.test(line)).length;
-  const third = rows(header({ terminalRows: () => 36 }).view.render(100));
-  const half = rows(header({ terminalRows: () => 36, stageShare: 1 / 2 }).view.render(100));
+  const third = rows(header({ terminalRows: () => 36 }).view.renderStage(100));
+  const half = rows(header({ terminalRows: () => 36, stageShare: 1 / 2 }).view.renderStage(100));
   expect(third).toBeLessThanOrEqual(12);
   expect(half).toBeLessThanOrEqual(18);
   expect(half).toBeGreaterThan(third);
-  const short = header({ terminalRows: () => 12 }).view.render(100);
+  const short = header({ terminalRows: () => 12 }).view.renderStage(100);
   expect(short.some((line) => braille.test(line))).toBe(false);
-  expect(short.map((line) => stripTerminalSequences(line)).join("\n")).toContain("Tesota ");
+  expect(header({ terminalRows: () => 12 }).view.render(100).map(stripTerminalSequences).join("\n")).toContain("Tesota ");
   for (const width of [4, 20, 40, 64, 200]) {
-    expect(header().view.render(width).every((line) => visibleWidth(line) <= width)).toBe(true);
+    expect(header().view.renderStage(width).every((line) => visibleWidth(line) <= width)).toBe(true);
   }
 });
 
 it("plays again with the tumbleweed when the resting tree is clicked, and comes back to rest", () => {
   const { view, region, timers, tick, rest } = header();
-  const resting = stage(region.render(100));
+  const resting = stage(region.emptyState.render(100));
   rest();
-  const [x, y] = center(region.render(100));
+  const [x, y] = center(region.emptyState.render(100));
   timers.length = 0;
-  expect(region.handleMouse(click(x, y))).toEqual({ handled: true, render: true });
+  expect(region.emptyState.handleMouse(click(x, y))).toEqual({ handled: true, render: true });
   expect(view.moving).toBe(true);
-  region.render(100);
+  region.emptyState.render(100);
   expect(timers).toHaveLength(1);
   // A few seconds in, frame by frame, the tumbleweed is on the stage, where the wind alone would not put it.
   const wind = header();
-  wind.view.render(100);
+  wind.view.renderStage(100);
   for (let step = 0; step < 50; step++) { tick(); wind.tick(); }
-  expect(stage(region.render(100))).not.toBe(stage(wind.view.render(100)));
+  expect(stage(region.emptyState.render(100))).not.toBe(stage(wind.view.renderStage(100)));
   rest();
   timers.length = 0;
-  expect(stage(region.render(100))).toBe(resting);
+  expect(stage(region.emptyState.render(100))).toBe(resting);
   expect(timers).toEqual([]);
 });
 
 it("does nothing new when the tree is clicked while it plays, the opening or a replay", () => {
   const clicked = header();
   const untouched = header();
-  for (const scene of [clicked, untouched]) scene.view.render(100);
-  const [x, y] = center(clicked.region.render(100));
+  for (const scene of [clicked, untouched]) scene.view.renderStage(100);
+  const [x, y] = center(clicked.region.emptyState.render(100));
   for (let step = 0; step < 20; step++) { clicked.tick(); untouched.tick(); }
-  expect(clicked.region.handleMouse(click(x, y))).toEqual({ handled: true, render: true });
+  expect(clicked.region.emptyState.handleMouse(click(x, y))).toEqual({ handled: true, render: true });
   for (let step = 0; step < 20; step++) { clicked.tick(); untouched.tick(); }
-  expect(stage(clicked.view.render(100))).toBe(stage(untouched.view.render(100)));
+  expect(stage(clicked.view.renderStage(100))).toBe(stage(untouched.view.renderStage(100)));
 
   for (const scene of [clicked, untouched]) {
     scene.rest();
-    scene.region.handleMouse(click(x, y));
+    scene.region.emptyState.handleMouse(click(x, y));
   }
   for (let step = 0; step < 30; step++) { clicked.tick(); untouched.tick(); }
-  clicked.region.handleMouse(click(x, y));
+  clicked.region.emptyState.handleMouse(click(x, y));
   for (let step = 0; step < 30; step++) { clicked.tick(); untouched.tick(); }
-  expect(stage(clicked.view.render(100))).toBe(stage(untouched.view.render(100)));
+  expect(stage(clicked.view.renderStage(100))).toBe(stage(untouched.view.renderStage(100)));
 });
 
 it("leaves other gestures, and clicks beside the tree, to their usual owner", () => {
   const { view, region, rest } = header();
   rest();
-  const lines = region.render(100);
+  const lines = region.emptyState.render(100);
   const [x, y] = center(lines);
-  const text = lines.findIndex((line) => stripTerminalSequences(line).includes("Tesota "));
+  const text = lines.length;
   for (const event of [click(x, y, { button: "right" }), click(x, y, { ctrl: true }), click(x, y, { type: "press" }),
     click(1, y), click(x, text)]) {
-    expect(region.handleMouse(event)).toBeUndefined();
+    expect(region.emptyState.handleMouse(event)).toBeUndefined();
   }
   expect(view.moving).toBe(false);
   const short = header({ terminalRows: () => 12 });
-  short.region.render(100);
-  expect(short.region.handleMouse(click(50, 0))).toBeUndefined();
+  short.region.emptyState.render(100);
+  expect(short.region.emptyState.handleMouse(click(50, 0))).toBeUndefined();
 });
 
 it("stops asking for frames once disposed", () => {
   const { view, region, timers } = header();
-  region.render(100);
+  region.emptyState.render(100);
   region.dispose();
   timers.length = 0;
-  view.render(100);
+  view.renderStage(100);
   expect(view.moving).toBe(false);
   expect(timers).toEqual([]);
 });
@@ -239,16 +248,16 @@ it("lights the tree against the background the terminal reports, on time, late, 
   const art = (lines: readonly string[]): string => lines.filter((line) => braille.test(line)).join("");
   const { view, terminal, renders } = header();
   expect(terminal.queries).toHaveLength(1);
-  const fallback = art(view.render(100));
+  const fallback = art(view.renderStage(100));
   // No reported background keeps the palette's own canvas.
   terminal.queries[0]!.answer({});
   await Promise.resolve();
-  expect(art(view.render(100))).toBe(fallback);
+  expect(art(view.renderStage(100))).toBe(fallback);
   // A late reply, as over a slow link, still applies.
   const before = renders();
   terminal.queries[0]!.late({ background: { r: 12, g: 12, b: 12 } });
   expect(renders()).toBe(before + 1);
-  const campbell = art(view.render(100));
+  const campbell = art(view.renderStage(100));
   expect(stripTerminalSequences(campbell)).toBe(stripTerminalSequences(fallback));
   expect(campbell).not.toBe(fallback);
   // The terminal turning light asks again, and its new background is used.
@@ -256,17 +265,17 @@ it("lights the tree against the background the terminal reports, on time, late, 
   expect(terminal.queries).toHaveLength(2);
   terminal.queries[1]!.answer({ background: { r: 32, g: 32, b: 32 } });
   await Promise.resolve();
-  expect(art(view.render(100))).toBe(fallback);
+  expect(art(view.renderStage(100))).toBe(fallback);
 });
 
 it("stops listening to the terminal once disposed", async () => {
   const { view, region, terminal } = header();
-  const fallback = view.render(100).join("\n");
+  const fallback = view.renderStage(100).join("\n");
   region.dispose();
   expect(terminal.schemeListeners.size).toBe(0);
   terminal.queries[0]!.answer({ background: { r: 12, g: 12, b: 12 } });
   await Promise.resolve();
-  expect(view.render(100).join("\n")).toBe(fallback);
+  expect(view.renderStage(100).join("\n")).toBe(fallback);
 });
 
 it("never writes a folder's control characters to the terminal", () => {
@@ -301,3 +310,37 @@ it.each([["Tesota Dark", "tesota-dark"], ["Tesota Light", "tesota-light"]])(
       expect(wezterm).toContain(`${key} = "${value}"\n`);
     }
   });
+
+
+it.each([{ NO_COLOR: "1" }, { TERM: "ansi", COLORTERM: "" }])("uses a dim static fallback without extended colors: %j", (env) => {
+  for (const [key, value] of Object.entries(env)) vi.stubEnv(key, value);
+  try {
+    let now = 0;
+    const view = new WelcomeHeader("work", shellTheme("dark", "256color"), {
+      requestRender: () => undefined, terminalRows: () => 60, stageShare: 1 / 3,
+      now: () => now, setTimer: () => () => undefined,
+    });
+    view.renderStage(100);
+    while (view.moving) { now += 100; view.renderStage(100); }
+    const faded = view.renderStage(100).join("\n");
+    expect(faded).toContain("\x1b[2m");
+    expect(faded).not.toContain("\x1b[38;");
+    expect(faded).not.toContain("\x1b[48;");
+    expect(faded).toMatch(braille);
+  } finally { vi.unstubAllEnvs(); }
+});
+
+it("fades each lit cell toward the background after the scene, then stops scheduling", () => {
+  const { view, tick, timers } = header();
+  const start = view.renderStage(100).join("\n");
+  while (view.moving) tick();
+  for (let step = 0; step < 8; step++) tick();
+  const faded = view.renderStage(100).join("\n");
+  expect(stripTerminalSequences(faded)).toBe(stripTerminalSequences(start));
+  // eslint-disable-next-line no-control-regex -- inspect terminal foreground SGRs
+  const colors = (text: string) => [...text.matchAll(/\x1b\[38;2;(\d+);(\d+);(\d+)m/gu)].map((match) => match.slice(1).map(Number));
+  expect(colors(faded)).toEqual(colors(start).map((rgb) => rgb.map((channel) => Math.round(32 + (channel - 32) * 0.18))));
+  timers.length = 0;
+  view.renderStage(100);
+  expect(timers).toEqual([]);
+});

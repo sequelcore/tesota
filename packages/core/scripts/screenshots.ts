@@ -164,7 +164,7 @@ async function shell(cwd: string, script: readonly ScriptStep[], appearance: App
   const settingsPath = join(mkdtempSync(join(tmpdir(), "tesota-screenshot-settings-")), "settings.json");
   writeFileSync(settingsPath, JSON.stringify({ permissionMode: "full", model: "scripted/your-model" }));
   const running = runApp({ cwd, terminal, models, credentials, settingsPath, sessions: mkdtempSync(join(tmpdir(), "tesota-screenshot-sessions-")) });
-  await terminal.until("Tesota (v");
+  await terminal.until("Tesota v");
   if (appearance === "light") {
     // The terminal's answers to the shell's questions about its colors: a light background.
     const asked = (terminal.written.match(/\]11;\?/gu) ?? []).length;
@@ -190,13 +190,13 @@ const write = async (terminal: VirtualTerminal, name: string, appearance: Appear
 const welcomeRows = 30;
 const turnRows = 40;
 
-/** The shell as it opens: the palo fierro over Tesota's name, the folder and its purpose, the input and the footer. */
+/** The shell as it opens: compact header, faint centered palo fierro, input band and footer. */
 async function welcome(appearance: Appearance): Promise<void> {
   const app = await shell(project(shop), [], appearance, welcomeRows);
   // The scene plays once, then rests; the tree is drawn at rest.
   await new Promise((resolve) => setTimeout(resolve, WELCOME_SCENE_MS + 1000));
   await write(app.terminal, "tesota-welcome", appearance, welcomeRows,
-    "Tesota's shell as it opens: the palo fierro tree above Tesota's name, the project's folder and 'Shows evidence that the change does what you asked.', then the input and the footer.");
+    "Tesota's shell as it opens: name, model, folder and purpose at the top left, a faint palo fierro in the empty space, then the input band and footer.");
   await quit(app);
 }
 

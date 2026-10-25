@@ -1,5 +1,5 @@
 import { type Color, colorToRgb, foregroundAnsi, MouseRegion, type TerminalColorMode, type TerminalColors,
-  truncateToWidth, type TUI, type TuiMouseEvent, type TuiMouseEventResult, visibleWidth, type Component }
+  truncateToWidth, type TUI, type TuiMouseEvent, type TuiMouseEventResult, type Component, visibleWidth, sliceByColumn }
   from "@earendil-works/pi-tui";
 import { MARK_MAX_COLUMNS, MARK_MAX_ROWS, MARK_STAGE_ROWS_PER_60_COLUMNS, markLighting, renderMark,
   type MarkCell, type MarkColors, type Rgb } from "./welcome-mark.js";
@@ -13,6 +13,8 @@ export const WELCOME_FRAME_MS = 50;
 /** A frame that arrives later than this, such as after the terminal was busy, advances by this much at most. */
 const LONGEST_STEP_MS = 100;
 const MIN_STAGE_ROWS = 8;
+export const WELCOME_FADE_MS = 400;
+export const WELCOME_STATIC_OPACITY = 0.18;
 export const WELCOME_TAGLINE = "Shows evidence that the change does what you asked.";
 
 /** The background the tree is lit against until the terminal reports its own, or when it never does: each
@@ -42,6 +44,7 @@ export interface WelcomeHeaderOptions {
   readonly terminalRows: () => number;
   /** The share of the terminal's rows the tree may take: less where Pi lists what it loaded beneath the header. */
   readonly stageShare: number;
+  readonly model?: () => string;
   readonly now?: () => number;
   readonly setTimer?: (callback: () => void, delayMs: number) => () => void;
 }
@@ -60,10 +63,11 @@ export class WelcomeHeader implements Component {
   readonly #version = host().version;
   /** How much of the scene has played, in milliseconds. */
   #played = 0;
+  #disposed = false;
   /** Whether the tumbleweed blows through: from the first click on, not at the opening. */
   #visitor = false;
   /** Where the last render drew the tree, in the header's own rows and columns. */
-  #drawnStage: { readonly left: number; readonly rows: number; readonly columns: number } | undefined;
+  #drawnStage: { readonly top: number; readonly left: number; readonly rows: number; readonly columns: number } | undefined;
   #lastFrame: number | undefined;
   #cancelFrame: (() => void) | undefined;
   #cached: { readonly key: string; readonly lines: readonly string[] } | undefined;
@@ -82,7 +86,7 @@ export class WelcomeHeader implements Component {
   }
 
   /** Whether the scene still has motion to show. */
-  get moving(): boolean { return this.#played < WELCOME_SCENE_MS; }
+  get moving(): boolean { return !this.#disposed && this.#played < WELCOME_SCENE_MS + WELCOME_FADE_MS; }
 
   invalidate(): void { this.#cached = undefined; }
 
@@ -92,7 +96,7 @@ export class WelcomeHeader implements Component {
   dispose(): void {
     this.#cancelFrame?.();
     this.#cancelFrame = undefined;
-    this.#played = WELCOME_SCENE_MS;
+    this.#disposed = true;
   }
 
   /**
@@ -103,7 +107,7 @@ export class WelcomeHeader implements Component {
     const stage = this.#drawnStage;
     if (stage === undefined || event.type !== "click" || event.button !== "left" || event.shift || event.alt ||
       event.ctrl) return undefined;
-    if (event.y < 0 || event.y >= stage.rows || event.x < stage.left || event.x >= stage.left + stage.columns) {
+    if (event.y < stage.top || event.y >= stage.top + stage.rows || event.x < stage.left || event.x >= stage.left + stage.columns) {
       return undefined;
     }
     if (!this.moving) {
@@ -114,36 +118,48 @@ export class WelcomeHeader implements Component {
     return { handled: true, render: true };
   }
 
+  /** Only these three compact rows enter the transcript. The shell owns the separate empty stage. */
   render(width: number): string[] {
+    return this.#text(width).map((line) => truncateToWidth(line, width, ""));
+  }
+
+  /** Draw in the shell's free space, never reserving rows in its document. Hidden space pauses the clock. */
+  renderStage(width: number, availableRows: number = Math.floor(this.#options.terminalRows() * this.#options.stageShare)): string[] {
     let columns = Math.min(MARK_MAX_COLUMNS, width - 4);
     let rows = Math.round(columns * MARK_STAGE_ROWS_PER_60_COLUMNS / MARK_MAX_COLUMNS);
-    const most = Math.floor(this.#options.terminalRows() * this.#options.stageShare);
+    const most = Math.min(availableRows, Math.floor(this.#options.terminalRows() * this.#options.stageShare));
     if (rows > most) {
       rows = most;
       columns = Math.round(rows * MARK_MAX_COLUMNS / MARK_STAGE_ROWS_PER_60_COLUMNS);
     }
-    const lines: string[] = [];
-    if (rows >= MIN_STAGE_ROWS && rows <= MARK_MAX_ROWS && columns <= MARK_MAX_COLUMNS) {
-      const left = Math.floor((width - columns) / 2);
-      this.#drawnStage = { left, rows, columns };
-      lines.push(...this.#stage(columns, rows).map((line) => " ".repeat(left) + line), "");
-    } else {
-      this.#drawnStage = undefined;
-      this.#lastFrame = undefined;
+    if (rows < MIN_STAGE_ROWS || rows > MARK_MAX_ROWS || columns > MARK_MAX_COLUMNS) {
+      this.pause();
+      return [];
     }
-    for (const line of this.#text(width)) {
-      const fitted = truncateToWidth(line, width);
-      lines.push(" ".repeat(Math.max(0, Math.floor((width - visibleWidth(fitted)) / 2))) + fitted);
-    }
-    return lines;
+    const left = Math.floor((width - columns) / 2);
+    const top = Math.floor((availableRows - rows) / 2);
+    this.#drawnStage = { top, left, rows, columns };
+    return [...Array<string>(top).fill(""), ...this.#stage(columns, rows).map((line) => " ".repeat(left) + line),
+      ...Array<string>(availableRows - rows - top).fill("")];
+  }
+
+  pause(): void {
+    this.#drawnStage = undefined;
+    this.#lastFrame = undefined;
+    this.#cancelFrame?.();
+    this.#cancelFrame = undefined;
   }
 
   #text(width: number): string[] {
     const theme = this.#theme;
-    const cwd = this.#cwd.length > width ? `…${this.#cwd.slice(-(width - 1))}` : this.#cwd;
+    const model = this.#options.model?.();
+    const room = Math.max(0, width - (model === undefined || model === "" ? 0 : visibleWidth(model) + 3));
+    const cwdWidth = visibleWidth(this.#cwd);
+    const cwd = cwdWidth <= room ? this.#cwd : room <= 1 ? "…".slice(0, room)
+      : `…${sliceByColumn(this.#cwd, cwdWidth - room + 1, room - 1)}`;
     const version = /^\d/u.test(this.#version) ? `v${this.#version}` : this.#version;
     // Bold directly: Pi's theme.bold leaves text plain where its color library detects no color support.
-    return [`\x1b[1mTesota\x1b[22m ${theme.fg("muted", `(${version})`)}`, theme.fg("muted", cwd),
+    return [`\x1b[1mTesota\x1b[22m ${theme.fg("muted", version)}`, theme.fg("muted", [model, cwd].filter(Boolean).join(" · ")),
       theme.fg("muted", WELCOME_TAGLINE)];
   }
 
@@ -152,7 +168,7 @@ export class WelcomeHeader implements Component {
     const now = (this.#options.now ?? Date.now)();
     const step = this.#lastFrame === undefined ? 0 : Math.min(LONGEST_STEP_MS, Math.max(0, now - this.#lastFrame));
     this.#lastFrame = now;
-    this.#played = Math.min(WELCOME_SCENE_MS, this.#played + step);
+    this.#played = Math.min(WELCOME_SCENE_MS + WELCOME_FADE_MS, this.#played + step);
     if (this.moving && this.#cancelFrame === undefined) {
       const setTimer = this.#options.setTimer ?? ((callback, delay) => {
         const timer = setTimeout(callback, delay);
@@ -163,7 +179,7 @@ export class WelcomeHeader implements Component {
         this.#options.requestRender();
       }, WELCOME_FRAME_MS);
     }
-    return this.#paint(columns, rows, this.#played / WELCOME_SCENE_MS);
+    return this.#paint(columns, rows, Math.min(1, this.#played / WELCOME_SCENE_MS));
   }
 
   /** The tree's pose in the theme's colors; Pi renders on every keystroke, so a pose already drawn is reused. */
@@ -173,13 +189,18 @@ export class WelcomeHeader implements Component {
     const colors = themeMarkColors(theme);
     const mode = theme.getColorMode();
     const background = this.#background ?? fallbackBackground[appearance];
-    const key = JSON.stringify([columns, rows, progress, this.#visitor, appearance, colors, mode, background]);
+    const opacity = this.#played >= WELCOME_SCENE_MS + WELCOME_FADE_MS ? WELCOME_STATIC_OPACITY
+      : 1 - (1 - WELCOME_STATIC_OPACITY) * Math.max(0, this.#played - WELCOME_SCENE_MS) / WELCOME_FADE_MS;
+    const key = JSON.stringify([columns, rows, progress, opacity, this.#visitor, appearance, colors, mode, background]);
     if (this.#cached?.key === key) return this.#cached.lines;
     const cells = renderMark(columns, rows, progress, markLighting(background, appearance === "light", colors),
       this.#visitor);
+    const colored = theme.getBgAnsi("userMessageBg") !== "";
+    const faint = !colored && opacity < 1;
     const lines: string[] = [];
     for (let row = 0; row < rows; row++) {
-      lines.push(`${brailleText(cells.slice(row * columns, (row + 1) * columns), mode).trimEnd()}\x1b[39m`);
+      const text = brailleText(cells.slice(row * columns, (row + 1) * columns), mode, background, opacity, colored).trimEnd();
+      lines.push(faint ? `\x1b[2m${text}\x1b[22m` : `${text}\x1b[39m`);
     }
     this.#cached = { key, lines };
     return lines;
@@ -187,11 +208,13 @@ export class WelcomeHeader implements Component {
 }
 
 /** A row of the mark's cells as terminal text: each cell's braille dots in its color, an empty cell as a space. */
-function brailleText(cells: readonly MarkCell[], mode: TerminalColorMode): string {
+function brailleText(cells: readonly MarkCell[], mode: TerminalColorMode, background: Rgb, opacity: number, colored: boolean): string {
   return cells.map(({ dots, rgb }) => {
     if (dots === 0) return " ";
-    const color: Color = { kind: "rgb", r: rgb >> 16 & 255, g: rgb >> 8 & 255, b: rgb & 255 };
-    return foregroundAnsi(color, mode) + String.fromCodePoint(0x2800 + dots);
+    const blend = (channel: number, index: number): number => Math.round(background[index]! + (channel - background[index]!) * opacity);
+    const [r, g, b] = [blend(rgb >> 16 & 255, 0), blend(rgb >> 8 & 255, 1), blend(rgb & 255, 2)];
+    const color: Color = { kind: "rgb", r, g, b };
+    return (colored ? foregroundAnsi(color, mode) : "") + String.fromCodePoint(0x2800 + dots);
   }).join("");
 }
 
@@ -302,10 +325,14 @@ const COLOR_QUERY_MS = 200;
  * answers leaves the tree on its appearance's usual background.
  */
 export function mountWelcomeHeader(header: WelcomeHeader,
-  tui: Pick<TUI, "queryTerminalColors" | "onTerminalColorSchemeChange" | "requestRender">): MouseRegion & {
+  tui: Pick<TUI, "queryTerminalColors" | "onTerminalColorSchemeChange" | "requestRender">): Component & {
+  emptyState: MouseRegion & { renderIn(width: number, rows: number): string[]; pause(): void };
   dispose(): void;
 } {
   let disposed = false;
+  // Surface construction must not rasterize the scene on the shell's first frame.
+  let ready = false;
+  const firstFrame = setTimeout(() => { if (!disposed) { ready = true; tui.requestRender(); } }, WELCOME_FRAME_MS);
   const apply = (colors: TerminalColors): void => {
     if (disposed || colors.background === undefined) return;
     const { r, g, b } = colors.background;
@@ -315,9 +342,14 @@ export function mountWelcomeHeader(header: WelcomeHeader,
   const ask = (): void => { void tui.queryTerminalColors({ timeoutMs: COLOR_QUERY_MS, onLateReply: apply }).then(apply); };
   ask();
   const stopListening = tui.onTerminalColorSchemeChange(ask);
-  return Object.assign(new MouseRegion(header, (event) => header.click(event)), { dispose: () => {
+  const emptyState = Object.assign(new MouseRegion({ render: (width) => header.renderStage(width),
+    invalidate: () => header.invalidate() }, (event) => header.click(event)), {
+    renderIn: (width: number, rows: number) => ready ? header.renderStage(width, rows) : [], pause: () => header.pause(),
+  });
+  return { render: (width) => header.render(width), invalidate: () => header.invalidate(), emptyState, dispose: () => {
     disposed = true;
+    clearTimeout(firstFrame);
     stopListening();
     header.dispose();
-  } });
+  } };
 }
