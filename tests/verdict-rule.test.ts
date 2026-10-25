@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { decisions, methodStanding, partlyHolds, verdictTone } from "../src/verification/verdict-rule.js";
+import { decisions, methodStanding, partlyHolds, runStanding, verdictTone } from "../src/verification/verdict-rule.js";
 
 it("counts only what the checks established, never a model's opinion", () => {
   expect(decisions([])).toBe(0);
@@ -28,4 +28,18 @@ it("sums up a method as holding only when every run held outright (#591)", () =>
   expect(methodStanding(0, 0, 1, 2)).toBe("fails");
   expect(methodStanding(0, 0, 0, 1)).toBe("none");
   expect(methodStanding(0, 0, 0, 0)).toBe("none");
+});
+
+it("calls a run verified only with passing evidence, every changed path covered, no gap, no decision and no stop (#668)", () => {
+  expect(runStanding(true, false, 0, false, 1, 0, [true], [false], [false])).toBe("verified");
+  expect(runStanding(true, false, 0, false, 1, 0, [false], [true], [true])).toBe("verified");
+  expect(runStanding(true, false, 0, false, 1, 0, [false], [true], [false])).toBe("incomplete");
+  expect(runStanding(true, false, 0, false, 1, 0, [false], [false], [true])).toBe("incomplete");
+  expect(runStanding(true, false, 0, false, 1, 1, [true], [false], [false])).toBe("incomplete");
+  expect(runStanding(true, false, 0, false, 0, 0, [], [], [])).toBe("unverified");
+  expect(runStanding(false, false, 0, false, 3, 0, [], [], [])).toBe("unchanged");
+  expect(runStanding(true, false, 1, false, 1, 0, [], [], [])).toBe("incomplete");
+  expect(runStanding(true, false, 1, true, 1, 0, [], [], [])).toBe("failed");
+  expect(runStanding(true, true, 0, false, 1, 0, [], [], [])).toBe("incomplete");
+  expect(runStanding(false, true, 0, true, 0, 0, [], [], [])).toBe("failed");
 });

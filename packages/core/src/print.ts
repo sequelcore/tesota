@@ -3,7 +3,7 @@ import { statSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
 import { provideHost } from "../../../src/host.ts";
-import { entryReceipt, isReceipt, receiptStanding } from "../../../src/receipt.ts";
+import { entryReceipt, isReceipt, type Receipt, receiptStanding, standingWords, unverifiedWhy } from "../../../src/receipt.ts";
 import tesota from "../../../src/tesota.ts";
 import { fileCredentialStore } from "./credentials.ts";
 import { branchOf } from "./branch.ts";
@@ -103,8 +103,11 @@ function trustedStandards(cwd: string, settingsPath: string, write: PrintOutput)
 function ending(outcome: string | undefined, file: string): string {
   const { entries } = peekSessionFile(file);
   const receipt = branchOf(entries).map(entryReceipt).findLast((found) => found !== undefined);
+  const standing = isReceipt(receipt) ? receiptStanding(receipt) : undefined;
+  // A run that changed nothing claims no standing (#668); one that changed something unverified says why.
   return `${outcome === "completed" ? "Completed" : `Ended ${outcome ?? "without a run"}`}`
-    + `${isReceipt(receipt) ? `, ${receiptStanding(receipt)}; tesota receipt writes it for a pull request` : ""}.\n`
+    + `${standing === undefined ? "" : standing === "unchanged" ? ` (${standingWords[standing]})`
+      : `, ${standingWords[standing]}${standing === "unverified" ? `: ${unverifiedWhy(receipt as Receipt)}` : ""}; tesota receipt writes it for a pull request`}.\n`
     + (lastFloorNotice(entries) ?? "")
     // A run that ended on its question says how to answer it (#651).
     + (pendingQuestion(entries) === undefined ? "" : `Awaiting your answer: tesota -p --resume ${basename(file, ".jsonl")} "<answer>"\n`);
