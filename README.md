@@ -2,7 +2,7 @@
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/tesota-welcome-light.svg">
-  <img alt="Tesota's shell as it opens: the palo fierro tree above Tesota's name, the project's folder and 'Shows evidence that the change does what you asked.', then the input and the footer." src="docs/assets/tesota-welcome-dark.svg">
+  <img alt="Tesota's shell as it opens: a half-block ironwood mark beside the name, model, folder and purpose; a faded ironwood and armless seedling centered above the input band and footer." src="docs/assets/tesota-welcome-dark.svg">
 </picture>
 
 **Tesota is a coding agent that shows evidence its change does what you
@@ -12,7 +12,7 @@ The run doesn't end until that's done.
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/tesota-turn-light.svg">
-  <img alt="A verified turn: the request, the agent's two file writes and its answer, then Tesota's receipt saying nothing needs you, the tests pass and the new test notices the change." src="docs/assets/tesota-turn-dark.svg">
+  <img alt="A verified turn: the ironwood mark blooms beside the header; below, the request, two file writes, the answer and the receipt. The text remains the primary signal: the tests pass and the new test notices the change." src="docs/assets/tesota-turn-dark.svg">
 </picture>
 
 ## What Tesota checks

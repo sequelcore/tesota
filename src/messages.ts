@@ -146,9 +146,10 @@ function tinted(theme: Theme, glyph: string): string {
   return theme.fg(tone, glyph);
 }
 
-/** Groups of the summary: a glyph and title, the reason they share under it. */
+/** Groups of the summary: a glyph and title, the reason they share under it; a `·` row is said for information only, all muted. */
 function groupRows(theme: Theme, groups: readonly SummaryGroup[], width: number): string[] {
-  return groups.flatMap(({ glyph, title, note }) => [...wrapUnder(`${tinted(theme, glyph)} ${theme.fg("text", terminalText(title))}`, width, 2),
+  return groups.flatMap(({ glyph, title, note }) => [
+    ...wrapUnder(`${tinted(theme, glyph)} ${theme.fg(glyph === "·" ? "muted" : "text", terminalText(title))}`, width, 2),
     ...note === "" ? [] : wrapUnder(theme.fg("muted", `  ${terminalText(note)}`), width, 2)]);
 }
 

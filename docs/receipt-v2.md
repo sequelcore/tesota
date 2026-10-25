@@ -136,6 +136,38 @@ and the unit's `folder` kept.
 | `children` | Child[], optional | The [subagents](guides/subagents.md) the run started, in the order they ended: who did what. Never this receipt's evidence: a child's own receipt covers its own branch. Absent when the run started none |
 | `floorRefusals` | FloorRefusal[], optional | The calls Tesota's [floor](guides/permissions.md#the-floor) refused in the request, in order: `tool`, `subject` (what the call named, on one line and cut to 80 characters) and `reason`. Rendered without `subject`, which may be a secret's path. A refusal shows that one call didn't run, not what ran instead: never evidence, and never part of the verdict. Absent when there were none |
 
+### Standing
+
+Where a receipt stands is read from it, never stored (`receiptStanding`,
+whose rule `runStanding` is proved). Print mode's last line, the footer,
+the dashboard and a subagent's end show it, with one meaning:
+
+| Standing | Shown as | When |
+| --- | --- | --- |
+| `failed` | `failed` | The run stopped, or something needs a decision, and a proof, command or model failed |
+| `incomplete` | `incomplete` | The run stopped, or something needs a decision, with no failed check; or evidence passed but a gap remains or a changed path isn't covered |
+| `unchanged` | `Completed (nothing to verify)` | Nothing changed: no path the receipt records as changed, and no change of comments alone. There's nothing to claim |
+| `unverified` | `unverified`, and why | Something changed, and no proof, command or model passed on current content |
+| `verified` | `verified` | None of the above: evidence passed, no gap, every changed path covered, nothing to decide, not stopped |
+
+A changed path is every path in `changed`, `unverified`, `proofs`,
+`uncovered` and `models`. It's covered when `unverified` doesn't list it,
+or, read per unit, when it was tested and exercised: its unit's
+`unverified` holds that one path alone, every command in the unit passed,
+and the unit records at least one exercise, each `fails_then_passes`.
+Nothing in the receipt maps a test to the file it exercises, so with two
+unproved files neither counts as exercised. A gap is any other finding
+the receipt lists as a verification limit, such as uncovered lines, a test
+not checked, a model not checked or attribution unresolved, and a `changed`
+that is `unreadable`, since then nothing shows every changed path covered.
+
+A green summary means `verified`: one that verified nothing is amber.
+The summary reads coverage from the same rule (`pathCovered`), so a file
+that is covered though no proof covers it is no verification limit: it
+is neither counted nor amber, and shows as a muted line, such as
+`add.js: tested and exercised; no proof covers it`. A file that isn't
+covered stays a limit.
+
 ### Clarification
 
 Each batch has `reply` (zero-based assistant reply within the run), `callId`,
@@ -158,7 +190,7 @@ dismissed questions and unavailable answers do not enter this list.
 | `model` | string, optional | Its model, as `provider/id` |
 | `writes` | boolean | Whether it could change files, in a worktree of its own |
 | `outcome` | string | How its run ended: `completed`, `aborted`, `error`, `incomplete`, or `unknown` when the process ended while it ran |
-| `verification` | `verified`, `incomplete` or `failed`, optional | Where its own receipt stands, when its run settled with one |
+| `verification` | `verified`, `incomplete` or `failed`, optional | Where its own receipt stands ([Standing](#standing)), when its run settled with one. Absent when it stands `unverified` or `unchanged`, which this field doesn't store |
 | `session` | string | Its session's file |
 | `branch` | string, optional | The branch its work stays on, when it wrote something |
 | `floorRefusals` | number, optional | How many of its calls Tesota's floor refused; its own session lists them |

@@ -139,11 +139,12 @@ it("counts what the checks established and never a model's opinion, as the recei
 
 it("says there was nothing to verify when the change was comments alone, and only when nothing else is listed", () => {
   const comments: Receipt = { ...emptyReceipt, commentsOnly: true };
-  expect(words({ step: "settled", receipt: comments })).toBe("✓ receipt · nothing to verify, comments only");
-  expect(words({ step: "settled", receipt: comments }, "short")).toBe("✓ receipt · nothing to verify");
-  expect(words({ step: "settled", receipt: comments }, "glyphs")).toBe("✓ · no code");
+  // Nothing verified a change of comments alone, so it is not checked as verified (#668).
+  expect(words({ step: "settled", receipt: comments })).toBe("○ receipt · nothing to verify, comments only");
+  expect(words({ step: "settled", receipt: comments }, "short")).toBe("○ receipt · nothing to verify");
+  expect(words({ step: "settled", receipt: comments }, "glyphs")).toBe("○ · no code");
   expect(words({ step: "settled", receipt: { ...comments, proofs: [proved] } })).toBe("✓ receipt · 1 proved");
-  expect(words({ step: "settled", receipt: emptyReceipt })).toBe("✓ receipt");
+  expect(words({ step: "settled", receipt: emptyReceipt })).toBe("○ receipt · nothing to verify, nothing changed");
 });
 
 it("drops the folder first, then the model, then shortens the evidence, and drops the context % last, never the statuses", () => {

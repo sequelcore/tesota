@@ -1,4 +1,5 @@
 import { type Component, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { type ReceiptStanding, standingWords } from "../../../../src/receipt.ts";
 import type { ShellTheme, ThemeToken } from "../../../../src/theme.ts";
 
 /** A session's first request and current status, as the dashboard shows them. */
@@ -7,7 +8,8 @@ export interface SessionRow {
   readonly request: string;
   readonly state: "idle" | "working" | "verifying" | "waiting" | "ended";
   readonly outcome?: string;
-  readonly verification?: "verified" | "incomplete" | "failed" | "unverified";
+  /** Where its last receipt stands; none before it has one, which reads as unverified. */
+  readonly verification?: ReceiptStanding;
   readonly workspace: string;
   readonly startedAt: number;
   readonly attached: boolean;
@@ -106,13 +108,13 @@ export class Dashboard implements Component {
       : row.state === "ended" && row.outcome !== undefined ? `ended (${row.outcome})` : row.state;
     const verification = row.verification ?? "unverified";
     const tones: Record<NonNullable<SessionRow["verification"]>, ThemeToken> = {
-      verified: "success", incomplete: "warning", failed: "error", unverified: "dim",
+      verified: "success", incomplete: "warning", failed: "error", unverified: "dim", unchanged: "muted",
     };
     const seconds = Math.max(0, Math.floor((this.now() - row.startedAt) / 1_000));
     const minutes = Math.floor(seconds / 60);
     const elapsed = seconds < 60 ? `${seconds}s` : minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
     const attached = row.attached ? theme.fg("accent", " (attached)") : "";
-    const prefix = `${marker}${theme.fg(row.state === "waiting" ? "warning" : "muted", state)} · ${theme.fg(tones[verification], verification)} · ${theme.fg("muted", row.workspace)} · ${theme.fg("dim", elapsed)}${attached} · `;
+    const prefix = `${marker}${theme.fg(row.state === "waiting" ? "warning" : "muted", state)} · ${theme.fg(tones[verification], standingWords[verification])} · ${theme.fg("muted", row.workspace)} · ${theme.fg("dim", elapsed)}${attached} · `;
     const request = row.request.split(/\r?\n|\r/)[0] || "new session";
     return truncateToWidth(prefix + truncateToWidth(request, Math.max(0, width - visibleWidth(prefix))), width);
   }

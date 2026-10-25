@@ -13,9 +13,22 @@ import { build } from "../scripts/build.ts";
  * the repository can be found.
  */
 const roots: string[] = [];
-// Windows can hold a binary that just exited, and the worker it started from the same file, for a moment longer
-// than three quick retries: CI failed with EBUSY here (#593). Wait up to about five seconds before giving up.
-afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true, maxRetries: 25, retryDelay: 200 }); });
+/**
+ * Windows can keep a binary that just ran locked for longer than any short wait, as CI's runners do after building one
+ * (EBUSY twice in the merge queue, #593, though no process is left). These folders are inside the isolated run's own
+ * temporary folder, which `scripts/isolated.ts` removes when the run ends, so a folder Windows still holds is left to it.
+ */
+afterEach(() => {
+  for (const root of roots.splice(0)) {
+    try {
+      rmSync(root, { recursive: true, force: true, maxRetries: 3 });
+    } catch (error) {
+      const held = process.platform === "win32" && ["EBUSY", "EPERM"].includes((error as NodeJS.ErrnoException).code ?? "");
+      const isolated = process.env["TESOTA_ISOLATED"];
+      if (!held || isolated === undefined || !root.startsWith(isolated)) throw error;
+    }
+  }
+});
 
 function folder(prefix: string): string {
   const root = mkdtempSync(join(tmpdir(), prefix));

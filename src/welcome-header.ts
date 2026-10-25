@@ -1,78 +1,58 @@
-import { type Color, colorToRgb, foregroundAnsi, MouseRegion, type TerminalColorMode, type TerminalColors,
-  truncateToWidth, type TUI, type TuiMouseEvent, type TuiMouseEventResult, visibleWidth, type Component }
+import { type Color, backgroundAnsi, colorToRgb, foregroundAnsi, MouseRegion, type TerminalColorMode, type TerminalColors,
+  truncateToWidth, type TUI, type TuiMouseEvent, type TuiMouseEventResult, type Component, visibleWidth, sliceByColumn }
   from "@earendil-works/pi-tui";
-import { MARK_MAX_COLUMNS, MARK_MAX_ROWS, MARK_STAGE_ROWS_PER_60_COLUMNS, markLighting, renderMark,
-  type MarkCell, type MarkColors, type Rgb } from "./welcome-mark.js";
+import { markPalette, mixMark, renderMark, type MarkName, type MarkColors, type Rgb } from "./welcome-mark.js";
+import { markBlooms, type MarkStanding } from "./verification/mark-bloom-rule.js";
 import type { Theme } from "./contract.js";
 import { homeRelative } from "./footer.js";
 import { host } from "./host.js";
 
-/** The scene's length: the wind rising and falling, and on a replay the tumbleweed's pass. */
-export const WELCOME_SCENE_MS = 9_000;
+export const WELCOME_SCENE_MS = 800;
 export const WELCOME_FRAME_MS = 50;
-/** A frame that arrives later than this, such as after the terminal was busy, advances by this much at most. */
-const LONGEST_STEP_MS = 100;
-const MIN_STAGE_ROWS = 8;
+export const WELCOME_STATIC_OPACITY = 0.30;
 export const WELCOME_TAGLINE = "Shows evidence that the change does what you asked.";
-
-/** The background the tree is lit against until the terminal reports its own, or when it never does: each
- * appearance's usual one, the canvas Tesota's palettes are drawn for. */
 const fallbackBackground: Readonly<Record<"dark" | "light", Rgb>> = { dark: [32, 32, 32], light: [237, 237, 229] };
 
-/** A color as red, green and blue; one the theme leaves to the terminal is drawn mid-grey, since the mark needs a value. */
 function rgb(color: Color | undefined): Rgb {
   if (color === undefined) return [128, 128, 128];
   const { r, g, b } = colorToRgb(color);
   return [r, g, b];
 }
 
-/** The tree in the theme's own roles: leaves in its success green, bark between its warning and muted colors, edges
- * lit in its accent and gloss in its text color. */
+/** The flat inks follow the theme roles in both appearances. */
 export function themeMarkColors(theme: Theme): MarkColors {
   const { success, warning, muted, accent, text } = theme.colors;
-  const [bark, dust] = [rgb(warning), rgb(muted)];
-  return { foliage: rgb(success), wood: [(bark[0] + dust[0]) / 2, (bark[1] + dust[1]) / 2, (bark[2] + dust[2]) / 2],
-    rim: rgb(accent), foreground: rgb(text) };
+  return { foliage: rgb(success), wood: mixMark(rgb(warning), rgb(muted), 0.5), rim: rgb(accent),
+    foreground: rgb(text), muted: rgb(muted) };
 }
 
 export interface WelcomeHeaderOptions {
-  /** Asks Pi for another render. */
   readonly requestRender: () => void;
-  /** Rows of the terminal; the tree takes at most `stageShare` of them. */
   readonly terminalRows: () => number;
-  /** The share of the terminal's rows the tree may take: less where Pi lists what it loaded beneath the header. */
   readonly stageShare: number;
+  readonly model?: () => string;
+  readonly standing?: () => MarkStanding;
+  readonly working?: () => boolean;
   readonly now?: () => number;
   readonly setTimer?: (callback: () => void, delayMs: number) => () => void;
 }
 
-/**
- * Pi's header in a Tesota session: the palo fierro with a saguaro seedling in its shade and saguaros further off,
- * and beneath it Tesota's name, version, folder and what it does. The wind moves the crown once, then the tree rests
- * for the rest of the session; a click on the resting tree (`click`) plays the scene again with a tumbleweed blowing
- * through. Its colors follow Pi's active theme.
- */
+/** A four-row header and separate live-only splash, sharing a bounded, on-demand rustle. */
 export class WelcomeHeader implements Component {
   readonly #cwd: string;
   readonly #theme: Theme;
   readonly #options: WelcomeHeaderOptions;
-  /** The engine's, as a receipt records it: a binary has no package.json beside it (#472). */
   readonly #version = host().version;
-  /** How much of the scene has played, in milliseconds. */
+  #started: number | undefined;
   #played = 0;
-  /** Whether the tumbleweed blows through: from the first click on, not at the opening. */
-  #visitor = false;
-  /** Where the last render drew the tree, in the header's own rows and columns. */
-  #drawnStage: { readonly left: number; readonly rows: number; readonly columns: number } | undefined;
-  #lastFrame: number | undefined;
+  #disposed = false;
+  #leaf = false;
+  #headerWidth = 0;
+  #drawnStage: { readonly top: number; readonly left: number; readonly rows: number; readonly columns: number } | undefined;
   #cancelFrame: (() => void) | undefined;
-  #cached: { readonly key: string; readonly lines: readonly string[] } | undefined;
-  /** The terminal's own background, once it reports one. */
   #background: Rgb | undefined;
 
   constructor(cwd: string, theme: Theme, options: WelcomeHeaderOptions) {
-    // From `~` under the home folder, as the footer shows it; a folder's name could hold control characters, which never
-    // reach the terminal as such.
     this.#cwd = Array.from(homeRelative(cwd), (character) => {
       const code = character.codePointAt(0)!;
       return code < 0x20 || (code >= 0x7f && code < 0xa0) ? "?" : character;
@@ -81,118 +61,109 @@ export class WelcomeHeader implements Component {
     this.#options = options;
   }
 
-  /** Whether the scene still has motion to show. */
-  get moving(): boolean { return this.#played < WELCOME_SCENE_MS; }
-
-  invalidate(): void { this.#cached = undefined; }
-
-  /** The terminal's own background, which the tree is lit against from now on. */
-  setBackground(background: Rgb): void { this.#background = background; }
-
-  dispose(): void {
-    this.#cancelFrame?.();
-    this.#cancelFrame = undefined;
-    this.#played = WELCOME_SCENE_MS;
+  #colored(): boolean { return this.#theme.getBgAnsi("userMessageBg") !== ""; }
+  get moving(): boolean {
+    return !this.#disposed && this.#colored() && !this.#options.working?.() && this.#played < WELCOME_SCENE_MS;
   }
-
-  /**
-   * A plain left click on the resting tree plays the scene again, with the tumbleweed; one during a replay or the
-   * opening only keeps it playing. Other gestures, and clicks beside the tree, keep their usual owner.
-   */
+  invalidate(): void { /* The tiny grids are rendered directly; no palette cache to invalidate. */ }
+  setBackground(background: Rgb): void { this.#background = background; }
+  dispose(): void {
+    this.#cancelFrame?.(); this.#cancelFrame = undefined; this.#disposed = true;
+  }
+  #gesture(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+    if (this.#disposed || !this.#colored() || this.#options.working?.() || event.button !== "left" || event.shift || event.alt || event.ctrl) return undefined;
+    // Claim the press so Pi routes its eventual click here; a press alone never animates.
+    if (event.type === "press") return { handled: true };
+    if (event.type !== "click") return undefined;
+    this.#cancelFrame?.(); this.#cancelFrame = undefined;
+    this.#played = 0; this.#started = undefined; this.#leaf = true;
+    return { handled: true, render: true };
+  }
   click(event: TuiMouseEvent): TuiMouseEventResult | undefined {
     const stage = this.#drawnStage;
-    if (stage === undefined || event.type !== "click" || event.button !== "left" || event.shift || event.alt ||
-      event.ctrl) return undefined;
-    if (event.y < 0 || event.y >= stage.rows || event.x < stage.left || event.x >= stage.left + stage.columns) {
-      return undefined;
-    }
-    if (!this.moving) {
-      this.#played = 0;
-      this.#visitor = true;
-      this.#lastFrame = undefined;
-    }
-    return { handled: true, render: true };
+    if (stage === undefined || event.y < stage.top || event.y >= stage.top + stage.rows || event.x < stage.left || event.x >= stage.left + stage.columns) return undefined;
+    return this.#gesture(event);
+  }
+  clickHeader(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+    if (event.x < 0 || event.x >= Math.min(19, this.#headerWidth) || event.y < 0 || event.y >= 4) return undefined;
+    return this.#gesture(event);
   }
 
   render(width: number): string[] {
-    let columns = Math.min(MARK_MAX_COLUMNS, width - 4);
-    let rows = Math.round(columns * MARK_STAGE_ROWS_PER_60_COLUMNS / MARK_MAX_COLUMNS);
-    const most = Math.floor(this.#options.terminalRows() * this.#options.stageShare);
-    if (rows > most) {
-      rows = most;
-      columns = Math.round(rows * MARK_MAX_COLUMNS / MARK_STAGE_ROWS_PER_60_COLUMNS);
-    }
-    const lines: string[] = [];
-    if (rows >= MIN_STAGE_ROWS && rows <= MARK_MAX_ROWS && columns <= MARK_MAX_COLUMNS) {
-      const left = Math.floor((width - columns) / 2);
-      this.#drawnStage = { left, rows, columns };
-      lines.push(...this.#stage(columns, rows).map((line) => " ".repeat(left) + line), "");
-    } else {
-      this.#drawnStage = undefined;
-      this.#lastFrame = undefined;
-    }
-    for (const line of this.#text(width)) {
-      const fitted = truncateToWidth(line, width);
-      lines.push(" ".repeat(Math.max(0, Math.floor((width - visibleWidth(fitted)) / 2))) + fitted);
-    }
-    return lines;
+    this.#headerWidth = width;
+    const progress = this.#advance();
+    const mark = this.#paint(markBlooms(this.#options.standing?.() ?? "none") ? "small-bloom" : "small", progress, 1);
+    const text = this.#text(Math.max(0, width - 21));
+    return mark.map((row, index) => truncateToWidth(row + "  " + (text[index] ?? ""), width, ""));
   }
+
+  renderStage(width: number, availableRows: number = Math.floor(this.#options.terminalRows() * this.#options.stageShare)): string[] {
+    const rows = 9;
+    const columns = 49;
+    if (width < columns || Math.min(availableRows, Math.floor(this.#options.terminalRows() * this.#options.stageShare)) < rows) {
+      this.pause(); return [];
+    }
+    const left = Math.floor((width - columns) / 2);
+    const top = Math.floor((availableRows - rows) / 2);
+    this.#drawnStage = { top, left, rows, columns };
+    return [...Array<string>(top).fill(""), ...this.#paint("large", this.#advance(), WELCOME_STATIC_OPACITY).map((line) => " ".repeat(left) + line),
+      ...Array<string>(availableRows - rows - top).fill("")];
+  }
+  pause(): void { this.#drawnStage = undefined; }
 
   #text(width: number): string[] {
     const theme = this.#theme;
-    const cwd = this.#cwd.length > width ? `…${this.#cwd.slice(-(width - 1))}` : this.#cwd;
+    const model = this.#options.model?.();
+    const room = Math.max(0, width - (model === undefined || model === "" ? 0 : visibleWidth(model) + 3));
+    const cwdWidth = visibleWidth(this.#cwd);
+    const cwd = cwdWidth <= room ? this.#cwd : room <= 1 ? "…".slice(0, room)
+      : `…${sliceByColumn(this.#cwd, cwdWidth - room + 1, room - 1)}`;
     const version = /^\d/u.test(this.#version) ? `v${this.#version}` : this.#version;
-    // Bold directly: Pi's theme.bold leaves text plain where its color library detects no color support.
-    return [`\x1b[1mTesota\x1b[22m ${theme.fg("muted", `(${version})`)}`, theme.fg("muted", cwd),
+    return [`\x1b[1mTesota\x1b[22m ${theme.fg("muted", version)}`, theme.fg("muted", [model, cwd].filter(Boolean).join(" · ")),
       theme.fg("muted", WELCOME_TAGLINE)];
   }
 
-  /** Advance the clock by the time since the last drawn frame, then draw the tree's pose for it. */
-  #stage(columns: number, rows: number): readonly string[] {
+  #advance(): number {
+    if (this.#disposed) return 0;
+    if (!this.#colored() || this.#options.working?.()) {
+      this.#played = WELCOME_SCENE_MS;
+      this.#cancelFrame?.(); this.#cancelFrame = undefined;
+      return 0;
+    }
+    if (this.#played >= WELCOME_SCENE_MS) return 1;
     const now = (this.#options.now ?? Date.now)();
-    const step = this.#lastFrame === undefined ? 0 : Math.min(LONGEST_STEP_MS, Math.max(0, now - this.#lastFrame));
-    this.#lastFrame = now;
-    this.#played = Math.min(WELCOME_SCENE_MS, this.#played + step);
+    this.#started ??= now;
+    this.#played = Math.min(WELCOME_SCENE_MS, Math.max(0, now - this.#started));
     if (this.moving && this.#cancelFrame === undefined) {
       const setTimer = this.#options.setTimer ?? ((callback, delay) => {
-        const timer = setTimeout(callback, delay);
-        return () => clearTimeout(timer);
+        const timer = setTimeout(callback, delay); return () => clearTimeout(timer);
       });
       this.#cancelFrame = setTimer(() => {
         this.#cancelFrame = undefined;
-        this.#options.requestRender();
+        if (!this.#disposed) this.#options.requestRender();
       }, WELCOME_FRAME_MS);
     }
-    return this.#paint(columns, rows, this.#played / WELCOME_SCENE_MS);
+    return this.#played / WELCOME_SCENE_MS;
   }
 
-  /** The tree's pose in the theme's colors; Pi renders on every keystroke, so a pose already drawn is reused. */
-  #paint(columns: number, rows: number, progress: number): readonly string[] {
-    const theme = this.#theme;
-    const appearance = theme.appearance;
-    const colors = themeMarkColors(theme);
-    const mode = theme.getColorMode();
-    const background = this.#background ?? fallbackBackground[appearance];
-    const key = JSON.stringify([columns, rows, progress, this.#visitor, appearance, colors, mode, background]);
-    if (this.#cached?.key === key) return this.#cached.lines;
-    const cells = renderMark(columns, rows, progress, markLighting(background, appearance === "light", colors),
-      this.#visitor);
-    const lines: string[] = [];
-    for (let row = 0; row < rows; row++) {
-      lines.push(`${brailleText(cells.slice(row * columns, (row + 1) * columns), mode).trimEnd()}\x1b[39m`);
-    }
-    this.#cached = { key, lines };
-    return lines;
+  #paint(name: MarkName, progress: number, opacity: number): string[] {
+    const colored = this.#colored();
+    const mode = this.#theme.getColorMode();
+    const background = this.#background ?? fallbackBackground[this.#theme.appearance];
+    const palette = markPalette(themeMarkColors(this.#theme));
+    const ansi = (ink: Exclude<import("./welcome-mark.js").Ink, ".">, bg = false): string => {
+      const [r, g, b] = mixMark(background, palette[ink], opacity);
+      return (bg ? backgroundAnsi : foregroundAnsi)({ kind: "rgb", r, g, b }, mode);
+    };
+    return renderMark(name, progress, this.#leaf, colored).map((row) => row.map(({ top, bottom, glyph }) => {
+      if (!colored) return glyph;
+      if (top === "." && bottom === ".") return "\x1b[39;49m ";
+      const fg = top === "." ? bottom : top;
+      if (fg === ".") return " ";
+      const bg = glyph === "▀" && bottom !== "." ? ansi(bottom, true) : "\x1b[49m";
+      return ansi(fg) + bg + glyph;
+    }).join("") + (colored ? "\x1b[39;49m" : ""));
   }
-}
-
-/** A row of the mark's cells as terminal text: each cell's braille dots in its color, an empty cell as a space. */
-function brailleText(cells: readonly MarkCell[], mode: TerminalColorMode): string {
-  return cells.map(({ dots, rgb }) => {
-    if (dots === 0) return " ";
-    const color: Color = { kind: "rgb", r: rgb >> 16 & 255, g: rgb >> 8 & 255, b: rgb & 255 };
-    return foregroundAnsi(color, mode) + String.fromCodePoint(0x2800 + dots);
-  }).join("");
 }
 
 export const ORB_FRAME_MS = 80;
@@ -302,7 +273,8 @@ const COLOR_QUERY_MS = 200;
  * answers leaves the tree on its appearance's usual background.
  */
 export function mountWelcomeHeader(header: WelcomeHeader,
-  tui: Pick<TUI, "queryTerminalColors" | "onTerminalColorSchemeChange" | "requestRender">): MouseRegion & {
+  tui: Pick<TUI, "queryTerminalColors" | "onTerminalColorSchemeChange" | "requestRender">): Component & {
+  emptyState: MouseRegion & { renderIn(width: number, rows: number): string[]; pause(): void };
   dispose(): void;
 } {
   let disposed = false;
@@ -315,9 +287,14 @@ export function mountWelcomeHeader(header: WelcomeHeader,
   const ask = (): void => { void tui.queryTerminalColors({ timeoutMs: COLOR_QUERY_MS, onLateReply: apply }).then(apply); };
   ask();
   const stopListening = tui.onTerminalColorSchemeChange(ask);
-  return Object.assign(new MouseRegion(header, (event) => header.click(event)), { dispose: () => {
+  const emptyState = Object.assign(new MouseRegion({ render: (width) => header.renderStage(width),
+    invalidate: () => header.invalidate() }, (event) => header.click(event)), {
+    renderIn: (width: number, rows: number) => header.renderStage(width, rows), pause: () => header.pause(),
+  });
+  const mark = new MouseRegion(header, (event) => header.clickHeader(event));
+  return { render: (width) => mark.render(width), handleMouse: (event) => mark.handleMouse(event), invalidate: () => header.invalidate(), emptyState, dispose: () => {
     disposed = true;
     stopListening();
     header.dispose();
-  } });
+  } };
 }

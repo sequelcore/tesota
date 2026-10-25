@@ -177,7 +177,11 @@ export interface FooterData {
 export const QUESTION_STATUS = "question";
 
 /** A component the shell mounts that may hold something to let go when it is replaced. */
-export type Mounted = Component & { dispose?(): void };
+export type Mounted = Component & {
+  dispose?(): void;
+  /** A header's decoration in free screen space only, never in the transcript or exported scrollback. */
+  readonly emptyState?: Component & { renderIn(width: number, rows: number): string[]; pause(): void };
+};
 
 /** How an extension's message is drawn: as its card, expanded or not, `outputPad` columns in; undefined draws it as plain text. */
 export type MessageRenderer = (message: { readonly customType: string; readonly content: string; readonly details?: unknown },

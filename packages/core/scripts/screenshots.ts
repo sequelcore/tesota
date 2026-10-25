@@ -164,7 +164,7 @@ async function shell(cwd: string, script: readonly ScriptStep[], appearance: App
   const settingsPath = join(mkdtempSync(join(tmpdir(), "tesota-screenshot-settings-")), "settings.json");
   writeFileSync(settingsPath, JSON.stringify({ permissionMode: "full", model: "scripted/your-model" }));
   const running = runApp({ cwd, terminal, models, credentials, settingsPath, sessions: mkdtempSync(join(tmpdir(), "tesota-screenshot-sessions-")) });
-  await terminal.until("Tesota (v");
+  await terminal.until("Tesota v");
   if (appearance === "light") {
     // The terminal's answers to the shell's questions about its colors: a light background.
     const asked = (terminal.written.match(/\]11;\?/gu) ?? []).length;
@@ -190,13 +190,13 @@ const write = async (terminal: VirtualTerminal, name: string, appearance: Appear
 const welcomeRows = 30;
 const turnRows = 40;
 
-/** The shell as it opens: the palo fierro over Tesota's name, the folder and its purpose, the input and the footer. */
+/** The shell as it opens: compact header, faint centered palo fierro, input band and footer. */
 async function welcome(appearance: Appearance): Promise<void> {
   const app = await shell(project(shop), [], appearance, welcomeRows);
-  // The scene plays once, then rests; the tree is drawn at rest.
+  // The sub-second rustle ends at the exact static grid, still at 30% opacity.
   await new Promise((resolve) => setTimeout(resolve, WELCOME_SCENE_MS + 1000));
   await write(app.terminal, "tesota-welcome", appearance, welcomeRows,
-    "Tesota's shell as it opens: the palo fierro tree above Tesota's name, the project's folder and 'Shows evidence that the change does what you asked.', then the input and the footer.");
+    "Tesota's shell as it opens: a pixel ironwood beside the name, model, folder and purpose, a 30%-opacity ironwood and armless seedling in the empty space, then the input band and footer.");
   await quit(app);
 }
 
@@ -223,7 +223,7 @@ async function turn(appearance: Appearance): Promise<void> {
   await app.terminal.until("receipt ·", 120_000);
   await new Promise((resolve) => setTimeout(resolve, 500));
   await write(app.terminal, "tesota-turn", appearance, turnRows,
-    "A verified turn in Tesota: the request, the agent's two file writes and its answer, then Tesota's receipt card saying nothing needs you, the tests pass and the new test exercises the change.");
+    "A verified turn in Tesota: a blooming pixel ironwood in the header, the request, two file writes and the answer, then the receipt card with the passing tests and the new test exercising the change.");
   await quit(app);
 }
 

@@ -181,6 +181,25 @@ describe("what the continued request carries", () => {
   });
 });
 
+describe("the final line's standing (#668)", () => {
+  test("a run that creates an empty file, with nothing to verify it, never ends verified (#651)", async () => {
+    const ended = await printer([{ tool: "write", args: { path: "notes.txt", content: "" } }, "Created notes.txt."])(
+      ["Create an empty file named notes.txt"], repository());
+    expect(ended.error).not.toContain(", verified");
+    // It says why, as the receipt recorded it: the change holds no code.
+    expect(ended.error).toContain("Completed, unverified: the changes are comments or blank lines only; tesota receipt writes it");
+  });
+
+  test("a read-only run, or a question, ends Completed, with nothing to verify", async () => {
+    const cwd = repository();
+    const read = await printer([{ tool: "read", args: { path: "README.md" } }, "It says project."])(["What does README.md say?"], cwd);
+    expect(read.error).toContain("Completed.\n");
+    const asked = await printer(["Two."])(["What is one plus one?"], cwd);
+    expect(asked.error).toContain("Completed.\n");
+    for (const { error } of [read, asked]) expect(error).not.toContain("verified");
+  });
+});
+
 describe("resuming a session without a question", () => {
   test("the text is a follow-up: a new request, as the shell sends one", async () => {
     const cwd = repository();
@@ -231,4 +250,16 @@ describe("what resuming refuses", () => {
     expect(refused.code).toBe(2);
     expect(refused.error).toContain("-c and --resume");
   });
+});
+
+test("print output and its piped sinks and session log contain no terminal mark", async () => {
+  const cwd = repository();
+  const print = printer(["An ordinary answer."]);
+  const result = await print(["Answer without changing files."], cwd);
+  expect(result.code).toBe(0);
+  expect(result.out).toContain("An ordinary answer.");
+  expect(result.out + result.error).not.toMatch(/[▀▄█⠁-⣿]/u);
+  for (const file of sessionsOf(cwd)) {
+    expect(JSON.stringify(readSessionFile(file).entries)).not.toMatch(/[▀▄█⠁-⣿]/u);
+  }
 });

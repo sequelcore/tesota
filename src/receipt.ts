@@ -13,7 +13,7 @@ import type { Weakening } from "./verification-changes.js";
 import { attributionResolved, type StartState, type UnmeasuredPath } from "./request-fingerprint.js";
 import type { GateVerdict } from "./verification/gate-rule.js";
 import { clock } from "./operations.js";
-import { decisions, methodStanding, partlyHolds, type Standing, verdictTone } from "./verification/verdict-rule.js";
+import { decisions, methodStanding, partlyHolds, pathCovered, runStanding, type Standing, verdictTone } from "./verification/verdict-rule.js";
 
 /**
  * What a run that changed files leaves the operator when it settles: each
@@ -548,6 +548,8 @@ export interface Finding {
   readonly more: readonly string[];
   /** How the receipt's summary groups it with findings of the same reason (#591); without one, by its label and detail. */
   readonly group?: FindingGroup;
+  /** Said for information only, shown muted: neither a check that held nor a limit, such as a covered file no proof covers. */
+  readonly muted?: true;
 }
 
 /**
@@ -832,6 +834,7 @@ function unitFindings(receipt: UnitEvidence, folder = ""): Finding[] {
   }
   const tested = receipt.tests.length > 0 && receipt.tests.every(({ verdict }) => verdict === "proved");
   const unproved = tested ? "Not proved" : "Not verified";
+  const covered = coveredPaths(receipt);
   const unread = typeof receipt.weakened === "string";
   const found: Finding[] = [
     ...fingerprintFindings(receipt, folder),
@@ -874,9 +877,13 @@ function unitFindings(receipt: UnitEvidence, folder = ""): Finding[] {
         detail: (tested ? "outside any contract; the tests pass with them" : "outside any contract, and nothing checked them"), more: [],
         group: { title: "No proof covers changed lines in %", noun: ["file", "files"], note: tested ? "" : "Not checked by anything else.", item: subject } };
     }),
-    ...receipt.unverified.map((path): Finding => ({ standing: "gap", check: "coverage", label: unproved, subject: path,
-      detail: (tested ? "no contract; the tests pass with it" : "nothing checked it"), more: [],
-      group: { title: "No proof covers %", noun: ["changed file", "changed files"], note: tested ? "" : "Not checked by anything else.", item: path } })),
+    // A file the standing counts as covered, tested and exercised, is no limit; the receipt still says no proof covers it.
+    ...receipt.unverified.map((path): Finding => covered.has(path)
+      ? { standing: "holds", check: "coverage", label: "Tested and exercised", subject: path, detail: "no proof covers it", more: [],
+        muted: true, group: { title: `${path}: tested and exercised; no proof covers it`, note: "" } }
+      : { standing: "gap", check: "coverage", label: unproved, subject: path,
+        detail: (tested ? "no contract; the tests pass with it" : "nothing checked it"), more: [],
+        group: { title: "No proof covers %", noun: ["changed file", "changed files"], note: tested ? "" : "Not checked by anything else.", item: path } }),
     ...(receipt.tooLarge ?? []).map((path): Finding => ({ standing: "gap", check: "coverage", label: "Not verified", subject: path,
       detail: "too large for Tesota's snapshot, which left it out", more: [],
       group: { title: "Left out of Tesota's snapshot · %", noun: ["file too large", "files too large"], note: "Not verified by anything.",
@@ -936,17 +943,85 @@ export function receiptTone(findings: readonly Finding[]): ReturnType<typeof ver
     findings.some(({ standing, failed }) => standing === "decide" && failed === true), findings.filter(({ standing }) => standing === "gap").length);
 }
 
+/** Where a receipt stands (`runStanding`), in one word for every surface that shows it (#455, #668). */
+export type ReceiptStanding = ReturnType<typeof runStanding>;
+
+/** Each standing as every surface words it: nothing changed claims nothing, so it says there is nothing to verify. */
+export const standingWords: Readonly<Record<ReceiptStanding, string>> = {
+  verified: "verified", incomplete: "incomplete", failed: "failed", unverified: "unverified", unchanged: "nothing to verify",
+};
+
+/** Whether `value` names a standing, as a child's report carries it. */
+export function isStanding(value: unknown): value is ReceiptStanding {
+  return typeof value === "string" && Object.hasOwn(standingWords, value);
+}
+
+/** Why an `unverified` receipt verified nothing, in a few words. */
+export function unverifiedWhy(receipt: Receipt): string {
+  return allEvidence(receipt).commentsOnly === true ? "the changes are comments or blank lines only"
+    : "no test, proof or model check passed on the change";
+}
+
+/** The receipt with no unit listing an unproved file, so its findings hold every gap but those (`runStanding` weighs them per path). */
+function withoutUnproved(receipt: Receipt): Receipt {
+  return receipt.units === undefined ? { ...receipt, unverified: [] }
+    : { ...receipt, units: receipt.units.map((unit) => ({ ...unit, unverified: [] })) };
+}
+
+/** One changed path of a verified unit as `runStanding` weighs it. */
+interface ChangedPath { readonly path: string; readonly proved: boolean; readonly tested: boolean; readonly exercised: boolean }
+
 /**
- * The receipt in one word, as a list of sessions shows it (#455): verified
- * when it is clean and the run was not stopped first; failed when a proof or
- * a command did not end proved; incomplete otherwise.
+ * Each path a verified unit records as changed, read per unit, never
+ * guessing for verified: proved unless its `unverified` lists it; tested
+ * when the unit ran a command and every one passed; exercised when the unit
+ * lists exactly that one path unproved, records an exercise, and every
+ * exercise is `fails_then_passes`.
  */
-export function receiptStanding(receipt: Receipt): "verified" | "incomplete" | "failed" {
-  if (receipt.stopped === undefined && receiptDecisions(receipt) === 0) return "verified";
+function changedPaths(unit: UnitEvidence): ChangedPath[] {
+  const tested = unit.tests.length > 0 && unit.tests.every(({ verdict }) => verdict === "proved");
+  const noticed = unit.exercises.length > 0 && unit.exercises.every(({ sensitivity }) => sensitivity === "fails_then_passes");
+  // Every path the receipt records as changed: the inventory, and each file it lists unproved, proved, with lines uncovered, or modeled.
+  const changed = [...typeof unit.changed === "string" ? [] : unit.changed.map(({ path }) => path), ...unit.unverified,
+    ...unit.proofs.map(({ path }) => path), ...unit.uncovered.map(({ path }) => path), ...(unit.models ?? []).map(({ path }) => path)];
+  return [...new Set(changed)].map((path) => ({ path, proved: !unit.unverified.includes(path), tested,
+    exercised: noticed && unit.unverified.length === 1 && unit.unverified[0] === path }));
+}
+
+/** The unit's unproved files that are covered all the same (`pathCovered`, as the standing reads them): tested and exercised. */
+function coveredPaths(unit: UnitEvidence): ReadonlySet<string> {
+  return new Set(changedPaths(unit).filter(({ proved, tested, exercised }) => !proved && pathCovered(proved, tested, exercised))
+    .map(({ path }) => path));
+}
+
+/** How many unproved files the receipt counts as covered, every unit's together (`coveredPaths`), so none is counted as a limit. */
+export function coveredCount(receipt: Receipt): number {
+  return receiptUnits(receipt).filter(verified).map(fromFolder).reduce((sum, unit) => sum + coveredPaths(unit).size, 0);
+}
+
+/**
+ * The receipt's standing (`runStanding`, proved) from what it records: each
+ * verified unit's changed paths, read per unit, never guessing for verified;
+ * whether anything changed, from those paths, an unreadable inventory or a
+ * change of comments alone; the proofs, commands and models that passed on
+ * current content; whether one failed; its other gaps, an unreadable
+ * inventory among them; what needs the operator; and whether it stopped.
+ */
+export function receiptStanding(receipt: Receipt): ReceiptStanding {
   // A folder of repositories keeps its checks in its units, as the footer reads them too.
-  const { proofs, tests, models = [] } = allEvidence(receipt);
-  return [...proofs, ...tests].some(({ verdict }) => verdict !== "proved") || models.some(({ verdict }) => verdict === "no_progress" || verdict === "send_back")
-    ? "failed" : "incomplete";
+  const evidence = allEvidence(receipt);
+  const { proofs, tests, models = [] } = evidence;
+  const passed = [...proofs, ...tests, ...models].filter(({ verdict, evidence: run }) => verdict === "proved" && run.invalidated === undefined).length;
+  const failed = [...proofs, ...tests].some(({ verdict }) => verdict !== "proved") || models.some(({ verdict }) => verdict === "no_progress" || verdict === "send_back");
+  const units = receiptUnits(receipt).filter(verified).map(fromFolder);
+  const paths = units.flatMap(changedPaths);
+  // An inventory Git couldn't read is a gap: nothing shows every path it changed was covered.
+  const unreadable = units.filter(({ changed }) => changed === "unreadable").length + (evidence.changed === "unreadable" ? 1 : 0);
+  const gaps = receiptFindings(withoutUnproved(receipt)).filter(({ standing }) => standing === "gap").length + unreadable;
+  // A change of comments alone changed lines, whatever paths the receipt names.
+  return runStanding(evidence.changed === "unreadable" || paths.length > 0 || evidence.commentsOnly === true, receipt.stopped !== undefined,
+    receiptDecisions(receipt), failed, passed, gaps, paths.map(({ proved }) => proved), paths.map(({ tested }) => tested),
+    paths.map(({ exercised }) => exercised));
 }
 
 /** One row of the summary that names a method (#591): what it ran on and how each run ended, never more. */
@@ -1044,7 +1119,8 @@ function methodRows(evidence: Pick<UnitEvidence, "proofs" | "tests" | "models" |
       text: `${outOf(strong, evidence.contracts.length, "contract", "contracts")}: every decided change broke its proof` }]];
 }
 
-function findingGlyph({ standing, failed }: Finding): string {
+function findingGlyph({ standing, failed, muted }: Finding): string {
+  if (muted === true) return "·";
   if (standing === "opinion") return "◇";
   if (standing === "decide") return failed === true ? "✗" : "!";
   return standing === "gap" ? "○" : "✓";
@@ -1073,6 +1149,12 @@ function grouped(findings: readonly Finding[]): SummaryGroup[] {
 
 const counted = (n: number, one: string, many: string, none: string): string => n === 0 ? none : plural(n, one, many);
 
+/** The summary's color (`receiptTone`): green says verified, and only a verified receipt is (#668), so one that verified nothing is amber. */
+function summaryTone(receipt: Receipt, findings: readonly Finding[]): ReturnType<typeof verdictTone> {
+  const tone = receiptTone(findings);
+  return tone === "success" && receiptStanding(receipt) !== "verified" ? "warning" : tone;
+}
+
 /** The receipt's summary (`ReceiptSummary`). */
 export function receiptSummary(receipt: Receipt): ReceiptSummary {
   const findings = receiptFindings(receipt);
@@ -1085,7 +1167,7 @@ export function receiptSummary(receipt: Receipt): ReceiptSummary {
       counted(flags, "review flag", "review flags", "no review flags"),
       counted(of("gap").length, "verification limit", "verification limits", "no verification limits")].join(" · ")
       .replace(/^n/u, "N"),
-    tone: receiptTone(findings),
+    tone: summaryTone(receipt, findings),
     methods: receipt.stopped === undefined ? methodRows(allEvidence(receipt)) : methodRows(noEvidence),
     notes: grouped(of("holds").filter(({ check }) => check === "coverage")),
     flags: grouped(of("decide")), limits: grouped(of("gap")), opinions: grouped(of("opinion")),

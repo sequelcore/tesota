@@ -36,17 +36,21 @@ function colorsOf(file: ThemeFile): Map<string, Color> {
 export function shellTheme(appearance: "dark" | "light", mode: TerminalColorMode): ShellTheme {
   let file: ThemeFile = appearance === "dark" ? dark : light;
   let colors = colorsOf(file);
+  const noColor = process.env["NO_COLOR"] !== undefined && process.env["NO_COLOR"] !== "";
+  // pi-tui exposes truecolor/256color only; do not paint a quantized dark band on a basic ANSI palette.
+  const plainBackground = noColor || (mode === "256color" && process.env["TERM"] !== undefined
+    && !/256color|direct/iu.test(process.env["TERM"]!) && !/truecolor|24bit/iu.test(process.env["COLORTERM"] ?? ""));
   const fg = (token: ThemeToken, text: string): string => {
     const color = colors.get(token);
-    return color === undefined ? text : `${foregroundAnsi(color, mode)}${text}\x1b[39m`;
+    return noColor || color === undefined ? text : `${foregroundAnsi(color, mode)}${text}\x1b[39m`;
   };
   const bgAnsi = (token: ThemeToken): string => {
     const color = colors.get(token);
-    return color === undefined ? "" : backgroundAnsi(color, mode);
+    return plainBackground || color === undefined ? "" : backgroundAnsi(color, mode);
   };
   const bg = (token: ThemeToken, text: string): string => {
     const start = bgAnsi(token);
-    return start === "" ? text : `${start}${text}\x1b[49m`;
+    return start === "" ? text : `${start}${text.replaceAll("\x1b[0m", `\x1b[0m${start}`).replaceAll("\x1b[49m", start)}\x1b[49m`;
   };
   const bold = wrap("1", "22");
   const italic = wrap("3", "23");

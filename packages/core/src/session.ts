@@ -538,6 +538,7 @@ function childOf(details: unknown): ReceiptChild[] {
   if (typeof description !== "string" || typeof outcome !== "string" || typeof session !== "string") return [];
   return [{ description, outcome, session, writes: writes === true, ...typeof type === "string" ? { type } : {},
     ...typeof model === "string" ? { model } : {},
+    // Receipt v2 stores these three only (#668): an unverified child, or one that changed nothing, claims no standing.
     ...verification === "verified" || verification === "incomplete" || verification === "failed" ? { verification } : {},
     ...typeof branch === "string" ? { branch } : {}, ...unguarded === true ? { unguarded } : {},
     ...typeof refused === "number" && refused > 0 ? { floorRefusals: refused } : {} }];

@@ -98,8 +98,9 @@ runs at a time, since nothing could bring a second one's work back.
 ## The dashboard
 
 `/agents`, or Ctrl+T, opens the dashboard: every session with its request,
-its state (idle, working, verifying, waiting for you, ended), its verification,
-its workspace and how long it has run.
+its state (idle, working, verifying, waiting for you, ended), its verification
+(its last receipt's [standing](../receipt-v2.md#standing), `unverified`
+before it has one), its workspace and how long it has run.
 
 | Key | |
 | --- | --- |
