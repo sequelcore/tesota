@@ -10,7 +10,8 @@ export async function modelViewWorker(): Promise<void> {
   const { manifest, request, html } = JSON.parse(Buffer.concat(chunks).toString("utf8")) as { manifest: string; request: ViewRequest; html?: boolean };
   if ((await stat(manifest)).size > 32 * 1024 * 1024) throw new Error("Manifest exceeds viewer budget");
   const data = JSON.parse(await readFile(manifest, "utf8")) as {
-    version: number; status: string; exploration: string; header?: string; binding?: { model?: string };
+    version: number; status: string; exploration: string; header?: string; binding?: { model?: string; modelHash?: string };
+    ruleDefinitions?: { modelHash: string; properties: Record<string, string> };
     artifacts: { dot: { file: string; sha256: string } };
     graph: { trace: TraceState[]; violations: Record<string, string[]> };
   };
@@ -23,10 +24,12 @@ export async function modelViewWorker(): Promise<void> {
   if (graphContentHash(dot) !== artifact.sha256) throw new Error("DOT content hash mismatch");
   const graph = reachedGraph(dot);
   if (graph.states.length > graphLimits.states || graph.edges.length > graphLimits.edges) throw new Error("Graph exceeds viewer budget");
-  const view = buildModelView(graph, data.graph, data.exploration === "partial", data.header ?? "", request);
+  const reports = { ...data.graph, ruleDefinitions: data.ruleDefinitions !== undefined && data.ruleDefinitions.modelHash === data.binding?.modelHash
+    ? data.ruleDefinitions.properties : {} };
+  const view = buildModelView(graph, reports, data.exploration === "partial", data.header ?? "", request);
   const result = html === true
     ? JSON.stringify(await (await import("./model-html.js")).writeModelHtml(manifest, {
-      model: data.binding?.model ?? basename(manifest), graph, reports: data.graph, header: data.header ?? "", view,
+      model: data.binding?.model ?? basename(manifest), graph, reports, header: data.header ?? "", view,
     }))
     : JSON.stringify(view);
   // main exits explicitly: wait until the pipe owns every byte, including on Windows.

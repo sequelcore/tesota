@@ -39,7 +39,7 @@ Partial counts are lower bounds; zero reports do not establish safety.
 Grouped transitions are not an execution. Only TLC's concrete trace is.
 
 `tesota graph --html <manifest>` writes `<manifest-stem>.html`: for example,
-`capture.manifest.json` becomes `capture.manifest.html`, beside the capture.
+`capture.manifest.json` becomes `capture.html`, beside the capture.
 The file includes Cytoscape.js, the viewer and graph data. Open it from
 `file://` or copy it to another machine: it needs no server or network.
 Its Content Security Policy blocks network access; model labels stay text.
@@ -49,10 +49,10 @@ capture itself. Running the command again replaces the HTML file.
 In the page, choose up to two ordered grouping variables. Expand a group to
 show its members; Fold returns to its group. Choose a member to see every
 variable. Search covers states, actions, properties and values. Toggle
-**TLC concrete trace** for its ordered steps and changed variables; those
+**Show the failing run** for its ordered steps and changed variables; those
 concrete steps alone are an execution, not the grouped graph. Drag and the
 mouse wheel pan and zoom; focus the graph for arrow-key panning and `+`/`-`
-zooming. **Fit graph** resets the viewport. Light and dark themes follow the
+zooming. **Fit** resets the viewport. Light and dark themes follow the
 system preference.
 
 Parsing, grouping and HTML writing run in a disposable worker. Stopping the
@@ -72,7 +72,7 @@ change verification results.
 | `/new` | Start another session beside this one |
 | `/resume` | Open an earlier session of this folder |
 | `/agents` | Open the dashboard of sessions |
-| `/graph [--plain\|--open] [name]` | Open a [model graph](../guides/receipts.md#model-graph-previews) a receipt captured; `--plain` appends its text; `--open` writes HTML, prints its path and opens the system browser |
+| `/graph [--plain] [name]` | Open a [model graph](../guides/receipts.md#model-graph-previews) a receipt captured; press `o` in the viewer to write HTML and open the system browser; `--plain` appends its text |
 | `/compact` | Summarize the older conversation |
 | `/mcp` | MCP servers: state, reconnect, sign in and out; also `/mcp login\|logout\|reconnect <server>` |
 | `/quit` | End the shell |

@@ -61,6 +61,48 @@ function invariantReports(output: string, graph: ReachedGraph): { trace: TraceSt
 }
 const hash = (text: string): string => createHash("sha256").update(text).digest("hex");
 
+/** Conservative source extraction, not a TLA+ parser. Ambiguous scope/syntax yields no text. */
+function ruleDefinitions(source: string, names: readonly string[]): Record<string, string> {
+  let doubtful = false;
+  const masked = source.replace(/"(?:\\.|[^"\\])*"|\(\*[\s\S]*?\*\)|\\\*[^\r\n]*/gu, token => {
+    if (token.startsWith("(*") && token.slice(2).includes("(*")) doubtful = true;
+    return token.replace(/[^\r\n]/gu, " ");
+  });
+  if (doubtful || /\b(?:LET|INSTANCE|LOCAL)\b|----\s*MODULE[\s\S]*----\s*MODULE/u.test(masked)
+    || /^[\t ]+[A-Za-z_]\w*(?:\([^\r\n]*?\))?[^\S\r\n]*==/mu.test(masked)) return {};
+  // Only column-zero operator headers are certain top-level definitions here. Parameterized
+  // headers delimit a preceding body but are never themselves presented as property definitions.
+  const boundaries = [...masked.matchAll(/^(?:([A-Za-z_]\w*)(\([^\r\n]*?\))?[^\S\r\n]*==|={4,}[^\r\n]*)/gmu)];
+  if (masked.split(/\r?\n/u).some(line => line.includes("==") && !/^(?:[A-Za-z_]\w*(?:\([^\r\n]*?\))?[^\S\r\n]*==|={4,})/u.test(line))) return {};
+  const properties: Record<string, string> = {};
+  for (const name of names) {
+    const matches = boundaries.filter(match => match[1] === name);
+    const at = matches[0];
+    if (matches.length !== 1 || at === undefined || at[2] !== undefined) continue;
+    const next = boundaries[boundaries.indexOf(at) + 1];
+    if (next === undefined) continue;
+    const body = source.slice(at.index + at[0].length, next.index).trim();
+    const syntax = masked.slice(at.index + at[0].length, next.index);
+    // A standalone comment may document the next operator; a separator may end this one.
+    // Without parsing their scope, omit rather than attribute either to the rule.
+    if (body === "" || /^[\t ]*(?:\\\*|\(\*|-{4,})/mu.test(body)
+      || /^(?:THEOREM|LEMMA|ASSUME|ASSUMPTION|AXIOM|PROPOSITION|COROLLARY|USE|HIDE|RECURSIVE|VARIABLES?|CONSTANTS?|EXTENDS)\b/mu.test(syntax)) continue;
+    properties[name] = body.length > 400 ? body.slice(0, 399) + "…" : body;
+  }
+  return properties;
+}
+
+async function capturedSource(binding: GraphBinding, names: readonly string[]): Promise<{
+  header: string; ruleDefinitions: { modelHash: string; properties: Record<string, string> };
+}> {
+  const header = await readFile(resolve(binding.root, binding.model), "utf8").catch(() => "");
+  const config = await readFile(resolve(binding.root, binding.config), "utf8").catch(() => "");
+  const substituted = new Set([...config.matchAll(/\b([A-Za-z_]\w*)\s*(?:<-|=(?!=))/gu)].map(match => match[1]));
+  const properties = hash(header) === binding.modelHash && hash(config) === binding.configHash
+    ? ruleDefinitions(header, names.filter(name => !substituted.has(name))) : {};
+  return { header, ruleDefinitions: { modelHash: binding.modelHash, properties } };
+}
+
 /** TLC's DOT labels carry the full valuation, not a scalar-only variable subset. */
 export function reachedGraph(dot: string): ReachedGraph {
   const states = [...dot.matchAll(/^(-?\d+) \[label="((?:[^"\\]|\\.)*)"/gmu)].map((match) => ({
@@ -135,8 +177,9 @@ export async function captureGraph(dotFile: string, output: string, binding: Gra
       await writeFile(join(directory, file), text, { flag: "wx" });
       artifacts[extension] = { file, sha256: hash(text) };
     }
+    const source = await capturedSource(binding, Object.keys(reports.violations));
     await writeFile(manifest, JSON.stringify({ ...metadata, status: "captured",
-      header: await readFile(resolve(binding.root, binding.model), "utf8").catch(() => ""),
+      ...source,
       exploration: complete ? "complete" : "partial", counts, graph: { ...graph, ...reports }, artifacts }, null, 2), { flag: "wx" });
     return { status: "captured", manifest, preview: transcriptGraph(graph, reports, counts, !complete) };
   } catch (error) { return failure("failed", String(error)); }

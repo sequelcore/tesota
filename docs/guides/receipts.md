@@ -25,7 +25,8 @@ violations is not a safety verdict. A missing or limited capture says so;
 the graph never changes the verification verdict.
 
 **Open graph** names the `/graph <name>` command that opens the capture
-full-screen; its `.dot`, `.mmd` and `.txt` files stay beside the session. A
+full-screen, then `o` inside it for the browser; its `.dot`, `.mmd` and `.txt`
+files stay beside the session. A
 preview that does not fit has no scroll region of its own: open the graph.
 
 `/graph` opens the newest graph the shown session's receipts captured, or the
@@ -43,11 +44,11 @@ the graph's text rendering to the conversation instead.
 
 ### Explore a capture in the browser
 
-Use `/graph --open` for the newest capture, or `/graph --open <name>` for a
-named one. It writes a self-contained HTML file beside the capture, prints
-its absolute path and opens the system browser. Nothing stays running in
-Tesota to serve the page. If opening the browser fails, the printed file
-still exists.
+Use `/graph` for the newest capture, or `/graph <name>` for a named one,
+then press `o` in the text viewer. It writes a self-contained HTML file beside
+the capture, shows its absolute path in the viewer's status line and opens
+the system browser. Nothing stays running in Tesota to serve the page.
+If opening the browser fails, the written path stays in the status line.
 
 For SSH or headless use:
 
@@ -55,11 +56,17 @@ For SSH or headless use:
 tesota graph --html /path/to/capture.manifest.json
 ```
 
-This prints `/path/to/capture.manifest.html` without opening a browser.
+This prints `/path/to/capture.html` without opening a browser.
 Copy the file to a machine with a browser and open it directly. All code,
 Cytoscape.js and graph data are inline: no server, CDN or network is needed.
 The file contains the full captured variables; treat it like the capture
 when sharing it. Writing it again replaces the HTML file.
+
+Beside a broken rule, **Rule, from the model:** shows its captured TLA+
+definition as text, not an English interpretation. Definitions longer than
+400 characters end in `…`. A definition is omitted when it cannot be found
+unambiguously in that model file or its content binding cannot be checked.
+The text viewer shows the same definition under the selected state's `! BREAK`.
 
 The page uses the same grouping and conserved counts as the text viewer.
 Choose up to two variables, expand or fold groups, inspect each state's

@@ -289,3 +289,53 @@ it("keeps readable text in nodes and a separate panel, and exports PNG through t
     } finally { dom.window.close(); }
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+it("shows verbatim rule text safely beside every broken-rule presentation and keeps group marks in a row", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tesota-html-rule-"));
+  try {
+    const manifest = await fixture(root);
+    const data = JSON.parse(await readFile(manifest, "utf8"));
+    const definition = 'x = 0 => label = "</script>" /\\ x = 1';
+    await writeFile(manifest, JSON.stringify({ ...data, binding: { ...data.binding, modelHash: "bound" },
+      ruleDefinitions: { modelHash: "bound", properties: { Safe: definition } } }));
+    const { dom, errors } = runHtml(await readFile(writeHtml(manifest), "utf8"));
+    try {
+      const doc = dom.window.document;
+      expect(node(doc, "#summary-rules code").textContent).toBe(definition);
+      expect(node(doc, "#summary-rules").textContent).toBe(`Rule, from the model: ${definition}`);
+      expect(node(doc, "#explainer").textContent).toBe("TLC, the model checker, tried every order of the model's actions it could reach. Each box is a situation the system can be in, called a state.");
+      expect([...doc.querySelectorAll(".legend p")].slice(0, 4).map(p => p.textContent)).toEqual([
+        "Box: a situation (state) · start: where it begins", "Arrow: a possible move, not a story",
+        "⚠: breaks a rule", "Highlighted path: the failing run, a real story",
+      ]);
+      const cy = node<HTMLElement & { _cyreg: { cy: Core } }>(doc, "#graph")._cyreg.cy;
+      expect(cy.nodes()[0]?.data("label")).toContain(`Rule, from the model: ${definition}`);
+      const row = node(doc, "#groups > div");
+      expect(row.classList.contains("group-row")).toBe(true);
+      expect(row.querySelector(":scope > .break")?.textContent).toContain("⚠ breaks Safe");
+      expect(row.querySelector("code")?.textContent).toBe(definition);
+      node<HTMLButtonElement>(doc, "#trace-toggle").click();
+      expect(node(doc, "#trace .rule-definition code").textContent).toBe(definition);
+      node<HTMLButtonElement>(doc, ".trace-step:last-of-type").click();
+      expect(node(doc, "#details .rule-definition code").textContent).toBe(definition);
+      expect(doc.querySelector("img")).toBeNull();
+      expect(doc.querySelectorAll("script")).toHaveLength(2);
+      expect(errors).toEqual([]);
+    } finally { dom.window.close(); }
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+it("never invents definition text from inherited object properties", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tesota-html-no-rule-"));
+  try {
+    const manifest = await fixture(root);
+    const data = JSON.parse(await readFile(manifest, "utf8"));
+    data.graph.violations = { toString: ["2"] };
+    await writeFile(manifest, JSON.stringify(data));
+    const { dom, errors } = runHtml(await readFile(writeHtml(manifest), "utf8"));
+    try {
+      expect(node(dom.window.document, "#title").textContent).toContain("breaks toString");
+      expect(dom.window.document.querySelectorAll(".rule-definition")).toHaveLength(0);
+      expect(errors).toEqual([]);
+    } finally { dom.window.close(); }
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

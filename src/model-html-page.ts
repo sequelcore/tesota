@@ -32,6 +32,19 @@ function button(text: string, action: () => void): HTMLButtonElement {
 function paragraph(text: string, className = ""): HTMLParagraphElement {
   const p = document.createElement("p"); p.textContent = text; p.className = className; return p;
 }
+function ruleText(names: readonly string[]): string[] {
+  return [...new Set(names)].flatMap(name => {
+    const definitions = data.reports.ruleDefinitions;
+    const definition = definitions !== undefined && Object.hasOwn(definitions, name) ? definitions[name] : undefined;
+    return definition === undefined ? [] : [`Rule, from the model: ${definition}`];
+  });
+}
+function appendRules(parent: HTMLElement, names: readonly string[]): void {
+  for (const text of ruleText(names)) {
+    const p = paragraph("Rule, from the model: ", "rule-definition"), code = document.createElement("code");
+    code.textContent = text.slice("Rule, from the model: ".length); p.append(code); parent.append(p);
+  }
+}
 function variables(entries: readonly (readonly [string, string])[]): HTMLDListElement {
   const dl = document.createElement("dl");
   for (const [k, v] of entries) {
@@ -50,13 +63,16 @@ function details(id: string): void {
   const panel = get("details"); panel.replaceChildren();
   const title = document.createElement("h2"); title.textContent = "Selected state";
   panel.append(title, paragraph(state.breaks.length ? `⚠ Breaks ${state.breaks.join(", ")}` : "No broken rule reported for this state", state.breaks.length ? "break" : ""),
-    variables(Object.entries(state.variables)), paragraph(`TLC id ${id}`, "secondary"));
+  );
+  appendRules(panel, state.breaks);
+  panel.append(variables(Object.entries(state.variables)), paragraph(`TLC id ${id}`, "secondary"));
 }
 function groupDetails(group: ViewGroup): void {
   openPanel(); const panel = get("details"); panel.replaceChildren();
   const title = document.createElement("h2"); title.textContent = "Selected group";
   panel.append(title, variables(group.path), paragraph(states(group.members.length)));
   if (group.violating) panel.append(paragraph(`⚠ breaks ${rules(group)} · ${states(group.violating)}`, "break"));
+  appendRules(panel, rules(group).split(", "));
   panel.append(button(`Show its ${group.members.length} ${group.members.length === 1 ? "state" : "states"}`, () => { expanded.add(group.id); render(); }));
 }
 function elements(): cytoscape.ElementDefinition[] {
@@ -65,13 +81,13 @@ function elements(): cytoscape.ElementDefinition[] {
   for (const [i, group] of view.groups.entries()) {
     const gid = `g${i}`;
     if (!expanded.has(group.id)) nodeIds.set(group.id, gid);
-    const text = `${initial(group) ? "start\n" : ""}${label(group)}\n${states(group.members.length)}${group.violating ? `\n⚠ breaks ${rules(group)} · ${states(group.violating)}` : ""}`;
+    const text = `${initial(group) ? "start\n" : ""}${label(group)}\n${states(group.members.length)}${group.violating ? `\n⚠ breaks ${rules(group)} · ${states(group.violating)}${ruleText(rules(group).split(", ")).map(text => `\n${text}`).join("")}` : ""}`;
     nodes.push({ data: { id: gid, label: text, members: group.members, group: group.id }, classes: `${group.violating ? "break" : ""} ${initial(group) ? "start" : ""}` });
     for (const [index, id] of group.members.entries()) {
       if (!expanded.has(group.id)) continue;
       nodeIds.set(id, `s${id}`);
       const state = view.states.find(s => s.fingerprint === id);
-      nodes.push({ data: { id: `s${id}`, parent: gid, label: `${id === view.trace[0]?.fingerprint ? "start\n" : ""}${stateLabel(group, index)}\n${label(group)}${state?.breaks.length ? `\n⚠ breaks ${state.breaks.join(", ")}` : ""}`, members: [id], group: group.id }, classes: `${state?.breaks.length ? "break" : ""} ${id === view.trace[0]?.fingerprint ? "start" : ""}` });
+      nodes.push({ data: { id: `s${id}`, parent: gid, label: `${id === view.trace[0]?.fingerprint ? "start\n" : ""}${stateLabel(group, index)}\n${label(group)}${state?.breaks.length ? `\n⚠ breaks ${state.breaks.join(", ")}${ruleText(state.breaks).map(text => `\n${text}`).join("")}` : ""}`, members: [id], group: group.id }, classes: `${state?.breaks.length ? "break" : ""} ${id === view.trace[0]?.fingerprint ? "start" : ""}` });
     }
   }
   // The model owns mixed expansion too: folded groups retain aggregated multiplicities.
@@ -82,7 +98,7 @@ function elements(): cytoscape.ElementDefinition[] {
 }
 function styleGraph(): void {
   const c = colors();
-  cy.style().selector("node").style({ shape: "round-rectangle", "background-color": c.bg, color: c.fg, label: "data(label)", "text-wrap": "wrap", "text-max-width": "260px", width: "label", height: "label", padding: "12px", "text-valign": "center", "text-halign": "center", "font-family": "system-ui", "font-size": 14, "border-color": c.accent, "border-width": 1 })
+  cy.style().selector("node").style({ shape: "round-rectangle", "background-color": c.bg, color: c.fg, label: "data(label)", "text-wrap": "wrap", "text-max-width": "260px", width: "label", height: "label", padding: "12px", "text-valign": "center", "text-halign": "center", "font-family": "monospace", "font-size": 14, "border-color": c.accent, "border-width": 1 })
     .selector("edge").style({ label: "data(label)", color: c.fg, "line-color": c.fg, "line-opacity": .45, "target-arrow-color": c.fg, "arrow-scale": 1.2, "target-arrow-shape": "triangle", "curve-style": "bezier", "control-point-step-size": 80, "font-size": 12, "text-background-color": c.bg, "text-background-opacity": 1, "text-background-padding": "3px", "text-background-shape": "roundrectangle" })
     .selector(".start").style({ "border-width": 3 })
     .selector(".break").style({ "border-color": c.error, "border-width": 2, "background-color": c.error, "background-opacity": .12 })
@@ -123,6 +139,8 @@ function summary(): void {
   const example = traceBad ?? bad;
   get("title").textContent = example === undefined ? "TLC reported no broken rule in the states it reached"
     : `TLC found a state that breaks ${example.breaks.join(", ")}${traceBad === undefined ? "" : ` in ${view.trace.length - 1} ${view.trace.length === 2 ? "step" : "steps"} from the start`}`;
+  get("summary-rules").replaceChildren();
+  appendRules(get("summary-rules"), example?.breaks ?? []);
   get("summary-values").textContent = example === undefined ? (view.partial ? "exploration was partial, so this is not proof of safety" : "") : values(Object.entries(example.variables));
   get("caveats").textContent = `${view.partial ? "Partial exploration: counts are at least these numbers. " : ""}Arrows between groups are possible moves, not one run. Only the failing run is a real execution.`;
   get("counts").textContent = `${data.model} · reached ${states(view.states.length)} · reported violating ${states(view.violations.length)}`;
@@ -166,7 +184,7 @@ function render(): void {
   layoutGraph();
   const groups = get("groups"); groups.replaceChildren();
   for (const group of view.groups) {
-    const row = document.createElement("div");
+    const row = document.createElement("div"); row.className = "group-row";
     const expand = button(`${expanded.has(group.id) ? "Fold" : "Expand"} ${label(group)} · ${states(group.members.length)}`, () => {
       if (expanded.has(group.id)) expanded.delete(group.id); else expanded.add(group.id); render();
     });
@@ -174,6 +192,7 @@ function render(): void {
     if (traceVisible) expand.title = "Hide the failing run to fold groups";
     row.append(expand);
     if (group.violating > 0) row.append(paragraph(`⚠ breaks ${rules(group)} · ${states(group.violating)}`, "break"));
+    appendRules(row, rules(group).split(", "));
     if (expanded.has(group.id)) for (const [i, id] of group.members.entries()) row.append(button(stateLabel(group, i), () => { details(id); cy.$id(`s${id}`).select(); }));
     groups.append(row);
   }
@@ -243,7 +262,7 @@ for (const [i, step] of view.trace.entries()) {
   const item = button(`${i + 1}. ${i === 0 ? "Start" : step.action.replace(/ line \d+.*$/u, "")}: ${changed || "no variables changed"}${broken.length ? ` ⚠ breaks ${broken.join(", ")}` : ""}`, () => {
     details(step.fingerprint); cy.nodes().unselect(); cy.$id(`s${step.fingerprint}`).select();
   });
-  item.className = "trace-step"; trace.append(item); previous = vars;
+  item.className = "trace-step"; trace.append(item); appendRules(trace, broken); previous = vars;
 }
 window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", styleGraph);
 render();

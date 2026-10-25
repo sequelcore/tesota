@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { runApp } from "../src/shell/app.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
 
-test("/graph --open writes beside the selected capture, prints its path and only calls the browser seam", async () => {
+test("/graph then o writes beside the selected capture, prints its path and only calls the browser seam", async () => {
   const root = mkdtempSync(join(tmpdir(), "tesota-html-shell-"));
   const sessions = join(root, "sessions"); mkdirSync(sessions);
   const credentials = new InMemoryCredentialStore();
@@ -32,6 +32,11 @@ test("/graph --open writes beside the selected capture, prints its path and only
     ].map(v => JSON.stringify(v)).join("\n") + "\n");
     send("/resume"); await terminal.until("HTML graph request"); terminal.type("\r"); await terminal.until("HTML receipt");
     send("/graph --open lights-complete");
+    await terminal.until("Use: /graph [--plain] [name]");
+    expect(opened).toEqual([]);
+    send("/graph lights-complete");
+    await terminal.until("! BREAK DarkWhenLocked");
+    terminal.type("o");
     const path = join(root, "lights-complete.html");
     await terminal.until("lights-complete.html");
     expect(existsSync(path)).toBe(true);
@@ -40,7 +45,7 @@ test("/graph --open writes beside the selected capture, prints its path and only
     expect(readFileSync(path, "utf8")).toContain("Content-Security-Policy");
     expect(Object.keys(require.cache).filter(path => /[/\\]cytoscape[/\\]/u.test(path))).toEqual([]);
   } finally {
-    send("/quit"); await running;
+    terminal.type("\x1b"); send("/quit"); await running;
     rmSync(root, { recursive: true, force: true });
   }
 }, 30_000);

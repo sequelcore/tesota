@@ -84,3 +84,30 @@ test("panning through half a wide canvas cell preserves the box border column", 
   const row = terminalText(component.render(40)[4] ?? "");
   expect(visibleWidth(row.slice(0, row.indexOf("│")))).toBe(7);
 });
+
+test("selected state shows the model rule verbatim through terminal sanitization", async () => {
+  const data = JSON.parse(readFileSync(fixture, "utf8"));
+  const definition = 'door = "locked" => lamp = "off" /\\ x = "</script>"';
+  data.binding = { modelHash: "bound" };
+  data.ruleDefinitions = { modelHash: "bound", properties: { DarkWhenLocked: definition } };
+  const { component } = await viewer(JSON.stringify(data));
+  const text = screen(component, 180);
+  expect(text).toContain("Rule, from the model:");
+  expect(text).toContain('door = "locked" => lamp = "off"');
+  expect(text).toContain('x =');
+  expect(text).toContain('"</script>"');
+});
+
+test("o keeps a long written path copyable at an 80-column width", async () => {
+  const view = await captured();
+  const path = 'C:\\sessions\\' + 'a'.repeat(160) + '.html';
+  const component = new ModelViewer({ theme, subject: "Lights", rows: () => 20,
+    load: async () => view, browser: async (_signal, written) => { written(path); },
+    close: () => undefined, redraw: () => undefined });
+  await Promise.resolve();
+  component.handleInput("o");
+  await Promise.resolve();
+  const rows = component.render(80).map(terminalText);
+  expect(rows.slice(-4, -1).map(row => row.trim()).join("")).toBe(path);
+  expect(rows.at(-1)).toContain("o browser");
+});

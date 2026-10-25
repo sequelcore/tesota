@@ -13,6 +13,7 @@ export interface ModelViewerOptions {
   readonly rows: () => number;
   /** One request, one worker; the signal stops it when the view is no longer wanted. */
   readonly load: (request: ViewRequest, signal: AbortSignal) => Promise<ModelView>;
+  readonly browser?: (signal: AbortSignal, written: (path: string) => void) => Promise<void>;
   readonly close: () => void;
   /** Draws the shell again once a view arrives. */
   readonly redraw: () => void;
@@ -113,6 +114,7 @@ export class ModelViewer implements Component {
   #search: { readonly query: string; readonly matches: readonly string[]; index: number } | undefined;
   #controller: AbortController | undefined;
   #closed = false;
+  #browserController: AbortController | undefined;
   #reveal = true;
   #drag: { readonly x: number; readonly y: number; readonly pan: readonly [number, number] } | undefined;
   #canvas = { x: 0, y: header, w: 1, h: 1 };
@@ -149,6 +151,7 @@ export class ModelViewer implements Component {
   /** Releases the worker when either the viewer or its owning shell closes. */
   dispose(): void {
     this.#closed = true;
+    this.#browserController?.abort();
     this.#controller?.abort();
     this.#controller = undefined;
   }
@@ -311,6 +314,7 @@ export class ModelViewer implements Component {
     ["n", () => { this.#jump(1); }],
     ["p", () => { this.#jump(-1); }],
     ["t", () => { this.#toggleTrace(); }],
+    ["o", () => { this.#browser(); }],
     ["enter", () => { if (this.#trace === undefined) this.#drill(); }],
     ["tab", () => { this.#step(1); }],
     ["shift+tab", () => { this.#step(-1); }],
@@ -321,6 +325,23 @@ export class ModelViewer implements Component {
     ["pageUp", () => { this.#panelTop = Math.max(0, this.#panelTop - 8); }],
     ["pageDown", () => { this.#panelTop += 8; }],
   ];
+
+  #browser(): void {
+    if (this.#browserController !== undefined || this.options.browser === undefined) return;
+    const controller = new AbortController();
+    this.#browserController = controller;
+    this.#notice = "Writing HTML…";
+    this.options.browser(controller.signal, path => {
+      if (this.#closed) return;
+      this.#notice = path;
+      this.options.redraw();
+    }).catch((error: unknown) => {
+      if (!this.#closed) this.#notice += ` · ${error instanceof Error ? error.message : String(error)}`;
+    }).finally(() => {
+      this.#browserController = undefined;
+      if (!this.#closed) this.options.redraw();
+    });
+  }
 
   handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
     const { x, y, w, h } = this.#canvas;
@@ -404,10 +425,11 @@ export class ModelViewer implements Component {
   /** The notice or the open prompt, then the keys. */
   #bottom(width: number): string[] {
     const { theme } = this.options;
-    const keys = theme.fg("dim", fit(`detail ${this.#detail + 1}/3 · pan ${this.#pan[0]},${this.#pan[1]} · arrows/drag pan · +/- detail · g group · Enter drill · `
+    const keys = theme.fg("dim", fit(`o browser · detail ${this.#detail + 1}/3 · pan ${this.#pan[0]},${this.#pan[1]} · arrows/drag pan · +/- detail · g group · Enter drill · `
       + "n/p break · t trace · / search · Tab state · PgUp/PgDn variables · Esc back", width));
     const prompt = this.#prompt;
-    if (prompt === undefined) return [theme.fg(this.#notice.startsWith("!") ? "error" : "muted", oneLine(this.#notice)), keys];
+    if (prompt === undefined) return [...wrapped(this.#notice, width).map(line =>
+      theme.fg(this.#notice.startsWith("!") ? "error" : "muted", line)), keys];
     const asked = prompt.kind === "group"
       ? `Group by: up to two variables, comma-separated; empty for each state (now ${oneLine(this.#view?.projection.join(", ") ?? "") || "each state"})`
       : "Search reached states: a fingerprint, a variable's value or an invariant; Enter for the next match";
@@ -527,6 +549,12 @@ export class ModelViewer implements Component {
     const placed = this.#layoutOf(view);
     const lines: Line[] = [{ text: `State ${id}`, role: "accent" },
       breaks.length > 0 ? { text: `! BREAK ${breaks.join(", ")}`, role: "error" } : { text: "No violation reported for this state", role: "muted" },
+      ...breaks.flatMap(name => {
+        const definitions = view.ruleDefinitions;
+        const definition = definitions !== undefined && Object.hasOwn(definitions, name) ? definitions[name] : undefined;
+        return definition === undefined ? [] : [{ text: "Rule, from the model:", role: "muted" as ThemeColor },
+          ...terminalText(definition).split("\n").map(text => ({ text, role: "text" as ThemeColor }))];
+      }),
       ...step === undefined ? [] : [{ text: `TLC trace step ${view.trace.indexOf(step) + 1}: ${terminalText(step.action)}`, role: "muted" as ThemeColor }],
       ...group === undefined ? [] : [{ text: `In group ${placed.byGroup.get(group.id)?.number ?? "?"}: ${this.#count(group.members.length)} members`, role: "muted" as ThemeColor }],
       { text: "", role: "text" }, { text: "Variables", role: "text" },
