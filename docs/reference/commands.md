@@ -12,6 +12,7 @@
 | `tesota accounts login <provider>@<name>` | Signs an account in again |
 | `tesota accounts remove <provider>@<name>` | Removes an account no setting or agent type names |
 | `tesota graph --plain <manifest>` | Prints the captured model graph, its default grouping, full variables and TLC's concrete trace without a terminal UI |
+| `tesota graph --html <manifest>` | Writes a self-contained HTML viewer beside the capture and prints its absolute path; does not launch a browser |
 | `tesota --version` | Prints the version |
 
 | Option | For | |
@@ -37,8 +38,25 @@ counts members with reported violations, not the number of properties.
 Partial counts are lower bounds; zero reports do not establish safety.
 Grouped transitions are not an execution. Only TLC's concrete trace is.
 
-Parsing and grouping run in a disposable worker. Stopping the command stops
-that worker. Captures over the graph limits or viewer responses over 64 MiB
+`tesota graph --html <manifest>` writes `<manifest-stem>.html`: for example,
+`capture.manifest.json` becomes `capture.manifest.html`, beside the capture.
+The file includes Cytoscape.js, the viewer and graph data. Open it from
+`file://` or copy it to another machine: it needs no server or network.
+Its Content Security Policy blocks network access; model labels stay text.
+The file contains full captured variables, so share it as carefully as the
+capture itself. Running the command again replaces the HTML file.
+
+In the page, choose up to two ordered grouping variables. Expand a group to
+show its members; Fold returns to its group. Choose a member to see every
+variable. Search covers states, actions, properties and values. Toggle
+**TLC concrete trace** for its ordered steps and changed variables; those
+concrete steps alone are an execution, not the grouped graph. Drag and the
+mouse wheel pan and zoom; focus the graph for arrow-key panning and `+`/`-`
+zooming. **Fit graph** resets the viewport. Light and dark themes follow the
+system preference.
+
+Parsing, grouping and HTML writing run in a disposable worker. Stopping the
+command stops that worker. Captures over the graph limits or viewer responses over 64 MiB
 are refused; the raw artifacts remain available. These viewer limits do not
 change verification results.
 
@@ -54,7 +72,7 @@ change verification results.
 | `/new` | Start another session beside this one |
 | `/resume` | Open an earlier session of this folder |
 | `/agents` | Open the dashboard of sessions |
-| `/graph [--plain] [name]` | Open a [model graph](../guides/receipts.md#model-graph-previews) a receipt captured; `--plain` appends its text |
+| `/graph [--plain\|--open] [name]` | Open a [model graph](../guides/receipts.md#model-graph-previews) a receipt captured; `--plain` appends its text; `--open` writes HTML, prints its path and opens the system browser |
 | `/compact` | Summarize the older conversation |
 | `/mcp` | MCP servers: state, reconnect, sign in and out; also `/mcp login\|logout\|reconnect <server>` |
 | `/quit` | End the shell |

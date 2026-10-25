@@ -34,6 +34,8 @@ import type { QuestionResponder } from "../questions.ts";
 export interface AppOptions {
   readonly cwd: string;
   readonly terminal?: Terminal;
+  /** System browser boundary; tests supply a recorder instead of launching a browser. */
+  readonly openGraphFile?: (path: string) => Promise<void>;
   /** The operator's credentials; the engine's own file when not given. */
   readonly credentials?: CredentialStore;
   /** The models over those credentials; the engine's when not given. */
@@ -322,7 +324,11 @@ export async function runApp(options: AppOptions): Promise<void> {
   const graphCommand = async (args: string): Promise<void> => {
     const words = args.split(/\s+/u).filter((word) => word !== "");
     const plain = words.includes("--plain");
-    const named = words.find((word) => word !== "--plain");
+    const open = words.includes("--open");
+    if ((plain && open) || words.filter(word => !["--plain", "--open"].includes(word)).length > 1 || words.some(word => word.startsWith("--") && !["--plain", "--open"].includes(word))) {
+      shell.note("Use: /graph [--plain|--open] [name]", "warning"); return;
+    }
+    const named = words.find((word) => !["--plain", "--open"].includes(word));
     const graphs = sessionGraphs(attached.session.history());
     const stem = (manifest: string): string => basename(manifest).replace(/\.manifest\.json$/u, "");
     const graph = graphs.flatMap(({ subject, capture }) => capture?.status === "captured" ? [{ subject, manifest: capture.manifest }] : [])
@@ -333,6 +339,15 @@ export async function runApp(options: AppOptions): Promise<void> {
         : newest === undefined ? "No captured graph in this session: a model check with TLC captures one."
           : newest.capture === undefined || newest.capture.status === "captured" ? "Graph unavailable: no capture" : `Graph ${newest.capture.status}: ${terminalText(newest.capture.reason)}`,
       "warning");
+      return;
+    }
+    if (open) {
+      const { writeModelViewHtml, openGraphHtml } = await import("../../../../src/model-view-process.ts");
+      try {
+        const path = await writeModelViewHtml(graph.manifest, new AbortController().signal);
+        shell.note(terminalText(path));
+        await (options.openGraphFile ?? openGraphHtml)(path);
+      } catch (error) { shell.note(terminalText(error instanceof Error ? error.message : String(error)), "warning"); }
       return;
     }
     const [{ appendOnlyText, fitsFullScreen, fullScreen, ModelViewer }, { loadModelView }] =
@@ -616,7 +631,7 @@ export async function runApp(options: AppOptions): Promise<void> {
       });
     } },
     "/agents": { description: "Open the sessions dashboard", run: () => { agents(); return Promise.resolve(); } },
-    "/graph": { description: "Open a model graph a receipt captured", argumentHint: "[--plain] [name]", run: graphCommand },
+    "/graph": { description: "Open a model graph a receipt captured", argumentHint: "[--plain|--open] [name]", run: graphCommand },
     "/settings": { description: "Change terminal mode and thinking", run: async () => {
       const picked = await shell.pick("Settings", [
         { value: "mode", label: `Terminal: ${settings.tuiMode ?? "fullscreen"}`, description: "fullscreen or inline, from the next start" },

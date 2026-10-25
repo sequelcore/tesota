@@ -1,10 +1,13 @@
 import { conservesCounts, partitionWeights } from "./verification/group-count-rule.js";
-import { stateVariables, type ReachedGraph, type TraceState } from "./model-graph.js";
+import type { ReachedGraph, TraceState } from "./model-graph.js";
+import { stateVariables } from "./model-state.js";
 
 export interface ViewRequest {
   readonly projection?: readonly string[];
   /** Fingerprints obtained by drilling into a reached group. */
   readonly members?: readonly string[];
+  /** Project these groups as individual states; all other groups keep their edge multiplicities. */
+  readonly expanded?: readonly string[];
   readonly search?: string;
 }
 export interface ViewState {
@@ -73,9 +76,11 @@ export function buildModelView(graph: ReachedGraph, reports: { readonly trace: r
   if (scope !== undefined && [...scope].some(id => !ids.has(id))) throw new Error("Unknown drill member");
   const states = all.filter(s => scope === undefined || scope.has(s.fingerprint));
   const groups = new Map<string, ViewGroup>(), membership = new Map<string, string>();
+  const expanded = new Set(request.expanded);
   for (const state of states) {
-    const path = projection.map(k => [k, state.variables[k] ?? "(missing)"] as const);
-    const id = projection.length === 0 ? state.fingerprint : JSON.stringify(path);
+    let path = projection.map(k => [k, state.variables[k] ?? "(missing)"] as const);
+    let id = projection.length === 0 ? state.fingerprint : JSON.stringify(path);
+    if (expanded.has(id)) { id = state.fingerprint; path = []; }
     let group = groups.get(id);
     if (group === undefined) { group = { id, path, members: [], violating: 0 }; groups.set(id, group); }
     group.members.push(state.fingerprint);

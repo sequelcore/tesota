@@ -41,6 +41,35 @@ Counts follow the capture: a partial exploration's are lower bounds.
 `/graph --plain`, the inline shell, and a terminal smaller than 40×12 append
 the graph's text rendering to the conversation instead.
 
+### Explore a capture in the browser
+
+Use `/graph --open` for the newest capture, or `/graph --open <name>` for a
+named one. It writes a self-contained HTML file beside the capture, prints
+its absolute path and opens the system browser. Nothing stays running in
+Tesota to serve the page. If opening the browser fails, the printed file
+still exists.
+
+For SSH or headless use:
+
+```sh
+tesota graph --html /path/to/capture.manifest.json
+```
+
+This prints `/path/to/capture.manifest.html` without opening a browser.
+Copy the file to a machine with a browser and open it directly. All code,
+Cytoscape.js and graph data are inline: no server, CDN or network is needed.
+The file contains the full captured variables; treat it like the capture
+when sharing it. Writing it again replaces the HTML file.
+
+The page uses the same grouping and conserved counts as the text viewer.
+Choose up to two variables, expand or fold groups, inspect each state's
+variables, or search by state, action, property or value. `! BREAK` counts
+reported violating members; it does not label every member of a mixed group
+as violating. Partial counts remain lower bounds, and zero reports never
+establish safety. Toggle TLC's concrete trace to see the only execution
+shown, with its steps and changed variables. Mouse pan and zoom, arrow keys
+and `+`/`-` with the graph focused, and system light/dark themes work offline.
+
 ## For a pull request
 
 Commit the change, then, in the folder where the session ran:

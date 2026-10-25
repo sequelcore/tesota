@@ -1,3 +1,4 @@
+import { stateVariables } from "./model-state.js";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
@@ -24,22 +25,6 @@ export interface GraphState { readonly fingerprint: string; readonly valuation: 
 export interface GraphEdge { readonly from: string; readonly to: string; readonly action: string; }
 export interface TraceState { readonly fingerprint: string; readonly action: string; readonly valuation: string; }
 export interface ReachedGraph { readonly states: GraphState[]; readonly edges: GraphEdge[]; }
-
-/** TLC state assignments, including multiline records, sets, tuples and functions. */
-export function stateVariables(lines: readonly string[]): Map<string, string> {
-  const variables = new Map<string, string>();
-  let current: string | undefined;
-  for (const line of lines) {
-    const assignment = /^(?:\/\\\s+)?([A-Za-z_][\w]*)\s*=\s*(.*)$/u.exec(line.trim());
-    if (assignment !== null && (line.trimStart().startsWith("/\\") || variables.size === 0)) {
-      current = assignment[1] ?? "";
-      variables.set(current, assignment[2] ?? "");
-    } else if (current !== undefined && line.trim() !== "") {
-      variables.set(current, `${variables.get(current) ?? ""} ${line.trim()}`);
-    }
-  }
-  return variables;
-}
 
 function valuationKey(valuation: string): string {
   return JSON.stringify([...stateVariables(valuation.split(/\r?\n/u))].sort(([a], [b]) => a.localeCompare(b)));
