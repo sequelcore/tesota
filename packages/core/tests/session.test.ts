@@ -30,6 +30,24 @@ afterEach(async () => { await Promise.all(open.splice(0).map((session) => sessio
 
 const folder = (prefix = "tesota-core-session-"): string => mkdtempSync(join(tmpdir(), prefix));
 
+/**
+ * Polls until the child has written `file.txt` in `sessions` and the session file it names holds `text`, and returns that file's path.
+ * Either file may be missing or partly written meanwhile (a race on Windows, #659), so a failed read polls again; only `limitMs` fails it.
+ */
+async function sessionFileWith(sessions: string, text: string, limitMs = 15_000): Promise<string> {
+  const pathFile = join(sessions, "file.txt");
+  const deadline = Date.now() + limitMs;
+  for (;;) {
+    try {
+      const path = readFileSync(pathFile, "utf8");
+      // Only whole lines count: a line still being written may hold `text` and be discarded by recovery.
+      if (readFileSync(path, "utf8").split("\n").slice(0, -1).some((line) => line.includes(text))) return path;
+    } catch { /* not there yet, or partly written */ }
+    if (Date.now() > deadline) throw new Error(`Waited ${limitMs} ms for ${pathFile} to name a session file containing ${text}`);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
 for (const engine of [tesotaEngine]) {
   describe(engine.name, () => {
     test("a resumed session has its conversation and usage, and goes on from them", async () => {
@@ -359,11 +377,12 @@ describe("recovery after the process was killed", () => {
     const sessions = folder("tesota-core-sessions-");
     const running = Bun.spawn(["bun", join(import.meta.dir, "session-child.ts"), "stream", cwd, sessions], { stdout: "ignore", stderr: "inherit" });
     const pathFile = join(sessions, "file.txt");
-    while (!existsSync(pathFile) || !readFileSync(readFileSync(pathFile, "utf8"), "utf8").includes("\"type\":\"request\"")) {
-      await new Promise((resolve) => setTimeout(resolve, 20));
+    try {
+      await sessionFileWith(sessions, "\"type\":\"request\"");
+    } finally {
+      running.kill("SIGKILL");
+      await running.exited;
     }
-    running.kill("SIGKILL");
-    await running.exited;
     const resumed = openSession(readFileSync(pathFile, "utf8"), scriptless());
     open.push(resumed);
     expect(resumed.messages().map((message) => message.role)).toEqual(["user"]);
