@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { win32 } from "node:path";
 import { runProcess } from "./process.js";
+import { terminalText } from "./terminal-text.js";
 import type { ModelView, ViewRequest } from "./model-view.js";
 
 /** One request, one disposable process. Cancellation waits for runProcess's tree release. */
@@ -60,7 +61,7 @@ export async function modelViewCommand(args: readonly string[]): Promise<void> {
   process.once("SIGINT", stop);
   try {
     const text = args[0] === "--html" ? await writeModelViewHtml(args[1], controller.signal)
-      : (await loadModelView(args[1], {}, controller.signal)).plain;
+      : terminalText((await loadModelView(args[1], {}, controller.signal)).plain);
     await new Promise<void>((resolve, reject) => {
       process.stdout.write(`${text}\n`, error => { if (error) reject(error); else resolve(); });
     });

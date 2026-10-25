@@ -3,7 +3,7 @@ import { writeFile } from "node:fs/promises";
 import { extname, resolve } from "node:path";
 import { modelHtmlBundle } from "../packages/core/scripts/model-html-bundle.js" with { type: "macro" };
 import type { ReachedGraph, TraceState } from "./model-graph.js";
-import type { ModelView } from "./model-view.js";
+import { GROUPED_MOVES, type ModelView } from "./model-view.js";
 
 export interface HtmlModel {
   readonly model: string;
@@ -22,7 +22,7 @@ export async function writeModelHtml(manifest: string, data: HtmlModel): Promise
   const json = JSON.stringify(data).replace(/[<>&\u2028\u2029]/gu, c => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`);
   const csp = `default-src 'none'; script-src 'sha256-${hash(code)}'; style-src-elem 'sha256-${hash(css)}'; style-src-attr 'none'; img-src 'none'; connect-src 'none'; base-uri 'none'; form-action 'none'`;
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Tesota model graph</title><style id="__________cytoscape_stylesheet">${css}</style></head><body>
-<header><h1 id="title"></h1><p id="summary-values"></p><div id="summary-rules"></div><p id="explainer" class="help">TLC, the model checker, tried every order of the model's actions it could reach. Each box is a situation the system can be in, called a state. Arrows between groups are possible moves, not one run. Only the failing run is a real execution.</p><p id="caveats"></p><p id="counts" role="status"></p></header>
+<header><h1 id="title"></h1><p id="summary-values"></p><div id="summary-rules"></div><p id="explainer" class="help">TLC, the model checker, tried every order of the model's actions it could reach. Each box is a situation the system can be in, called a state. ${GROUPED_MOVES} Only the failing run is a real execution.</p><p id="caveats"></p><p id="counts" role="status"></p></header>
 <nav aria-label="Graph controls"><label>Group by <select id="first"></select></label><label>Then <select id="second"></select></label><label>Search <input id="search" type="search" placeholder="Find a value, action or rule"></label><button id="trace-toggle" aria-expanded="false" aria-controls="trace" title="TLC's counterexample, the only real execution shown">Show the failing run</button><button id="fit">Fit</button><button id="download-png">Download PNG</button><button id="panel-toggle" aria-expanded="true" aria-controls="panel">Hide panel</button></nav>
 <main><div id="graph" tabindex="0" role="region" aria-label="Model graph; arrows pan, plus and minus zoom"></div><aside id="panel" aria-label="Graph inspection"><div id="details"><h2>Inspect the graph</h2><p>Choose a group or state.</p></div><div class="legend"><p>Box: a situation (state) · start: where it begins</p><p>Arrow: a possible move, not a story</p><p class="break">⚠: breaks a rule</p><p>Highlighted path: the failing run, a real story</p><p class="help">Drag to pan; wheel to zoom. Focus graph: arrows pan, +/− zoom.</p></div><p id="grouping"></p><section id="groups" aria-label="Groups and states"></section><section id="trace" aria-label="Failing run" hidden></section></aside></main>
 <script id="model-data" type="application/json">${json}</script><script>${code}</script></body></html>`;

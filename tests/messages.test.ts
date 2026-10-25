@@ -75,7 +75,7 @@ it("keeps the graph preview visible in collapsed and expanded receipts without c
   const published = receiptGraphEntry("tui", receipt, [{ subject: model.path, ...model.capture === undefined ? {} : { capture: model.capture } }]);
   for (const width of [80, 32]) for (const expanded of [false, true]) {
     const rows = shown(published.customType, published.type === "custom_message" ? published.details : published.data, width, expanded).join("\n");
-    expect(rows).toContain("9 reached");
+    expect(rows).toContain("9 states reached");
     expect(rows).toContain("Open graph");
     expect(rows).toContain("1 -> 2");
   }

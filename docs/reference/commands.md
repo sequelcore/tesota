@@ -33,10 +33,16 @@ ordered default grouping of up to two variables in a header comment:
 
 Without a valid declaration, grouping uses `pc`, then the variable with the
 fewest distinct reached values between 2 and 16 (name breaks ties). If none
-qualifies, states remain individual. Only reached groups appear. `! BREAK`
-counts members with reported violations, not the number of properties.
+qualifies, states remain individual. Only reached groups appear. `⚠ breaks`
+names reported broken rules; the count beside it counts states with reported
+violations, not the number of rules or a verdict on the whole group.
 Partial counts are lower bounds; zero reports do not establish safety.
 Grouped transitions are not an execution. Only TLC's concrete trace is.
+
+In the full-screen terminal viewer, `f` resets pan and centers a drawing
+smaller than the canvas. Labels wrap into two lines; select a state to read
+its full group label and exact variables in the panel. The one-line key bar
+keeps `o browser` and `Esc back`; more keys are in the scrollable panel.
 
 `tesota graph --html <manifest>` writes `<manifest-stem>.html`: for example,
 `capture.manifest.json` becomes `capture.html`, beside the capture.

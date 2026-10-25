@@ -35,7 +35,7 @@ test("/graph then o writes beside the selected capture, prints its path and only
     await terminal.until("Use: /graph [--plain] [name]");
     expect(opened).toEqual([]);
     send("/graph lights-complete");
-    await terminal.until("! BREAK DarkWhenLocked");
+    await terminal.until("⚠ breaks DarkWhenLocked");
     terminal.type("o");
     const path = join(root, "lights-complete.html");
     await terminal.until("lights-complete.html");
