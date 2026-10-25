@@ -4,7 +4,7 @@ import { readdirSync, readFileSync, rmSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { tesotaHome } from "../../../../src/home.ts";
 import { provideHost } from "../../../../src/host.ts";
-import { entryGraphs, entryReceipt, isReceipt, type Receipt, receiptStanding } from "../../../../src/receipt.ts";
+import { entryReceipt, isReceipt, type Receipt, receiptStanding, sessionGraphs } from "../../../../src/receipt.ts";
 import { terminalText } from "../../../../src/terminal-text.ts";
 import tesota from "../../../../src/tesota.ts";
 import { type AccountHands, accountRows, addAccount, type ClaudeCode, claudeOf, removeAccount, signInAgain } from "../accounts.ts";
@@ -315,7 +315,7 @@ export async function runApp(options: AppOptions): Promise<void> {
   const terminal = options.terminal ?? new ProcessTerminal();
   const mode = modeFor(settings);
   /**
-   * `/graph` (#592): a graph the shown session's receipts captured, newest first or by its name, read through step 3a's
+   * `/graph` (#592): a graph the shown session captured, newest first or by its name, read through step 3a's
    * disposable worker. It opens full-screen over the shell; with `--plain`, or in a terminal that cannot hold a full
    * screen, its text rendering is appended to the conversation instead.
    */
@@ -323,7 +323,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     const words = args.split(/\s+/u).filter((word) => word !== "");
     const plain = words.includes("--plain");
     const named = words.find((word) => word !== "--plain");
-    const graphs = entryGraphs(attached.session.history().flatMap((message) => message.role === "custom" ? [{ ...message, type: "custom_message" }] : []));
+    const graphs = sessionGraphs(attached.session.history());
     const stem = (manifest: string): string => basename(manifest).replace(/\.manifest\.json$/u, "");
     const graph = graphs.flatMap(({ subject, capture }) => capture?.status === "captured" ? [{ subject, manifest: capture.manifest }] : [])
       .find(({ manifest }) => named === undefined || stem(manifest) === named);

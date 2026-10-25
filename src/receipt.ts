@@ -490,12 +490,35 @@ export function receiptEntry(mode: string | undefined, receipt: Receipt):
 export interface ReceiptGraph { readonly subject: string; readonly capture?: GraphCapture; }
 export interface ReceiptGraphMessage { readonly receipt: Receipt; readonly graphs: readonly ReceiptGraph[]; }
 
-/** The graphs a session's receipts carry, the newest receipt's first: what `/graph` opens. */
+/** The graphs a session's receipts carry, the newest receipt's first. */
 export function entryGraphs(entries: readonly ReceiptEntry[]): ReceiptGraph[] {
   return [...entries].reverse().flatMap((entry) => {
     const graphs = entry.customType === "tesota-receipt-graphs" && entry.type === "custom_message" && typeof entry.details === "object" && entry.details !== null
       ? Reflect.get(entry.details, "graphs") : undefined;
     return Array.isArray(graphs) ? graphs as ReceiptGraph[] : [];
+  });
+}
+
+/** A message of a session's history, as `sessionGraphs` reads it. */
+export interface HistoryMessage { readonly role: string; readonly customType?: string; readonly toolName?: string; readonly details?: unknown }
+
+/**
+ * The graphs a session captured, newest first, each capture once: what `/graph` opens. Its receipts carry some, but a
+ * run that ends without a receipt, such as a read-only request, and print mode's receipt v2 carry none, so each
+ * `check_model` result's own capture counts too.
+ */
+export function sessionGraphs(messages: readonly HistoryMessage[]): ReceiptGraph[] {
+  const seen = new Set<string>();
+  return [...messages].reverse().flatMap((message): ReceiptGraph[] => {
+    if (message.role === "custom") return entryGraphs([{ ...message, type: "custom_message" }]);
+    if (message.role !== "toolResult" || message.toolName !== "check_model" || typeof message.details !== "object" || message.details === null) return [];
+    const { path, capture } = message.details as { path?: unknown; capture?: GraphCapture };
+    return capture === undefined ? [] : [{ subject: typeof path === "string" ? path : "model", capture }];
+  }).filter(({ capture }) => {
+    if (capture?.status !== "captured") return true;
+    if (seen.has(capture.manifest)) return false;
+    seen.add(capture.manifest);
+    return true;
   });
 }
 

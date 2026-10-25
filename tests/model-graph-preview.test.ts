@@ -4,7 +4,7 @@ import { basename, join } from "node:path";
 import { expect, it } from "vitest";
 import { captureGraph, type GraphCapture } from "../src/model-graph.js";
 import { graphPreviewRows } from "../src/messages.js";
-import { entryGraphs } from "../src/receipt.js";
+import { entryGraphs, sessionGraphs } from "../src/receipt.js";
 
 const failure = "\nError: Invariant Safe is violated.\nError: The behavior up to this point is:\nState 1: <Initial predicate>\nx = 0\n\nState 2: <Next>\nx = 1\n\n";
 
@@ -71,4 +71,18 @@ it("names /graph with the capture's stem, and finds a session's graphs newest re
   const entry = (subject: string) => ({ type: "custom_message", customType: "tesota-receipt-graphs", details: { receipt: {}, graphs: [{ subject, capture }] } });
   expect(entryGraphs([entry("old"), { type: "custom_message", customType: "tesota-receipt", details: {} }, entry("new")]).map((graph) => graph.subject))
     .toEqual(["new", "old"]);
+});
+
+it("finds a graph a model check captured without a receipt carrying it, as a read-only or print-mode run leaves it, each capture once", async () => {
+  const capture = await captured();
+  const other = await captured();
+  const check = (path: string, from: GraphCapture) => ({ role: "toolResult", toolName: "check_model", details: { path, capture: from } });
+  const receipt = { role: "custom", customType: "tesota-receipt-graphs", details: { receipt: {}, graphs: [{ subject: "models/A.tla", capture }] } };
+  // A read-only request ends without a receipt: only the check's result holds the capture.
+  expect(sessionGraphs([check("models/A.tla", capture)]).map((graph) => graph.subject)).toEqual(["models/A.tla"]);
+  // A receipt carrying the same capture names it once; a later check comes first.
+  expect(sessionGraphs([check("models/A.tla", capture), receipt, check("models/B.tla", other)]).map((graph) => graph.subject))
+    .toEqual(["models/B.tla", "models/A.tla"]);
+  expect(sessionGraphs([{ role: "toolResult", toolName: "read", details: { path: "a", capture } }, { role: "toolResult", toolName: "check_model", details: null }]))
+    .toEqual([]);
 });
