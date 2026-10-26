@@ -2,6 +2,10 @@
 
 datatype Standing = decide | gap | holds | opinion
 
+datatype ProofOutcome = passed | failed | vacuous | timed_out | cancelled | not_started
+
+datatype ModelRun = passed | vacuous | timed_out | cancelled | not_started | violated | malformed
+
 function verdictTone(decisions: int, failed: bool, gaps: int): string
   requires (decisions >= 0)
   requires (gaps >= 0)
@@ -54,6 +58,39 @@ lemma methodStanding_ensures(held: int, partly: int, failed: int, runs: int)
   ensures ((methodStanding(held, partly, failed, runs) == "partly") <==> (((held + partly) > 0) && (held < runs)))
   ensures ((methodStanding(held, partly, failed, runs) == "fails") <==> (((held + partly) == 0) && (failed > 0)))
   ensures ((methodStanding(held, partly, failed, runs) == "none") <==> (((held + partly) + failed) == 0))
+{
+}
+
+function checkEnd(kind: string, stale: bool, outcome: ProofOutcome, run: ModelRun, faultPasses: bool): string
+{
+  if stale then
+    "gap"
+  else
+    if (kind == "model") then
+      if (run.violated? || (run.passed? && faultPasses)) then
+        "failed"
+      else
+        if (outcome.passed? && run.passed?) then
+          "passed"
+        else
+          "gap"
+    else
+      if outcome.failed? then
+        "failed"
+      else
+        if outcome.passed? then
+          "passed"
+        else
+          "gap"
+}
+
+lemma checkEnd_ensures(kind: string, stale: bool, outcome: ProofOutcome, run: ModelRun, faultPasses: bool)
+  ensures ((checkEnd(kind, stale, outcome, run, faultPasses) == "failed") <==> (!(stale) && (((kind == "model") && (run.violated? || (run.passed? && faultPasses))) || ((kind != "model") && outcome.failed?))))
+  ensures ((checkEnd(kind, stale, outcome, run, faultPasses) == "passed") <==> ((!(stale) && outcome.passed?) && ((kind != "model") || (run.passed? && !(faultPasses)))))
+  ensures (((checkEnd(kind, stale, outcome, run, faultPasses) == "passed") || (checkEnd(kind, stale, outcome, run, faultPasses) == "failed")) || (checkEnd(kind, stale, outcome, run, faultPasses) == "gap"))
+  ensures (stale ==> (checkEnd(kind, stale, outcome, run, faultPasses) == "gap"))
+  ensures ((kind != "model") ==> (((outcome.vacuous? || outcome.not_started?) || outcome.timed_out?) || outcome.cancelled?) ==> (checkEnd(kind, stale, outcome, run, faultPasses) == "gap"))
+  ensures ((kind == "model") ==> ((((run.malformed? || run.vacuous?) || run.timed_out?) || run.cancelled?) || run.not_started?) ==> (checkEnd(kind, stale, outcome, run, faultPasses) == "gap"))
 {
 }
 

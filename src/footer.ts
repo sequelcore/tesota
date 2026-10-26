@@ -3,7 +3,7 @@ import { sep } from "node:path";
 import { type ContextUsage, type FooterData, QUESTION_STATUS, type Theme, type ThemeColor } from "./contract.js";
 import { type Component, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { GateProgress, GateStatus, Tally } from "./gate.js";
-import { addedAssumptions, allEvidence, coveredCount, type Finding, type Receipt, receiptDecisions, receiptFindings, type ReceiptStanding, receiptStanding,
+import { addedAssumptions, allEvidence, coveredCount, type Finding, modelEnd, type Receipt, receiptDecisions, receiptFindings, type ReceiptStanding, receiptStanding,
   receiptTone, type UnitEvidence, unverifiedWhy, verified } from "./receipt.js";
 import { elapsedTime, type EvidenceLevel, footerLayout } from "./verification/footer-rule.js";
 
@@ -59,7 +59,8 @@ function lineCount(uncovered: Receipt["uncovered"]): number {
 /** The models' parts of the receipt's row: how many were model-checked, how many still fail, and how many may be stale. */
 function modelParts(models: NonNullable<Receipt["models"]>): EvidencePart[] {
   const checked = models.filter(({ verdict }) => verdict === "proved").length;
-  const fails = models.filter(({ verdict }) => verdict === "no_progress" || verdict === "send_back").length;
+  // Only an observed violation fails (`modelEnd`); a model that couldn't be checked is one of the gaps counted as not checked.
+  const fails = models.filter((model) => modelEnd(model) === "failed").length;
   const stale = models.filter(({ staleness }) => staleness !== "current").length;
   return [...checked > 0 ? [part(plural(checked, "model checked", "models checked"), `${checked} modeled`, `model ${checked}`, "success")] : [],
     ...fails > 0 ? [part(plural(fails, "model fails", "models fail"), `${fails} model ✗`, `model ✗${fails}`, "error")] : [],

@@ -13,7 +13,7 @@ import type { Weakening } from "./verification-changes.js";
 import { attributionResolved, type StartState, type UnmeasuredPath } from "./request-fingerprint.js";
 import type { GateVerdict } from "./verification/gate-rule.js";
 import { clock } from "./operations.js";
-import { decisions, methodStanding, partlyHolds, pathCovered, runStanding, type Standing, verdictTone } from "./verification/verdict-rule.js";
+import { checkEnd, decisions, methodStanding, partlyHolds, pathCovered, runStanding, type Standing, verdictTone } from "./verification/verdict-rule.js";
 
 /**
  * What a run that changed files leaves the operator when it settles: each
@@ -604,12 +604,16 @@ export function contractFinding({ path, name, mutation }: ContractStrength): Fin
 }
 
 /**
- * Whether a check ran and showed the change wrong: a proof, command or model
- * the gate sent back or that made no progress (`gateVerdict`). One that could
- * not run, ran past its limit, was stopped or whose evidence is stale is the
- * operator's (`operator`): a gap, never a failure (`runStanding`).
+ * How a proof or command ended (`checkEnd`, proved), from its evidence:
+ * `failed` only when it ran and showed the change wrong, a gap when it
+ * couldn't run, checked nothing or is stale. A model's run is not read.
  */
-export const ranAndFailed = ({ verdict }: { readonly verdict: GateVerdict }): boolean => verdict === "send_back" || verdict === "no_progress";
+export const evidenceEnd = (kind: "proof" | "command", evidence: Evidence): ReturnType<typeof checkEnd> =>
+  checkEnd(kind, evidence.invalidated !== undefined, evidence.outcome, "not_started", false);
+
+/** How a design model ended (`checkEnd`): `failed` only on an observed violation or a planted fault it didn't catch. */
+export const modelEnd = ({ evidence, run, faults }: Pick<ModelResult, "evidence" | "run" | "faults">): ReturnType<typeof checkEnd> =>
+  checkEnd("model", evidence.invalidated !== undefined, evidence.outcome, run, faults.some(({ verdict }) => verdict === "passes"));
 
 /** A command's run as a finding: passed, still failing after it went back, or a gap because it did not run or is stale. */
 export function commandFinding({ command, verdict, evidence, failingTests }: Pick<Receipt["tests"][number],
@@ -618,8 +622,9 @@ export function commandFinding({ command, verdict, evidence, failingTests }: Pic
   if (evidence.invalidated === "content_changed") {
     return { standing: "gap", check: "tests", label: "Tests stale", subject: command, detail: staleEvidenceWords, more };
   }
-  if (verdict === "proved") return { standing: "holds", check: "tests", label: "Tests pass", subject: command, detail: "", more };
-  if (verdict === "operator") {
+  const end = evidenceEnd("command", evidence);
+  if (end === "passed" && verdict === "proved") return { standing: "holds", check: "tests", label: "Tests pass", subject: command, detail: "", more };
+  if (end !== "failed") {
     return { standing: "gap", check: "tests", label: "Tests did not run", subject: command, detail: `it ${why(evidence)}`, more };
   }
   return { standing: "decide", check: "tests", failed: true, label: "Tests fail", subject: command,
@@ -686,14 +691,18 @@ export function modelFinding(model: ModelResult): Finding {
       detail: `${modelHolds(model)}; ${linkWords[model.link]}`, more };
   }
   if (verdict === "operator") return { standing: "gap", check: "model", label: "Model not checked", subject: path, detail: modelWhy(model), more };
+  // Only an observed violation or a planted fault it didn't catch fails (`modelEnd`); a model that couldn't be checked is a gap.
+  if (modelEnd(model) !== "failed") {
+    return { standing: "gap", check: "model", label: model.run === "passed" ? "Model too weak" : "Model not checkable", subject: path,
+      detail: model.run === "passed" ? failingFaults(model) : modelWhy(model), more };
+  }
   if (counterexample !== undefined) {
     return { standing: "decide", check: "model", failed: true, label: "Model fails", subject: path, detail: counterexample.violation,
       more: [...counterexampleSteps(counterexample), ...more] };
   }
-  if (model.run === "passed") {
-    return { standing: "decide", check: "model", failed: true, label: "Model too weak", subject: path, detail: failingFaults(model), more };
-  }
-  return { standing: "decide", check: "model", failed: true, label: "Model not checkable", subject: path, detail: modelWhy(model), more };
+  return model.run === "passed"
+    ? { standing: "decide", check: "model", failed: true, label: "Model too weak", subject: path, detail: failingFaults(model), more }
+    : { standing: "decide", check: "model", failed: true, label: "Model fails", subject: path, detail: modelWhy(model), more };
 }
 
 /**
@@ -746,10 +755,10 @@ export function proofFinding({ path, verdict, evidence }: Pick<Receipt["proofs"]
       more: [checked(evidence)] };
   }
   const more = [...summary.at === undefined ? [] : [`at ${summary.at}`], checked(evidence)];
-  // A proof that could not run or is stale shows nothing about the change: a gap (`ranAndFailed`).
-  if (verdict === "operator") {
-    return { standing: "gap", check: "proof", label: evidence.invalidated === "content_changed" ? "Proof stale" : "Proof did not run",
-      subject: path, detail: summary.words, more };
+  // A proof that could not run, verified nothing or is stale shows nothing about the change: a gap (`evidenceEnd`).
+  if (evidenceEnd("proof", evidence) !== "failed") {
+    return { standing: "gap", check: "proof", label: evidence.invalidated === "content_changed" ? "Proof stale"
+      : evidence.outcome === "vacuous" ? "Proof proved nothing" : "Proof did not run", subject: path, detail: summary.words, more };
   }
   return { standing: "decide", check: "proof", failed: true, label: "Proof fails", subject: path, detail: summary.words, more };
 }
@@ -1026,8 +1035,8 @@ export function coveredCount(receipt: Receipt): number {
  * verified unit's changed paths, read per unit, never guessing for verified;
  * whether anything changed, from those paths, an unreadable inventory or a
  * change of comments alone; the proofs, commands and models that passed on
- * current content; whether one ran and failed (`ranAndFailed`), one that
- * could not run or is stale being a gap; its other gaps, an unreadable
+ * current content; whether one ran and showed the change wrong
+ * (`checkEnd`), one that couldn't be checked or is stale being a gap; its other gaps, an unreadable
  * inventory among them; what needs the operator; and whether it stopped.
  */
 export function receiptStanding(receipt: Receipt): ReceiptStanding {
@@ -1035,7 +1044,8 @@ export function receiptStanding(receipt: Receipt): ReceiptStanding {
   const evidence = allEvidence(receipt);
   const { proofs, tests, models = [] } = evidence;
   const passed = [...proofs, ...tests, ...models].filter(({ verdict, evidence: run }) => verdict === "proved" && run.invalidated === undefined).length;
-  const failed = [...proofs, ...tests, ...models].some(ranAndFailed);
+  const failed = [...proofs.map(({ evidence: run }) => evidenceEnd("proof", run)), ...tests.map(({ evidence: run }) => evidenceEnd("command", run)),
+    ...models.map(modelEnd)].includes("failed");
   const units = receiptUnits(receipt).filter(verified).map(fromFolder);
   const paths = units.flatMap(changedPaths);
   // An inventory Git couldn't read is a gap: nothing shows every path it changed was covered.
@@ -1099,11 +1109,11 @@ function methodRow(method: string, runs: readonly { readonly ran: Ran; readonly 
     text: runs.map(({ text }) => text).join("; ") };
 }
 
-/** How a proof, command or model that did not hold ended, in a word or two. */
-function notHeld(verdict: GateVerdict, evidence: Evidence): { readonly ran: Ran; readonly words: string } {
+/** How a proof, command or model that did not hold ended (`checkEnd`), in a word or two: only a failure is ✗. */
+function notHeld(end: ReturnType<typeof checkEnd>, evidence: Evidence): { readonly ran: Ran; readonly words: string } {
   if (evidence.invalidated === "content_changed") return { ran: "none", words: "stale" };
-  return verdict === "operator" ? { ran: "none", words: "did not run" }
-    : { ran: "failed", words: evidence.outcome === "vacuous" ? "verified nothing" : "fails" };
+  if (end === "failed") return { ran: "failed", words: "fails" };
+  return { ran: "none", words: evidence.outcome === "vacuous" ? "verified nothing" : "did not run" };
 }
 
 /** A count of `of` in which `held` hold, said as all of them or as how many of them. */
@@ -1114,11 +1124,11 @@ function methodRows(evidence: Pick<UnitEvidence, "proofs" | "tests" | "models" |
   const proofs = evidence.proofs.map(({ path, verdict, evidence: run }) => {
     const assumed = addedAssumptions(run.files, evidence.weakened);
     const ended = verdict === "proved" ? { ran: assumed === 0 ? "holds" as const : "partly" as const,
-      words: assumed === 0 ? "" : trusting(assumed) } : notHeld(verdict, run);
+      words: assumed === 0 ? "" : trusting(assumed) } : notHeld(evidenceEnd("proof", run), run);
     return { ran: ended.ran, text: [path, ended.words, clock(run.durationMs)].filter((part) => part !== "").join(" · ") };
   });
   const tests = evidence.tests.map(({ command, verdict, evidence: run }) => {
-    const ended = verdict === "proved" ? { ran: "holds" as const, words: "" } : notHeld(verdict, run);
+    const ended = verdict === "proved" ? { ran: "holds" as const, words: "" } : notHeld(evidenceEnd("command", run), run);
     return { ran: ended.ran, text: [command, ended.words, clock(run.durationMs)].filter((part) => part !== "").join(" · ") };
   });
   // A passing model is model-checked, about the model: never proved, and its row says whether anything links it to the code.
@@ -1129,7 +1139,7 @@ function methodRows(evidence: Pick<UnitEvidence, "proofs" | "tests" | "models" |
   const models = (evidence.models ?? []).map((model) => {
     const { path, verdict, link, writtenWithCode, evidence: run } = model;
     const ended = verdict === "proved" ? { ran: outright(model) ? "holds" as const : "partly" as const,
-      words: `model-checked, ${linkWords[link]}${writtenWithCode ? ", written with the code" : ""}` } : notHeld(verdict, run);
+      words: `model-checked, ${linkWords[link]}${writtenWithCode ? ", written with the code" : ""}` } : notHeld(modelEnd(model), run);
     return { ran: ended.ran, text: [path, ended.ran === "none" ? "not checked" : ended.words, clock(run.durationMs)].join(" · ") };
   });
   const noticing = evidence.exercises.filter(({ sensitivity }) => sensitivity === "fails_then_passes").length;

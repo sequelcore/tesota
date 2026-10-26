@@ -278,6 +278,35 @@ it("exports each standing with the result it observed, and refuses one no result
   }
 });
 
+it("never exports FAILED for a design model that never ran, as one whose header names no invariant", async () => {
+  const root = repository();
+  const spec = "---- MODULE Rule ----\n====\n";
+  mkdirSync(join(root, "models"));
+  writeFileSync(join(root, "models", "Rule.tla"), spec);
+  git(root, "add", "-A");
+  git(root, "commit", "-qm", "model");
+  const base = git(root, "rev-parse", "HEAD");
+  // As checkModel records a header it refuses before TLC starts: `malformed`, with an outcome of `failed` the gate sends back.
+  const refused = { path: "models/Rule.tla", language: "tla", header: { covers: [{ path: "src/rule.ts", names: [] }], invariants: [],
+    atomic: [], omits: [], faults: [] }, problems: ["its tesota-model header names no invariant"], run: "malformed", states: 0, faults: [],
+    staleness: "current", stale: [], writtenWithCode: false, link: "no_replay", evidence: { verifier: "tlc", claim: "", limits: "",
+      outcome: "failed", output: "its tesota-model header names no invariant", durationMs: 0, files: ["models/Rule.tla", "src/rule.ts"],
+      contentHash: contentHash([{ path: "models/Rule.tla", content: spec }, { path: "src/rule.ts", content: rule }]) } };
+  for (const verdict of ["send_back", "no_progress"] as const) {
+    const receipt = { ...verifiedReceipt(base), models: [{ ...refused, verdict }] } as Receipt;
+    // Its evidence is current, so only the standing decides the export.
+    expect(await subjectOf(root, receipt, "id")).toMatchObject({ stale: [], changedAfter: [] });
+    const out: string[] = [];
+    const errors: string[] = [];
+    const write = { out: (text: string) => { out.push(text); }, error: (text: string) => { errors.push(text); } };
+    expect(await receiptCommand(["--json"], root, holding(receipt), write), verdict).toBe(1);
+    expect(out, verdict).toEqual([]);
+    expect(errors.join(""), verdict).toContain("stands incomplete");
+    expect(await receiptCommand(["--json"], root, holding({ ...receipt, proofs: [] }), write), verdict).toBe(1);
+    expect(errors.pop(), verdict).toContain("stands unverified");
+  }
+});
+
 it("reports a design model stale when a file it covers changed after the run", async () => {
   const root = repository();
   const spec = "---- MODULE Rule ----\n====\n";

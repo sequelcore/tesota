@@ -92,11 +92,20 @@ it("names the model being checked, then sums up the models: checked, still faili
     header: { covers: [{ path: "src/stock.mjs", names: [] }], invariants: ["NeverOversold"], atomic: ["each await"], omits: ["failures"], faults: [] },
     evidence: { ...evidence("passed"), verifier: "tlc" }, faults: [], staleness: "possibly_stale", stale: ["src/stock.mjs"],
     writtenWithCode: false, link: "no_replay", verdict: "proved" };
+  // Still failing: TLC ran and found a counterexample, as a model whose check went back records it.
+  const violated: typeof model = { ...model, run: "violated", evidence: { ...evidence("failed"), verifier: "tlc" }, staleness: "current" };
   expect(words({ step: "settled", receipt: { ...emptyReceipt, models: [model] } })).toBe("○ receipt · 1 model checked · 1 model possibly stale");
-  expect(words({ step: "settled", receipt: { ...emptyReceipt, models: [{ ...model, verdict: "no_progress", staleness: "current" }] } }))
+  expect(words({ step: "settled", receipt: { ...emptyReceipt, models: [{ ...violated, verdict: "no_progress" }] } }))
     .toBe("! receipt · 1 model fails");
   expect(words({ step: "settled", receipt: { ...emptyReceipt, unresolvedQuestion: "Which option?",
-    models: [{ ...model, verdict: "send_back", staleness: "current" }] } })).toContain("1 model fails");
+    models: [{ ...violated, verdict: "send_back" }] } })).toContain("1 model fails");
+  // A model TLC could not read went back to the agent, but nothing ran: a gap, never a failure.
+  const malformed: typeof model = { ...model, run: "malformed", states: 0, evidence: { ...evidence("failed"), verifier: "tlc" }, staleness: "current" };
+  for (const verdict of ["send_back", "no_progress"] as const) {
+    const shown = words({ step: "settled", receipt: { ...emptyReceipt, models: [{ ...malformed, verdict }] } });
+    expect(shown).not.toContain("model fails");
+    expect(shown).toContain("1 not checked");
+  }
   expect(words({ step: "settled", receipt: { ...emptyReceipt, models: [{ ...model, verdict: "operator", staleness: "current" }] } }))
     .toBe("○ receipt · 1 not checked");
 });

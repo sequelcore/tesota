@@ -260,7 +260,7 @@ describe("receipts beyond the four", () => {
   });
 
   it("a model failure kept when generation ends is failed, not already sent back", () => {
-    const model = { path: "models/Stock.tla", language: "tla", problems: [], run: "violation", states: 2,
+    const model = { path: "models/Stock.tla", language: "tla", problems: [], run: "violated", states: 2,
       faults: [], link: "no_replay", staleness: "current", stale: [], writtenWithCode: false, verdict: "send_back",
       counterexample: { violation: "NeverNegative", steps: [] },
       header: { covers: [{ path: "src/stock.ts", names: [] }], invariants: ["NeverNegative"], atomic: [], omits: [], faults: [] },

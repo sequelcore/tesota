@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { commandFinding, type ModelResult, modelFinding, noEvidence, proofFinding, type Receipt, receiptDetailLines, receiptFindings, receiptStanding, receiptSummary,
   receiptTone, renderReceipt } from "../src/receipt.js";
 import type { Evidence } from "../src/evidence.js";
+import { modelOutcome } from "../src/verification/model-rule.js";
 import { emptyReceipt } from "./receipts.js";
 
 // What "verified" means on every surface (#668): evidence that passed, every changed path covered, no gap, nothing to decide.
@@ -71,10 +72,12 @@ describe("the receipt's standing (#668)", () => {
   const timedOut = { ...passing, verdict: "operator" as const, evidence: ran("timed_out") };
   const staleTest = { ...passing, verdict: "operator" as const, evidence: stale(passing.evidence) };
   const staleProof = { ...proof, verdict: "operator" as const, evidence: stale(proof.evidence) };
-  const model = (verdict: ModelResult["verdict"], run: ModelResult["run"]): ModelResult => ({ path: "models/Add.tla", language: "tla",
+  // Its evidence's outcome is the one the real check records for this run and these faults (`modelOutcome`).
+  const model = (verdict: ModelResult["verdict"], run: ModelResult["run"], faults: ModelResult["faults"] = []): ModelResult => ({
+    path: "models/Add.tla", language: "tla",
     header: { covers: [{ path: "src/add.ts", names: [] }], invariants: ["Safe"], atomic: [], omits: [], faults: [] }, problems: [],
-    evidence: { ...ran(run === "passed" ? "passed" : run === "violated" ? "failed" : run === "timed_out" ? "timed_out" : "not_started"),
-      verifier: "tlc" }, run, states: 9, faults: [], staleness: "current", stale: [], writtenWithCode: false, link: "no_replay", verdict,
+    evidence: { ...ran(modelOutcome(run, faults.map((fault) => fault.verdict))), verifier: "tlc" }, run, states: run === "passed" ? 9 : 0, faults,
+    staleness: "current", stale: [], writtenWithCode: false, link: "no_replay", verdict,
     ...run === "violated" ? { counterexample: { violation: "Invariant Safe is violated.", steps: [] } } : {} });
   const provedAdd: Receipt = { ...emptyReceipt, changed: [blob("src/add.ts")], proofs: [proof] };
   const unprovedAdd: Receipt = { ...emptyReceipt, changed: [blob("src/add.ts")], unverified: ["src/add.ts"] };
@@ -106,6 +109,33 @@ describe("the receipt's standing (#668)", () => {
     expect(receiptStanding({ ...provedAdd, proofs: [proof, { ...proof, path: "src/sub.ts", verdict: "no_progress", evidence: ran("failed") }] }))
       .toBe("failed");
     expect(receiptStanding({ ...provedAdd, models: [model("send_back", "violated")] })).toBe("failed");
+  });
+
+  const fault = (verdict: ModelResult["faults"][number]["verdict"]): ModelResult["faults"][number] =>
+    ({ path: "models/Fault.cfg", description: "lock removed", verdict, output: "", durationMs: 1 });
+  // A header Tesota refused before TLC started: no invariant to check, so nothing ran.
+  const refused: ModelResult = { ...model("no_progress", "malformed"), problems: ["its tesota-model header names no invariant"],
+    header: { covers: [{ path: "src/add.ts", names: [] }], invariants: [], atomic: [], omits: [], faults: [] } };
+
+  it("is failed for a model only on an observed violation or a planted fault it didn't catch", () => {
+    expect(receiptStanding({ ...provedAdd, models: [model("send_back", "violated")] })).toBe("failed");
+    expect(receiptStanding({ ...provedAdd, models: [model("no_progress", "passed", [fault("caught"), fault("passes")])] })).toBe("failed");
+    // Models that could not be checked or checked nothing: a gap whichever verdict the gate gave them.
+    for (const unchecked of [refused, model("send_back", "malformed"), model("no_progress", "malformed"), model("send_back", "vacuous"),
+      model("send_back", "passed"), model("send_back", "passed", [fault("broken")]), model("operator", "cancelled")]) {
+      expect(receiptStanding({ ...provedAdd, models: [unchecked] }), `${unchecked.run} ${unchecked.verdict}`).toBe("incomplete");
+      expect(receiptStanding({ ...unprovedAdd, models: [unchecked] }), `${unchecked.run} ${unchecked.verdict}`).toBe("unverified");
+      expect(receiptStanding({ ...provedAdd, models: [unchecked], unresolvedQuestion: "Which behavior?" })).toBe("incomplete");
+      expect(modelFinding(unchecked), `${unchecked.run} ${unchecked.verdict}`).toMatchObject({ standing: "gap" });
+      expect(modelFinding(unchecked).failed).toBeUndefined();
+    }
+    // A proof Dafny verified nothing of, as a contract attached to no function, checked nothing: a gap like a model with no state.
+    const vacuous = { ...proof, verdict: "send_back" as const, evidence: { ...proof.evidence, outcome: "vacuous" as const } };
+    expect(receiptStanding({ ...unprovedAdd, proofs: [vacuous] })).toBe("unverified");
+    expect(receiptStanding({ ...tested, proofs: [vacuous] })).toBe("incomplete");
+    expect(proofFinding(vacuous)).toMatchObject({ standing: "gap", label: "Proof proved nothing" });
+    expect(modelFinding(model("no_progress", "passed", [fault("passes")]))).toMatchObject({ standing: "decide", failed: true });
+    expect(receiptSummary({ ...provedAdd, models: [refused] }).methods.find(({ method }) => method === "Models")?.glyph).toBe("○");
   });
 
   it("colours a check that could not run as a gap, and one that failed red", () => {
