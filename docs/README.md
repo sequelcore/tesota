@@ -1,8 +1,8 @@
 # Tesota documentation
 
-Tesota is a coding agent whose every run ends in verification: it proves
-the change where it can, tests it where it can't, and says what it couldn't
-verify, in a receipt.
+Tesota is a coding agent whose every run ends in verification. It proves
+the change where it can, tests it where it can't, and records what it
+couldn't verify in a receipt.
 
 ## Get started
 
@@ -18,6 +18,8 @@ verify, in a receipt.
 - [Verification](guides/verification.md): what Tesota checks, and how to
   give it more to check.
 - [Receipts](guides/receipts.md): a receipt for a pull request or CI.
+- [Model checking](guides/model-checking.md): check a design model and
+  explore its model graph.
 - [Print mode](guides/print-mode.md): one request from a script.
 - [Permissions](guides/permissions.md): what the agent may do without
   asking.
@@ -36,18 +38,19 @@ verify, in a receipt.
 
 - [Architecture](concepts/architecture.md): the engine, the verification
   layer, sessions, and why Tesota has its own engine.
-- [How verification works](concepts/verification.md): the gate, its
-  evidence, and the rules it proves about itself.
+- [How verification works](concepts/verification.md): checks, evidence,
+  standing and verification limits.
 
 ## Reference
 
 - [Commands and keys](reference/commands.md)
 - [Configuration](reference/configuration.md): every file Tesota reads.
 - [Receipt v2](receipt-v2.md): the receipt's format.
+- [Proved rules](reference/proved-rules.md): every rule in `formal:check`.
+- [Glossary](reference/glossary.md): terms used in the docs and receipts.
 
 ## Project
 
 - [Roadmap](../ROADMAP.md)
 - [Development](development.md): building, testing and proving Tesota.
-- [The claude-code route under Anthropic's terms](decisions/claude-code-route-terms.md)
 - [Contributing](../CONTRIBUTING.md) and [Security](../SECURITY.md)

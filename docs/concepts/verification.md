@@ -1,659 +1,315 @@
 # How verification works
 
-When the agent says it's done, Tesota's gate checks the change before the
-run may end. Each rung answers a narrower question than the one before, and
-the receipt keeps their answers apart:
+Suppose you ask Tesota to fix a calculation and add a test. When the agent
+finishes, Tesota runs the project's checks. If they pass, it also tries
+the changed test on the starting code to see whether the test notices the
+change. The receipt keeps those results separate: a passing test and a
+test that detects the change establish different things.
 
-1. **Proved.** The changed file's LemmaScript contracts hold for every input
-   they admit (LemmaScript with Dafny).
-2. **Tested.** The project's own commands pass with the change.
-3. **Exercised.** A changed or added test fails without the change.
-4. **Strong enough.** Small changes to a proved function's body break its
-   proof, unless Dafny proves they behave the same.
-5. **Model-checked.** A model of the design the change touches holds its
-   invariants in every reachable state, and each planted fault breaks one
-   (TLC). This is evidence about the model, not a proof of the code.
-6. **Judged.** A model compares each new contract with the request. This is
-   a model's judgment and never counts as a proof.
+Verification is part of every run's lifecycle. It checks observed results;
+[permissions](../guides/permissions.md) control which actions may run.
+A receipt records evidence and its limits. You decide whether to accept
+the change.
 
-Alongside the rungs, the receipt lists what may weaken the evidence and what
-nothing verified, down to changed lines. Tesota verifies results, not
-actions: what the agent may do is the [permissions](../guides/permissions.md)'
-job.
+## Evidence kinds
 
-| Behavior | Owner |
-| --- | --- |
-| The gate and its order | `src/gate.ts` |
-| Request fingerprints and attribution | `src/request-fingerprint.ts` |
-| Evidence and its content hash | `src/evidence.ts` |
-| Proofs and `prove` | `src/verification/lemmascript-verifier.ts`, `src/prove-tool.ts` |
-| Weakened evidence | `src/verification-changes.ts` |
-| Tests and exercise | `src/projects.ts`, `src/test-rung.ts`, `src/test-report.ts` |
-| Contract strength | `src/proof-guarantees.ts`, `src/proof-mutation.ts`, `src/pi-claimcheck.ts` |
-| Models and `check_model` | `src/model-check.ts`, `src/model-tool.ts` |
-| Open cases | `src/open-cases.ts` |
-| Coverage | `src/proof-coverage.ts` |
-| The receipt and `tesota receipt` | `src/receipt.ts`, `src/pull-request-receipt.ts` |
-| What you see of it | `src/footer.ts`, `src/messages.ts`, `src/editor.ts`, `src/prove-tool.ts`, `src/model-tool.ts` |
+| Kind | What it establishes | Main limit |
+| --- | --- | --- |
+| Proof | The checked contracts hold for every admitted input in LemmaScript's model of TypeScript, as checked with Dafny | The contract may omit something you wanted, and the model differs from JavaScript runtime semantics |
+| Project checks | Your project's selected commands passed | A passing command establishes only what it checks |
+| Test exercise | A changed or added test fails on the starting code and passes with the change | The test's expected result may be wrong |
+| Contract strength | Small changes to a function's body are rejected by its contract, apart from changes proved equivalent | Only the generated mutations were tried |
+| Design model check | The declared properties hold in every reachable state of the design model as configured; planted-fault results are recorded separately | The design model can leave out behavior the code has |
 
-## Evidence
+Two additional checks use a model's judgment. ClaimCheck compares contracts
+with your request. Open cases list inputs your request may leave ambiguous.
+They appear separately in the receipt and do not count as check evidence
+or decisions required by the receipt.
 
-Each check produces an **evidence** record: which verifier ran
-(`lemmascript`, `command` or `tlc`), the claim a pass establishes, what it
-doesn't, how it ended, the end of its output, its duration, the files it
-checked and a SHA-256 of their paths and content. Evidence describes those
-files only while their content still has that hash.
+## Change scope
 
-Before publishing the receipt, after the rungs and open-cases listing, the
-gate compares each proof, command and model's evidence hash with its current
-files. A mismatch keeps the checked hash and output, but records
-`not_started` with a stale-evidence reason and the `operator` verdict: the
-current content was not checked. It never retains a pass for that content.
-Stale proofs no longer count as proof coverage. The receipt's changed-path
-blobs still record what the run leaves, not what an earlier check read.
+Tesota records the starting commit or snapshot before the agent works.
+In a Git repository, it captures `HEAD` and dirty paths' content at the
+first tool call that may change files, then captures them again at the end.
+Changes include commits made during the request, deletions and untracked
+files. A commit cannot hide a file from verification.
 
-There is no automatic re-check: formatting changes to a checked file also
-invalidate its evidence, but cannot cause a retry loop. Generated outputs
-outside the evidence's file list do not invalidate it. Commands bind only
-the request's changed paths, not every dependency they might read.
-The reads, blob capture and receipt publication are not an atomic filesystem
-snapshot: another writer can change a file after its last read, and a
-change restored before that read is not detected. `tesota receipt` checks
-the hashes again on export and also compares the receipt's blobs with the
-commit, catching later edits.
+These observations describe changes during the request, whoever made them.
+Files already dirty whose content stayed the same are inherited changes.
+They are excluded from the request's proof and exercise scope, but project
+commands still run with them present.
 
-Outcomes are `passed`, `failed`, `vacuous`, `timed_out`, `cancelled` and
-`not_started`. A proof passes only when LemmaScript regenerated and checked
-it cleanly and Dafny verified at least one obligation; a clean run that
-verified nothing is `vacuous`, never proved.
+Contribution attribution asks which observed changes can be credited to
+your request. It uses the starting and ending captures and Git history.
+If those facts cannot establish credit, Tesota still checks the resulting
+files, but omits measurements that need a reliable starting point.
+[Receipt v2](../receipt-v2.md#capturestate) owns the exact attribution rules.
 
-## The request and its base
+Unreadable captures and files too large to hash leave gaps in what Tesota
+can observe. They cannot establish that nothing changed. Weakening checks compare the diff with the request's
+starting commit, including inherited changes.
 
-A request starts with your input. Before the agent can run anything,
-Tesota records the request's **base**: the commit `HEAD` names. A steer or
-follow-up joins the request already running; what the gate sent back
-resets on your next request.
+Outside Git, Tesota can take a private snapshot without adding a Git
+folder to your workspace. It excludes `.env` and `.env.*` files, ignored files, dependencies
+and build output. It refuses home folders, drive roots and folders beyond
+its size or reading limits; the receipt explains what it could not verify.
+A folder containing several repositories is checked in separate units.
+Each unit is a repository or snapshot folder with its own starting commit
+or snapshot, commands and evidence.
 
-At the first non-reader tool's `tool_execution_start`, before the tool runs,
-the gate fingerprints each repository: its `HEAD` and the blob IDs of every
-dirty path, including deleted, renamed and untracked files. It uses
-`git status --porcelain=v2 -z --untracked-files=all` and
-`git hash-object --stdin-paths`, without `-w`; optional index refreshes are
-disabled. It writes no objects, refs, index or stash. A new request resets
-the fingerprint; steers, follow-ups and verification continuations keep it.
+## Check order
 
-At settlement it captures again. A repository is eligible if `HEAD` moved,
-a path appeared, disappeared or changed blob, or any path was unmeasured.
-The request's changed paths are those differences plus the files changed
-between the admission base H and the current `HEAD`, deletions included.
-These are **changed during the request (by anyone)**: the gate observes
-results, not authors. A stash removing old dirt counts as a request change,
-even when it restores H's content. A commit hides nothing.
+Verification starts after generation ends. It needs a started tool call
+that may change files and an observed change. Built-in readers and native
+questions do not make a run eligible. A read-only session does not verify
+another session's edits in the folder they share. The `prove` tool, which
+checks one file's LemmaScript contracts, does count: it regenerates proof
+files.
 
-**History movement limits credit, not verification.** A repository's
-contribution attribution needs readable captures, with the start HEAD at
-admission H. Unchanged history keeps credit. Moved history keeps it only
-on the same branch, when H is an ancestor of the end HEAD and every commit
-in `H..HEAD` is reached by no local branch, remote-tracking ref or tag as
-those refs pointed **when the request was admitted**, and has a committer
-date at or after the request's start (at Git's whole-second precision).
-Admission records, with H, each ref's tip that H does not already reach. No remote or branch name is
-assumed. Starting refs that could not be recorded or read, and other failed
-or missing reads, leave attribution unresolved. The gate still
-proves current files, runs project commands and checks models over the
-observed scope. It keeps H and every changed path, including imported files
-and overlapping local/upstream edits.
+For eligible changes, Tesota proceeds in this order:
 
-For an unresolved unit it does not measure test exercise, contract strength
-or ClaimCheck against the stale base. One prominent receipt limit says why;
-weakening, unproved paths and line totals are **compared with the request's
-start**, not attributed to this request. Text, card and export use the same
-proved decision. Empty exercise/contract lists then mean not measured, not
-success. Ordinary local commits keep credit, and so do pushing them during
-the request and merging a branch the request created, such as a writing
-subagent's, or tagging them: a ref withholds only the commits its tip
-reached at admission, so one the request moved or created withholds none
-of the request's own. Merging a
-branch that existed at admission, or a fetch of commits made before the
-request, stays unresolved.
+1. Prove changed TypeScript files with LemmaScript annotations, including
+   sources whose generated or hand-written proof files changed.
+2. Run the commands selected for the projects that own the changed files.
+3. Measure new or changed contracts in files that proved, and compare them
+   with the request.
+4. Check affected design models, including their planted faults.
+5. List open cases, check that evidence still matches current content, and
+   publish the receipt.
 
-Ambiguity remains, since this is not proof of authorship. Commits someone
-else made during the request are credited once merged, if no starting tip
-reached them: a fetch of upstream work committed during the request, or
-new commits on a branch that existed at admission. So is a fast-forward to
-a commit no ref reached at admission, made inside the request's time, and
-a pull by URL of commits made during the request or dated ahead. Squash
-merges, cherry-picks and applied patches can also create new commits
-satisfying these facts. A request's first commit in
-an unborn repository stays unresolved: there is no admission commit from
-which to establish ancestry.
-See [Receipt v2](../receipt-v2.md#capturestate) for machine interpretation.
+A failure can return the run to the agent before later checks start.
+Weak contracts also go back for repair. Once no check needs another repair
+attempt, the receipt records what passed, failed or could not run.
+An unresolved blocking question ends generation, but verification still
+checks the changes and records the question.
 
-Paths dirty at the start whose blob stayed the same are **inherited**.
-They are not proved or exercised as this request's change. Dirty files over
-10 MiB and files in an untracked directory with 200 or more files are
-**unmeasured**, never unchanged. Git failures or index conflicts make a
-capture **unknown**, with a reason; verification then uses the whole change
-against H and the receipt explains why attribution could not be measured.
+### Repair attempts
 
-**Outside a repository** the base is Tesota's own snapshot of the folder,
-taken as the request starts: Git, with its Git folder in
-`~/.tesota/snapshots` and your folder as its work tree, so your folder
-gains nothing. An OS lock gives the snapshot store one writer across
-processes, from initialization through commit and pruning.
-Secrets (`.env`, `.env.*`), Git's and Jujutsu's folders,
-dependencies, build output and what `.gitignore` names are left out; a file
-over 10 MB is left out and listed as not verified. A folder of more than
-20,000 files or 3,000 folders, or that takes over 5 seconds to read, a home
-folder and a drive's root are never snapshotted: there, a request that may
-have changed files ends with a receipt saying why they weren't verified.
+A failed or vacuous check goes back to the agent unless the same failure
+has already gone back during this request. A repeated failure is recorded
+as no progress. Tesota compares proof output, failing test names when
+available, surviving mutations, or design model counterexamples as
+appropriate. A command without test reports gets one repair attempt.
 
-**A folder of repositories** is verified repository by repository: each
-one's base is its own commit, and the gate runs in each repository the
-request changed, with its own commands. One receipt holds each one's
-evidence in its `units`. In a home folder or a drive's root, only the
-repositories are units: the other folders there hold a person's files, and
-none of them is snapshotted.
+A check that cannot start, exceeds its time limit or is cancelled does
+not go back for automatic repair. The receipt leaves that limit for you.
+The engine allows up to 32 automatic continuations per run, shared by
+verification send-backs and extension requests to continue. Your input and
+tool calls do not use that allowance.
 
-## The gate
+## Proofs and contracts
 
-The gate runs when generation ends, including when an unresolved question
-ends it incomplete. Such a question stops generation and further
-continuations, not verification: the gate settles the changes and the
-receipt names the unresolved question alongside the evidence.
-It verifies only when a tool that may
-change files started during the request: any tool except the built-in
-readers `read`, `grep`, `find` and `ls`. `prove` counts because it regenerates
-proof files. Nothing counts in a read-only session, such as a subagent that
-only reads: only tools that read start there, and its own subagents only
-read, so its gate never verifies edits it didn't make, such as its parent's
-in the folder they share (#585). Without such a start, the footer returns to ready, with no
-checks, model call, diff or receipt. If no unit's fingerprint is eligible,
-it also returns to ready without checks, an open-cases call or a receipt.
-Eligible units climb:
+Tesota runs LemmaScript in your project. Regeneration merges the changed
+source into its Dafny proof while preserving hand-written proof additions;
+checking then asks Dafny to verify it. Each process has five minutes.
+A clean exit that verifies no obligation is vacuous and earns no proof.
 
-1. Prove each changed TypeScript file with `//@` annotations, and each whose
-   `.dfy` or `.dfy.gen` changed. A proof maps back to its source as
-   LemmaScript maps it: beside it, or under the `proof-dir` a project's
-   `lemmascript.json` sets.
-2. Once no proof goes back, run the project's commands.
-3. Once no command goes back, measure each new or changed contract's
-   strength, and send back the weak ones.
-4. Once no contract goes back, check each model whose own files or covered
-   files the request changed, and send back those that fail.
-5. When nothing goes back, settle with the receipt.
+By default, LemmaScript keeps a file's `.dfy` proof beside its TypeScript
+source. A `proof-dir` in `lemmascript.json` places proofs under that folder,
+mirroring source paths relative to the configuration file. When a `.dfy`
+or `.dfy.gen` changes, Tesota looks for its source beside the proof and
+through those configured paths, then confirms the mapping with `lsc config`.
 
-Stopping the run while it climbs ends the step under way and every process
-it started, and starts no other: the receipt says you stopped it, names the
-checks it interrupted or never started, and claims no evidence. Nothing goes
-back to the agent after a stop, and no check runs again.
+The agent can use `prove` on one file while it works. The same verification
+runs again at the end where needed. The tool is exposed when Tesota finds
+LemmaScript annotations, including ones the agent writes.
 
-**A run that ends before it's verified** (#599) still settles with a receipt
-once a tool that may change files ran, whether you stopped it, it failed, or
-the shell ended. The receipt reads incomplete, never verified. It lists what
-the run left: each changed, deleted or untracked path with its final blob,
-and the captures' limits, read from Git without running anything. When Git
-can't tell, it says `unreadable` and why, never an empty list. Reading has
-30 seconds, so a stuck Git or a slow drive can't hold the stop: past that,
-it says `unreadable` because the inventory ran past its time limit.
-Submitted answers to the agent's questions are kept; an answer that wasn't
-saved before the stop isn't. A question waiting for an answer has no time limit:
-it stays pending until you answer it or stop the run.
+A proof is conditional on its assumptions. Tesota identifies trusted or
+excluded code, such as `//@ assume`, `//@ extern`, `//@ skip`, selective
+`//@ verify` annotations and hand-written Dafny axioms. A proof with these
+limits is shown with qualifications rather than as an outright proof.
+Malformed annotation lines are reported so the agent can correct them.
 
-When the process itself dies, nothing can verify the run then. Opening the
-session again records the run as interrupted, once. If a call it started may
-have changed files, by the same rule the gate uses (`toolMayChangeFiles`),
-the run gets a receipt that verified nothing and says what changed is
-unknown; a session file older than this rule counts every started call as
-one that may have. No inventory was saved,
-and what's on disk now need not be what the run left. Nothing is replayed,
-neither writes nor unsaved answers. A new request verifies the current
-content. A session that is never opened again after a power loss or a
-killed process gets no receipt at all: only a process that survives could
-verify it, and Tesota runs none.
+### What a proof covers
 
-**What goes back** follows one rule on every rung (`gateVerdict`, proved).
-A `failed` or `vacuous` result goes back to the agent, unless it repeats a
-failure already sent for the same file, command or contract during the
-request: then it's `no_progress`, reported instead of sent again. A result
-that couldn't run, ran past its limit or was stopped is yours, and never
-goes back. What counts as a repeat:
+A proof holds in LemmaScript's model of TypeScript. It does not establish
+all behavior under JavaScript's runtime semantics. The receipt shows this
+limit under each proof in its details.
 
-- **Proofs:** the outcome and output.
-- **Commands:** the set of failing tests, from the JUnit XML reports the
-  command wrote. A command that writes none goes back once, since its
-  output varies between runs.
-- **Weak contracts:** the surviving mutants.
-- **Models:** the counterexample's steps, the planted faults' verdicts, or
-  what TLC printed. A file without a header goes back once.
+- Numbers use mathematical integers by default, or exact reals for
+  non-integer literals with Dafny. For example, `0.1 + 0.2 == 0.3` proves
+  with exact reals but is false in JavaScript. The model has no 53-bit
+  precision bound and no representation for `NaN`, `Infinity` or `-0`.
+  Supported bitwise operations use unbounded arithmetic without int32 wrap.
+- Only the supported TypeScript subset is represented. True `async`/`await`
+  is unsupported; an `async` function without `await` can be checked.
+  Class inheritance and mutation outside the supported subset are not
+  covered. Class-field mutation can need hand-written Dafny proof additions.
+  `**`, `>>>`, `Math.round`, `Math.trunc`, `Math.sqrt` and `Math.pow` have
+  no lowering to the proof language.
+- Coverage depends on which functions are extracted. With `//@ verify`
+  in a file, only opted-in functions are checked. Without it, LemmaScript
+  extracts all top-level functions by default. Class methods require
+  `//@ verify`. Skipped or trusted code remains a limit.
 
-## Proofs
+See the [LemmaScript specification](https://github.com/midspiral/LemmaScript/blob/main/SPEC.md),
+especially the type mapping, selective verification and unsupported features.
 
-Tesota runs LemmaScript's `lsc` in the project itself: `lsc regen` merges
-the changed source into the file's `.dfy`, keeping proof lines written by
-hand, then `lsc check` proves it with your Dafny. Each process has 5
-minutes; Tesota stops it with everything it started.
+### Contract strength
 
-**`prove`** gives the agent the same on one file while it works. It's off
-until the session finds a file with `//@` annotations, or the agent writes
-one. It runs alone, so its evidence describes files no other call left
-half-written. Its guidance asks the agent to work until the proof passes,
-gives LemmaScript's syntax, and forbids loosening a contract or adding
-`//@ assume`.
+After project commands no longer request a repair, Tesota tries up to eight small mutations per
+new or changed top-level function contract. Examples include changing a
+comparison, a returned value or an arithmetic operator. A mutation that
+still proves is a survivor: the contract allows that behavior.
 
-**On trust.** A pass reads `Proved` only when nothing in the proof is
-taken on trust or left out: no `//@ assume`, `//@ extern` or `//@ skip`, no
-function a `//@ verify` leaves out, and no `assume`, `{:axiom}` or lemma
-without a body written into the `.dfy` by hand. Otherwise it reads `Proved,
-but not outright` and names each one.
+Dafny then checks whether each survivor returns the same result as the
+original function for every admitted input. A proved-equivalent mutation
+does not count against the contract. Other survivors make the contract
+weak and send it back for strengthening while keeping it provable.
 
-**Skipped lines.** LemmaScript skips a specification line without a word
-unless it reads `//@ <keyword> <expression>`, one space after `//@` and
-one after the keyword. Such a line belongs to no contract; `prove` names it
-and asks the agent to rewrite it.
-
-## Weakened evidence
-
-From the diff against the base, fixed rules list the changes that may
-weaken the evidence. The agent can't argue one off the list; whether each
-is legitimate is yours to decide. Moving or reindenting a line doesn't count.
-This still includes inherited paths, so weakening left by a stopped or
-unverified earlier request remains visible when a later request changes files.
-
-- **Contracts:** a removed or changed `//@ requires` or `//@ ensures`.
-- **New preconditions:** a `//@ requires` added to a function the base had.
-- **Assumptions:** an added `//@ assume`, or `//@ extern`, which trusts a
-  function's contract without proving its code.
-- **Left out of the proof:** an added `//@ skip` on something the base had,
-  or a function the base proved that a new `//@ verify` leaves out, since
-  LemmaScript then extracts only the functions marked.
-- **Dafny proofs:** an `assume` or `{:axiom}` line, or a lemma without a
-  body, written into a `.dfy` by hand. A line LemmaScript generated, which
-  its `.dfy.gen` holds, doesn't count.
-- **Tests:** a deleted test file, or an edit that may weaken its tests: a
-  removed line that isn't blank, a comment, a widened import or an extended
-  line; or an added focus or skip marker (`.only`, `.skip`, `xit`,
-  `@Disabled`, `#[ignore]`, `t.Skip`, `pytest.mark.skip`…), setup or
-  teardown hook, or module mock. A new test file, or one that only gains
-  tests, isn't listed. A line added inside an existing test, such as an
-  early `return`, isn't caught.
-
-  An extended line is one in a JavaScript or TypeScript test file that the
-  added line in its place keeps token for token, adding only whole list
-  items such as arguments, properties or parameters: `{ sessionId }` becoming
-  `{ metadata, sessionId }` (`addsItems`, proved). It still counts when
-  either line is inside an assertion's call (`expect`, `assert`, `should`),
-  or when the line holds or gains a word that checks, skips, defines, retries
-  or times a test or returns early (`toBe…`, `skip`, `only`, `it`, `retry`,
-  `timeout`, `return`…), or a comment or open string that could hide the
-  lines after it.
-
-  In a JavaScript or TypeScript test file read on both sides, as Bun,
-  Vitest and Jest write tests, the flag also says how the edit may weaken
-  each test, one line per test under it, matching tests by name within
-  their groups and each `expect` assertion with one on the same subject:
-
-  ```text
-  may weaken    tests/price.test.ts: edits a test file; read from the diff, a heuristic flag, not a verdict
-                price › rounds: loosens expect(price(1)).toBe(1) to .toBeTruthy()
-                price › caps: skips it (it.skip)
-  ```
-
-  It names an assertion removed; one loosened, to a weaker matcher
-  (`toBe(3)` to `toBeTruthy()`) or a wider expected value (fewer
-  `toBeCloseTo` digits, a shorter `toMatch` or `toThrow` string, a looser
-  bound); a dropped `not`; an assertion changed otherwise; a test or group skipped
-  (`.skip`, `.todo`, `.skipIf`, `.runIf`, `.if`, `xit`, `{ skip: true }`)
-  or focused (`.only`, `fit`); a new mock (`vi.mock`, `jest.mock`,
-  `mock.module`) of the module the file is named after and imports; and a
-  test deleted by name while the file stays (`assertionChange`, proved). A
-  removed line that only holds assertions made stricter doesn't count:
-  stricter only where the new check implies the old one, such as
-  `toBeTruthy()` becoming `toBe(3)`, `toEqual(x)` becoming `toBe(x)`, or
-  more `toBeCloseTo` digits. A matcher only ranked stricter, such as
-  `toHaveBeenCalledWith(a, b)` becoming `toHaveBeenCalledTimes(1)`, still
-  counts. The lines name what
-  Tesota recognizes, not every change the file has; other frameworks and
-  languages get the flag alone.
-- **Check scripts:** a `package.json` script selected at the base whose
-  command changed or is no longer selected.
-
-A proof whose source or `.dfy` gained an assumption holds only if what the
-change trusts is right, so the receipt never calls it proved outright:
-`Proved, trusting 3 unproved parts`.
-
-When the diff passes 16 MiB, the receipt says the change wasn't checked
-for weakening, and coverage isn't measured.
+ClaimCheck makes two separate model requests. One restates the contract
+without seeing your request; the other compares the restatement with your
+request. Its judgment can help you review a contract, but cannot establish
+that the contract expresses your intent.
 
 ## Tests
 
-Tesota finds the projects in the repository, at the root and up to three
-folders below, and their commands:
+Tesota selects commands from the projects that own the changed files.
+[Verification](../guides/verification.md) owns the command-selection table
+and setup instructions. Each command has fifteen minutes.
 
-| Project | Commands |
-| --- | --- |
-| JavaScript or TypeScript | `check`, or else `typecheck`, `lint` and `test`, with the package manager `package.json`'s `packageManager` field names, else the lockfile's, else the first of npm, Bun, pnpm and Yarn on the `PATH` |
-| Gradle | `check`, through `./gradlew` when present |
-| Maven | `verify`, through `./mvnw` when present |
-| Cargo | `cargo test` |
-| Go | `go test ./...` |
+After the commands pass, changed or added test files can run against the
+starting code in a temporary Git worktree. Supported direct Bun, Vitest
+and Jest scripts run the selected files; otherwise Tesota uses the
+project's whole checks. Reports must show that the selected tests actually
+ran. When a file filter also selects other files, the receipt says so.
 
-The gate runs the commands of the deepest project holding each changed
-file (`owner`, proved), from the root through `cd <folder> &&`, in a POSIX
-shell: Git's bash on Windows, bash elsewhere. Each has 15 minutes. It reads
-the failing tests from JUnit XML reports written under the project while
-the command ran.
+A test earns exercise evidence only when it fails on the starting code
+and passes with the change. If the starting project already fails,
+per-test reports can distinguish newly failing tests from existing failures.
+The checking command must also pass with the whole change in the same
+worktree environment. Missing ignored dependencies must not masquerade
+as a defect the change fixed.
 
-**Exercise.** When every command passes and the request has a base, each
-changed or added test file in a programming language runs alone over the
-base (a snapshot or a JSON fixture is no test a runner runs), in a Git worktree in
-the temporary folder with the checkout's `node_modules` linked in. What
-runs it there (#603): when the project's `test` script directly runs Bun,
-Vitest or Jest with plain arguments, that script on the file alone, with
-per-test reporting and the runner's empty-suite success flag, even when a
-composite `check` is the project's normal command; Bun and Vitest write
-JUnit XML, Jest its native JSON report. Jest takes the file as an exact
-path (`--runTestsByPath`), which keeps the project's own selection. Bun
-and Vitest take it as a filter, which also selects every path that ends the
-same way: Bun's exact form, `./`, runs files the project excludes, and
-Vitest has none. So the reason names any other file the runner ran tests
-from on the base (#620). Otherwise the project's whole commands run. Each
-reason names the command that judged it.
+A test that passes on the starting code does not depend on the change,
+though it may still prevent a regression. Unknown results stay unknown.
+Dependency manifest or lockfile changes prevent a reliable baseline
+comparison. Inherited changes can also affect the comparison.
 
-- a test that passes there passes on the base: it doesn't depend on the
-  change, though it may still guard against a regression. For the runner
-  on the file alone, a pass counts only when its report, read whole, holds
-  a test from that file, named by its path, that ran and passed: a filter
-  that selects nothing passes with no tests, so an exit alone shows no
-  test ran (#615). A report holding fewer or more tests than its root
-  counts gives nothing;
-- a test that fails there, while the base passes without it, notices the
-  change: it fails, then passes (`checkOrigin`, proved). Without it means
-  the base's own version of the file, or none, for the runner on the file
-  alone, and the base as it is, once per project folder, for the whole
-  commands;
-- when the base fails without it too, the reports of both runs decide: the
-  test notices the change when tests fail with it that pass, or are
-  missing, without it, as SWE-bench grades fail-to-pass;
-- what ran it must also pass with the whole change, run once per project
-  folder in the same worktree, so that both sides lack the same files the
-  repository ignores: a base that fails for want of a vendored binary
-  isn't a defect the change repaired (#618). The runner on the files alone,
-  when another file fails there, runs once more on the file alone, and must
-  run a test from each file it credits that passed;
-- anything else stays unknown, with the reason.
+## Design models
 
-The runner on one file sees what the test asserts, not the project's
-typecheck or lint of it, which the change's own commands already passed.
+A TLA+ or Quint design model describes states and steps, such as workers
+competing for a lock. TLC explores every reachable state of the configured
+finite design model. A passing check establishes that the declared
+properties hold in every reachable state of that design model as configured.
+Its constants, state constraints or a depth limit determine the bounds;
+TLC is not inherently a bounded checker. The `tesota-model` header names the covered code, invariants,
+atomic steps, omissions and planted faults.
 
-The receipt keeps that apart from the test's provenance (#527): whether the
-base held the file, so the request changed it, or the request added it. A
-test the agent added notices the change by what the agent expects, which
-may be wrong (#396), so neither fact is a score of how much to trust it.
+Tesota checks a design model when the request changes its files, faults
+or covered code. A passing session check can be reused for the same
+content. Declared planted faults test whether the design model detects bugs. A
+fault that passes, or cannot be read, makes the combined check fail.
+An unfinished fault leaves a gap even when the main check passes.
+A design model with no fault earns no passing evidence.
 
-A change to `package.json` or a lockfile leaves the base with the wrong
-dependencies, so no run there gives a verdict.
-Commands run on the real working tree, including inherited changes.
-Exercise still uses H as its base: a test relying on inherited changes may
-be misjudged, which the receipt discloses.
+The agent's `check_model` tool uses the same checker while it works.
+Counterexamples return as numbered steps. The agent must compare them
+with the code: possible steps indicate a code defect; an impossible step
+indicates an inaccurate design model. Weakening an invariant would hide
+the problem.
 
-## Contract strength
+The receipt states the design model's omissions, whether it was written
+with the code and whether covered code differs from its confirmed commit.
+A successful declared replay command links the design model to the code;
+without it, that connection remains unverified. See
+[Model checking](../guides/model-checking.md) for setup, headers and model
+graphs. A model graph visualizes explored states; grouped transitions are
+not an execution trace.
 
-A contract is a top-level function's `//@` lines, where LemmaScript reads
-them. Once the commands pass, each contract the request added or changed in
-a file that proved is measured two ways at once.
+## Weakened evidence
 
-**Mutation** proves up to 8 small changes to the function's body, each
-alone: return another of its returned values, flip a comparison, move a
-number by one, swap `+` and `-`. A mutant whose proof fails is ruled out by
-the contract; one that still proves is a **survivor**. This is Lahiri's
-completeness metric (FMCAD 2024), with the prover in place of tests.
+Fixed diff rules flag changes that may weaken checks. Examples include
+removed contracts, new preconditions on existing functions, added
+assumptions, excluded proof code, deleted tests and changed check scripts.
+Test-edit analysis can name removed or loosened assertions, skips, focused
+tests and mocks in JavaScript and TypeScript using the conventions Tesota
+parses, including Bun, Vitest and Jest. Other frameworks and languages get
+the file-level weakening flag without per-test detail.
 
-**Equivalence** then asks Dafny whether a survivor returns the same result
-as the code for every input the `requires` admit. One proved equivalent is
-only counted. A contract with survivors left is **weak**, and goes back to
-the agent to be strengthened while staying provable.
-
-**ClaimCheck** adapts [ClaimCheck](https://github.com/metareflection/claimcheck)'s
-round trip, in two separate requests: a model restates each contract
-without seeing the request (`--claimcheck-model`, or the session's), then
-the session's model compares the restatements with what you asked. The
-verdict is `justified`, `partially_justified`, `not_justified` or
-`vacuous`. It's a model's opinion: it never goes back and never counts
-toward what needs you.
-
-Sending weak contracts back made the final contract rule out the
-registered bug in 15 of 15 runs, against 2 of 15 with the receipt alone
-([#351](https://github.com/sequelcore/tesota/pull/351),
-[#353](https://github.com/sequelcore/tesota/pull/353)).
-
-## Models
-
-A proof covers a function for every input it admits; a race between
-concurrent steps is out of its reach. A model of the design is checked
-instead, with TLC, which explores every order of the model's steps.
-Experiment [#539](https://github.com/sequelcore/tesota/issues/539) chose
-TLC: it found every race in 12 to 16 seconds, where Apalache reached none
-within its budget.
-
-**Which files are models.** A `.tla` or `.qnt` file in the project whose
-comment holds the `tesota-model` header: the files and functions it covers,
-the commit it was last confirmed against, its invariants, the steps it
-treats as atomic, what it leaves out, its planted faults, and optionally a
-replay command. One format for both languages, read from comments, so no
-reader per tool. [Verification](../guides/verification.md#model-check-it-tla-and-quint)
-shows it.
-
-**When a model runs.** When the request changed the model, its
-configuration, one of its faults or a covered file, once before the run
-settles, unless the session already passed the same content
-(`checksModel`, proved): the evidence binds the SHA-256 of all of them.
-
-**How it runs.** A TLA+ model runs TLC 2.19 from `tla2tools.jar` on its
-`.cfg`, with the header's invariants added, from the specification's
-folder, with a 2 GB heap and a temporary folder for TLC's state. A Quint
-model runs `quint typecheck`, then `quint verify --backend=tlc` with the
-header's invariants. Each run has 5 minutes, the proof timeout; a model
-with F planted faults takes at most (F + 1) × 5 minutes. A missing Java,
-TLC or Quint, and Quint failing to start Apalache, as on Windows under
-Node 24, are runs that didn't start: the receipt says the model wasn't
-checked, and the run never fails for it.
-
-**How it ends** (`tlcRun`, proved): TLC's exit 0 with a reachable state
-passes; 10 to 14 is a violation (assumption, deadlock, invariant,
-liveness, assertion); 150, 151 and 75 mean TLC couldn't read or evaluate
-the model; anything else means TLC didn't run.
-
-**Planted faults** (`faultVerdict`, `modelOutcome`, proved). Once the
-model passes, each fault runs with the same invariants. A fault is caught
-only by a violation. A model with no fault, or a fault that passes or that
-TLC can't read, goes back: nothing shows the model can tell a fault from
-the code. Tesota runs the faults a model declares; it doesn't mutate
-models itself.
-
-**A counterexample** goes back as numbered steps, each the action TLC
-names, which a model true to its code takes from the code, with the
-variables it changed. The agent is told to replay it against the code:
-every step possible means a bug in the code; one impossible means a wrong
-model; and never to weaken an invariant.
-
-**`check_model`** gives the agent the same check on one model while it
-works, through the gate's own code (`checkModel`), faults and replay
-included. It's on once Tesota finds `tla2tools.jar`, so its guidance,
-which says TLC is installed and gives the header, never claims a TLC that
-isn't there. It runs alone, as `prove` does. Without that, pstack's skill
-judged TLC unavailable and wrote an interleaving test instead of a model
-(#554). The gate still checks the model before the run settles.
-
-**What the receipt adds** to a pass:
-
-- the abstraction: the covered files, the atomic steps and what's left
-  out, since what a model can find is fixed by them; #539's one miss lay
-  exactly in what its model left out;
-- "not linked to the code", unless the header's `replay` command passes;
-- "possibly stale" when a covered file differs from the `confirmed` commit
-  (`staleness`, proved), or "staleness unknown" when that commit isn't in
-  the repository: a hint, never a guarantee, since a change outside the
-  covered files can break what the model assumes;
-- "written with the code", which counts as weaker, when the request changed
-  both the model and the code it covers (`writtenWithCode`, proved). Such a
-  model that passed was checked against the code as the request leaves it,
-  so it is never called stale; a later request that changes the covered
-  code without the model gets the hint again.
-
-A model checks the properties it's given. Open cases still apply after a
-pass.
+These are review flags. A legitimate change can trigger one. The rules
+also miss some weakening, such as an early return added inside an existing
+test. They do not establish that unflagged tests remain equally strong.
+If the diff is too large to read, the receipt says weakening was not checked.
 
 ## Open cases
 
-A proof settles code against its contract, not the contract against what
-you meant, and agents settle a request's open cases silently. So as the run
-settles, a model reads your messages for the request, not the change, and
-lists the inputs where someone who made the request could expect more than
-one result. A standard term keeps its usual meaning unless you say otherwise,
-so `clamp` or `median` raise no case their definition settles, while an
-input their definition gives no result for, such as an empty list, still
-does. The receipt shows each as a note for you to settle; nothing goes back.
+The open-cases lister reads your saved request messages, without the
+agent's change or access to referenced files and URLs. It asks which
+inputs could reasonably have more than one expected result. Missing
+reference contents produce a reason instead of guessed requirements.
 
-The model is GPT-6 Sol, the one that found every open case with few false
-alarms on held-out requests
-([#397](https://github.com/sequelcore/tesota/issues/397)), or
-`--open-cases-model`; `off` turns it off. When the model isn't available,
-or takes more than 2 minutes, the receipt says why nothing was listed. If
-listing depends on an issue, PR, file or other reference whose relevant
-contents aren't in your messages, the model reports what is missing instead
-of guessing its cases. The lister cannot fetch references; include their
-requirements in the request to have it list them.
+The configured default is `openai/gpt-6-sol`; you can choose another with
+`--open-cases-model` or disable listing with `off`. This is a configured
+choice, not a demonstrated launch-performance claim. If the model is
+unavailable or exceeds two minutes, the receipt records why no list was
+produced. Its suggestions remain a model's opinion for you to review.
 
-## Coverage
+## Standing
 
-A file that proved covers only some of its changed lines. A line is covered
-when it's inside a function with a contract, from the first annotation to
-the closing brace, and the change didn't narrow that contract
-(`proofCovered`, proved). Blank and comment-only lines don't count, read by
-each language's own parser: TypeScript and JavaScript by theirs, Python
-and Go by tree-sitter grammars Tesota ships. In any other language, a
-changed comment counts as code: more listed, nothing missed.
+The receipt derives a standing from its evidence and findings. A receipt
+stands `failed` only when a check ran and showed the change wrong: a
+failing test, a proof that doesn't hold, or a design model with a
+counterexample or a planted fault it didn't catch. A check that couldn't
+run, ran past its limit, was stopped, checked nothing, couldn't be read or
+is stale is a gap: the run is incomplete, or unverified if nothing else
+passed.
 
-A changed file no proof covers is listed whole, unless it's a test file or
-its change is only blank lines and comments. Both lists read "not proved"
-when the commands passed, and "not verified" otherwise.
-
-## The receipt
-
-When nothing goes back, the run settles with a receipt session entry
-(`tesota-receipt`, or `tesota-receipt-graphs` when it carries graph preview
-metadata alongside the receipt). It records the base, when the request started and settled,
-Tesota's version and the model; each proof with its verdict and evidence;
-each measured contract; ClaimCheck; the open cases; each command; each
-exercise finding; the weakened evidence; what nothing verified; and the Git
-blob of every file changed during the request (by anyone), inherited paths,
-unmeasured paths and capture states.
-[Receipt v2](../receipt-v2.md) specifies every field, and
-[Receipts](../guides/receipts.md) how `tesota receipt` writes it for a pull
-request.
-
-## What you see
-
-- **The footer** shows what the project lets Tesota verify before a
-  request (`readiness`, proved), that it waits while the agent works, the
-  gate's step and timer while it verifies, and the receipt in brief after.
-  It names no file or command: the status line does.
-- **The status line beside the orb** says `Working…` while the agent works.
-  While the gate verifies it names the operation running, its exact
-  launched command or target, and the time it has run, such as
-  `Running project check · bun run check · 6:02`. Operations the gate and
-  its runners publish from the code that runs them (`src/operations.ts`)
-  feed it: each has a start and an end the runner reports, never an
-  estimate, so it shows no percentage or time remaining. Concurrent work
-  (mutation with ClaimCheck) shows as concurrent, a reused check as reused,
-  a stop marks unlaunched work as not started, and an operation with no
-  end reads as interrupted, never passed. When none runs it says
-  `Verifying…`. It listens only while shown, and lets go when the session
-  switches or the shell stops.
-  It leads with `!` when anything needs you, by the same count as the
-  receipt, `✓` only when the receipt stands `verified`
-  ([Standing](../receipt-v2.md#standing)), and `○` otherwise, in the
-  receipt's color; with nothing else to list it says why, such as
-  `unverified` or `nothing to verify`. It is one row: at the right the
-  folder, the model, the context % and the permission mode. As the terminal
-  narrows it drops the folder, then the model, shortens the evidence, then
-  drops the context % (`footerLayout`, proved); the permission mode stays.
-- **The request's block** is one block at the end of the conversation.
-  While the gate verifies it is a ledger read from the same operations:
-  the operation running, up to three that ended most recently, each with
-  its glyph and time (`✓` passed, `✗` failed, `◐` verified nothing, `○`
-  ended without a verdict, such as not started, past its limit or with no
-  end), a count of the earlier ones, and each attempt that went back to the
-  agent folded into `↺ Attempt 1 · returned to agent`. Ctrl+O shows every
-  check of every attempt. When the run settles the receipt takes its place.
-- **The receipt** is built from the receipt's `details` (`receiptSummary`),
-  as the card, as plain text and, separately, as Markdown, so no Markdown
-  escape reaches plain text. It opens with its counts, failed checks, review
-  flags and verification limits, counting only findings the checks
-  established (`decisions`, proved), and `Check evidence, not your
-  acceptance.` Its color is green only when there are no flags and no limits,
-  amber otherwise, red when a check failed (`verdictTone`, proved). Then one
-  row per method (Tested, Proved, Models, and Exercised or Contracts when
-  something held), each saying only what ran and how it ended, `✓` only
-  when every run held outright (`methodStanding`, proved): a passing
-  model reads `model-checked`, never proved; a proof resting on assumptions
-  the change added reads `◐ … trusting 3 unproved parts`. Then the review
-  flags and the limits, findings of the same reason grouped into one row,
-  such as `! Review test edits · 2 heuristic flags`. The models' opinions
-  (ClaimCheck, open cases, marked `◇`) follow under their own heading and
-  are never counted. `▸ Details` holds every path, output and assumption;
-  `▸ Context` the operator's answers, inherited files and subagents, whose
-  receipts cover their own branch, never the parent's change. Rows wrap; a
-  reason is never cut.
-- **What the gate sends back** is a card titled with what failed, such as
-  `↺ Sent back to the agent: the tests fail`.
-- **`prove`** shows the file, how long the proof took, and `✓ Proved` or
-  `✗ Not proved` with Dafny's error and the contract line it points at.
-
-Ctrl+O expands each one to its details.
-Inherited paths occupy the receipt's Context row, with their paths under
-Ctrl+O. Unknown capture states show their reasons.
-
-## Proved rules
-
-The pure decisions carry LemmaScript `//@` specifications, proved with Dafny
-by `bun run formal:check` on every pull request.
-
-| Rule | Decides |
+| Standing | Meaning |
 | --- | --- |
-| `proof-outcome-rule.ts` | How a proof ended, vacuous included |
-| `gate-rule.ts` | Which started tools make a request eligible, what goes back, what is yours, and whether the run continues |
-| `fingerprint-rule.ts` | Whether a repository is eligible and whether each path is a request change, inherited, unmeasured or unchanged |
-| `weakening-rule.ts` | Which annotation changes may weaken the evidence |
-| `selection-rule.ts` | Which functions LemmaScript extracts, `//@ verify` and `//@ skip` included |
-| `test-weakening-rule.ts` | Which changes to a test file may weaken its tests, and how an edit changed an assertion |
-| `project-rule.ts` | Which folders hold projects, and which project owns a path |
-| `check-origin-rule.ts` | Whether a test failure comes from the change |
-| `mutation-rule.ts` | What a mutant's proof means, and when a survivor is equivalent |
-| `proof-cover-rule.ts` | Which changed lines a proof covers |
-| `comment-line-rule.ts` | Whether a line holds only a comment |
-| `range-rule.ts` | How the receipt groups line numbers |
-| `footer-rule.ts` | What Tesota can verify before a request, and what the footer's one row drops as the terminal narrows, never the permission mode |
-| `model-rule.ts` | How a TLC run ended, what a planted fault shows, how a model's check ends, when a model runs, whether it may be stale, and whether it was written with its code |
-| `verdict-rule.ts` | How many findings need you, never a model's opinion, when a summary must say how many hold, the receipt's color, and when a method's row reads as holding |
-| `settle-rule.ts` | Whether a run goes on or how it ends, after its extensions and its verifier |
-| `permission-rule.ts` | Whether a call may run: the floor, the mode and the strongest rule |
-| `reconcile-rule.ts` | What recovery says of each call of an interrupted run |
-| `compact-rule.ts` | When to compact, and where the verbatim tail starts |
-| `edit-rule.ts` | When a list of edits may apply to a file, all at once |
-| `truncate-rule.ts` | How much of a tool's output the model gets |
-| `catalog-rule.ts` | How much of the prompt the skill list and instruction files may take |
-| `invocation-rule.ts` | Who may start a skill: the model unless `disable-model-invocation: true`, the operator by name unless `user-invocable: false` |
-| `budget-rule.ts` | Whether a performance measurement keeps to its limit, in one of two attempts |
+| `failed` | A check ran and showed the change wrong |
+| `incomplete` | The run stopped or needs a decision without a failed check; or evidence passed but gaps or uncovered paths remain |
+| `unchanged` | Nothing changed; print mode says “Completed (nothing to verify)”, while other surfaces say “nothing to verify” |
+| `unverified` | Something changed and no proof, command or design model check passed on current content |
+| `verified` | Evidence passed, every changed path is covered, no other gap or decision remains, and the run was not stopped |
 
-## Credits
+Coverage means a path proved or was tested and exercised under the
+receipt's conservative matching rules. Test files and comment-only changes
+are excluded from the unproved-file list. Changed lines outside proved
+contracts are still listed. With several unproved files, exercise evidence
+cannot establish which implementation file a test exercised.
 
-Proofs run on [LemmaScript](https://github.com/midspiral/LemmaScript) by
-Midspiral (MIT) with [Dafny](https://github.com/dafny-lang/dafny). Models
-run on [TLC](https://github.com/tlaplus/tlaplus), from the TLA+ tools (MIT),
-and [Quint](https://github.com/informalsystems/quint) by Informal Systems
-(Apache 2.0); Tesota runs both as the operator installs them. The
-contract comparison adapts the method and prompt wording of
-[ClaimCheck](https://github.com/metareflection/claimcheck) by metareflection
-(MIT); [NOTICE](../../NOTICE) keeps its license.
+[Receipt v2](../receipt-v2.md#standing) specifies the exact interpretation.
+Tesota's own pure decisions are listed in [Proved rules](../reference/proved-rules.md).
+
+## Evidence limits
+
+Evidence records the checker, outcome, output, duration and a content hash
+of its listed files. Before publishing, Tesota invalidates evidence whose
+content changed. It preserves the checked hash and output but cannot
+claim a pass on the current files. It does not automatically retry.
+Export rechecks proof, command and design model evidence and compares
+recorded file blobs with the commit. It refuses whenever the commit
+doesn't hold exactly what the checks saw. Exported as a Statement, a
+`verified` or `unchanged` receipt states `COMPLETED`, a `failed` one
+`FAILED`, and a stopped run's `CANCELLED`. An `incomplete` or `unverified`
+receipt isn't exported, because no defined result states it truthfully;
+read it with `tesota receipt`. See [Receipt v2](../receipt-v2.md).
+
+Hashes are not an atomic snapshot. Another writer can change files after
+a read. Command hashes cover changed paths rather than every dependency
+a command reads. A passing check can therefore establish less than a
+reader assumes. Proof coverage also depends on the written contract;
+a design model covers only its declared abstraction.
+
+## Stops and recovery
+
+A waiting question has no time limit. It stays pending until you answer,
+dismiss it or stop the run.
+
+Stopping during verification interrupts the active check and its child
+processes; no later check starts. The stopped receipt claims no evidence.
+It lists changed files through a read-only inventory, or says the inventory
+was unreadable. That inventory has a thirty-second limit.
+
+If the process dies, it cannot publish a receipt at that moment. Reopening
+the session records the interrupted run once. If a started call may have
+changed files, recovery adds a receipt that verified nothing and says the
+change is unknown. Files present when you reopen are not claimed to be
+what the interrupted run left.
+
+Recovery marks unfinished read-only calls as having no effect, other
+started calls as outcome unknown and unstarted calls as not run. It does
+not replay calls or unsaved answers. A new request can verify the current
+content. A session never reopened after a killed process gets no recovery
+receipt.

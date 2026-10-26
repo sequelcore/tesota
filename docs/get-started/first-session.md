@@ -1,7 +1,7 @@
 # Your first session
 
-This walk-through uses a small JavaScript project with a test command. Any
-Git repository works the same way.
+This walk-through uses a small TypeScript project with a test command and
+LemmaScript contracts. Any Git repository works the same way.
 
 ## 1. Open Tesota in the project
 
@@ -14,6 +14,7 @@ The footer says what Tesota can verify here:
 
 - `● ready · proofs and tests`: the project has LemmaScript contracts and
   check or test commands;
+- `● ready · proofs only`: it has contracts but no commands;
 - `● ready · tests only`: it has commands but no contracts;
 - `● ready · nothing to check with`: it has neither. Tesota still lists
   what changed as not verified.
@@ -23,12 +24,12 @@ The footer says what Tesota can verify here:
 Type the request and press Enter:
 
 ```text
-Take 10% off orders over 100, and add a test for it.
+Take 10% off orders over 100, with a contract and a test for it.
 ```
 
 The agent reads, writes and runs commands. By default Tesota asks before
-anything that isn't a read: answer **Yes, this once**, **Yes, for this
-session**, or **No**. Shift+Tab switches to full access or read only;
+anything that isn't a read: answer Yes, this once, Yes, for this
+session, or No. Shift+Tab switches to full access or read only;
 [Permissions](../guides/permissions.md) explains each.
 
 While the agent works, the indicator says `Working…`. Press Esc to stop it.
@@ -59,24 +60,40 @@ The run ends with Tesota's receipt:
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="../assets/tesota-turn-light.svg">
-  <img alt="A verified turn: the request, the agent's two file writes and its answer, then Tesota's receipt saying nothing needs you, the tests pass and the new test notices the change." src="../assets/tesota-turn-dark.svg">
+  <img alt="A verified run: the request, the agent's file writes and its answer, then Tesota's receipt saying nothing needs you, the contract is proved, the tests pass and the new test notices the change." src="../assets/tesota-turn-dark.svg">
 </picture>
 
-- While Tesota verifies, the same block shows what it is checking and
-  how each check ended; the receipt takes its place when it's done.
-- The receipt's first row counts what needs you: `No review flags · 1
-  verification limit` in amber when something is left unverified.
-- Then one row per method, saying only what ran: here, `✓ Tested` with
-  the command and its time, and `✓ Exercised`, since the new test failed
-  on the base and passed with the change. The details say the agent added
-  that test in this request, so it checks what the agent expects.
-- Then the review flags and limits, grouped by reason, and the models'
+A verified run with a proof and a test reads like this:
+
+```text
+Tesota receipt
+No review flags · no verification limits
+Check evidence, not your acceptance.
+
+✓ Tested      npm test · 0:04
+✓ Proved      src/discount.ts · 0:03
+○ Models      none recorded
+✓ Exercised   1 test file failed on the base and passed with the change
+✓ Contracts   1 contract: every decided change broke its proof
+```
+
+- The first row counts what needs you. Here nothing does; when something
+  is left unverified, it reads `1 verification limit`, in amber.
+- Then one row per method:
+  - `Tested` and `Proved`, with the command or file and its time;
+  - `Models`, for [design models](../guides/model-checking.md), none here;
+  - `Exercised`: the new test failed without the change and passes with
+    it, so it tests the change;
+  - `Contracts`: each small change Tesota made to the code broke the
+    proof, so the contract is strong enough to catch it.
+- Then any review flags and limits, grouped by reason, and the models'
   opinions on their own, never counted.
 - Press Ctrl+O for the details: every path, output and assumption; again
   to fold them.
 
-The footer keeps the receipt in brief, in the same color: `○ receipt · tests
-pass · 1 file not proved`.
+While Tesota verifies, the same block shows each check as it ends. The
+footer keeps the receipt in brief: `✓ receipt · 1 proved · tests pass ·
+contracts strong`. A `○` in its place means the run isn't verified.
 
 ## 5. Take it to a pull request
 
@@ -93,5 +110,7 @@ It writes the receipt as Markdown for the pull request's description.
 
 - [Verification](../guides/verification.md): give Tesota more to check
   with contracts and test reports.
+- [Model checking](../guides/model-checking.md): check a design where
+  steps interleave.
 - [Sessions](../guides/sessions.md): several requests at once, each in its
   own worktree.

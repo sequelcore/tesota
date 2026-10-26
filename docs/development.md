@@ -30,7 +30,7 @@ Node's zlib for the pinned ZIP executables, without external commands.
 
 | Command | |
 | --- | --- |
-| `bun run check` | The whole gate: types, the verification layer's tests, lint, and the engine's check |
+| `bun run check` | Every check: types, the verification layer's tests, lint, and the engine's check |
 | `bun run formal:check` | Prove every LemmaScript rule in `src/verification/` and `packages/core/src/`; needs Dafny |
 | `bun run typecheck` | Types of `src`, `tests` and `evaluation` |
 | `bun run test` | The verification layer's tests, with Vitest |
@@ -41,12 +41,13 @@ Node's zlib for the pinned ZIP executables, without external commands.
 
 Before finishing a change, run `bun run check`, `bun run formal:check` when
 a proved rule changed, and `git diff --check`. CI runs both checks on
-Ubuntu and Windows. Report what ran: a passing check, a live observation
-and a person's acceptance are different claims.
+Ubuntu, Windows and macOS, and the engine's session and tool tests on musl
+Linux, in Alpine without bash. Report what ran: a passing check, a live
+observation and a person's acceptance are different claims.
 
 `bun run check` never calls a live model. The tests that prove files run
-only where Dafny is installed; the gate's tests script the proofs and the
-model, and run real commands.
+only where Dafny is installed; the verification tests script the proofs and
+the model, and run real commands.
 
 ## Layout
 
@@ -57,7 +58,7 @@ model, and run real commands.
 | `src` | The verification layer, written against `src/contract.ts`; the engine gives it its parts through `src/host.ts` |
 | `src/verification` | Verification's proved rules and LemmaScript runner |
 | `tests` | The verification layer's tests, with Vitest, on a test host (`tests/host.ts`) |
-| `evaluation` | Measurements of Tesota's defaults on live models, run on the engine from your Tesota sign-in, and Claude through `claude -p` on your Claude sign-in (`engine-session.ts`, [#464](https://github.com/sequelcore/tesota/issues/464)) |
+| `evaluation` | Measurements of Tesota's defaults on live models, run on the engine from your Tesota sign-in, and Claude through `claude -p` on your Claude sign-in (`engine-session.ts`) |
 | `themes`, `terminal-schemes`, `grammars` | The two themes, the terminal color schemes, and the tree-sitter grammars coverage reads |
 
 `lemmascript` and `web-tree-sitter` are runtime dependencies. The grammars
@@ -71,7 +72,7 @@ package's.
   files and which calls failed, not how a message is worded.
 - **Engine home isolation.** Run engine tests with `bun run --cwd packages/core test`.
   Direct `bun test` runs from the root or engine folder refuse to start outside
-  the isolated wrapper, before tests can read or write the operator's home.
+  the isolated wrapper, before tests can read or write your home folder.
 - **Real processes.** Session tests kill a process mid-run, and mid-settle,
   to check recovery: that shows what survives a killed process, not a
   power cut.
@@ -88,6 +89,7 @@ A pure decision that can be stated precisely, such as a permission, a budget
 or a test's origin, carries LemmaScript `//@` specifications taken from its
 requirement, in a `*-rule.ts` file named in `formal:check`. Check that the
 proof means something: a deliberately wrong version must fail it.
+[Proved rules](reference/proved-rules.md) lists them.
 
 A rule's proof lives in its `.dfy`: the program LemmaScript generates, kept
 also as `.dfy.gen`, plus any proof added by hand. After changing a
@@ -116,7 +118,7 @@ of syncs to disk, settlement, resuming a session of about 1,000 entries,
 that session's size, the shell's first frame, and its memory. On Windows the
 first frame is limited divided by the same attempt's median startup, since
 runners there differ in speed for the whole job, with a looser limit in
-milliseconds for a regression that slows both (#556). Linux does the same
+milliseconds for a regression that slows both. Linux does the same
 with the median resume, which tracks the first frame there more closely. A
 second attempt measures everything again only when the first exceeds a
 budget. A sync's time depends on the disk, so it's only reported; their
@@ -146,35 +148,28 @@ the checkout, including a search with the embedded ripgrep.
 A release is a GitHub Release of the binaries, published by the binaries
 workflow from a tag; no one publishes from their own machine.
 
-Until the first stable release, alphas follow one another (`alpha.4`,
-`alpha.5`, …). Tesota is built with the installed alpha, so a new one is
-cut:
+Until the first stable release, versions are prereleases, numbered
+`0.1.0-alpha.<n>`. A fix that stops sessions, loses work, makes the receipt
+claim more than it observed, or crosses a permission or security boundary
+ships in a release of its own; other fixes wait for the next one.
 
-- **when the installed alpha becomes a wall for the work at hand:** it
-  stops it, such as a session that fails or verification that doesn't
-  finish; it pollutes it, such as false credit, false flags or a receipt
-  that has to be checked by hand; or it wastes it, such as minutes of
-  needless verification;
-- **when a phase of the plan closes,** so that its work reaches the
-  installed version.
-
-A public announcement goes out on an alpha that closes a phase, not one cut
-mid-phase. A fix waits for the next alpha unless it's urgent: one that
-stops sessions or loses work, makes the receipt claim more than it
-observed, or fails a permission or security boundary goes out in its own
-alpha at once.
-
-1. Set the version in [package.json](../package.json) and
-   [packages/core/package.json](../packages/core/package.json), such as
-   `0.1.0-alpha.2`, and merge it to `dev`.
+1. Set `<version>` in [package.json](../package.json) and
+   [packages/core/package.json](../packages/core/package.json). In
+   [CHANGELOG.md](../CHANGELOG.md), give the release's section that
+   version and the date. Merge it to `dev`.
 2. Tag that commit `v<version>` and push the tag.
 3. The workflow refuses a tag that isn't both versions, or a version
    already released. It builds and starts every target and runs the whole
    check (`ci.yml`) on the tagged commit. Only once all of them pass, the
    publish job, the only one that may write, checks the files against their
    `SHA256SUMS`, attests each binary's provenance, and publishes them
-   unchanged. A version with a suffix, such as `-alpha.1`, is a prerelease
-   and never becomes the latest release.
+   unchanged. A version with a suffix, such as `0.1.0-alpha.<n>`, is a
+   prerelease and never becomes the latest release. The release is titled
+   `Tesota <version>`, and its notes are a fixed line pointing to the
+   install scripts and `gh attestation verify`. The workflow doesn't
+   generate notes, so the categories in
+   [release.yml](../.github/release.yml) apply only to notes generated by
+   hand on GitHub.
 4. Check it: `gh attestation verify <binary> --repo sequelcore/tesota`,
    then install with the script and run a request through to a receipt.
 
@@ -203,7 +198,7 @@ with `Effect.runPromise(effect, { signal })`.
   Tesota reports. A stopped run's inventory runs no check, only Git: past
   its time limit it is abandoned, and its Git is stopped with every process
   it started (`gitStopped`) before the receipt.
-- **The operator's stop interrupts the model's turns, as Codex's does**
+- **Your stop interrupts the model's turns, as Codex's does**
   (`step` in `packages/core/src/loop.ts`). Each step a turn waits on (a
   reply, a call, a summary) is told by the run's signal and gets a short
   grace to report on its own; past that the run records it as stopped and
@@ -245,10 +240,11 @@ look successful because it removed the condition that detected a failure.
 
 `main` is the stable branch and `dev` the protected integration branch.
 Work starts on a short branch from `dev` and returns through a pull
-request; `dev` reaches `main` through a pull request with a merge commit. A
-hotfix starts from `main` and is merged back into `dev` promptly. Both
-branches require the Ubuntu and Windows checks, an up-to-date pull request
-and resolved conversations, and forbid force pushes and deletion.
+request, through a merge queue that checks it merged with what's ahead of
+it. `dev` reaches `main` through a pull request with a merge commit, which
+must be up to date. A hotfix starts from `main` and is merged back into
+`dev` promptly. Both branches require the Ubuntu and Windows checks and
+resolved conversations, and forbid force pushes and deletion.
 
 ## Documentation
 
@@ -273,6 +269,7 @@ The docs are for people and agents alike.
 | Exact commands, keys and files | [Reference](README.md#reference) |
 | The receipt's format | [Receipt v2](receipt-v2.md); keep its path, which receipts name |
 | Direction and non-goals | [Roadmap](../ROADMAP.md) |
+| What each release changed | [Changelog](../CHANGELOG.md) |
 | Building and testing Tesota | This page |
 | Instructions for agents working on Tesota | [AGENTS.md](../AGENTS.md) |
 

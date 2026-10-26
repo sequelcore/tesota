@@ -44,44 +44,36 @@ ignore it, the session gets no scratch folder.
 
 ## Answer the agent
 
-The agent can ask up to three questions with two to four choices each,
-and attempt at most three question batches in one request, including malformed
-or unavailable calls. A fourth attempt ends the run incomplete with the unresolved
-decision, rather than choosing for you. Select one or several choices as the question allows, add your own text,
-then submit the answers. A recommendation is a suggestion; nothing is
-selected or submitted for you. Questions wait until you answer, dismiss
-them or stop the run. An admitted question keeps the same run open: no
-verification or receipt is published just for asking. Work resumes after your
-answer and verifies at its real end.
+When the agent needs a decision from you, it shows up to three questions,
+each with two to four choices. Pick one or several, as the question allows,
+add your own text if you like, and submit. A choice marked as recommended
+is only a suggestion: nothing is picked for you.
 
-A direct blocking question in the last prose paragraph gets one request to use
-`ask_user`, only when someone can answer and a batch remains. The repair may
-only ask the question or clarify that no decision is needed. A second blocking
-prose question or a failed repair ends incomplete. Malformed and unavailable
-question calls share this one repair allowance. Both bounds survive amendments,
-compaction and verification continuations.
+The run waits for your answer and then carries on; asking doesn't end it
+or produce a receipt. The agent gets three tries at asking in one request.
+When it needs more, the run ends incomplete with the open decision
+rather than choosing for you.
 
-Recognition is a small English/Spanish heuristic, not a semantic guarantee.
-It covers direct forms such as “Should I…?”, “Which…?”, “Let me know which…”
-and “¿Quieres…?”, “¿Qué…?”, “Dime cuál…”. Code, quotes and headings are excluded;
-a question mark alone does not trigger it. Implicit questions, uncovered forms
-and other languages can be missed. Without a responder, as in print mode and
-subagents, a recognized unresolved question settles incomplete and stays visible.
+If the agent ends with a question in plain text, such as “Should I…?” or
+“¿Qué…?”, Tesota tells it once to ask through the question form
+instead. When it does it again, or when no one can answer, as in
+[print mode](print-mode.md) and in subagents, the run ends incomplete with
+the question shown. Tesota spots direct questions in English and Spanish
+in the last sentence; it can miss one asked another way.
 
-Ctrl+T opens the dashboard while a question is shown. Switching sessions
-keeps its unfinished answers; showing it again restores them. Esc dismisses
-the questions without an answer. Ctrl+C stops the run while its question
-form is open.
+Esc dismisses the questions without an answer, and Ctrl+C stops the run.
+Ctrl+T opens the dashboard; your unfinished answers are kept until you come
+back.
 
-Submitted answers are saved before the agent receives them. They stay with
-your request through compaction and resume, and qualify what verification
-checks. An answer does not grant execution permission or accept a change.
+Your answers are saved before the agent reads them, and stay with your
+request, so verification checks the change against them too. An answer
+doesn't allow any tool call or accept the change.
 
 ## Several sessions at once
 
 The first session in a folder works in the folder itself. Each one started
-while another holds it works in a **Git worktree** of its own: a copy of
-the repository on branch `tesota/<id>`, from the current commit, in
+while another holds it works in a Git worktree of its own: a copy of
+the repository on branch `tesota/<id>`, from the current commit, under
 `~/.tesota/worktrees`. Its tools, permissions, checks and receipt are its
 own, so two sessions never edit each other's files.
 

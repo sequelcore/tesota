@@ -94,7 +94,7 @@ its answer:
   own: the run that ended on the question saved its start fingerprints in
   the session, and the new run measures from them. What verification sent
   back before starts over.
-- The new run verifies once, at its end, and settles with its own receipt.
+- The new run is verified at its end and gets its own receipt.
 
 Otherwise, the text is a follow-up: a new request, as the shell sends a
 message once a run has ended. So resuming twice with the same answer

@@ -146,9 +146,8 @@ const noPlanToken = "Tesota takes no Claude plan token: use an Anthropic API key
 /**
  * pi-ai's Anthropic provider with its API key alone: no Claude sign-in, and
  * no Claude plan's token, from the environment (`ANTHROPIC_OAUTH_TOKEN`) or
- * entered as a key, since Tesota offers no Claude login
- * (`docs/decisions/claude-code-route-terms.md`). Claude on a plan is the
- * `claude-code` provider.
+ * entered as a key, since Tesota offers no Claude login (`docs/guides/models.md`).
+ * Claude on a plan is the `claude-code` provider.
  */
 export function anthropicKeyOnly(provider: Provider): Provider {
   const key = provider.auth.apiKey;
