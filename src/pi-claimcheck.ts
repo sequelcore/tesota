@@ -1,6 +1,9 @@
 import type { ExtensionContext } from "./contract.js";
 import { type TSchema, Type } from "typebox";
 import type { Contract } from "./proof-guarantees.js";
+import type { RequestJudgment } from "./receipt.js";
+import { contextUsage } from "./context-usage.js";
+import { fitsContext } from "./verification/request-context-rule.js";
 
 /**
  * ClaimCheck's round-trip method (metareflection/claimcheck, MIT), adapted to
@@ -100,6 +103,13 @@ export function claimcheckResult(models: Pick<Extract<ClaimCheck, { status: "jud
 }
 
 export type ModelAccess = Pick<ExtensionContext, "model" | "modelRegistry">;
+/** Whole operator requests, and where the gate records the context each judge actually received. */
+export interface JudgmentContext {
+  readonly folder?: string;
+  readonly requests: RequestJudgment["requests"];
+  readonly record: (judgment: RequestJudgment) => void;
+}
+
 type Reply = Awaited<ReturnType<ExtensionContext["modelRegistry"]["complete"]>>;
 
 /** Why a reply that ended without an answer ended so. */
@@ -112,15 +122,42 @@ function unanswered(reply: Pick<Reply, "stopReason" | "errorMessage">, signal: A
 
 const comparing = "You compare formal specifications with natural-language requirements. Answer only through the tool you are given.";
 
+const answerTool = (name: string, parameters: TSchema) => ({ name, description: "Record your answer. Call it exactly once.", parameters });
+
+/** Estimate the complete input with the engine's context rules, reserving the model's maximum output. */
+function promptFits(model: NonNullable<ModelAccess["model"]>, system: string, name: string, parameters: TSchema, prompt: string): boolean {
+  const usage = contextUsage([{ role: "user", content: prompt, timestamp: 0 }], system, [answerTool(name, parameters)], model.contextWindow);
+  return usage?.tokens != null && fitsContext(usage.tokens, model.maxTokens, usage.contextWindow);
+}
+
+/** The newest contiguous suffix of whole requests that fits the complete prompt; never truncate one request's requirements. */
+export function judgmentPrompt(model: NonNullable<ModelAccess["model"]>, system: string, name: string, parameters: TSchema,
+  requests: readonly string[], build: (texts: readonly string[]) => string, method: RequestJudgment["method"], judging?: JudgmentContext): string | undefined {
+  const groups = judging?.requests ?? requests.map((text, index) => ({ run: index + 1, text: [text] }));
+  let from = groups.length;
+  let prompt: string | undefined;
+  while (from > 0) {
+    const candidate = build(groups.slice(from - 1).flatMap(({ text }) => text));
+    if (!promptFits(model, system, name, parameters, candidate)) break;
+    prompt = candidate;
+    from -= 1;
+  }
+  // No request is meaningful too: direct callers can have no saved operator input.
+  if (groups.length === 0 && promptFits(model, system, name, parameters, build([]))) prompt = build([]);
+  judging?.record({ method, folder: judging.folder ?? "", requests: groups.slice(from), omitted: groups.slice(0, from).map(({ run }) => run) });
+  return prompt;
+}
+
 /** One request to `model` with `systemPrompt`, answered through the tool `name` with `parameters`; why it gave no answer otherwise. */
 export async function recorded<T>(ctx: ModelAccess, model: NonNullable<ModelAccess["model"]>, systemPrompt: string, name: string,
   parameters: TSchema, prompt: string, signal: AbortSignal): Promise<T | string> {
+  if (!promptFits(model, systemPrompt, name, parameters, prompt)) return "the complete prompt exceeds or has no known model context capacity";
   let reply: Reply;
   try {
     reply = await ctx.modelRegistry.complete(model, {
       systemPrompt,
       messages: [{ role: "user", content: [{ type: "text", text: prompt }], timestamp: Date.now() }],
-      tools: [{ name, description: "Record your answer. Call it exactly once.", parameters }],
+      tools: [answerTool(name, parameters)],
     }, { signal });
   } catch (error) {
     return unanswered({ stopReason: "error", errorMessage: error instanceof Error ? error.message : String(error) }, signal) ?? "";
@@ -150,7 +187,7 @@ export function registered(ctx: ModelAccess, name: string): ModelAccess["model"]
  * `CLAIMCHECK_TIME_LIMIT_MS`.
  */
 export async function claimCheck(ctx: ModelAccess, requests: readonly string[], items: readonly Contract[],
-  signal: AbortSignal, restateWith?: string): Promise<ClaimCheck> {
+  signal: AbortSignal, restateWith?: string, judging?: JudgmentContext): Promise<ClaimCheck> {
   const { model } = ctx;
   if (model === undefined) return { status: "not_judged", reason: "no model is selected" };
   const restater = restateWith === undefined ? model : registered(ctx, restateWith);
@@ -161,8 +198,11 @@ export async function claimCheck(ctx: ModelAccess, requests: readonly string[], 
   const first = await recorded<{ informalizations: Informalization[] }>(ctx, restater, comparing, "record_informalizations",
     informalizationSchema, informalizePrompt(items), limited);
   if (typeof first === "string") return { status: "not_judged", reason: first };
+  const prompt = judgmentPrompt(model, comparing, "record_comparisons", comparisonSchema, requests,
+    (texts) => comparePrompt(texts, items, first.informalizations), "claimcheck", judging);
+  if (prompt === undefined) return { status: "not_judged", reason: "no whole request fits the complete prompt within model context capacity" };
   const second = await recorded<{ comparisons: Comparison[] }>(ctx, model, comparing, "record_comparisons", comparisonSchema,
-    comparePrompt(requests, items, first.informalizations), limited);
+    prompt, limited);
   if (typeof second === "string") return { status: "not_judged", reason: second };
   return claimcheckResult({ restatedBy: named(restater), comparedBy: named(model) }, items, second.comparisons);
 }

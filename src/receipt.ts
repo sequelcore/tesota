@@ -15,6 +15,15 @@ import type { GateVerdict } from "./verification/gate-rule.js";
 import { clock } from "./operations.js";
 import { checkEnd, decisions, methodStanding, partlyHolds, pathCovered, runStanding, type Standing, verdictTone } from "./verification/verdict-rule.js";
 
+/** The operator requests actually supplied to one model judgment; omissions are explicit, never silent. */
+export interface RequestJudgment {
+  readonly method: "open_cases" | "claimcheck";
+  /** The ClaimCheck unit, or the empty string for root/global context. */
+  readonly folder: string;
+  readonly requests: readonly { readonly run: number; readonly text: readonly string[] }[];
+  readonly omitted: readonly number[];
+}
+
 /**
  * What a run that changed files leaves the operator when it settles: each
  * changed file with contracts, the gate's verdict on its proof and the
@@ -121,6 +130,8 @@ export interface Receipt {
   readonly openCases?: OpenCases;
   /** Submitted operator input that qualified the request; neither check evidence nor acceptance. */
   readonly clarifications?: readonly Clarification[];
+  /** Context supplied to each model-judged step, with any requests left out for context capacity. */
+  readonly requestJudgments?: readonly RequestJudgment[];
   /** The subagents the run started (#525), who did what: each one's own receipt is evidence about its own branch only. */
   readonly children?: readonly ReceiptChild[];
   /** The calls Tesota's floor refused in the request (#622): what didn't run, neither evidence nor a verdict. */
@@ -276,9 +287,11 @@ export function allEvidence(receipt: Receipt): UnitEvidence {
  */
 export function unitReceipt(receipt: Receipt, folder: string): Receipt | undefined {
   const unit = receipt.units?.find((candidate) => candidate.folder === folder && candidate.repository);
-  const { version, startedAt, settledAt, engine, model, clarifications, unresolvedQuestion, stopped } = receipt;
+  const { version, startedAt, settledAt, engine, model, clarifications, requestJudgments, openCases, unresolvedQuestion, stopped } = receipt;
   return unit === undefined ? undefined : { ...unit, version, startedAt, settledAt, engine, ...model === undefined ? {} : { model },
-    ...clarifications === undefined ? {} : { clarifications }, ...stopped === undefined ? {} : { stopped },
+    ...clarifications === undefined ? {} : { clarifications }, ...requestJudgments === undefined ? {} : { requestJudgments: requestJudgments.filter((judgment) =>
+      judgment.method === "open_cases" || judgment.folder === folder) },
+    ...stopped === undefined ? {} : { stopped }, ...openCases === undefined ? {} : { openCases },
     ...unresolvedQuestion === undefined ? {} : { unresolvedQuestion } };
 }
 
@@ -1228,7 +1241,20 @@ export function receiptDetailLines(receipt: Receipt): string[] {
     `${snapshot === true ? "Tesota's snapshot " : ""}${base?.slice(0, 12) ?? first}`;
   const from = receipt.units === undefined ? based(receipt, "the first commit")
     : receipt.units.filter(verified).map((unit) => `${plainName(unit.folder)} ${based(unit, "its first commit")}`).join(", ");
-  return [...receiptLines(receipt), `From ${from} · Tesota ${receipt.engine}${receipt.model === undefined ? "" : ` · ${receipt.model}`}`];
+  return [...receiptLines(receipt), ...requestJudgmentLines(receipt), `From ${from} · Tesota ${receipt.engine}${receipt.model === undefined ? "" : ` · ${receipt.model}`}`];
+}
+
+/** The judged request IDs, apart from check evidence and acceptance, including every capacity omission. */
+function requestJudgmentLines(receipt: Pick<Receipt, "requestJudgments">): string[] {
+  const ids = (runs: readonly number[]): string => runs.length < 2 ? runs.join("")
+    : `${runs.slice(0, -1).join(", ")} and ${runs.at(-1)}`;
+  const requests = (runs: readonly number[]): string => `${runs.length === 1 ? "request" : "requests"} ${ids(runs)}`;
+  return (receipt.requestJudgments ?? []).flatMap(({ method, folder, requests: given, omitted }) => {
+    const judge = method === "claimcheck" ? "ClaimCheck" : "Open cases";
+    const unit = folder === "" ? "" : ` · ${plainName(folder)}`;
+    return [`${judge} context: ${given.length === 0 ? "no requests supplied" : requests(given.map(({ run }) => run))}${unit}`,
+      ...omitted.length === 0 ? [] : [`${judge} left out ${requests(omitted)}: context capacity${unit}`]];
+  });
 }
 
 /**

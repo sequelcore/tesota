@@ -78,6 +78,126 @@ describe("the floor, which no mode crosses", () => {
     }
   });
 
+  // These only judge command text; no deletion command is executed.
+  test.each([
+    "Remove-Item (Join-Path $env:USERPROFILE '.tesota\\sessions\\x') -Recurse -Force",
+    "Remove-Item (Join-Path $env:USERPROFILE '.tesota\\sessions\\tesota-core-session-…') -Recurse -Force; …",
+    "Remove-Item (Join-Path $env:USERPROFILE 'sub\\folder') -Recurse",
+    "Remove-Item -Recurse (Join-Path $env:USERPROFILE 'sub\\folder')",
+    "Remove-Item -Recurse -Force (Join-Path $HOME 'sub/folder')",
+    "Remove-Item -Recurse (Join-Path ~ 'sub/folder')",
+    "Remove-Item -Recurse (Join-Path -Path $HOME -ChildPath 'sub/folder')",
+    "Remove-Item -Recurse (Join-Path $HOME sub/folder)",
+    "Remove-Item -Recurse (Join-Path $env:USERPROFILE 'x. ')",
+    "Remove-Item -Recurse (Join-Path $env:USERPROFILE '.tesota\\sessions\\x.. ')",
+    "Remove-Item -Recurse (Join-Path $env:SystemRoot 'Temp')",
+    "Remove-Item -Recurse $env:USERPROFILE\\sub",
+    "Remove-Item -Recurse $env:USERPROFILE/sub",
+    "Remove-Item -Recurse $HOME/sub",
+    "Remove-Item -Recurse $HOME\\sub",
+    "Remove-Item -Recurse ~\\sub",
+    "Remove-Item -Recurse ~/sub",
+    "Remove-Item -Recurse \"$HOME/sub\"",
+    "Remove-Item -Recurse \"$env:USERPROFILE\\sub\"",
+    "rm -rf $HOME/sub",
+    "rm -rf ~/sub",
+    "rm -rf ${HOME}/sub",
+    "rm -rf \"$HOME/sub\"",
+    "rm -rf \"${HOME}/sub\"",
+    "rm -rf \"$HOME\"/sub",
+    "rm -rf $HOME'/sub'",
+  ])("home subpaths are not home itself (#633): %s", (command) => {
+    for (const tool of ["powershell", "bash"]) {
+      expect(floor(tool, { command }, "run")).toMatchObject({ decision: "allow", by: "mode" });
+    }
+  });
+
+  test.each([
+    "Remove-Item -Recurse $env:USERPROFILE",
+    "Remove-Item -Recurse ~",
+    "Remove-Item -Recurse C:\\",
+    "Remove-Item -Recurse $HOME",
+    "Remove-Item -Recurse $env:SystemRoot",
+    // Only literal children establish a subpath; dynamic values and globs are not evaluated.
+    "Remove-Item -Recurse (Join-Path $HOME '*')",
+    "Remove-Item -Recurse (Join-Path $env:USERPROFILE $child)",
+    "Remove-Item -Recurse (Join-Path $HOME @children)",
+    "Remove-Item -Recurse (Join-Path -Path $HOME -ChildPath '*')",
+    "Remove-Item -Recurse (Join-Path -Path $HOME -ChildPath \"$child\")",
+    "Remove-Item -Recurse -Force (Get-Item $env:USERPROFILE -Force)",
+    "Remove-Item -Recurse (Get-ChildItem $HOME -Force)",
+    "Remove-Item -Recurse (Resolve-Path ~ -Relative)",
+    "Remove-Item -Recurse ( $HOME )",
+    "Remove-Item -Recurse ((Get-Location).Path) $HOME",
+    "rm -rf $HOME",
+    "rm -rf ~",
+    "rm -rf /",
+    // A subpath must not exempt another destructive target in the same command.
+    "Remove-Item -Recurse (Join-Path $HOME 'sub') $env:USERPROFILE",
+    "Remove-Item -Recurse (Join-Path $HOME 'sub'); Remove-Item -Recurse $HOME",
+    "rm -rf $HOME; rm -rf $HOME/sub",
+  ])("whole homes and roots are still refused (#633): %s", (command) => {
+    for (const tool of ["powershell", "bash"]) {
+      expect(floor(tool, { command }, "run")).toMatchObject({ decision: "deny", by: "floor" });
+    }
+  });
+
+  // A subpath that is empty, or whose `.` and `..` climb back, is the folder itself or above it.
+  test.each([
+    "Remove-Item -Recurse (Join-Path $env:USERPROFILE '..')",
+    "Remove-Item -Recurse (Join-Path $env:USERPROFILE '.')",
+    "Remove-Item -Recurse (Join-Path $env:USERPROFILE 'x/..')",
+    "Remove-Item -Recurse (Join-Path $env:USERPROFILE '../x')",
+    "Remove-Item -Recurse $env:USERPROFILE/x/..",
+    "Remove-Item -Recurse $env:USERPROFILE/../x",
+    "Remove-Item -Recurse (Join-Path $HOME '')",
+    "Remove-Item -Recurse (Join-Path -Path $HOME -ChildPath 'x/..')",
+    "Remove-Item -Recurse (Join-Path -Path $HOME -ChildPath '../x')",
+    "rm -rf $HOME/x/..",
+    "rm -rf $HOME/../x",
+    "Remove-Item -Recurse (Join-Path ~ '..\\..')",
+    "rm -rf $HOME/..",
+    "rm -rf ~/..",
+    "rm -rf $HOME/.",
+    "rm -rf ~/./",
+    "rm -rf $HOME/sub/../..",
+    "rm -rf \"$HOME\"/..",
+  ])("home subpaths that climb back are home or above it (#633): %s", (command) => {
+    for (const tool of ["powershell", "bash"]) {
+      expect(floor(tool, { command }, "run")).toMatchObject({ decision: "deny", by: "floor" });
+    }
+  });
+
+  test.each([
+    "Remove-Item -Recurse (Join-Path (Join-Path $env:USERPROFILE 'a') '..')",
+    "Remove-Item -Recurse (Join-Path (Join-Path $env:USERPROFILE 'x') '..\\..\\..')",
+    "Remove-Item -Recurse (Join-Path $env:USERPROFILE (Join-Path 'b' '..\\..\\..'))",
+    "Remove-Item -Recurse (Join-Path (Join-Path $HOME\\a '..') '.')",
+    "Remove-Item -Recurse (Join-Path (Join-Path $HOME\\a 'b') '..\\..')",
+    "Remove-Item -Recurse (Join-Path (Join-Path ~/a '..') '.')",
+    "Remove-Item -Recurse (Join-Path (Join-Path \"$HOME/a\" '..') '.')",
+    "Remove-Item -Recurse (Join-Path $HOME/a '..'); Write-Output (Join-Path x $y)",
+  ])("nested Join-Path does not exempt home (#692 F1): %s", (command) => {
+    for (const tool of ["powershell", "bash"]) {
+      expect(floor(tool, { command }, "run")).toMatchObject({ decision: "deny", by: "floor" });
+    }
+  });
+
+  test.each([
+    "Remove-Item -Recurse (Join-Path $env:USERPROFILE '...')",
+    "Remove-Item -Recurse (Join-Path $env:USERPROFILE '. ')",
+    "Remove-Item -Recurse (Join-Path $env:USERPROFILE '.. ')",
+    "Remove-Item -Recurse (Join-Path $env:USERPROFILE '....')",
+    "Remove-Item -Recurse (Join-Path $env:USERPROFILE 'x\\.. \\..')",
+    "Remove-Item -Recurse \"$env:USERPROFILE\\.. \"",
+    "Remove-Item -Recurse \"$env:USERPROFILE\\....\"",
+    "Remove-Item -Recurse (Join-Path $env:USERPROFILE '   ')",
+  ])("Windows dot/space segments do not exempt home (#692 F2): %s", (command) => {
+    for (const tool of ["powershell", "bash"]) {
+      expect(floor(tool, { command }, "run")).toMatchObject({ decision: "deny", by: "floor" });
+    }
+  });
+
   test("a root with a forward slash, a secret in capitals, and a shell call that also says a harmless path", () => {
     for (const command of ["Remove-Item -Recurse -Force C:/", "Get-Content .ENV", "type CONFIG\\.Env.local"]) {
       expect(floor(shell, { command }, "run")).toMatchObject({ decision: "deny", by: "floor" });

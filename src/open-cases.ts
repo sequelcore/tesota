@@ -1,5 +1,5 @@
 import { type TSchema, Type } from "typebox";
-import { type ModelAccess, named, recorded, registered } from "./pi-claimcheck.js";
+import { type JudgmentContext, judgmentPrompt, type ModelAccess, named, recorded, registered } from "./pi-claimcheck.js";
 
 /**
  * A model's list of the cases the operator's request leaves open: inputs
@@ -64,11 +64,13 @@ export function openCasesPrompt(requests: readonly string[]): string {
 }
 
 /** The open cases of `requests`, listed by `model`, a `provider/id` Tesota knows, within `OPEN_CASES_TIME_LIMIT_MS`. */
-export async function openCases(ctx: ModelAccess, requests: readonly string[], model: string, signal: AbortSignal): Promise<OpenCases> {
+export async function openCases(ctx: ModelAccess, requests: readonly string[], model: string, signal: AbortSignal, judging?: JudgmentContext): Promise<OpenCases> {
   const lister = registered(ctx, model);
   if (lister === undefined) return { status: "not_listed", reason: `${model} isn't a model Tesota knows (provider/id)` };
+  const prompt = judgmentPrompt(lister, openCasesSystemPrompt, "record_open_cases", listSchema, requests, openCasesPrompt, "open_cases", judging);
+  if (prompt === undefined) return { status: "not_listed", reason: `${model}: no whole request fits the complete prompt within model context capacity` };
   const listed = await recorded<ListAnswer>(ctx, lister, openCasesSystemPrompt, "record_open_cases", listSchema,
-    openCasesPrompt(requests), AbortSignal.any([signal, AbortSignal.timeout(OPEN_CASES_TIME_LIMIT_MS)]));
+    prompt, AbortSignal.any([signal, AbortSignal.timeout(OPEN_CASES_TIME_LIMIT_MS)]));
   if (typeof listed === "string") return { status: "not_listed", reason: `${named(lister)} ${listed}` };
   return listed.status === "not_listed" ? { status: "not_listed", reason: `${named(lister)} ${listed.reason}` }
     : { status: "listed", model: named(lister), cases: listed.cases };

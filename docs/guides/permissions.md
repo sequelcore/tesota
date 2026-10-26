@@ -39,6 +39,21 @@ No mode or rule allows these:
   `Remove-Item -Recurse C:\`, `format`, `mkfs`, `dd` onto a disk, a fork
   bomb.
 
+A home subfolder is not home itself: for example,
+`Remove-Item (Join-Path $env:USERPROFILE 'sub\folder') -Recurse` is not
+refused as a whole-home deletion. A literal subpath that ends back at home
+(`.`, `x/..`) or climbs above it (`../x`) is still refused. The patterns
+recognize flat, parent-first `Join-Path` pairs with literal children,
+optionally with `-Path` and `-ChildPath`. Dynamic children and wildcards do
+not exempt a home argument. Nested or unrecognized `Join-Path` forms keep
+the original guarded arguments visible to the net. If a `Join-Path` remains
+unrecognized, no guarded subpath in that command receives an exemption,
+even alongside another flat pair. Guarded subpaths use
+conservative Windows dot/space normalization: trailing dots and spaces do
+not establish a child folder, and ambiguous leading `..` dot/space-only
+segments count as parent steps. The patterns do not bind arbitrary parameters,
+evaluate expressions, expand variables or wildcards, or resolve symbolic links.
+
 The floor is a net of patterns, not a sandbox: a command can do harm it
 doesn't recognize. Tesota has no sandbox of its own. It judges what a call
 names, so it can't see that a later call reaches what it refused another

@@ -258,7 +258,7 @@ it.each([false, true])("verifies clarifications and amendments in their journal 
   inputs.push({ kind: "amendment", origin: "extension", text: "Not operator input." });
   const prompts: string[] = [];
   const run = gate(root, undefined, { flags: { "open-cases-model": "test/lister" }, modelRegistry: {
-    find: () => ({ provider: "test", id: "lister" }), complete: (_model: unknown, context: { messages: { content: { text: string }[] }[] }) => {
+    find: () => ({ provider: "test", id: "lister", contextWindow: 128_000, maxTokens: 4096 }), complete: (_model: unknown, context: { messages: { content: { text: string }[] }[] }) => {
       prompts.push(context.messages[0]?.content[0]?.text ?? "");
       return Promise.resolve({ stopReason: "toolUse", content: [{ type: "toolCall", id: "result", name: "record_open_cases", arguments: { status: "listed", cases: [] } }] });
     },
@@ -901,7 +901,7 @@ it("publishes each step for the footer: waiting, proving, sent back, testing, me
 
 it("leaves a receipt verifying nothing when a run is stopped after a write starts", async () => {
   const root = project();
-  const run = gate(root, undefined, { model: { provider: "provider", id: "model" } });
+  const run = gate(root, undefined, { model: { provider: "provider", id: "model", contextWindow: 128_000, maxTokens: 4096 } });
   await run.input();
   await run.tool("write");
   writeFileSync(join(root, "src", "rule.ts"), contract.replace("return 0;", "return 1;"));
@@ -1124,6 +1124,38 @@ it("records the blob of every file the run left changed, and a deleted one as nu
     { path: "src/new.md", blob }]);
 });
 
+it("serializes each judge's actual request selection and capacity omissions (#627)", async () => {
+  const root = project();
+  const commit = await headCommit(root);
+  const earlier = Array.from({ length: 99 }, (_, index) => ({ run: index + 1, text: `Requirement ${index + 1}: ${"x".repeat(20_000)}`, inputs: [] }));
+  const asked: string[] = [];
+  const model = { provider: "test", id: "judge", contextWindow: 12_000, maxTokens: 256 };
+  const complete = (_model: unknown, context: { messages: { content: { text: string }[] }[]; tools: { name: string }[] }): Promise<unknown> => {
+    asked.push(context.messages[0]?.content[0]?.text ?? "");
+    const name = context.tools[0]?.name;
+    const arguments_ = name === "record_open_cases" ? { status: "listed", cases: [] }
+      : name === "record_comparisons" ? { comparisons: [{ function: 1, verdict: "justified", explanation: "as asked" }] }
+        : { informalizations: [{ function: 1, preconditions: "none", postcondition: "non-negative", strength: "strong" }] };
+    return Promise.resolve({ stopReason: "toolUse", content: [{ type: "toolCall", id: "1", name, arguments: arguments_ }] });
+  };
+  const run = gate(root, undefined, { model, modelRegistry: { complete, find: () => ({ ...model, id: "lister", contextWindow: 7000 }) },
+    flags: { "open-cases-model": "test/lister" } }, () => ({ run: 100, text: "continue", at: "2026-10-26T00:00:00Z", inputs: [],
+    unverifiedRequests: earlier, base: { units: [{ folder: "", kind: "commit", commit }] } }));
+  await run.input();
+  await run.tool("write");
+  writeFileSync(join(root, "src/rule.ts"), "//@ ensures \\result >= 0 && \\result <= 1\nexport function f(): number { return 0; }\n");
+  const receipt = JSON.parse(JSON.stringify(entry(await run.settle()).details)) as Receipt;
+  expect(receipt.requestJudgments?.map(({ method, requests, omitted }) => [method, requests.map(({ run }) => run), omitted])).toEqual([
+    ["claimcheck", [98, 99, 100], Array.from({ length: 97 }, (_, index) => index + 1)],
+    ["open_cases", [99, 100], Array.from({ length: 98 }, (_, index) => index + 1)],
+  ]);
+  expect(asked[1]).toContain("Requirement 98:");
+  expect(asked[1]).not.toContain("Requirement 97:");
+  expect(asked[2]).toContain("Requirement 99:");
+  expect(asked[2]).not.toContain("Requirement 98:");
+  expect(renderReceipt(receipt)).toContain("Open cases left out requests 1, 2");
+});
+
 it("measures the strength of the contracts the request changed once they prove, judged against what the operator asked", async () => {
   const root = repository({ "src/rule.ts": contract,
     "src/other.ts": "//@ ensures \\result >= 0\nexport function g(): number {\n  return 1;\n}\n" });
@@ -1135,7 +1167,7 @@ it("measures the strength of the contracts the request changed once they prove, 
       ? { comparisons: [{ function: 1, verdict: "not_justified", explanation: "It allows any non-negative result." }] }
       : { informalizations: [{ function: 1, preconditions: "none", postcondition: "non-negative", strength: "weak" }] } }] });
   };
-  const run = gate(root, undefined, { model: { provider: "provider", id: "model" }, modelRegistry: { complete } });
+  const run = gate(root, undefined, { model: { provider: "provider", id: "model", contextWindow: 128_000, maxTokens: 4096 }, modelRegistry: { complete } });
   await run.input("interactive", undefined, "f returns zero");
   await run.tool("write");
   await run.input("interactive", "steer", "and only zero");
@@ -1153,7 +1185,7 @@ it("measures the strength of the contracts the request changed once they prove, 
 
 it("restates with the model the claimcheck-model flag names", async () => {
   const root = project();
-  const run = gate(root, undefined, { model: { provider: "provider", id: "model" }, flags: { "claimcheck-model": "other/missing" },
+  const run = gate(root, undefined, { model: { provider: "provider", id: "model", contextWindow: 128_000, maxTokens: 4096 }, flags: { "claimcheck-model": "other/missing" },
     modelRegistry: { find: () => undefined } });
   await run.input();
   await run.tool("write");
@@ -1169,10 +1201,10 @@ it("lists the cases the request leaves open with GPT-6 Sol unless the operator n
     return Promise.resolve({ stopReason: "toolUse", content: [{ type: "toolCall", id: "1", name: "record_open_cases",
       arguments: { status: "listed", cases: [{ input: "lateFee(-1)", outcomes: ["0", "-5"] }] } }] });
   };
-  const find = (provider: string, id: string): object => ({ provider, id });
+  const find = (provider: string, id: string): object => ({ provider, id, contextWindow: 128_000, maxTokens: 4096 });
   for (const [named, model] of [[undefined, "openai/gpt-6-sol"], ["other/lister", "other/lister"]] as const) {
     const root = project();
-    const run = gate(root, undefined, { model: { provider: "provider", id: "model" }, modelRegistry: { complete, find },
+    const run = gate(root, undefined, { model: { provider: "provider", id: "model", contextWindow: 128_000, maxTokens: 4096 }, modelRegistry: { complete, find },
       flags: { "open-cases-model": named } });
     await run.input("interactive", undefined, "lateFee charges 5 per day late, at most 50");
     await run.tool("write");
@@ -1194,8 +1226,8 @@ it("reports missing issue contents instead of inventing an open case for the #57
     return Promise.resolve({ stopReason: "toolUse", content: [{ type: "toolCall", id: "1", name: "record_open_cases",
       arguments: { status: "not_listed", reason } }] });
   };
-  const run = gate(root, undefined, { model: { provider: "provider", id: "model" },
-    modelRegistry: { complete, find: (provider: string, id: string) => ({ provider, id }) },
+  const run = gate(root, undefined, { model: { provider: "provider", id: "model", contextWindow: 128_000, maxTokens: 4096 },
+    modelRegistry: { complete, find: (provider: string, id: string) => ({ provider, id, contextWindow: 128_000, maxTokens: 4096 }) },
     flags: { "open-cases-model": "openai/gpt-6-sol" } });
   await run.input("interactive", undefined, "Fix issue #575 (read it and its comments with gh issue view 575 --comments).");
   await run.tool("write");
@@ -1212,12 +1244,12 @@ it("reports missing issue contents instead of inventing an open case for the #57
 
 it("leaves the open cases out when the operator turns the list off, and says why when no model lists them", async () => {
   const root = project();
-  const off = gate(root, undefined, { model: { provider: "provider", id: "model" }, modelRegistry: { find: () => undefined } });
+  const off = gate(root, undefined, { model: { provider: "provider", id: "model", contextWindow: 128_000, maxTokens: 4096 }, modelRegistry: { find: () => undefined } });
   await off.input();
   await off.tool("write");
   writeFileSync(join(root, "src", "notes.md"), "notes\n");
   expect((entry(await off.settle()).details as Receipt).openCases).toBeUndefined();
-  const missing = gate(root, undefined, { model: { provider: "provider", id: "model" }, modelRegistry: { find: () => undefined },
+  const missing = gate(root, undefined, { model: { provider: "provider", id: "model", contextWindow: 128_000, maxTokens: 4096 }, modelRegistry: { find: () => undefined },
     flags: { "open-cases-model": "nobody/none" } });
   await missing.input();
   await missing.tool("write");
@@ -1924,7 +1956,7 @@ it("shows a command that prints nothing with its exact command and growing time,
 it("publishes the open-case listing, and a model check kept from an earlier check as reused (#590)", async () => {
   const root = repository({ "src/counter.ts": "export const n = 0;\n", ...counterModel() });
   const run = gate(root, undefined, { flags: { "open-cases-model": "test/lister" }, modelRegistry: {
-    find: () => ({ provider: "test", id: "lister" }), complete: () => Promise.resolve({ stopReason: "toolUse",
+    find: () => ({ provider: "test", id: "lister", contextWindow: 128_000, maxTokens: 4096 }), complete: () => Promise.resolve({ stopReason: "toolUse",
       content: [{ type: "toolCall", id: "result", name: "record_open_cases", arguments: { status: "listed", cases: [] } }] }) } });
   await run.input();
   await run.tool("write");

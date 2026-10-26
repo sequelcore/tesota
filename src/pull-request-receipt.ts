@@ -145,7 +145,9 @@ function commitDescriptor(commit: string, repository: string | undefined): objec
 /**
  * The receipt as an in-toto Statement about the commit, with the agentic
  * process evidence proposal's predicate fields; `result` is the process
- * result its standing states truthfully (`statementResult`).
+ * result its standing states truthfully (`statementResult`). The custom
+ * receipt retains requestJudgments verbatim, including text and capacity
+ * omissions; those describe model context, never check evidence.
  */
 export function receiptStatement(receipt: Receipt, subject: Subject, createdAt: string, result: "CANCELLED" | "COMPLETED" | "FAILED"): object {
   const models = [...new Set([receipt.model, ...receipt.claimcheck?.status === "judged"
@@ -174,7 +176,8 @@ export function receiptStatement(receipt: Receipt, subject: Subject, createdAt: 
 /**
  * The receipt as Markdown for a pull request: what it is bound to, the
  * evidence the commit no longer holds, the files changed after the receipt,
- * and the receipt as the operator read it, fenced so no Markdown in it renders.
+ * and the receipt as the operator read it, including each judge's supplied
+ * and omitted request numbers, fenced so no Markdown in it renders.
  */
 export function receiptMarkdown(receipt: Receipt, subject: Subject): string {
   const text = renderReceipt(receipt);

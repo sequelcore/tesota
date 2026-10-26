@@ -1,0 +1,16 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`stores and exports the requests each judge received and names context omissions (#627) 1`] = `
+"Tesota receipt
+No review flags · no verification limits
+Check evidence, not your acceptance.
+
+○ Tested   none recorded
+○ Proved   none recorded
+○ Models   none recorded
+
+Details
+ClaimCheck context: requests 1 and 3 · app
+ClaimCheck left out request 2: context capacity · app
+From the first commit · Tesota 0.1.0"
+`;
