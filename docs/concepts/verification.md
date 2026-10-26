@@ -276,7 +276,12 @@ of its listed files. Before publishing, Tesota invalidates evidence whose
 content changed. It preserves the checked hash and output but cannot
 claim a pass on the current files. It does not automatically retry.
 Export rechecks proof, command and design model evidence and compares
-recorded file blobs with the commit.
+recorded file blobs with the commit. It refuses whenever the commit
+doesn't hold exactly what the checks saw. Exported as a Statement, a
+`verified` or `unchanged` receipt states `COMPLETED`, a `failed` one
+`FAILED`, and a stopped run's `CANCELLED`. An `incomplete` or `unverified`
+receipt isn't exported, because no defined result states it truthfully;
+read it with `tesota receipt`. See [Receipt v2](../receipt-v2.md).
 
 Hashes are not an atomic snapshot. Another writer can change files after
 a read. Command hashes cover changed paths rather than every dependency
