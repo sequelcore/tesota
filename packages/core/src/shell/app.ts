@@ -11,6 +11,7 @@ import tesota from "../../../../src/tesota.ts";
 import { type AccountHands, accountRows, addAccount, type ClaudeCode, claudeOf, removeAccount, signInAgain } from "../accounts.ts";
 import { fileCredentialStore } from "../credentials.ts";
 import { unusedModels } from "../agents.ts";
+import { startingModel } from "../resume-model-rule.ts";
 import { accountLabels, chosenModel, engineModels, loginOptions, runnableModel, runnableModels } from "../model-access.ts";
 import { claudeCodeProviderId, claudeCodeSignIn } from "../providers/claude-code.ts";
 import type { Mode } from "../permission-rule.ts";
@@ -293,12 +294,24 @@ export async function runApp(options: AppOptions): Promise<void> {
    */
   const resumeHere = async (picked: string, holder?: Live): Promise<void> => {
     try {
+      const last = peekSessionFile(picked).entries.findLast((entry) => entry.type === "assistant")?.message;
+      const lastModel = last === undefined ? "" : `${last.provider}/${last.model}`;
+      const chosen = startingModel("", lastModel, model === undefined ? "" : label(model));
+      const next = lastModel === "" ? model === undefined ? undefined : { model } : await runnableModel(models, chosen);
+      if (typeof next === "string") {
+        shell.note(`Not resumed: the session last ran on ${lastModel}, which cannot run now: ${next} Sign in again to resume on that model. The current model is unchanged.`, "warning");
+        return;
+      }
       if (holder !== undefined && lives.includes(holder)) {
         const asked = firstRequest(holder.session.file) !== undefined;
         await close(holder, false);
         if (!asked) for (const file of [holder.session.file, holder.session.file.replace(/\.jsonl$/u, ".lock")]) rmSync(file, { force: true });
       }
-      await attach(live((made) => openSession(picked, sessionOptions(made))));
+      const resumed = live((made) => openSession(picked, { ...sessionOptions(made), ...next === undefined ? {} : { model: next.model } }));
+      model = next?.model;
+      await attach(resumed);
+      if (next?.unchecked !== undefined) shell.note(next.unchecked, "warning");
+      if (next !== undefined) shell.note(`Continuing on ${label(next.model)}. Use /model to choose another.`);
     } catch (error) {
       shell.note(error instanceof Error ? error.message : String(error), "warning");
       if (!lives.includes(attached)) await attach(lives[0] ?? live((made) => createSession({ cwd: options.cwd, folder, ...sessionOptions(made) })));
