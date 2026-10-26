@@ -141,9 +141,43 @@ apply.
 | `startState`, `endState` | CaptureState, optional | Each repository's capture at the first non-reader tool and at final verification. Absent for snapshots, runs recovered after their process ended, older receipts, and when no capture was taken |
 | `units` | Unit[], optional | Per-folder evidence when the session runs outside Git across folders. Top-level check lists and change inventory are empty, `repository` is true and `base` is null; shared run metadata remains at the top level |
 | `openCases` | OpenCases, optional | Cases your request leaves open, as a model listed them for you to resolve. These suggestions appear separately from check evidence and do not count toward decisions required by the receipt. Absent when listing is disabled with `--open-cases-model off`; otherwise listing uses `openai/gpt-6-sol` by default |
+| `requestJudgments` | RequestJudgment[], optional | The requests supplied to each model-judged step, and any omitted for model context capacity. Context, not check evidence or acceptance; absent when no request-context judgment was attempted |
 | `clarifications` | Clarification[], optional | Explicitly submitted answers to the agent's questions, in submission order. Records request context; submitting an answer does not establish check evidence, execution permission or acceptance. Absent when no batch was submitted |
 | `children` | Child[], optional | The [subagents](guides/subagents.md) the run started, in the order they ended: who did what. Each child's receipt covers its own branch; the parent checks adopted changes in its workspace. Absent when the run started none |
 | `floorRefusals` | FloorRefusal[], optional | The calls Tesota's [floor](guides/permissions.md#the-floor) refused in the request, in order: `tool`, `subject` (what the call named, on one line and cut to 80 characters) and `reason`. Rendered without `subject`, which may be a secret's path. A refusal records that one call did not run. It does not establish what ran instead and contributes neither check evidence nor a standing decision. Absent when there were none |
+
+### RequestJudgment
+
+Each entry describes one model-judged prompt, independently budgeted for its
+model. A workspace can have several ClaimCheck comparisons, one per unit.
+A repository's pull-request export retains only that unit's ClaimCheck
+entries and the shared open-cases context, in both JSON and Markdown.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `method` | `"open_cases"` or `"claimcheck"` | Which model-judged step received the requests |
+| `folder` | string | The ClaimCheck unit's folder, or the empty string for the root or shared open-cases context |
+| `requests` | { run: number, text: string[] }[] | Whole requests supplied, oldest first. `run` is the session's request number; `text` is its original text followed by operator amendments and clarifications in order. Extension input is excluded |
+| `omitted` | number[] | Earlier request numbers left out for context capacity, oldest first. Empty when all fit. No request is truncated |
+
+For example, `ClaimCheck context: requests 1 and 3` names the supplied
+context. `ClaimCheck left out request 2: context capacity` makes an omission
+explicit. If even the newest whole request or fixed prompt does not fit,
+nothing is judged; the receipt records no supplied requests and lists all
+omitted request numbers. The model result explains why it could not run.
+
+The chain includes requests since the last final successful verifier
+settlement with a non-stopped receipt. A completed answer without a receipt
+does not end it. A stopped receipt is only an inventory, never this boundary.
+An intermediate receipt followed by resumed generation and a crash does not
+end the chain either. Context supplied to a model is not a claim that the
+model returned a usable judgment; its result is recorded separately.
+Capacity is estimated using Tesota's shared context estimator, including
+the system prompt, tool schema, contracts and restatements where applicable,
+and reserving the model's maximum output tokens. The newest contiguous
+suffix of whole requests that fits is supplied. Each model can therefore
+receive a different suffix. These are token estimates, not exact provider
+token counts.
 
 ### Standing
 

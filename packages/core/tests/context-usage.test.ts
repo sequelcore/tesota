@@ -1,6 +1,6 @@
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { expect, test } from "bun:test";
-import { contextUsage } from "../src/context-usage.ts";
+import { contextUsage } from "../../../src/context-usage.js";
 import type { HistoryMessage } from "../src/loop.ts";
 
 /**
