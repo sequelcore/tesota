@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { runPrint } from "../src/print.ts";
 import { sessionsFolder } from "../src/session.ts";
 import { readSessionFile } from "../src/session-file.ts";
@@ -66,7 +66,7 @@ describe("the model a resumed print run continues on", () => {
       const cwd = repository();
       expect((await run(["Say done", "--model", "side@b/s-1"], cwd)).code).toBe(0);
       const file = sessionOf(cwd);
-      const id = file.slice(file.lastIndexOf("\\") + 1).replace(/\.jsonl$/, "");
+      const id = basename(file, ".jsonl");
       const second = await run(how === "-c" ? ["-c", "Again"] : ["--resume", id, "Again"], cwd);
       expect(second.code).toBe(0);
       expect(second.error).not.toContain("Continuing on");
