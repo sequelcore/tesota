@@ -7,8 +7,8 @@ import { engineOf } from "../src/engine-name.js";
 
 const scratch = mkdtempSync(join(tmpdir(), "tesota-engine-"));
 // Windows can retain directory handles briefly after the Git/filter processes exit.
-// Bound cleanup retries, as the isolated-home fixtures do; persistent failures still fail the suite.
-afterAll(() => { rmSync(scratch, { recursive: true, force: true, maxRetries: 3 }); });
+// Bound cleanup retries with the isolated run's margin (scripts/isolated.ts); persistent failures still fail the suite.
+afterAll(() => { rmSync(scratch, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 }); });
 
 function checkout(name: string): { folder: string; head: string } {
   const folder = join(scratch, name);

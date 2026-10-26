@@ -73,7 +73,8 @@ change verification results.
 | Command | |
 | --- | --- |
 | `/login` | Sign in to a model provider, or add an account |
-| `/accounts` | Your accounts and their sign-ins: add one, sign one in again, remove one |
+| `/usage` | The usage panel on its Usage tab: how much each account has left in each limit window ([Usage](../guides/models.md#usage-of-your-accounts)) |
+| `/accounts` | The same panel on its Accounts tab: your accounts and their sign-ins; sign one in again, remove one, or press `a` to add one |
 | `/logout` | Forget a provider's sign-in |
 | `/model` | Choose the model |
 | `/settings` | Terminal mode (fullscreen or inline) and thinking level |

@@ -5,7 +5,8 @@ import { tesotaHome } from "../../../src/home.ts";
 import { accountUses } from "./account-rule.ts";
 import { agentTypes } from "./agents.ts";
 import { fileCredentialStore } from "./credentials.ts";
-import { accountId, accountLabels, engineModels, loginOptions, setAccountProvider } from "./model-access.ts";
+import { accountId, accountLabels, type AccountState, accountStates, type AccountStatesOptions, engineModels, loginOptions,
+  setAccountProvider } from "./model-access.ts";
 import { claudeCodeLogin, claudeCodeStatus } from "./providers/claude-code.ts";
 import { type Account, accountName, readSettings, updateSettings } from "./settings.ts";
 
@@ -141,23 +142,38 @@ export async function removeAccount(hands: AccountHands, id: string): Promise<st
   return `Removed ${id} and the folder Tesota made for it, ${own}.`;
 }
 
-/** Each account, with what it is signed in to and whether another is the same account, as `/accounts` and `tesota accounts` list them. */
-export async function accountRows(hands: AccountHands): Promise<readonly AccountRow[]> {
+/**
+ * Each account, with what it is signed in to and whether another is the same
+ * account, as `/accounts` and `tesota accounts` list them. `session` is the
+ * provider the shell's session runs on: its default sign-in is listed too.
+ * `options` checks sign-ins at once and tells of the rows as each returns, as
+ * `accountStates` does; one at a time, telling no one, unless given.
+ */
+export async function accountRows(hands: AccountHands, session?: string,
+  { onUpdate, ...options }: Omit<AccountStatesOptions, "onUpdate"> & { readonly onUpdate?: (rows: readonly AccountRow[]) => void } = {}):
+  Promise<readonly AccountRow[]> {
   const accounts = declared(hands);
-  const labels = await accountLabels(hands.credentials, accounts, claudeOf(hands.claude).status);
-  return [...labels].map(([id, label]) => {
+  const rows = (states: readonly AccountState[]): AccountRow[] => states.map(({ id, provider, label, signedIn, identity, checking }) => {
     const account = accounts.find((each) => accountId(each) === id);
-    if (account === undefined) return { id, label, default: true };
-    return { id, label, ...account.provider === "claude-code" ? { folder: account.folder } : {} };
+    return { id, provider, label, signedIn, ...identity === undefined ? {} : { identity }, ...checking === true ? { checking } : {},
+      ...account === undefined ? { default: true as const } : account.provider === "claude-code" ? { folder: account.folder } : {} };
   });
+  return rows(await accountStates(hands.credentials, accounts, claudeOf(hands.claude).status, session === undefined ? [] : [session],
+    { ...options, ...onUpdate === undefined ? {} : { onUpdate: (states) => { onUpdate(rows(states)); } } }));
 }
 
 /** An account in the view: a declared one, or a provider's default sign-in, listed so a duplicate of it is plain. */
 export interface AccountRow {
   readonly id: string;
+  readonly provider: Account["provider"];
   readonly label: string;
+  readonly signedIn: boolean;
+  /** Whom it is signed in to, when the provider says. */
+  readonly identity?: string;
   readonly folder?: string;
   readonly default?: true;
+  /** Its sign-in is still being checked. */
+  readonly checking?: true;
 }
 
 /** The accounts as text, one to a line, or how to add one. */

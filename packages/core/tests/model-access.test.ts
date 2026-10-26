@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { fileCredentialStore } from "../src/credentials.ts";
-import { accountLabels, chosenModel, engineModels, loginOptions } from "../src/model-access.ts";
+import { accountLabels, accountStates, chosenModel, engineModels, loginOptions } from "../src/model-access.ts";
 import { runPrint } from "../src/print.ts";
 import { createSession, type EngineSession } from "../src/session.ts";
 import { writeSettings } from "../src/settings.ts";
@@ -91,6 +91,68 @@ describe("the engine's models", () => {
     expect(labels.get("claude-code")).toContain("owner@example.test");
     expect(labels.get("claude-code@b")).toBe("owner@example.test · same account as claude-code");
     expect(labels.get("openai-codex@work")).toBe("chatgpt-account-1 · same account as openai-codex");
+  });
+
+  /** Claude Code's status faked: each check waits until released, and counts how many wait at once. */
+  const heldStatus = () => {
+    const waiting: (() => void)[] = [];
+    let open = 0;
+    let most = 0;
+    const signals: (AbortSignal | undefined)[] = [];
+    const status = (folder?: string, _execute?: unknown, signal?: AbortSignal) => {
+      signals.push(signal);
+      open += 1;
+      most = Math.max(most, open);
+      return new Promise<{ loggedIn: boolean; email?: string }>((resolve) => {
+        waiting.push(() => { open -= 1; resolve({ loggedIn: true, email: `${folder ?? "default"}@example.test` }); });
+      });
+    };
+    return { status, waiting, signals, most: () => most };
+  };
+  const claudeAccounts = ["a", "b", "c", "d", "e"].map((name) => ({ name, provider: "claude-code" as const, folder: `/claude-${name}` }));
+
+  test("tells of the accounts at once, as being checked, then as each sign-in check returns, a bounded number at a time (#1)", async () => {
+    const held = heldStatus();
+    const updates: (readonly { id: string; checking?: true; identity?: string }[])[] = [];
+    const states = accountStates(new InMemoryCredentialStore(), claudeAccounts, held.status, [], { concurrency: 3, onUpdate: (each) => { updates.push(each); } });
+    // Before any check returns, every account is told of, being checked.
+    expect(updates).toHaveLength(1);
+    expect(updates[0]?.map(({ id, checking }) => `${id} ${String(checking)}`))
+      .toEqual(["claude-code true", ...claudeAccounts.map(({ name }) => `claude-code@${name} true`)]);
+    await Bun.sleep(0);
+    expect(held.waiting).toHaveLength(3);
+    held.waiting[1]?.();
+    await Bun.sleep(0);
+    expect(updates.at(-1)?.map(({ checking }) => checking)).toEqual([true, undefined, true, true, true, true]);
+    expect(updates.at(-1)?.[1]?.identity).toBe("/claude-a@example.test");
+    for (let round = 0; round < 10 && held.waiting.length < 6; round++) { for (const release of held.waiting) release(); await Bun.sleep(0); }
+    for (const release of held.waiting) release();
+    const done = await states;
+    expect(done.every(({ checking }) => checking === undefined)).toBe(true);
+    expect(held.most()).toBe(3);
+  });
+
+  test("accountLabels, as tesota accounts lists them, still checks one sign-in at a time", async () => {
+    const held = heldStatus();
+    const labels = accountLabels(new InMemoryCredentialStore(), claudeAccounts, held.status);
+    for (let round = 0; round < 10 && held.waiting.length < 6; round++) { held.waiting.at(-1)?.(); await Bun.sleep(0); }
+    held.waiting.at(-1)?.();
+    expect((await labels).size).toBe(6);
+    expect(held.most()).toBe(1);
+  });
+
+  test("a stopped check gives Claude Code's status its signal, and ends without telling of more (#3)", async () => {
+    const held = heldStatus();
+    const stop = new AbortController();
+    const updates: unknown[] = [];
+    const states = accountStates(new InMemoryCredentialStore(), claudeAccounts, held.status, [], { concurrency: 2, signal: stop.signal, onUpdate: (each) => { updates.push(each); } });
+    await Bun.sleep(0);
+    expect(held.signals).toEqual([stop.signal, stop.signal]);
+    stop.abort();
+    for (const release of held.waiting) release();
+    await expect(states).rejects.toThrow();
+    expect(updates).toHaveLength(1);
+    expect(held.signals).toHaveLength(2);
   });
 
   test("pi-ai's built-in providers are there, and none is available without a credential", async () => {

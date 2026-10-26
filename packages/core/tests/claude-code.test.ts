@@ -183,6 +183,11 @@ describe("the claude-code provider", () => {
     expect(status).toEqual({ loggedIn: true, email: "owner@example.test" });
     expect(seen?.env?.["CLAUDE_CONFIG_DIR"]).toBe("/claude-b");
     expect(seen?.env?.["HOME"]).toBe(process.env["HOME"]);
+    expect(seen?.signal).toBeUndefined();
+    const stop = new AbortController();
+    await claudeCodeStatus("/claude-b", execute, stop.signal);
+    // The usage panel's signal stops Claude Code when the panel closes (#3).
+    expect(seen?.signal).toBe(stop.signal);
   });
 
   test("an account's sign-in is Claude Code's own login, on the terminal, in the account's folder with HOME unchanged (#642)", async () => {

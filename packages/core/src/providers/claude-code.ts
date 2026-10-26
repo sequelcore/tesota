@@ -96,20 +96,21 @@ function sdkClaudeCode(): string | undefined {
 }
 
 /** A named instance must use its folder's sign-in, not ambient Claude auth or provider overrides. HOME is inherited unchanged. */
-function instanceEnvironment(configDir?: string): NodeJS.ProcessEnv {
+export function instanceEnvironment(configDir?: string): NodeJS.ProcessEnv {
   const inherited = Object.fromEntries(Object.keys(process.env)
     .filter((name) => configDir === undefined || !/^(?:ANTHROPIC_|CLAUDE_|USE_(?:LOCAL|STAGING)_OAUTH$)/iu.test(name))
     .map((name) => [name, process.env[name]]));
   return { ...inherited, ...configDir === undefined ? {} : { CLAUDE_CONFIG_DIR: configDir } };
 }
 
-/** Non-secret account metadata from Claude Code itself; never reads its credential files. */
-export function claudeCodeStatus(configDir?: string, execute: typeof execFile = execFile): Promise<{ readonly loggedIn: boolean; readonly email?: string }> {
+/** Non-secret account metadata from Claude Code itself; never reads its credential files. `signal` stops Claude Code when it aborts. */
+export function claudeCodeStatus(configDir?: string, execute: typeof execFile = execFile,
+  signal?: AbortSignal): Promise<{ readonly loggedIn: boolean; readonly email?: string }> {
   const program = claudeCodeExecutable();
   if (program === undefined) return Promise.resolve({ loggedIn: false });
   return new Promise((resolve) => {
     execute(program, ["auth", "status", "--json"], { encoding: "utf8", windowsHide: true, timeout: 15_000,
-      env: instanceEnvironment(configDir) }, (_error, stdout) => {
+      env: instanceEnvironment(configDir), ...signal === undefined ? {} : { signal } }, (_error, stdout) => {
       try {
         const status = JSON.parse(stdout) as { loggedIn?: unknown; email?: unknown };
         resolve({ loggedIn: status.loggedIn === true, ...typeof status.email === "string" ? { email: status.email } : {} });

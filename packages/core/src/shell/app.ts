@@ -25,7 +25,10 @@ import { lastFloorNotice, peekSessionFile } from "../session-file.ts";
 import { readStandards } from "../standards.ts";
 import { trust } from "../trust.ts";
 import { readSettings, type Settings, updateSettings } from "../settings.ts";
+import { pendingUsage, readUsage, type UsageSources } from "../usage.ts";
+import { usageSources } from "../usage-sources.ts";
 import { Dashboard, type SessionRow } from "./dashboard.ts";
+import { UsagePanel, type UsageTab, type UsageView } from "./usage-panel.ts";
 import { type Confirmation, type Shell, startShell } from "./shell.ts";
 import { diffLines } from "./transcript.ts";
 import { createSurface, footerData, shellHost, type Surface } from "./surface.ts";
@@ -50,6 +53,8 @@ export interface AppOptions {
   readonly flags?: Readonly<Record<string, string>>;
   /** Claude Code's sign-in and status in an account's folder (#642); the operator's own Claude Code when not given. */
   readonly claude?: ClaudeCode | undefined;
+  /** Where the usage panel reads from; Claude Code's usage report and ChatGPT's usage endpoint when not given. */
+  readonly usage?: UsageSources;
 }
 
 const levels: readonly ModelThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -423,16 +428,27 @@ export async function runApp(options: AppOptions): Promise<void> {
     if (name === undefined || name.trim() === "") return;
     await accountStep(() => provider === "openai-codex" ? browserSignIn((interaction) => addAccount({ ...hands, interaction }, provider, name.trim())) : addAccount(hands, provider, name.trim()));
   };
-  /** `/accounts` (#642): each account with what it is signed in to; one picked is signed in again or removed. */
-  const accountsCommand = async (): Promise<void> => {
-    const rows = (await accountRows(hands)).filter((row) => row.default !== true);
-    const picked = await shell.pick("Accounts", [{ value: "", label: "Add an account", description: "Claude Code or ChatGPT, under a name" },
-      ...rows.map(({ id, label: signedIn, folder: at }) => ({ value: id, label: id, description: at === undefined ? signedIn : `${signedIn} · ${at}` }))]);
-    if (picked === undefined) return;
-    if (picked === "") { await addAnAccount(); return; }
-    const action = await shell.pick(picked, [{ value: "login", label: "Sign in again" }, { value: "remove", label: "Remove" }]);
-    if (action === "login") await accountStep(() => picked.startsWith("openai-codex") ? browserSignIn((interaction) => signInAgain({ ...hands, interaction }, picked)) : signInAgain(hands, picked));
-    else if (action === "remove") await accountStep(() => removeAccount(hands, picked));
+  /** An account picked in the usage panel (#642): signed in again or removed. */
+  const manageAccount = async (id: string): Promise<void> => {
+    const action = await shell.pick(id, [{ value: "login", label: "Sign in again" }, { value: "remove", label: "Remove" }]);
+    if (action === "login") await accountStep(() => id.startsWith("openai-codex") ? browserSignIn((interaction) => signInAgain({ ...hands, interaction }, id)) : signInAgain(hands, id));
+    else if (action === "remove") await accountStep(() => removeAccount(hands, id));
+  };
+  /**
+   * `/usage` and `/accounts`: one panel over the session, with a tab for how much each account has left and one for the accounts
+   * (#642), opened on the tab the command names. Its readings are read and time-limited off the session's path.
+   */
+  const usagePanel = (tab: UsageTab): Promise<void> => {
+    let hide = (): void => undefined;
+    const view: UsageView = { accounts: (signal, onUpdate) => accountRows(hands, model?.provider, { concurrency: 4, signal, onUpdate }),
+      pending: (accounts) => pendingUsage(accounts),
+      read: (accounts, onEach, signal) => readUsage(accounts, options.usage ?? usageSources(models), { onEach, signal }),
+      openaiChatGPT: async () => (await models.checkAuth("openai"))?.type === "oauth" };
+    const panel = new UsagePanel({ theme, view, tab, session: () => model?.provider, rows: () => terminal.rows, redraw: () => { shell.redraw(); },
+      actions: { close: () => { hide(); }, manage: (id) => { hide(); void manageAccount(id); }, add: () => { hide(); void addAnAccount(); } } });
+    hide = shell.panel("Usage", panel);
+    void panel.start();
+    return Promise.resolve();
   };
   /** A project's hooks run its own commands: they run only once the operator trusts them as they are now (#457). */
   const trustProjectHooks = async (): Promise<void> => {
@@ -577,7 +593,8 @@ export async function runApp(options: AppOptions): Promise<void> {
         shell.note(error instanceof Error ? error.message : String(error), "error");
       }
     } },
-    "/accounts": { description: "Your accounts: add, sign in again, remove", run: accountsCommand },
+    "/usage": { description: "How much each account has left", run: () => usagePanel("usage") },
+    "/accounts": { description: "Your accounts: add, sign in again, remove", run: () => usagePanel("accounts") },
     "/logout": { description: "Forget a provider's sign-in", run: async () => {
       const stored = await credentials.list();
       if (stored.length === 0) { shell.note("No provider is logged in."); return; }

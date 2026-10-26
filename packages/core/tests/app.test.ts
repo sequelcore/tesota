@@ -13,6 +13,7 @@ import { claudeCodeProvider } from "../src/providers/claude-code.ts";
 import { engineModels } from "../src/model-access.ts";
 import { type Account, readSettings, writeSettings } from "../src/settings.ts";
 import { type AppOptions, runApp } from "../src/shell/app.ts";
+import type { UsageSources } from "../src/usage.ts";
 import type { ScriptStep } from "./engine.ts";
 import { scriptedReply, signInWithChatGPT } from "./scripted.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
@@ -23,6 +24,14 @@ import { VirtualTerminal } from "./virtual-terminal.ts";
  */
 const folder = (prefix: string): string => mkdtempSync(join(tmpdir(), prefix));
 const enter = "\r";
+
+/** The settings a test starts from, none when it asks for none. */
+function seedSettings(path: string, model: string | undefined, accounts: readonly Account[] | undefined): void {
+  if (model !== undefined || accounts !== undefined) writeSettings({ ...model === undefined ? {} : { model }, ...accounts === undefined ? {} : { accounts } }, path);
+}
+
+/** A usage source with no reading to give. */
+const noUsage: UsageSources = { claudeCode: () => Promise.reject(new Error("no usage in this test")), chatgpt: () => Promise.resolve(undefined) };
 
 /** A scripted model, and a provider that logs in by OAuth with a pasted code. */
 function scripted(replies: readonly ScriptStep[]): { models: MutableModels; credentials: InMemoryCredentialStore } {
@@ -53,7 +62,7 @@ function scripted(replies: readonly ScriptStep[]): { models: MutableModels; cred
 }
 
 /** The app in a temporary folder, its settings and sessions there too, once it has drawn its first frame. */
-async function app(replies: readonly ScriptStep[] = [], { repository = false, earlier, mcp, projectMcp, skills = {}, served, model, claudeCode, accounts, claude }:
+async function app(replies: readonly ScriptStep[] = [], { repository = false, earlier, mcp, projectMcp, skills = {}, served, model, claudeCode, accounts, claude, usage = noUsage }:
   { repository?: boolean;
     /** An earlier session of the folder that worked in its checkout, asked this and answered "earlier answer" (#595). */
     earlier?: string; mcp?: object; projectMcp?: object; skills?: Record<string, string>;
@@ -62,7 +71,9 @@ async function app(replies: readonly ScriptStep[] = [], { repository = false, ea
     /** Claude through Claude Code (#546), signed in there or not. */
     claudeCode?: "signed in" | "signed out";
     /** Claude Code's sign-in and status in an account's folder (#642), faked. */
-    claude?: AppOptions["claude"] } = {}) {
+    claude?: AppOptions["claude"];
+    /** Where the usage panel reads from, faked: it reads no real Claude Code or ChatGPT. */
+    usage?: UsageSources } = {}) {
   const terminal = new VirtualTerminal(100, 30);
   const { models, credentials } = scripted(replies);
   if (claudeCode !== undefined) {
@@ -70,7 +81,7 @@ async function app(replies: readonly ScriptStep[] = [], { repository = false, ea
   }
   const signOut = served === undefined ? () => undefined : await signInWithChatGPT(models, credentials, served);
   const settingsPath = join(folder("tesota-core-app-settings-"), "settings.json");
-  if (model !== undefined || accounts !== undefined) writeSettings({ ...model === undefined ? {} : { model }, ...accounts === undefined ? {} : { accounts } }, settingsPath);
+  seedSettings(settingsPath, model, accounts);
   if (accounts !== undefined) {
     for (const provider of engineModels(credentials, accounts).getProviders().filter(({ id }) => id.includes("@"))) models.setProvider(provider);
     for (const id of ["openai-codex", "openai-codex@work"]) await credentials.modify(id, async () =>
@@ -106,7 +117,7 @@ async function app(replies: readonly ScriptStep[] = [], { repository = false, ea
   const openedPages: string[] = [];
   let graphOpened = (_path: string): void => undefined;
   const openedGraph = new Promise<string>((resolve) => { graphOpened = resolve; });
-  const running = runApp({ cwd, terminal, models, credentials, settingsPath, sessions, claude,
+  const running = runApp({ cwd, terminal, models, credentials, settingsPath, sessions, claude, usage,
     openSignInPage: async (url) => { openedPages.push(url); },
     openGraphFile: async (path) => { graphOpened(path); } }).finally(signOut);
   await terminal.until("tesota-core");
@@ -279,28 +290,82 @@ describe("tesota-core", () => {
     } finally { send(terminal, "/quit"); await running; }
   });
 
-  test("/accounts shows each account's sign-in and duplicates, signs one in again, and refuses to remove one in use (#642)", async () => {
+  test("/accounts opens the panel's Accounts tab: each account's sign-in, duplicates and the session's own; one is signed in again, or refused removal while in use (#642)", async () => {
     const fake = fakeClaude("owner@example.test");
     const b = folder("claude-b-");
     const { terminal, settingsPath, running } = await app([], { claude: fake.claude, model: "openai-codex@work/gpt-6.1-sol",
       accounts: [{ name: "work", provider: "openai-codex" }, { name: "b", provider: "claude-code", folder: b }] });
     try {
       send(terminal, "/accounts");
-      const listed = await terminal.until("Accounts");
+      const listed = await terminal.until("sign in again or remove");
       expect(listed).toContain("account-work · same account as openai-codex");
       expect(listed).toContain("claude-code@b");
-      await choose(terminal, "claude-code@b");
+      expect(listed).toMatch(/openai-codex@work · this session/u);
+      // claude-code, openai-codex, then the declared accounts in order: work, b.
+      for (let down = 0; down < 3; down += 1) terminal.type("\x1b[B");
+      await terminal.until("tesota accounts login claude-code@b");
+      terminal.type(enter);
       await terminal.until("Sign in again");
       await choose(terminal, "Sign in again");
       await terminal.until("claude-code@b: owner@example.test");
       expect(fake.signIns).toEqual([b]);
       send(terminal, "/accounts");
-      await terminal.until("Accounts");
-      await choose(terminal, "openai-codex@work");
+      await terminal.until("sign in again or remove");
+      for (let down = 0; down < 2; down += 1) terminal.type("\x1b[B");
+      await terminal.until("tesota accounts login openai-codex@work");
+      terminal.type(enter);
       await terminal.until("Remove");
       await choose(terminal, "Remove");
       await terminal.until("model setting");
       expect(readSettings(settingsPath).settings.accounts).toHaveLength(2);
+    } finally { send(terminal, "/quit"); await running; }
+  });
+
+  test("/usage opens the panel on its Usage tab and /accounts on its Accounts tab; Tab switches and Esc closes it", async () => {
+    const at = new Date(Date.now() + (3 * 60 + 30) * 60_000).toISOString();
+    const usage: UsageSources = { chatgpt: () => Promise.resolve(undefined),
+      claudeCode: () => Promise.resolve({ subscription_type: "max", rate_limits: { five_hour: { utilization: 38, resets_at: at } } }) };
+    const { terminal, running } = await app([], { usage, model: "faux/faux-1", claude: { signIn: async () => undefined, status: async () => ({ loggedIn: true, email: "me@x.test" }) },
+      accounts: [{ name: "b", provider: "claude-code", folder: folder("claude-b-") }] });
+    try {
+      send(terminal, "/usage");
+      const opened = await terminal.until("resets in 3h");
+      expect(opened).toContain("62%");
+      expect(opened).not.toContain("sign in again or remove");
+      // A dialog as the shell's others are: in the input's place under the session, framed by the bar, its title once, then the tabs.
+      const rows = (await terminal.screen()).map((row) => row.trimEnd());
+      const title = rows.findIndex((row) => row === "▌ Usage");
+      expect(title).toBeGreaterThan(0);
+      expect(rows.slice(0, title).join("\n")).toContain("tesota-core");
+      expect(rows[title + 1]).toMatch(/^▌ \[ Usage \] +Accounts/u);
+      expect(rows.filter((row) => /Usage *$/u.test(row))).toHaveLength(1);
+      const framed = rows.slice(title).findIndex((row) => !row.startsWith("▌"));
+      const end = framed < 0 ? rows.length : title + framed;
+      expect(rows[end - 1]).toContain("Esc close");
+      expect(end).toBeLessThan(rows.length);
+      expect(end - title).toBeLessThan(30);
+      terminal.type("\t");
+      await terminal.until("sign in again or remove");
+      terminal.type("\x1b[D");
+      await terminal.until("resets in 3h");
+      terminal.type("\x1b");
+      await terminal.untilGone("resets in 3h");
+      send(terminal, "/accounts");
+      await terminal.until("sign in again or remove");
+      terminal.type("\x1b");
+      await terminal.untilGone("sign in again or remove");
+    } finally { terminal.type("\x1b"); send(terminal, "/quit"); await running; }
+  });
+
+  test("/usage on OpenAI's ChatGPT sign-in says its limits are not reported, marked as this session", async () => {
+    const { terminal, running } = await app([], { served: ["gpt-6.1-sol"], model: "openai/gpt-6.1-sol" });
+    try {
+      send(terminal, "/usage");
+      const opened = await terminal.until("A Codex sign-in does");
+      expect(opened).toContain("ChatGPT through the OpenAI sign-in doesn't report its limits.");
+      expect(opened).toContain("this session");
+      terminal.type("\x1b");
+      await terminal.untilGone("A Codex sign-in does");
     } finally { send(terminal, "/quit"); await running; }
   });
 

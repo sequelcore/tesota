@@ -103,9 +103,9 @@ every later run, with nothing to edit:
 tesota -p "Review the change" --model claude-code@personal/claude-opus-5-5
 ```
 
-`tesota accounts`, or `/accounts` in the shell, lists each account with the
-account it is signed in to, and flags `same account as …` when two
-identify the same one:
+`tesota accounts` lists each account with the account it is signed in to,
+and flags `same account as …` when two identify the same one (the shell's
+`/accounts` shows the same, in [the usage panel](#usage-of-your-accounts)):
 
 ```text
 claude-code (default)  owner@example.com
@@ -116,8 +116,8 @@ openai-codex@work  <ChatGPT account ID>
 
 | To | Command line | Shell |
 | --- | --- | --- |
-| Sign one in again, keeping it | `tesota accounts login claude-code@personal` | `/accounts`, the account, **Sign in again** |
-| Remove one | `tesota accounts remove openai-codex@work` | `/accounts`, the account, **Remove** |
+| Sign one in again, keeping it | `tesota accounts login claude-code@personal` | `/accounts`, choose the account, Enter, **Sign in again** |
+| Remove one | `tesota accounts remove openai-codex@work` | `/accounts`, choose the account, Enter, **Remove** |
 
 Removing an account that your `model` setting, or the `model` of one of
 your agent types or the current project's, still names is refused, naming
@@ -128,6 +128,54 @@ uses it; a folder you declared yourself stays. Tesota adds a Claude account
 only in a folder it makes, never in one already there. While the `accounts`
 setting is invalid, adding and removing are refused, so it is never written
 over.
+
+### Usage of your accounts
+
+`/usage` in the shell opens the **Usage** panel on its Usage tab, and
+`/accounts` opens it on its Accounts tab. Tab or ←/→ switch tabs, and Esc
+closes the panel; the session keeps running beneath it.
+
+- **Usage:** for each account, a row per limit window (the 5-hour and the
+  weekly one, for example): the share left as a meter of segments with its
+  percentage, and when it resets (`resets in 3h 12m`). The meter is in the
+  warning color at a quarter left or less, and in the error color when
+  nothing is left. A meter is empty only when nothing is left and full only
+  when nothing is used. On a narrow terminal it has fewer segments, and the
+  details wrap beneath it.
+- **Accounts:** each account, its provider, and whether it is signed in,
+  with the email when the provider gives one. ↑/↓ choose an account and
+  Enter offers **Sign in again** or **Remove**, as above; `a` adds an
+  account. The tab names the command to run from a terminal. A provider's
+  default sign-in is listed too (marked `default`) but is not managed here.
+- **This session** marks the account the session draws on, in both tabs.
+  The default sign-in the session uses is listed even when no account of its
+  provider is declared.
+
+The panel opens at once with every account, marked `checking sign-in…`
+until its sign-in is checked, a few at a time. Once an account's sign-in is
+known, its reading saved in the past hour shows, faded and with its age,
+and is replaced as it is read; `r` stops the reads still going and reads
+again, and closing the panel stops them. A saved reading shows only for the
+sign-in it was read for: an account signed in again as someone else shows
+none. A read that fails, or whose reply is not understood, shows the last
+reading of the past hour, `last known, 25m ago: <why>`, or else the reason.
+Each read has a 20-second limit and never blocks the panel or the session. Accounts that are one underlying account
+are read once, and the others say `same account as …`.
+
+| Provider | Where the reading comes from |
+| --- | --- |
+| `claude-code` | Claude Code's own experimental usage report, asked of your Claude Code in the account's folder (`CLAUDE_CONFIG_DIR` only). The report may change in Claude Code's releases. |
+| `openai-codex` | Codex's usage endpoint, with the account's own sign-in from `~/.tesota/auth.json`, refreshed when it has expired |
+
+ChatGPT through the `openai` sign-in reports no limits that can be read;
+the Codex sign-in (`openai-codex`, **OpenAI Codex (legacy)** in `/login`)
+does. When OpenAI is signed in with ChatGPT and no Codex sign-in is among
+the accounts, the Usage tab says so in one line, marked `this session` when
+the session runs on it. An OpenAI API key shows no line.
+
+No other provider reports limits. The readings are saved in
+`~/.tesota/usage.json` with their time and a one-way fingerprint of whom
+they were read for; no token, credential, email or account ID.
 
 ### Declaring accounts by hand
 
@@ -155,7 +203,7 @@ Tesota sets `CLAUDE_CONFIG_DIR` to a Claude account's folder for that
 account's Claude Code only, for its sign-in, status and runs. Named instances ignore ambient `ANTHROPIC_*` and
 `CLAUDE_*` overrides so a shell token or API key cannot replace the folder's
 sign-in. Tesota never changes `HOME`, and never reads, copies or stores
-Claude Code's credentials. It asks `claude auth status` in that folder for
+Claude Code's credentials; the usage panel asks Claude Code the same way. It asks `claude auth status` in that folder for
 sign-in status and the account label.
 
 Each ChatGPT account has its own credential slot in `~/.tesota/auth.json`;
