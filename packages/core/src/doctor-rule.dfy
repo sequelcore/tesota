@@ -18,20 +18,20 @@ lemma doctorStatus_ensures(found: bool, passed: bool)
 {
 }
 
-function doctorExitCode(failed: bool, unavailable: bool): int
+function doctorExitCode(failed: bool, coreUnavailable: bool): int
 {
   if failed then
     1
   else
-    if unavailable then
+    if coreUnavailable then
       2
     else
       0
 }
 
-lemma doctorExitCode_ensures(failed: bool, unavailable: bool)
-  ensures (failed ==> (doctorExitCode(failed, unavailable) == 1))
-  ensures (!(failed) ==> unavailable ==> (doctorExitCode(failed, unavailable) == 2))
-  ensures (!(failed) ==> !(unavailable) ==> (doctorExitCode(failed, unavailable) == 0))
+lemma doctorExitCode_ensures(failed: bool, coreUnavailable: bool)
+  ensures (failed ==> (doctorExitCode(failed, coreUnavailable) == 1))
+  ensures (!(failed) ==> coreUnavailable ==> (doctorExitCode(failed, coreUnavailable) == 2))
+  ensures (!(failed) ==> !(coreUnavailable) ==> (doctorExitCode(failed, coreUnavailable) == 0))
 {
 }

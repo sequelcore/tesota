@@ -42,6 +42,14 @@ known, smoke-test result, what you lose without it in receipt terms, and a
 repair command from [Install](../get-started/install.md#repair-commands).
 `tesota doctor --help` gives the command's syntax and exit codes.
 
+Every row is labelled **core** or **optional** in human output and has a
+`requirement` field (`"core"` or `"optional"`) in JSON. Git, Dafny with
+LemmaScript (`lsc`), and Java with TLC are core; Quint is optional. A missing
+or platform-unavailable Quint is still reported but does not affect the exit
+code. A failed optional tool still triggers exit 1. Provider rows retain
+their existing exit behavior and are labelled core for exit accounting;
+Claude sign-in remains unchecked, not failed.
+
 - **available:** the local version/help or sign-in probe passed.
 - **unavailable:** the executable, LemmaScript entry point or TLC jar was not
   found, or a working Quint cannot use its TLC backend on Windows because
@@ -69,16 +77,16 @@ version/help flags and reads configuration; it never installs or repairs
 anything. Quint's version probe does not test Apalache on macOS/Linux.
 
 Human and JSON output contain the same report. JSON has `capabilities` (rows
-with `id`, `status`, `path`, `version`, `smoke`, `consequence`, `repair`) and
+with `id`, `requirement`, `status`, `path`, `version`, `smoke`, `consequence`, `repair`) and
 `exitCode`. LemmaScript and TLC also have an `entryPoint` (the script/internal
 command and jar, respectively). Unknown versions and absent/not-applicable
 paths are null.
 
 | Exit | Meaning (human and JSON) |
 | --- | --- |
-| 0 | Every listed capability is available |
-| 1 | At least one failed, even if others are unavailable; also an unexpected command error |
-| 2 | At least one unavailable, none failed |
+| 0 | No failures or unavailable core capabilities/providers; optional capabilities may be unavailable |
+| 1 | At least one failed, including optional tools, even if others are unavailable; also an unexpected command error |
+| 2 | At least one core capability/provider unavailable, none failed |
 | 3 | Invalid doctor arguments |
 
 A nonzero doctor result does not prevent you from using Tesota with the

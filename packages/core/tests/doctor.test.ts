@@ -1,6 +1,6 @@
-import { expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { doctorCommand, formatDoctorReport, probe, repairCommand, type Diagnosis } from "../src/doctor.ts";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,7 +14,7 @@ const isolatedEnvironment = (home: string): NodeJS.ProcessEnv => ({ ...process.e
 import { doctorExitCode } from "../src/doctor-rule.ts";
 
 test("doctor reports an available tool's path, version and smoke result", async () => {
-  const result = await probe({ id: "runtime", executable: process.execPath, args: ["--version"], consequence: "Not proved", repair: "See install" });
+  const result = await probe({ id: "runtime", requirement: "core", executable: process.execPath, args: ["--version"], consequence: "Not proved", repair: "See install" });
   expect(result.status).toBe("available");
   expect(result.path).toBe(process.execPath);
   expect(result.version).toMatch(/^\d+\.\d+/u);
@@ -22,7 +22,7 @@ test("doctor reports an available tool's path, version and smoke result", async 
   expect(result.smoke.exitCode).toBe(0);
 });
 
-const base = { id: "fixture", consequence: "Not proved", repair: "See install" };
+const base = { id: "fixture", requirement: "core" as const, consequence: "Not proved", repair: "See install" };
 
 test("a missing executable is unavailable, not failed", async () => {
   const result = await probe({ ...base, executable: "tesota-doctor-missing-687", args: ["--version"] });
@@ -77,17 +77,17 @@ test("repair commands for all operating systems come from the install guide", ()
 });
 
 test("human and JSON renderings retain the same report", () => {
-  const report = { exitCode: 2, capabilities: [{ id: "quint", status: "unavailable", path: null, version: null,
+  const report = { exitCode: 0, capabilities: [{ id: "quint", requirement: "optional" as const, status: "unavailable", path: null, version: null,
     smoke: { ended: "not_started" as const, exitCode: null, output: "Executable not found." },
     consequence: "Model not checked: Quint models cannot be checked.", repair: "npm install -g @informalsystems/quint" }] };
   expect(JSON.parse(formatDoctorReport(report, true))).toEqual(report);
   const human = formatDoctorReport(report, false);
-  expect(human).toContain("quint: unavailable");
+  expect(human).toContain("quint: unavailable (optional)");
   expect(human).toContain("Version: unknown");
   expect(human).toContain("not_started, exit none: Executable not found.");
   expect(human).toContain("Model not checked: Quint models cannot be checked.");
   expect(human).toContain("npm install -g @informalsystems/quint");
-  expect(human).toContain("Exit code: 2");
+  expect(human).toContain("Exit code: 0");
 });
 
 test("help and invalid arguments do not run any probe", async () => {
@@ -95,6 +95,8 @@ test("help and invalid arguments do not run any probe", async () => {
   const output = { out: (text: string) => { out.push(text); }, error: (text: string) => { error.push(text); } };
   expect(await doctorCommand(["--help"], output)).toBe(0);
   expect(out.join("")).toContain("tesota doctor [--json]");
+  expect(out.join("")).toContain("Optional: Quint");
+  expect(out.join("")).toContain("Unavailable optional tools do not affect the exit code");
   expect(await doctorCommand(["--install"], output)).toBe(3);
   expect(error.join("")).toContain("Read-only");
 });
@@ -174,5 +176,54 @@ test.skipIf(process.platform !== "win32")("working Quint on Windows is unavailab
     expect(quint?.smoke.output).toContain("TLC backend cannot start Apalache on Windows");
     expect(report.exitCode).toBe(2);
     expect(result.exitCode).toBe(2);
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
+let toolFixture = "";
+let toolRoot = "";
+beforeAll(() => {
+  toolRoot = mkdtempSync(join(tmpdir(), "tesota-doctor-tools-"));
+  const source = join(toolRoot, "tool.ts");
+  toolFixture = join(toolRoot, process.platform === "win32" ? "tool.exe" : "tool");
+  writeFileSync(source, `import { basename } from "node:path";
+const name = basename(process.execPath).replace(/\\.exe$/u, "");
+if (name === "quint") process.exit(7);
+if (name === "java" && process.argv.includes("-help")) {
+  console.log("TLC - provides model checking - Version 2.19");
+  process.exit(1);
+}
+console.log(name === "dafny" ? "4.11.0" : name === "java" ? 'openjdk version "21.0.1"' : name + " version 1.0.0");
+`);
+  const built = Bun.spawnSync([process.execPath, "build", "--compile", source, "--outfile", toolFixture], { stdout: "ignore", stderr: "pipe" });
+  if (built.exitCode !== 0) throw new Error(built.stderr.toString());
+});
+afterAll(() => { if (toolRoot) rmSync(toolRoot, { recursive: true, force: true, maxRetries: 3 }); });
+
+test.each([
+  { scenario: "only Quint missing gives 0", tools: ["git", "dafny", "java", "claude"], unavailable: ["quint"],
+    exit: 0, git: "available", quint: "unavailable" },
+  { scenario: "missing core Git gives 2", tools: ["dafny", "java", "claude"], unavailable: ["git", "quint"],
+    exit: 2, git: "unavailable", quint: "unavailable" },
+  { scenario: "failed optional Quint gives 1", tools: ["git", "dafny", "java", "claude", "quint"], unavailable: [],
+    exit: 1, git: "available", quint: "failed" },
+])("core/optional policy: $scenario", async ({ tools, unavailable, exit, git, quint }) => {
+  const home = mkdtempSync(join(tmpdir(), "tesota-doctor-optional-"));
+  try {
+    for (const name of tools) {
+      linkSync(toolFixture, join(home, process.platform === "win32" ? `${name}.exe` : name));
+    }
+    mkdirSync(join(home, ".tesota", "tools"), { recursive: true });
+    writeFileSync(join(home, ".tesota", "tools", "tla2tools.jar"), "local tool-boundary fixture");
+    const result = await runProcess(process.execPath, [main, "doctor", "--json"], home, new AbortController().signal, 25_000,
+      undefined, { env: { ...isolatedEnvironment(home), PATH: home } });
+    const report = JSON.parse(result.stdout) as { exitCode: number; capabilities: Diagnosis[] };
+    expect(report.capabilities.filter(({ status }) => status === "unavailable").map(({ id }) => id)).toEqual([...unavailable]);
+    expect(report.exitCode).toBe(exit);
+    expect(result.exitCode).toBe(exit);
+    expect(report.capabilities.find(({ id }) => id === "quint")).toMatchObject({ requirement: "optional", status: quint });
+    expect(report.capabilities.find(({ id }) => id === "git")).toMatchObject({ requirement: "core", status: git });
+    for (const id of ["dafny", "lsc", "java", "tlc"]) {
+      expect(report.capabilities.find((item) => item.id === id)).toMatchObject({ requirement: "core", status: "available" });
+    }
   } finally { rmSync(home, { recursive: true, force: true }); }
 });
