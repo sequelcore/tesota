@@ -83,7 +83,7 @@ export async function doctorReport(): Promise<{ capabilities: Diagnosis[]; exitC
   ]) capabilities.push(await probe({ ...spec, repair: repairCommand(spec.id) }));
   const quint = capabilities.find(({ id }) => id === "quint");
   if (process.platform === "win32" && quint?.status === "available") {
-    capabilities[capabilities.indexOf(quint)] = { ...quint, status: "failed",
+    capabilities[capabilities.indexOf(quint)] = { ...quint, status: "unavailable",
       smoke: { ...quint.smoke, output: `${quint.smoke.output}\nQuint's TLC backend cannot start Apalache on Windows. Use TLA+ or Linux/WSL.` } };
   }
   try {
@@ -112,7 +112,7 @@ export async function doctorReport(): Promise<{ capabilities: Diagnosis[]; exitC
   const credentials = fileCredentialStore();
   const stored = new Set((await credentials.list()).map(({ providerId }) => providerId));
   const models = engineModels(credentials, accounts);
-  for (const provider of models.getProviders().filter(({ id }) => !id.startsWith("claude-code"))) {
+  for (const provider of models.getProviders().filter(({ id }) => !id.startsWith("claude-code") && models.getModels(id).length > 0)) {
     try {
       // checkAuth reads local auth only: unlike getAuth, it never refreshes OAuth credentials.
       const auth = await models.checkAuth(provider.id, { signal: AbortSignal.timeout(5_000) });

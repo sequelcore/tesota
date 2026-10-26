@@ -35,17 +35,20 @@ tesota doctor --json
 ```
 
 Lists Dafny, LemmaScript, Java, TLC, Quint, Git, Claude Code (including named
-accounts), and providers with a local sign-in or API key. Every row includes
+accounts), and chat providers with a local sign-in or API key. Providers
+without chat models are not listed. Every row includes
 its status, executable path (null for an in-process provider), version when
 known, smoke-test result, what you lose without it in receipt terms, and a
 repair command from [Install](../get-started/install.md#repair-commands).
 `tesota doctor --help` gives the command's syntax and exit codes.
 
 - **available:** the local version/help or sign-in probe passed.
-- **unavailable:** the executable, LemmaScript entry point or TLC jar was not found.
-- **failed:** found but its probe failed, timed out, returned an unsupported
-  version (Dafny must be 4, Java at least 11), or is unsupported (Quint's TLC
-  backend on Windows).
+- **unavailable:** the executable, LemmaScript entry point or TLC jar was not
+  found, or a working Quint cannot use its TLC backend on Windows because
+  Apalache cannot start there. The Quint row retains its successful version
+  probe and explains the platform limit.
+- **failed:** found but its probe failed, timed out, or returned an unsupported
+  version (Dafny must be 4, Java at least 11).
 
 Each process or local auth probe has a five-second limit; process timeouts
 stop and await its process tree using the same runner as verification. Probes

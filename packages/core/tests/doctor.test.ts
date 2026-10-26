@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { doctorCommand, formatDoctorReport, probe, repairCommand, type Diagnosis } from "../src/doctor.ts";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -140,5 +140,39 @@ test("the default and declared Claude accounts are version-only, without touchin
     expect(readdirSync(home)).toEqual([".tesota"]);
     expect(readdirSync(join(home, ".tesota"))).toEqual(["settings.json"]);
     expect(readFileSync(path, "utf8")).toBe(settings);
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
+test("doctor excludes non-chat providers even with an ambient API key", async () => {
+  const home = mkdtempSync(join(tmpdir(), "tesota-doctor-chat-"));
+  try {
+    const result = await runProcess(process.execPath, [main, "doctor", "--json"], home, new AbortController().signal, 25_000,
+      undefined, { env: { ...isolatedEnvironment(home), TYPESAFE_API_KEY: "fake-classifier-key", OPENAI_API_KEY: "fake-chat-key" } });
+    expect(result.ended).toBe("exited");
+    const report = JSON.parse(result.stdout) as { capabilities: Diagnosis[] };
+    expect(report.capabilities.find(({ id }) => id === "provider:typesafe")).toBeUndefined();
+    expect(report.capabilities.find(({ id }) => id === "provider:openai")?.status).toBe("available");
+    expect(readdirSync(home)).toEqual([]);
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
+test.skipIf(process.platform !== "win32")("working Quint on Windows is unavailable, not failed", async () => {
+  const home = mkdtempSync(join(tmpdir(), "tesota-doctor-quint-"));
+  try {
+    // A real version-printing executable at the tool boundary; no Quint installation or download.
+    copyFileSync(process.execPath, join(home, "quint.exe"));
+    const result = await runProcess(process.execPath, [main, "doctor", "--json"], home, new AbortController().signal, 25_000,
+      undefined, { env: { ...isolatedEnvironment(home), PATH: home } });
+    expect(result.ended).toBe("exited");
+    const report = JSON.parse(result.stdout) as { exitCode: number; capabilities: Diagnosis[] };
+    const quint = report.capabilities.find(({ id }) => id === "quint");
+    expect(quint?.status).toBe("unavailable");
+    expect(quint?.path).toBe(join(home, "quint.exe"));
+    expect(quint?.version).toMatch(/^\d+\.\d+/u);
+    expect(quint?.smoke.ended).toBe("exited");
+    expect(quint?.smoke.exitCode).toBe(0);
+    expect(quint?.smoke.output).toContain("TLC backend cannot start Apalache on Windows");
+    expect(report.exitCode).toBe(2);
+    expect(result.exitCode).toBe(2);
   } finally { rmSync(home, { recursive: true, force: true }); }
 });
