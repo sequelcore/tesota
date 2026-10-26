@@ -39,6 +39,15 @@ Claude Code only answers: Tesota's own tools, permissions, hooks and
 verification do the rest, and your Claude Code settings, skills and MCP
 servers don't load. Usage draws on your plan's limits.
 
+**Known issue:** Claude Code counts a session started through the Agent SDK,
+as Tesota's are, at about 1.8 times as much of the 5-hour window as the same
+work in interactive Claude Code. The weekly limit isn't reported as
+affected. Anthropic tracks it as
+[anthropics/claude-code#97074](https://github.com/anthropics/claude-code/issues/97074),
+open as of 2026-10-26. Tesota doesn't disguise its sessions as interactive
+ones to avoid it. For long runs, plan for the 5-hour window running out
+sooner, or use another provider.
+
 An Anthropic API key is a separate route, through the `anthropic`
 provider, with no Claude Code: set `ANTHROPIC_API_KEY`, or enter the key
 in `/login`. It takes an API key only, not a Claude plan's sign-in. Heavy
