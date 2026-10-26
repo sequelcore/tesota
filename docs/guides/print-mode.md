@@ -26,7 +26,7 @@ nothing, such as a question, ends `Completed.` with no claim
 | --- | --- |
 | `-c`, `--continue` | Continues this folder's most recently changed session ([Continuing a session](#continuing-a-session)) |
 | `-r <session>`, `--resume <session>` | Continues the session with that id, as `tesota receipt` and `/resume` show it |
-| `--model <provider>/<id>` | The model for this run; your chosen one otherwise |
+| `--model <provider>/<id>` | The model for this run; with `-c` or `--resume`, the one the session last ran on, otherwise your chosen one ([Continuing a session](#continuing-a-session)) |
 | `--claimcheck-model <provider>/<id>` | See [Verification](verification.md#the-models-opinions) |
 | `--open-cases-model <provider>/<id>`, or `off` | See [Verification](verification.md#the-models-opinions) |
 
@@ -67,6 +67,14 @@ Awaiting your answer: tesota -p --resume 2026-10-25T07-48-31-933Z-51024fc1 "<ans
 session, and `tesota -p --resume <session> "<text>"` the one with that id.
 The session file grows; no new session starts. A session another Tesota
 holds open is refused with the lock's message.
+
+The run continues on the model the session last ran on, account included
+(`claude-code@b/...` stays on `claude-code@b`). A session that hasn't
+replied yet uses your chosen model. `--model` overrides it, and standard
+error says so: `Continuing on <new>; the session last ran on <old>.` If the
+session's model can't run now, such as when its account was removed or
+signed out, the run is refused with exit code 1, naming that model; choose
+another with `--model`.
 
 When the session's last run ended on an unresolved question, the text is
 its answer:
