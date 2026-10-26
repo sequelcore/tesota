@@ -204,7 +204,9 @@ console.log(name === "dafny" ? "4.11.0" : name === "java" ? 'openjdk version "21
   doctorBinary = join(toolRoot, process.platform === "win32" ? "tesota.exe" : "tesota");
   build(doctorBinary);
 });
-afterAll(() => { if (toolRoot) rmSync(toolRoot, { recursive: true, force: true, maxRetries: 3 }); });
+// The folder holds executables this file compiled; Windows can hold them briefly after they exit, and CI failed
+// with EBUSY here. Wait up to about ten seconds, as the isolated run's other cleanups do.
+afterAll(() => { if (toolRoot) rmSync(toolRoot, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 }); });
 
 test.each([
   { scenario: "only Quint missing gives 0", tools: ["git", "dafny", "java", "claude"], unavailable: ["quint"],
