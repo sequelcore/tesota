@@ -1,7 +1,11 @@
 # Instructions and skills
 
-Tesota reads the same instruction files and skills as Codex, Claude Code,
-Gemini CLI and Pi, so a project set up for one works here.
+Tesota reads instructions from `AGENTS.md` files, or `CLAUDE.md` where a
+folder has no `AGENTS.md`, and skills from `.agents/skills` folders and
+`~/.tesota/skills`. It
+doesn't read `.claude/skills`, `.claude/agents` or any other tool's
+settings: a skill kept only in `.claude/skills` needs a copy in
+`.agents/skills` to load.
 
 ## AGENTS.md
 
@@ -21,9 +25,9 @@ where it first comes. Each file is named by its path in the instructions.
 Outside Git, only the session's own folder counts. Nothing above the
 repository's root is read.
 
-Together they keep to 32 KiB. A file that would pass it is cut, the next
-ones are left out, and the instructions say so, so a very large file never
-fills the model's context.
+Together they keep to 32,768 characters. A file that would pass that is
+cut, the next ones are left out, and the instructions say so, so a very
+large file never fills the model's context.
 
 ## Skills
 
@@ -44,7 +48,7 @@ Tesota looks in:
 
 | Folder | |
 | --- | --- |
-| `~/.agents/skills` | Shared with Codex, Gemini CLI, OpenCode and Pi |
+| `~/.agents/skills` | Yours, in the folder other agents can share |
 | `~/.tesota/skills` | Tesota's own |
 | `<project>/.agents/skills` | The project's, from the session's folder up to the repository's root |
 
@@ -67,10 +71,11 @@ Type `/` and the skill's name at the start of a message, in the shell or in
 
 The skills appear in the shell's `/` menu beside its commands; a command
 wins over a skill of the same name. Sent while the agent works, a skill
-waits as a follow-up for the run's turns to end; it never steers them.
-Like other [pending messages](../reference/commands.md#keys), it shows above
-the input and can be returned there to edit or withdraw. The agent gets the skill's `SKILL.md`
-with your words in place, as Claude Code places them:
+waits as a follow-up until the run ends, rather than steering it. Like
+other [pending messages](../reference/commands.md#keys), it shows above
+the input and can be returned there to edit or withdraw. The agent gets
+the skill's `SKILL.md` with your words in place, as Claude Code places
+them:
 
 | In `SKILL.md` | Becomes |
 | --- | --- |
@@ -79,8 +84,8 @@ with your words in place, as Claude Code places them:
 | `\$1` | A literal `$1` |
 
 When nothing in `SKILL.md` takes your words, they're added at its end as
-`ARGUMENTS: …`. Your request is the line you typed: verification, the
-ledger and the receipt read it, never the skill's text.
+`ARGUMENTS: …`. Your request is the line you typed: verification and the
+receipt read it, never the skill's text.
 
 Two fields say who may start a skill:
 

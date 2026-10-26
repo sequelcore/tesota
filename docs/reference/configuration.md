@@ -1,13 +1,14 @@
 # Configuration
 
 Tesota keeps its state in `~/.tesota`, and reads a project's own settings
-from its `.tesota` folder at the repository's root. Every file is
-optional.
+from its `.tesota` folder at the repository's root. Configuration files
+are optional; Tesota creates state files as needed.
 
 ## Your files: `~/.tesota`
 
 | Path | Holds |
 | --- | --- |
+| `accounts/claude-code/<name>/` | Claude Code configuration for a named account; see [Models](../guides/models.md) |
 | `bin/` | The `tesota` binary the [install scripts](../get-started/install.md) put there |
 | `settings.json` | Your settings, below, and your [hooks](../guides/hooks.md) |
 | `permissions.json` | Your [permission rules](../guides/permissions.md#rules): `allow`, `ask`, `deny` |
@@ -15,15 +16,15 @@ optional.
 | `AGENTS.md` | Your [instructions](../guides/instructions-and-skills.md) for every project |
 | `skills/` | Your [skills](../guides/instructions-and-skills.md#skills), beside `~/.agents/skills` |
 | `agents/` | Your [agent types](../guides/subagents.md#agent-types), beside `~/.agents/agents` |
-| `auth.json` | Model sign-ins, readable only by you |
-| `mcp-auth.json` | MCP servers' sign-ins, readable only by you |
+| `auth.json` | Model sign-ins |
+| `mcp-auth.json` | MCP servers' sign-ins |
 | `usage.json` | The usage panel's last readings of each account's limits, with their time and a one-way fingerprint of whom they were read for; no token, credential, email or account ID ([Usage of your accounts](../guides/models.md#usage-of-your-accounts)) |
-| `trust.json` | The projects whose hooks and MCP servers you trusted, as they were then |
+| `trust.json` | Approvals tied to project roots and hashes of hooks or MCP configuration; changed configuration needs trust again |
 | `sessions/` | Every session, one JSON Lines file each, by project |
 | `worktrees/` | The Git worktrees of [sessions](../guides/sessions.md) that run beside another |
 | `snapshots/` | Tesota's snapshots of folders in no repository |
-| `workspaces/` | Which session holds which checkout |
-| `tools/tla2tools.jar` | TLC, which [model checks](../guides/verification.md#model-check-it-tla-and-quint) run; you put it there |
+| `workspaces/` | Operating-system locks reserving checkouts for sessions |
+| `tools/tla2tools.jar` | TLC for [design model checks](../guides/model-checking.md); you put it there |
 
 No tool call may read or change `auth.json` or `mcp-auth.json`.
 
@@ -31,7 +32,6 @@ No tool call may read or change `auth.json` or `mcp-auth.json`.
 
 ```json
 {
-  "model": "openai/gpt-6-sol",
   "thinkingLevel": "medium",
   "permissionMode": "ask",
   "tuiMode": "fullscreen",
@@ -42,39 +42,18 @@ No tool call may read or change `auth.json` or `mcp-auth.json`.
 | Setting | Values | Set by |
 | --- | --- | --- |
 | `model` | `<provider>/<id>`, including `<provider>@<account>/<id>` | `/model` |
-| `accounts` | Named provider instances, below; operator settings only | You |
+| `accounts` | Array of named sign-ins; user settings only. See [Models](../guides/models.md) for fields and management | Account commands or you |
 | `thinkingLevel` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` | `/settings` |
 | `permissionMode` | `read`, `ask` (default), `full` | Shift+Tab |
-| `tuiMode` | `fullscreen` (default), `inline` | `/settings` |
+| `tuiMode` | `fullscreen` (default), `inline`; takes effect on next start. Windows over SSH uses inline | `/settings` |
 | `agentLimit` | How many [subagents](../guides/subagents.md) run at once across a session and its subagents: 1 to 16, 4 by default | You |
-| `subagentBranchGuard` | Whether Git keeps a [subagent that writes](../guides/subagents.md#its-branch-and-no-other-619) off every branch but its own: `require` (default), `warn`, `off` | You |
-| `hooks` | See [Hooks](../guides/hooks.md) | You |
+| `subagentBranchGuard` | Whether Git keeps a [subagent that writes](../guides/subagents.md) off every branch but its own: `require` (default), `warn`, `off` | You |
+| `hooks` | See [Hooks](../guides/hooks.md); read separately from the settings above | You |
+| `deviceId` | Installation UUID used by some sign-in flows | Generated when needed |
 
-A value Tesota doesn't recognize is left out, and Tesota names it when it
-starts. Tesota writes only the setting that changed, so two shells keep
-each other's.
-
-### `accounts`
-
-An array in your `settings.json`, never a project's, that `tesota accounts`
-and the shell's `/accounts` and `/login` write for you. Each entry declares:
-
-| Key | Values |
-| --- | --- |
-| `name` | One or more ASCII letters, digits, `_` or `-`; unique within the provider |
-| `provider` | `claude-code` or `openai-codex` |
-| `folder` | Required absolute Claude Code configuration folder for `claude-code`; omitted for `openai-codex` |
-
-An invalid entry or repeated provider/name pair rejects the whole list and
-names `accounts` as invalid. Restart Tesota after editing it by hand. A declaration
-creates the provider ID `<provider>@<name>` in the existing model selectors;
-the plain provider ID still names the default account. Claude instances set
-only `CLAUDE_CONFIG_DIR`, never `HOME`; ChatGPT instances use separate slots
-keyed by their full provider IDs in `auth.json`. No automatic switching or
-fallback takes place. [Models](../guides/models.md#several-accounts-of-one-provider)
-covers adding, signing in and removing accounts, account labels and
-duplicate-account warnings. A Claude account Tesota adds lives in
-`~/.tesota/accounts/claude-code/<name>`, Claude Code's own folder for it.
+Invalid values of known settings are left out and named at startup.
+Unknown keys are silently ignored. Saving a changed setting preserves
+other keys under a lock, so two shells keep each other's changes.
 
 ## A project's files
 

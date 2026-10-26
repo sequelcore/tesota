@@ -5,7 +5,7 @@ servers, local or remote, and gives the agent their tools and resources.
 
 ## Configure
 
-`mcp.json`, in the `mcpServers` format Claude Code, Pi and Gemini CLI share:
+`mcp.json`, in the `mcpServers` format Claude Code and Gemini CLI use:
 
 ```json
 {

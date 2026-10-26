@@ -1,10 +1,5 @@
 # Install
 
-Tesota is in alpha. Its releases on GitHub are prereleases: a `tesota`
-binary for each platform, which runs without Bun or a checkout.
-
-## Install a release
-
 On macOS or Linux:
 
 ```sh
@@ -17,25 +12,30 @@ On Windows, in PowerShell:
 irm https://raw.githubusercontent.com/sequelcore/tesota/dev/install.ps1 | iex
 ```
 
-The script picks the binary for your system, checks it against the
-release's `SHA256SUMS`, and installs it as `~/.tesota/bin/tesota`
-(`tesota.exe` on Windows). It then adds that folder to your `PATH`, in your
-shell's startup file or your Windows user `PATH`. Open a new terminal and
-check it:
+Open a new terminal and check it:
 
 ```sh
 tesota --version
 ```
 
+Tesota is in alpha, and its releases on GitHub are prereleases: a `tesota`
+binary for each platform, which runs without Bun or a checkout. The script
+picks the binary for your system, checks it against the release's
+`SHA256SUMS`, and installs it as `~/.tesota/bin/tesota` (`tesota.exe` on
+Windows). It then adds that folder to your `PATH`, in your shell's startup
+file or your Windows user `PATH`.
+
+## Choose a version
+
 With no version, the script installs the newest release, prereleases
-included. To install a given one:
+included. To install a given one, pass its number:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/sequelcore/tesota/dev/install.sh | sh -s -- 0.1.0-alpha.1
+curl -fsSL https://raw.githubusercontent.com/sequelcore/tesota/dev/install.sh | sh -s -- <version>
 ```
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/sequelcore/tesota/dev/install.ps1))) 0.1.0-alpha.1
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/sequelcore/tesota/dev/install.ps1))) <version>
 ```
 
 To update, run the script again. `TESOTA_INSTALL_DIR` installs somewhere
@@ -50,11 +50,11 @@ other than `~/.tesota/bin`.
 An x64 processor without AVX2 gets the `-baseline` build of its binary.
 
 On macOS and Linux the agent runs commands in bash when it's on your
-`PATH`, and otherwise in `/bin/sh`, which every system has; the agent is
-told which. On Alpine that is BusyBox's `sh`; install `bash` (`apk add
-bash`) if your commands need bash's features.
+`PATH`, and otherwise in `/bin/sh`; the agent is told which. On Alpine
+that is BusyBox's `sh`; install `bash` (`apk add bash`) if your commands
+need it.
 
-### Checking a binary yourself
+### Check a binary yourself
 
 Each release holds `SHA256SUMS` and a build-provenance attestation for each
 binary, made by the release workflow from the tagged commit. With the
@@ -70,17 +70,17 @@ in a browser is another matter: macOS Gatekeeper refuses to open it until
 you run `xattr -d com.apple.quarantine <file>`, and Windows SmartScreen
 asks you to confirm under "More info".
 
-## What the binary doesn't include
+## Tools the binary doesn't include
 
 The binary carries what verification reads: the grammars, LemmaScript and
-ripgrep. These it doesn't include; install the ones you need:
+ripgrep. Install the others you need:
 
 | | Needed for | Without it |
 | --- | --- | --- |
 | [Git](https://git-scm.com) | Measuring each change from where the request started. On Windows, Git's bash also runs your project's check commands | Outside a repository, Tesota measures changes from its own snapshot of the folder |
-| [Dafny 4](https://dafny.org), as `dafny` on your `PATH` | Proving LemmaScript contracts | Nothing is proved: a proof says Dafny isn't installed, and the receipt lists the code as not proved |
-| Java 11 or newer, as `java` on your `PATH`, and TLC (below) | [Model-checking](../guides/verification.md#model-check-it-tla-and-quint) TLA+ and Quint models | Models aren't checked, and the receipt says why |
-| [Quint](https://quint-lang.org), as `quint` on your `PATH` | Model-checking Quint models, through TLC | Quint models aren't checked. On Windows Quint can't start the Apalache it needs, so they aren't checked there either way |
+| [Dafny 4](https://dafny.org), as `dafny` on your `PATH` | Proving LemmaScript contracts | Nothing is proved, and the receipt lists the code as not proved |
+| Java 11 or newer, as `java` on your `PATH`, and TLC (below) | [Model-checking](../guides/model-checking.md) TLA+ and Quint models | Design models aren't checked, and the receipt says why |
+| [Quint](https://quint-lang.org), as `quint` on your `PATH` | Model-checking Quint models | Quint models aren't checked. On Windows Quint can't start the Apalache it needs, so they aren't checked there either way |
 
 Tests run as your project runs them, so they need only your project's own
 tools.
@@ -104,54 +104,20 @@ Open Tesota in any folder and type `/login`:
 tesota
 ```
 
-`/login` lists the providers Tesota reaches through
-[pi-ai](https://github.com/earendil-works/pi): some sign in with your
-account, others take an API key. An API key in the environment, such as
+`/login` lists the providers you can sign in to: some with your account,
+others with an API key. An API key in the environment, such as
 `OPENAI_API_KEY`, works without `/login`. Then `/model` picks the model.
-[Models](../guides/models.md) covers both.
+For Claude on a Claude plan, Tesota uses your own Claude Code; see
+[Models](../guides/models.md#claude-through-claude-code).
 
-### Claude through your own Claude Code
-
-`/login` has no Claude sign-in, and Anthropic takes an API key only. On a
-Claude plan, the binary runs the
-[Claude Code](https://code.claude.com/docs/en/setup) you installed, the
-`claude` on your `PATH`, unmodified. It doesn't include one. Install it,
-then sign in there: run `claude`, then `/login`. Once you're signed in,
-`/model` lists `claude-code/<id>`.
-
-Tesota talks to Claude Code through the Claude Agent SDK, which is built
-for one Claude Code version, and yours may be another. Tesota doesn't
-compare the two: it runs your version as it is. If yours refuses what the
-SDK asks, the run ends with Claude Code's own error, prefixed
-`Claude Code:`. Update Claude Code
-(`claude update`) and run the request again.
-
-## Install from source
-
-To work on Tesota, run it from a checkout instead. That needs
-[Bun](https://bun.sh), the version in `packageManager` of
-[package.json](../../package.json):
-
-```sh
-git clone https://github.com/sequelcore/tesota
-cd tesota
-bun install --frozen-lockfile --ignore-scripts
-bun run vendor
-cd packages/core
-bun link
-```
-
-`bun link` puts `tesota` on your `PATH`, in Bun's `bin` folder, running
-the checkout's source. To update, pull the checkout and run `bun install`
-and `bun run vendor` again. [mise](https://mise.jdx.dev) installs the
-Dafny version Tesota is tested with: run `mise install` in the checkout.
-[Development](../development.md) covers the rest.
+To run Tesota from a checkout instead, see
+[Development](../development.md#set-up).
 
 ## Uninstall
 
 Delete `~/.tesota/bin`, and its line in your shell's startup file or your
-Windows user `PATH`. From source, run `bun unlink` in
-`tesota/packages/core`.
+Windows user `PATH`. Installed from source with `bun link`, run
+`bun unlink` in `packages/core` instead.
 
 Tesota keeps its state in `~/.tesota`: your settings, sign-ins, sessions,
 and the worktrees and snapshots it makes. Delete that folder to remove it
