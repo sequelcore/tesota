@@ -3,7 +3,7 @@ import { terminalText } from "../../../../src/terminal-text.ts";
 import { BAR_WIDTH, barLines, frameTitle } from "./frame.ts";
 import type { ClarificationAnswer, ClarificationQuestion } from "../../../../src/clarification.ts";
 import type { QuestionSubmit } from "../questions.ts";
-import type { ShellTheme } from "../../../../src/theme.ts";
+import { listRow, type ShellTheme } from "../../../../src/theme.ts";
 
 const PASTE_START = "\x1b[200~";
 const PASTE_END = "\x1b[201~";
@@ -164,7 +164,7 @@ export class QuestionForm extends ScrollView implements Focusable {
     const text = this.currentText();
     if (this.draft.field === "text") this.#focusRow = lines.length;
     text.focused = this.focused && this.draft.field === "text";
-    // In the choices' column, past the gutter where `→` marks the focus, so the answer's parts line up.
+    // In the choices' column, past the gutter where `›` marks the focus, so the answer's parts line up.
     // Input draws a fake inverse-video cursor even when unfocused. Render the
     // inactive value as plain text so it cannot look like a second focus marker.
     const textWidth = Math.max(1, inner - 2);
@@ -173,12 +173,12 @@ export class QuestionForm extends ScrollView implements Focusable {
     lines.push(...textLines.map((line) => `  ${line}`));
     if (this.draft.field === "submit") this.#focusRow = lines.length;
     lines.push(...new Text(this.marked(this.draft.field === "submit", "[Submit answers]"), 0, 0).render(inner));
-    return barLines(this.theme, "answer", lines);
+    return barLines(this.theme, "answer", lines.map((line) => listRow(this.theme, line, inner)));
   }
 
   /** `text` behind the focus marker when it has the focus, as pi-tui's lists draw it. */
   private marked(focus: boolean, text: string): string {
-    return focus ? `${this.theme.selectList.selectedPrefix("→ ")}${this.theme.selectList.selectedText(text)}` : `  ${text}`;
+    return focus ? `${this.theme.selectList.selectedPrefix("› ")}${this.theme.selectList.selectedText(text)}` : `  ${text}`;
   }
 
   /**

@@ -5,7 +5,7 @@ exports[`dark question ANSI rendering follows the theme in each field 1`] = `
   "choices": [
     "<ESC>[38;2;198;168;210m▌<ESC>[39m <ESC>[1m<ESC>[38;2;198;168;210mWhich?<ESC>[39m<ESC>[22m",
     "<ESC>[38;2;198;168;210m▌<ESC>[39m",
-    "<ESC>[38;2;198;168;210m▌<ESC>[39m <ESC>[38;2;198;168;210m→ <ESC>[39m<ESC>[38;2;198;168;210m<ESC>[1m1. [x] A<ESC>[22m<ESC>[39m",
+    "<ESC>[38;2;198;168;210m▌<ESC>[39m <ESC>[48;2;75;61;83m<ESC>[38;2;242;238;230m› <ESC>[39m<ESC>[38;2;242;238;230m1. [x] A<ESC>[39m                                               <ESC>[49m",
     "<ESC>[38;2;198;168;210m▌<ESC>[39m      <ESC>[38;2;143;141;132mfirst<ESC>[39m",
     "<ESC>[38;2;198;168;210m▌<ESC>[39m   2. [ ] B (recommended)",
     "<ESC>[38;2;198;168;210m▌<ESC>[39m      <ESC>[38;2;143;141;132msecond<ESC>[39m",
@@ -20,7 +20,7 @@ exports[`dark question ANSI rendering follows the theme in each field 1`] = `
     "<ESC>[38;2;198;168;210m▌<ESC>[39m   2. [ ] B (recommended)",
     "<ESC>[38;2;198;168;210m▌<ESC>[39m      <ESC>[38;2;143;141;132msecond<ESC>[39m",
     "<ESC>[38;2;198;168;210m▌<ESC>[39m   Text: notes",
-    "<ESC>[38;2;198;168;210m▌<ESC>[39m <ESC>[38;2;198;168;210m→ <ESC>[39m<ESC>[38;2;198;168;210m<ESC>[1m[Submit answers]<ESC>[22m<ESC>[39m",
+    "<ESC>[38;2;198;168;210m▌<ESC>[39m <ESC>[48;2;75;61;83m<ESC>[38;2;242;238;230m› <ESC>[39m<ESC>[38;2;242;238;230m[Submit answers]<ESC>[39m                                       <ESC>[49m",
   ],
   "text": [
     "<ESC>[38;2;198;168;210m▌<ESC>[39m <ESC>[1m<ESC>[38;2;198;168;210mWhich?<ESC>[39m<ESC>[22m",
@@ -40,7 +40,7 @@ exports[`light question ANSI rendering follows the theme in each field 1`] = `
   "choices": [
     "<ESC>[38;2;109;75;120m▌<ESC>[39m <ESC>[1m<ESC>[38;2;109;75;120mWhich?<ESC>[39m<ESC>[22m",
     "<ESC>[38;2;109;75;120m▌<ESC>[39m",
-    "<ESC>[38;2;109;75;120m▌<ESC>[39m <ESC>[38;2;109;75;120m→ <ESC>[39m<ESC>[38;2;109;75;120m<ESC>[1m1. [x] A<ESC>[22m<ESC>[39m",
+    "<ESC>[38;2;109;75;120m▌<ESC>[39m <ESC>[48;2;211;194;220m<ESC>[38;2;36;33;31m› <ESC>[39m<ESC>[38;2;36;33;31m1. [x] A<ESC>[39m                                               <ESC>[49m",
     "<ESC>[38;2;109;75;120m▌<ESC>[39m      <ESC>[38;2;134;136;126mfirst<ESC>[39m",
     "<ESC>[38;2;109;75;120m▌<ESC>[39m   2. [ ] B (recommended)",
     "<ESC>[38;2;109;75;120m▌<ESC>[39m      <ESC>[38;2;134;136;126msecond<ESC>[39m",
@@ -55,7 +55,7 @@ exports[`light question ANSI rendering follows the theme in each field 1`] = `
     "<ESC>[38;2;109;75;120m▌<ESC>[39m   2. [ ] B (recommended)",
     "<ESC>[38;2;109;75;120m▌<ESC>[39m      <ESC>[38;2;134;136;126msecond<ESC>[39m",
     "<ESC>[38;2;109;75;120m▌<ESC>[39m   Text: notes",
-    "<ESC>[38;2;109;75;120m▌<ESC>[39m <ESC>[38;2;109;75;120m→ <ESC>[39m<ESC>[38;2;109;75;120m<ESC>[1m[Submit answers]<ESC>[22m<ESC>[39m",
+    "<ESC>[38;2;109;75;120m▌<ESC>[39m <ESC>[48;2;211;194;220m<ESC>[38;2;36;33;31m› <ESC>[39m<ESC>[38;2;36;33;31m[Submit answers]<ESC>[39m                                       <ESC>[49m",
   ],
   "text": [
     "<ESC>[38;2;109;75;120m▌<ESC>[39m <ESC>[1m<ESC>[38;2;109;75;120mWhich?<ESC>[39m<ESC>[22m",

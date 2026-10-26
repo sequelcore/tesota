@@ -252,7 +252,7 @@ describe("tesota-core", () => {
     } };
   };
   const choose = async (terminal: VirtualTerminal, item: string): Promise<void> => {
-    for (let down = 0; down < 40 && !(await terminal.screen()).join("\n").includes(`→ ${item}`); down++) terminal.type("\x1b[B");
+    for (let down = 0; down < 40 && !(await terminal.screen()).join("\n").includes(`› ${item}`); down++) terminal.type("\x1b[B");
     terminal.type(enter);
   };
 
@@ -601,7 +601,7 @@ describe("tesota-core", () => {
     const { terminal, credentials, running } = await app();
     send(terminal, "/login");
     await terminal.until("Scripted login");
-    for (let down = 0; down < 40 && !(await terminal.screen()).join("\n").includes("→ Scripted login"); down++) terminal.type("\x1b[B");
+    for (let down = 0; down < 40 && !(await terminal.screen()).join("\n").includes("› Scripted login"); down++) terminal.type("\x1b[B");
     terminal.type(enter);
     await terminal.until("Paste the code");
     expect((await terminal.screen()).join("\n")).toContain("https://example.test/authorize");
@@ -621,7 +621,7 @@ describe("tesota-core", () => {
     const { terminal, credentials, running } = await app();
     send(terminal, "/login");
     await terminal.until("Scripted key");
-    for (let down = 0; down < 40 && !(await terminal.screen()).join("\n").includes("→ Scripted key"); down++) terminal.type("\x1b[B");
+    for (let down = 0; down < 40 && !(await terminal.screen()).join("\n").includes("› Scripted key"); down++) terminal.type("\x1b[B");
     terminal.type(enter);
     await terminal.until("Paste the key");
     terminal.type("sk-secret-123");

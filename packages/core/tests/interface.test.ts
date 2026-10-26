@@ -70,7 +70,7 @@ describe("Tesota's interface on the engine", () => {
       const screen = await terminal.screen();
       const suggestion = screen.findIndex((line) => /model\s+Choose the model/u.test(line));
       expect(suggestion).toBeLessThan(screen.findIndex((line) => line.startsWith("› ")));
-      expect(screen[suggestion]).toMatch(/^\s+→ model/u);
+      expect(screen[suggestion]).toMatch(/^\s+› model/u);
       terminal.type("res");
       await terminal.until("Open an earlier session");
       terminal.type("\t");
