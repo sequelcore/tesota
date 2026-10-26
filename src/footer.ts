@@ -3,7 +3,7 @@ import { sep } from "node:path";
 import { type ContextUsage, type FooterData, QUESTION_STATUS, type Theme, type ThemeColor } from "./contract.js";
 import { type Component, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { GateProgress, GateStatus, Tally } from "./gate.js";
-import { addedAssumptions, allEvidence, coveredCount, type Finding, modelEnd, type Receipt, receiptDecisions, receiptFindings, type ReceiptStanding, receiptStanding,
+import { addedAssumptions, allEvidence, coveredCount, evidenceEnd, type Finding, modelEnd, type Receipt, receiptDecisions, receiptFindings, type ReceiptStanding, receiptStanding,
   receiptTone, type UnitEvidence, unverifiedWhy, verified } from "./receipt.js";
 import { elapsedTime, type EvidenceLevel, footerLayout } from "./verification/footer-rule.js";
 
@@ -94,7 +94,8 @@ function receiptParts(settled: Receipt): EvidencePart[] {
   const findings = receiptFindings(settled);
   const unchecked = uncheckedGaps(findings, receipt, coveredCount(settled));
   const listed = [
-    ...tallyParts({ proved, notProved: receipt.proofs.length - proved,
+    // Only a proof that ran and doesn't hold is not proved (`evidenceEnd`); one that couldn't run, checked nothing or is stale is counted as not checked.
+    ...tallyParts({ proved, notProved: receipt.proofs.filter(({ evidence }) => evidenceEnd("proof", evidence) === "failed").length,
       ...receipt.tests.length === 0 ? {} : { tests: passed ? "pass" : "fail" }, weak }, assumed),
     // Narrower rows keep what needs the operator, so they leave out contracts that held.
     // Strength needs a change the proof caught, as the receipt in the conversation says.

@@ -85,6 +85,21 @@ it("sums up the receipt, leading with whether anything in it needs the operator"
     .toBe("! receipt · 1 proved · tests pass · contracts strong · weakening not checked");
 });
 
+it("counts a proof that doesn't hold apart from one that checked nothing or couldn't run", () => {
+  const failing = { ...proved, verdict: "send_back", evidence: evidence("failed") } as const;
+  const settledWith = (proof: Receipt["proofs"][number], level: "full" | "glyphs" = "full"): string =>
+    words({ step: "settled", receipt: { ...emptyReceipt, proofs: [proof] } }, level);
+  expect(settledWith(failing)).toContain("1 not proved");
+  expect(settledWith(failing, "glyphs")).toContain("✗1");
+  // Dafny verified nothing, the proof didn't start, or its content changed: a gap, never red.
+  for (const gap of [{ ...proved, verdict: "send_back", evidence: evidence("vacuous") }, { ...proved, verdict: "no_progress", evidence: evidence("vacuous") },
+    { ...proved, verdict: "operator", evidence: evidence("not_started") },
+    { ...proved, verdict: "operator", evidence: { ...evidence("passed"), invalidated: "content_changed" } }] as const) {
+    expect(settledWith(gap), gap.evidence.outcome).not.toContain("not proved");
+    expect(settledWith(gap, "glyphs"), gap.evidence.outcome).not.toContain("✗");
+    expect(settledWith(gap), gap.evidence.outcome).toContain("1 not checked");
+  }
+});
 it("names the model being checked, then sums up the models: checked, still failing, and possibly stale", () => {
   expect(words({ step: "checking", path: "models/Stock.tla", startedAt: 0, tally: { proved: 0, notProved: 0, tests: "pass" } }))
     .toBe("◐ checking models… · 0s · tests pass");

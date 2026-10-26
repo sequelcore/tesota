@@ -314,8 +314,12 @@ function line(path: string, verdict: GateVerdict, evidence: Evidence, assumed: n
   if (verdict === "proved") return `  proved        ${path}${assumed === 0 ? "" : `, ${trusting(assumed)} the change added`}`;
   if (verdict === "operator") return `  NOT proved    ${path}: the proof ${why(evidence)}`;
   const what = evidence.outcome === "vacuous" ? "Dafny verified nothing" : "an obligation fails";
-  return `  NOT proved    ${path}: ${what}${verdict === "send_back" ? "; generation ended before repair" : ", repeating a failure already sent back"}`;
+  return `  NOT proved    ${path}: ${what}${verdict === "send_back" ? "; generation ended before repair" : again(evidenceEnd("proof", evidence))}`;
 }
+
+/** How a check that went back and came back unchanged ended: failing again only when it ran and failed (`checkEnd`), otherwise still a gap. */
+const again = (end: ReturnType<typeof checkEnd>): string =>
+  end === "failed" ? ", repeating a failure already sent back" : ", still could not be checked after being sent back";
 
 function testLine({ command, verdict, evidence, failingTests }: Receipt["tests"][number]): string {
   if (evidence.invalidated === "content_changed") return `  stale         ${command}: ${staleEvidenceWords}`;
@@ -737,8 +741,9 @@ function modelLines(model: ModelResult): string[] {
     return [`  model fails   ${path}: ${counterexample.violation}${verdict === "send_back" ? unrepaired : ", repeating a counterexample already sent back"}`,
       ...counterexampleSteps(counterexample).map((step) => `                ${step}`), ...abstraction, ...stale];
   }
-  return [model.run === "passed" ? `  weak model    ${path}: ${failingFaults(model)}${verdict === "send_back" ? unrepaired : ", after they went back"}`
-    : `  NOT checked   ${path}: ${modelWhy(model)}${verdict === "send_back" ? unrepaired : ", repeating a failure already sent back"}`, ...stale];
+  const repeated = modelEnd(model) === "failed" ? undefined : again("gap");
+  return [model.run === "passed" ? `  weak model    ${path}: ${failingFaults(model)}${verdict === "send_back" ? unrepaired : repeated ?? ", after they went back"}`
+    : `  NOT checked   ${path}: ${modelWhy(model)}${verdict === "send_back" ? unrepaired : repeated ?? again("failed")}`, ...stale];
 }
 
 /**

@@ -138,6 +138,28 @@ describe("the receipt's standing (#668)", () => {
     expect(receiptSummary({ ...provedAdd, models: [refused] }).methods.find(({ method }) => method === "Models")?.glyph).toBe("○");
   });
 
+  it("says a check that went back and still couldn't be checked was not checked again, never that it failed again", () => {
+    const repeated = "repeating a failure already sent back";
+    const still = "still could not be checked after being sent back";
+    const vacuousAgain = { ...proof, verdict: "no_progress" as const, evidence: { ...proof.evidence, outcome: "vacuous" as const } };
+    const failingAgain = { ...proof, verdict: "no_progress" as const, evidence: { ...proof.evidence, outcome: "failed" as const } };
+    for (const unchecked of [{ ...unprovedAdd, models: [{ ...refused, verdict: "no_progress" as const }] },
+      { ...unprovedAdd, models: [model("no_progress", "passed", [fault("broken")])] }, { ...unprovedAdd, proofs: [vacuousAgain] }]) {
+      const text = renderReceipt(unchecked);
+      expect(text).not.toContain(repeated);
+      expect(text).toContain(still);
+    }
+    // The concrete reason stays.
+    expect(renderReceipt({ ...unprovedAdd, models: [{ ...refused, verdict: "no_progress" as const }] })).toContain("names no invariant");
+    expect(renderReceipt({ ...unprovedAdd, proofs: [vacuousAgain] })).toContain(`Dafny verified nothing, ${still}`);
+    // A check that ran and failed again keeps saying so.
+    // A violation TLC reported without a trace it could parse, as in a deadlock: it ran and failed.
+    const { counterexample: _trace, ...untraced } = model("no_progress", "violated");
+    for (const failedAgain of [{ ...unprovedAdd, proofs: [failingAgain] }, { ...unprovedAdd, models: [untraced] }] satisfies Receipt[]) {
+      expect(renderReceipt(failedAgain)).toContain(repeated);
+    }
+    expect(renderReceipt({ ...unprovedAdd, models: [model("no_progress", "passed", [fault("passes")])] })).toContain("after they went back");
+  });
   it("colours a check that could not run as a gap, and one that failed red", () => {
     for (const finding of [proofFinding(noDafny), proofFinding(staleProof), commandFinding(timedOut), commandFinding(staleTest),
       modelFinding(model("operator", "timed_out"))]) {
