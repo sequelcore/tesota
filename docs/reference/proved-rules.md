@@ -6,7 +6,7 @@ To prove one rule again from the repository root, run:
 lsc check --backend=dafny src/verification/gate-rule.ts
 ```
 
-These are the 33 rule files selected by `formal:check` in
+These are the 34 rule files selected by `formal:check` in
 [package.json](../../package.json). Each contains pure TypeScript decisions
 with LemmaScript contracts checked by Dafny. These proofs use
 [LemmaScript's model of TypeScript](../concepts/verification.md#what-a-proof-covers),
@@ -53,3 +53,4 @@ Run `bun run formal:check` to check the full list.
 | [`packages/core/src/account-rule.ts`](../../packages/core/src/account-rule.ts) | Which settings and agent types still name an account before removal | `lsc check --backend=dafny packages/core/src/account-rule.ts` |
 | [`packages/core/src/resume-model-rule.ts`](../../packages/core/src/resume-model-rule.ts) | Which model an explicit, resumed or default print request uses | `lsc check --backend=dafny packages/core/src/resume-model-rule.ts` |
 | [`packages/core/src/usage-rule.ts`](../../packages/core/src/usage-rule.ts) | How account usage is rounded, drawn, colored and deduplicated | `lsc check --backend=dafny packages/core/src/usage-rule.ts` |
+| [`packages/core/src/doctor-rule.ts`](../../packages/core/src/doctor-rule.ts) | Whether a found tool passed its smoke test, and failure-over-missing exit precedence | `lsc check --backend=dafny packages/core/src/doctor-rule.ts` |

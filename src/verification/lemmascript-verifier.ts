@@ -52,10 +52,15 @@ function run(executable: string, args: readonly string[], cwd: string, signal: A
  * extension loads, so Tesota opens even where LemmaScript is missing; in a
  * binary, which embeds LemmaScript, the binary's own `__lsc` command (#472).
  */
-function lsc(args: readonly string[], cwd: string, signal: AbortSignal): Promise<ProcessRun> {
-  if (inBinary) return run(process.execPath, ["__lsc", ...args], cwd, signal);
+export function lscCommand(): { executable: string; args: readonly string[] } {
+  if (inBinary) return { executable: process.execPath, args: ["__lsc"] };
   const require = createRequire(import.meta.url);
-  return run(process.execPath, [join(dirname(require.resolve("lemmascript/package.json")), "tools", "dist", "lsc.js"), ...args], cwd, signal);
+  return { executable: process.execPath, args: [join(dirname(require.resolve("lemmascript/package.json")), "tools", "dist", "lsc.js")] };
+}
+
+function lsc(args: readonly string[], cwd: string, signal: AbortSignal): Promise<ProcessRun> {
+  const command = lscCommand();
+  return run(command.executable, [...command.args, ...args], cwd, signal);
 }
 
 /** Whether Dafny answers on this computer, which every LemmaScript proof needs. */

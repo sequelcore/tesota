@@ -64,6 +64,21 @@ test("the engine's binary starts, and runs LemmaScript it embeds", () => {
   expect(regen.stdout).toContain("clamp.dfy.gen");
 }, 120_000);
 
+test("the binary doctor embeds repairs and probes LemmaScript without writing outside the checkout", () => {
+  const binary = join(folder("tesota-doctor-binary-"), executable("tesota"));
+  build(binary);
+  const project = folder("tesota-doctor-project-");
+  const run = spawnSync(binary, ["doctor", "--json"], { cwd: project, encoding: "utf8", timeout: 30_000,
+    env: { ...process.env, PATH: "", HOME: project, USERPROFILE: project, APPDATA: project, LOCALAPPDATA: project } });
+  expect(run.stderr).toBe("");
+  expect(run.status).toBe(2);
+  const report = JSON.parse(run.stdout) as { exitCode: number; capabilities: { id: string; status: string; entryPoint?: string; repair: string }[] };
+  expect(report.exitCode).toBe(2);
+  expect(report.capabilities.find(({ id }) => id === "lsc")).toMatchObject({ status: "available", entryPoint: "__lsc" });
+  expect(report.capabilities.find(({ id }) => id === "git")?.repair.length).toBeGreaterThan(0);
+  expect(readdirSync(project)).toEqual([]);
+}, 120_000);
+
 test("the binary renders a captured graph through its disposable worker outside the checkout", () => {
   const binary = join(folder("tesota-graph-binary-"), executable("tesota"));
   build(binary);

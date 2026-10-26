@@ -23,6 +23,7 @@ const usage: readonly (readonly [string, string] | string)[] = [
   ["  -r, --resume <session>", "Continue the session with this id."],
   ["  --model <provider>/<id>", "Choose the model for this run."],
   ["tesota receipt [--json] [--owner <who>]", "Write the last run's receipt."],
+  ["tesota doctor [--json]", "Report local tools and sign-ins without changing anything."],
   ["tesota accounts", "List your accounts."],
   ["tesota accounts add <provider> <name>", "Sign in and add an account (claude-code or openai-codex)."],
   ["tesota accounts login <provider>@<name>", "Sign an account in again."],
@@ -76,6 +77,7 @@ else if (command === undefined) exitWith(import("./shell/app.ts").then(({ runApp
 else if (command === "-p" || command === "--print") {
   exitWith(import("./print.ts").then(({ runPrint }) => runPrint(rest, process.cwd(), output, flags)));
 }
+else if (command === "doctor") exitWith(import("./doctor.ts").then(({ doctorCommand }) => doctorCommand(rest, output)));
 else if (command === "accounts") exitWith(import("./accounts.ts").then(({ accountsCommand }) => accountsCommand(rest, output)));
 else if (command === "receipt") {
   exitWith(Promise.all([import("../../../src/pull-request-receipt.ts"), import("./session-store.ts")])

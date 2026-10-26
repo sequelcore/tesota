@@ -26,6 +26,12 @@ export interface ProcessOptions {
   readonly verbatim?: boolean;
 }
 
+/** The executable Bun would run on the current PATH. Shared by process runs and doctor; Node callers retain spawn's lookup. */
+export function processExecutable(executable: string, cwd: string = process.cwd(), env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const runtime = (globalThis as { Bun?: { which: (name: string, options: { PATH: string; cwd: string }) => string | null } }).Bun;
+  return runtime?.which(executable, { PATH: env["PATH"] ?? "", cwd }) ?? undefined;
+}
+
 const outputLimit = 8 * 1024;
 const streamLimit = 64 * 1024;
 // A process that exits while a descendant still holds its output never closes it; the run ends this long after the exit.
@@ -140,7 +146,7 @@ export async function runProcess(executable: string, args: readonly string[], cw
   };
   const jobs = await windowsJobs();
   const start = Effect.sync(() => {
-    const child = spawn(executable, [...args], { cwd, windowsHide: true, detached: process.platform !== "win32",
+    const child = spawn(processExecutable(executable, cwd, options.env) ?? executable, [...args], { cwd, windowsHide: true, detached: process.platform !== "win32",
       stdio: [options.input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
       ...options.env === undefined ? {} : { env: options.env }, windowsVerbatimArguments: options.verbatim === true });
     child.stdout?.on("data", append("stdout"));
