@@ -505,8 +505,8 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     await loadChecks();
     const request = recorded?.();
     if (request !== undefined) {
-      requests = [request.text, ...request.inputs.flatMap((input) => input.kind === "clarification"
-        ? [clarificationText(input.clarification)] : input.origin === "extension" ? [] : [input.text])];
+      // The earlier requests it follows whose runs never completed come first (#627): "continue" asks for what they asked.
+      requests = [...request.uncompleted ?? [], request].flatMap(operatorText);
       clarifications = request.inputs.flatMap((input) => input.kind === "clarification" ? [input.clarification] : []);
       children = request.children ?? [];
       floorRefusals = request.refusals ?? [];
@@ -811,6 +811,14 @@ export interface RecordedRequest {
   readonly base: { readonly units: readonly RecordedUnit[] };
   /** The earlier request this one continues (#651), and what the gate saved as it ended on its question (`savedStart`). */
   readonly continues?: { readonly run: number; readonly start?: unknown };
+  /** The earlier requests it follows whose runs never completed, so their changes were never verified (#627), oldest first, judged with it. */
+  readonly uncompleted?: readonly Pick<RecordedRequest, "text" | "inputs">[];
+}
+
+/** What the operator asked in a recorded request: its text, then its amendments and answers in order, none an extension's. */
+function operatorText(request: Pick<RecordedRequest, "text" | "inputs">): string[] {
+  return [request.text, ...request.inputs.flatMap((input) => input.kind === "clarification"
+    ? [clarificationText(input.clarification)] : input.origin === "extension" ? [] : [input.text])];
 }
 
 type RecordedUnit =

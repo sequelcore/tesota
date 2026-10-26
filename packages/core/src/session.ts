@@ -24,6 +24,7 @@ import {
   type SessionHeader, sessionWriter, type SessionWriter,
 } from "./session-file.ts";
 import { lockSession, SessionLockedError } from "./session-lock.ts";
+import { uncompletedFrom } from "./uncompleted-rule.ts";
 import { outputPrefix } from "./tools/shell.ts";
 import { keepTail, maxBytes } from "./truncate.ts";
 import { bindWorkspace, outsideChange, reopenWorkspace, type Workspace } from "./workspace.ts";
@@ -60,6 +61,13 @@ export interface LedgerRequest {
    * that run ended on its question (`requestStartType`), for it to restore.
    */
   readonly continues?: { readonly run: number; readonly start?: unknown };
+  /**
+   * The earlier requests whose runs never completed, so their changes were
+   * never verified, that this one follows (#627, `uncompletedFrom`), oldest
+   * first, without one a later of them, or this one, continues (#651), whose
+   * text and inputs it already holds.
+   */
+  readonly uncompleted: readonly Pick<LedgerRequest, "run" | "text" | "inputs">[];
 }
 
 /** What makes a session a child of another (#525): its parent, where it works, the tree it counts in, its types and instructions. */
@@ -406,20 +414,28 @@ function conversation(entries: readonly SessionEntry[]): Pick<LoopState, "histor
  * The ledger: each request with its amendments, from the ledger entries and
  * the deliveries alone. A request that continues an earlier one (#651) holds
  * that one's amendments and clarifications first, since it is the same
- * request, then its own.
+ * request, then its own. Each holds the earlier requests it is judged with
+ * (#627): those since the last run that completed.
  */
 function ledgerOf(entries: readonly SessionEntry[]): LedgerRequest[] {
   const ledger = ownLedgerOf(entries);
   const inputs = new Map<number, readonly RequestInput[]>();
-  return ledger.map((request) => {
+  // A run with no end yet, before recovery records it interrupted, was not verified either.
+  const ends = new Map(entries.flatMap((entry) => entry.type === "run_end" ? [[entry.run, entry.outcome] as const] : []));
+  const merged: LedgerRequest[] = [];
+  for (const request of ledger) {
     const all = [...request.continues === undefined ? [] : inputs.get(request.continues.run) ?? [], ...request.inputs];
     inputs.set(request.run, all);
-    return { ...request, inputs: all };
-  });
+    const earlier = merged.slice(uncompletedFrom(merged.map(({ run }) => ends.get(run) ?? "interrupted")));
+    const continued = new Set([...earlier, request].flatMap(({ continues }) => continues === undefined ? [] : [continues.run]));
+    merged.push({ ...request, inputs: all, uncompleted: earlier.filter(({ run }) => !continued.has(run))
+      .map(({ run, text, inputs: given }) => ({ run, text, inputs: given })) });
+  }
+  return merged;
 }
 
 /** Each request with only the amendments and clarifications given in its own run. */
-function ownLedgerOf(entries: readonly SessionEntry[]): LedgerRequest[] {
+function ownLedgerOf(entries: readonly SessionEntry[]): Omit<LedgerRequest, "uncompleted">[] {
   const withdrawn = new Set(entries.flatMap((entry) => entry.type === "withdrawn" ? [entry.amendment] : []));
   const delivered = new Set(entries.flatMap((entry) => entry.type === "delivered" ? [entry.amendment] : []));
   return entries.flatMap((entry) => entry.type !== "request" ? [] : [{

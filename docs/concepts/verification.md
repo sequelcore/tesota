@@ -45,7 +45,11 @@ A run's cycle: failed checks and repairable gaps go back to the agent, and the g
 Two additional checks use a model's judgment. ClaimCheck compares contracts
 with your request. Open cases list inputs your request may leave ambiguous.
 They appear separately in the receipt and do not count as check evidence
-or decisions required by the receipt.
+or decisions required by the receipt. On `@tesota/core` both read, before
+your request, the earlier requests whose runs ended without completing,
+such as one stopped or ended by an error or a limit, back to the last run
+that completed: "continue" is judged against what those asked. A request
+after a completed run is judged on its own.
 
 ## Change scope
 
