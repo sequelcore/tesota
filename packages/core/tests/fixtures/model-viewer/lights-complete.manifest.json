@@ -1,0 +1,159 @@
+{
+  "version": 1,
+  "status": "captured",
+  "exploration": "complete",
+  "header": "---------------------------- MODULE Lights ----------------------------\nEXTENDS Naturals\n(* Viewer test fixture: a lamp that may be left lit when the door locks.\n   @view groupBy: door, lamp *)\nVARIABLES door, lamp, n\nInit == door = \"open\" /\\ lamp = \"off\" /\\ n = 0\nSwitch == /\\ lamp' = (IF lamp = \"on\" THEN \"off\" ELSE \"on\") /\\ UNCHANGED <<door, n>>\nLock == door = \"open\" /\\ door' = \"locked\" /\\ UNCHANGED <<lamp, n>>\nUnlock == door = \"locked\" /\\ door' = \"open\" /\\ n' = (n + 1) % 2 /\\ UNCHANGED lamp\nNext == Switch \\/ Lock \\/ Unlock\nDarkWhenLocked == door = \"locked\" => lamp = \"off\"\n=============================================================================\r\n",
+  "counts": {
+    "kind": "exact",
+    "reached": 8,
+    "edges": 16,
+    "violating": 2
+  },
+  "artifacts": {
+    "dot": {
+      "file": "lights-complete.dot",
+      "sha256": "7038117e2f65f41ed8b00462d398c798c6ec552d2df26bd63991e46ca942730d"
+    }
+  },
+  "graph": {
+    "states": [
+      {
+        "fingerprint": "3588016040887795817",
+        "valuation": "/\\ door = \"open\"\n/\\ lamp = \"off\"\n/\\ n = 0"
+      },
+      {
+        "fingerprint": "-1860901837630739872",
+        "valuation": "/\\ door = \"open\"\n/\\ lamp = \"on\"\n/\\ n = 0"
+      },
+      {
+        "fingerprint": "1864311015857670523",
+        "valuation": "/\\ door = \"locked\"\n/\\ lamp = \"off\"\n/\\ n = 0"
+      },
+      {
+        "fingerprint": "-7489905741496962076",
+        "valuation": "/\\ door = \"locked\"\n/\\ lamp = \"on\"\n/\\ n = 0"
+      },
+      {
+        "fingerprint": "6650386497623550793",
+        "valuation": "/\\ door = \"open\"\n/\\ lamp = \"off\"\n/\\ n = 1"
+      },
+      {
+        "fingerprint": "-8381931732474576576",
+        "valuation": "/\\ door = \"open\"\n/\\ lamp = \"on\"\n/\\ n = 1"
+      },
+      {
+        "fingerprint": "8385287033566388827",
+        "valuation": "/\\ door = \"locked\"\n/\\ lamp = \"off\"\n/\\ n = 1"
+      },
+      {
+        "fingerprint": "-752285075239298876",
+        "valuation": "/\\ door = \"locked\"\n/\\ lamp = \"on\"\n/\\ n = 1"
+      }
+    ],
+    "edges": [
+      {
+        "from": "3588016040887795817",
+        "to": "-1860901837630739872",
+        "action": "Switch"
+      },
+      {
+        "from": "3588016040887795817",
+        "to": "1864311015857670523",
+        "action": "Lock"
+      },
+      {
+        "from": "-1860901837630739872",
+        "to": "3588016040887795817",
+        "action": "Switch"
+      },
+      {
+        "from": "-1860901837630739872",
+        "to": "-7489905741496962076",
+        "action": "Lock"
+      },
+      {
+        "from": "1864311015857670523",
+        "to": "-7489905741496962076",
+        "action": "Switch"
+      },
+      {
+        "from": "1864311015857670523",
+        "to": "6650386497623550793",
+        "action": "Unlock"
+      },
+      {
+        "from": "-7489905741496962076",
+        "to": "1864311015857670523",
+        "action": "Switch"
+      },
+      {
+        "from": "-7489905741496962076",
+        "to": "-8381931732474576576",
+        "action": "Unlock"
+      },
+      {
+        "from": "6650386497623550793",
+        "to": "-8381931732474576576",
+        "action": "Switch"
+      },
+      {
+        "from": "6650386497623550793",
+        "to": "8385287033566388827",
+        "action": "Lock"
+      },
+      {
+        "from": "-8381931732474576576",
+        "to": "6650386497623550793",
+        "action": "Switch"
+      },
+      {
+        "from": "-8381931732474576576",
+        "to": "-752285075239298876",
+        "action": "Lock"
+      },
+      {
+        "from": "8385287033566388827",
+        "to": "-752285075239298876",
+        "action": "Switch"
+      },
+      {
+        "from": "8385287033566388827",
+        "to": "3588016040887795817",
+        "action": "Unlock"
+      },
+      {
+        "from": "-752285075239298876",
+        "to": "8385287033566388827",
+        "action": "Switch"
+      },
+      {
+        "from": "-752285075239298876",
+        "to": "-1860901837630739872",
+        "action": "Unlock"
+      }
+    ],
+    "trace": [
+      {
+        "fingerprint": "3588016040887795817",
+        "action": "Initial predicate",
+        "valuation": "/\\ door = \"open\"\n/\\ lamp = \"off\"\n/\\ n = 0"
+      },
+      {
+        "fingerprint": "-1860901837630739872",
+        "action": "Switch line 7, col 11 to line 7, col 83 of module Lights",
+        "valuation": "/\\ door = \"open\"\n/\\ lamp = \"on\"\n/\\ n = 0"
+      },
+      {
+        "fingerprint": "-7489905741496962076",
+        "action": "Lock line 8, col 9 to line 8, col 66 of module Lights",
+        "valuation": "/\\ door = \"locked\"\n/\\ lamp = \"on\"\n/\\ n = 0"
+      }
+    ],
+    "violations": {
+      "DarkWhenLocked": [
+        "-7489905741496962076",
+        "-752285075239298876"
+      ]
+    }
+  }
+}

@@ -11,6 +11,7 @@
     "noPropertyAccessFromIndexSignature": true,
     "verbatimModuleSyntax": true,
     "moduleDetection": "force",
+    "resolveJsonModule": true,
     "isolatedDeclarations": true,
     "skipLibCheck": true,
     "declaration": true,

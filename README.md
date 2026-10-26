@@ -1,100 +1,109 @@
 # Tesota
 
+**A coding agent that ends every run with a receipt.**
+
+[![CI](https://github.com/sequelcore/tesota/actions/workflows/ci.yml/badge.svg)](https://github.com/sequelcore/tesota/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/sequelcore/tesota?include_prereleases&sort=semver)](https://github.com/sequelcore/tesota/releases)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+
 <picture>
-  <source media="(prefers-color-scheme: light)" srcset="docs/assets/tesota-welcome-light.png">
-  <img alt="Tesota's welcome screen in a terminal: the palo fierro tree drawn in braille characters, above the words Tesota, the project path, and 'Every turn is reviewed; reverting never overwrites your edits.', then the prompt and the footer naming the model, the repository and branch, and the permission mode." src="docs/assets/tesota-welcome-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/tesota-turn-light.svg">
+  <img alt="A verified run in Tesota: the request, the agent's file changes and its answer, then the receipt, which shows a contract proved with Dafny and a test that passes and catches the change." src="docs/assets/tesota-turn-dark.svg">
 </picture>
 
-**Tesota is an open-source coding agent that reviews every turn it takes in
-your project, and reverts one without overwriting your own edits.** It records
-the exact content of each turn, runs your checks and its own verifiers on it,
-and presents the diff with an independent review; you keep the turn or
-revert it. Checking is proportional, and errs toward checking: a turn that
-changes files is always checked and reviewed, more deeply when it touches
-tests, what checks it, sensitive files or much code; a turn that only answers
-gets a fast first pass, on a typed decision model such as Jev or on any
-model, that decides whether its answer needs the full check, and a first pass
-that cannot decide runs it, so nothing goes unchecked without you seeing why.
-A folder of documents, a second session, or any session that asks,
-works in a separate copy that changes nothing until you apply it. Software development
-is its first proving ground; work beyond code is planned.
-
-## The name
-
-Tesota takes its name from *Olneya tesota*, the desert ironwood, *palo
-fierro* in Spanish: a tree of the Sonoran Desert whose wood is dense enough
-to sink in water, and under whose shelter other plants take root. The name
-stands for a durable foundation that supports growth.
-
-The [design overview](docs/design/overview.md#name-and-identity) explains the
-name and identity.
-
-## Try it
-
-This package is not published. From a source checkout, use the Bun and Node
-versions in [package.json](package.json):
+## Install
 
 ```sh
-bun install --frozen-lockfile --ignore-scripts
-bun run check
-bun link
-tesota auth login
+curl -fsSL https://raw.githubusercontent.com/sequelcore/tesota/dev/install.sh | sh
 ```
 
-`tesota auth login` lets you choose a route; `tesota auth login codex` signs
-in with a ChatGPT plan. Without one, Tesota can use
-Claude Code, an Anthropic API key, OpenCode, or OpenRouter;
-[choosing models](docs/guide/choosing-models.md) shows the
-setup for each.
+On Windows, in PowerShell:
 
-Then, in the repository you want to work on:
+```powershell
+irm https://raw.githubusercontent.com/sequelcore/tesota/dev/install.ps1 | iex
+```
+
+If the Linux or macOS script added Tesota to your `PATH`, open a new
+terminal first, or run the line it prints. Then, in your project:
 
 ```sh
-cd my-project
 tesota
 ```
 
-The agent reads, edits, creates and deletes files in your project, and Tesota
-records each turn, checks and reviews it; `/keep` keeps it and `/revert` undoes
-it without overwriting what you edited since. `/isolate`, before a session's
-first request, makes it work in a copy you apply from instead, as a second
-session and a folder that is not a Git repository always do.
+Type `/login` to sign in to a model provider, then ask for a change. Tesota
+is in alpha, released as prerelease binaries. You need Git, and
+[Dafny 4](https://dafny.org) to prove contracts.
+[Install](docs/get-started/install.md) and
+[your first session](docs/get-started/first-session.md) go step by step.
+
+## The receipt
+
+When the agent finishes, Tesota verifies the change and writes a receipt.
+It records:
+
+- what was proved, tested and model-checked;
+- any weakened evidence it found, such as a loosened contract, a deleted
+  test or an added `.skip`;
+- what it couldn't verify: changed lines and files that no check covered.
+
+A run ends verified only when that evidence holds. `tesota receipt` writes
+the receipt for a pull request. The receipt is evidence; accepting the
+change is up to you. See [Receipts](docs/guides/receipts.md) and the
+[receipt format](docs/receipt-v2.md).
+
+## The checks
+
+- **Proofs:** TypeScript functions with LemmaScript contracts, proved with
+  Dafny. A contract that still proves after the code is changed is too weak,
+  and goes back to the agent, unless Dafny proves the changed code returns
+  the same result for every input the contract admits.
+- **Tests:** your project's own commands, run against the change, with a
+  check that a new test catches it.
+- **Design models:** TLA+ and Quint models of the design, checked with TLC
+  when the change touches the code they cover. Each planted fault must
+  break one.
+
+A failing check goes back to the agent. [Verification](docs/guides/verification.md)
+and [model checking](docs/guides/model-checking.md) show how to give
+Tesota more to check; [how verification works](docs/concepts/verification.md)
+explains the rest.
 
 <picture>
-  <source media="(prefers-color-scheme: light)" srcset="docs/assets/tesota-turn-light.png">
-  <img alt="A reviewed turn in Tesota. In the conversation, the agent fixed a pricing bug and ran npm test; the review below it lists the two edited files, flags that the agent edited a test, which only the user can judge, and says the checks ran on this exact content in the WSL sandbox, reviewed by codex:gpt-6-astra. Under it, a bar offers Keep, Revert and Diff for the undecided turn. On the right, the record's Checks tab shows the check that passed, what a pass shows and what it does not, and the test output. On the left, the sidebar lists two other sessions, one needing a decision and one unread." src="docs/assets/tesota-turn-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/tesota-welcome-light.svg">
+  <img alt="Tesota's shell as it opens: the ironwood mark beside the name, model, folder and tagline; a faded ironwood and its saguaro seedling centered above the input band and footer." src="docs/assets/tesota-welcome-dark.svg">
 </picture>
-
-On Windows, the agent's commands run on their own in Tesota's WSL sandbox,
-once `tesota setup` has prepared it (WSL needs an administrator prompt and a
-restart once) and Tesota has checked on your computer that the sandbox holds.
-The sandbox sees only the project, with `.git` read-only and files that may
-hold credentials hidden, and reaches only package registries. Docker
-Sandboxes is not used for now, while its network allowlist is checked again:
-choosing it runs commands on your computer, outside any virtual machine,
-asking before each one. Without a sandbox, every command asks for your
-approval first and then runs with your permissions. `tesota sandbox` shows
-and chooses where they run.
-
-`tesota run "<request>"` does one request without the shell, for scripts and
-benchmarks, allowing only what its flags say. See
-[Using Tesota](docs/guide/using-tesota.md) for the workflow and limits. Run
-`bun unlink` in this checkout to remove the command.
-
-Tesota is pre-release and has been exercised live only on Windows. A passing
-check shows only that the command succeeded on the reviewed content, and a
-clean review is advice; neither shows that the change does what you asked. The
-[roadmap](docs/roadmap.md) owns status and priorities.
 
 ## Documentation
 
-| Need | Read |
+| | |
 | --- | --- |
-| The user workflow | [Using Tesota](docs/guide/using-tesota.md), [authentication](docs/guide/authentication.md), [choosing models](docs/guide/choosing-models.md) |
-| How it works today | [Design](docs/design/overview.md) |
-| Current status and next work | [Roadmap](docs/roadmap.md) |
-| Build, test and contribution practice | [Development](docs/development.md) |
+| [Get started](docs/get-started/install.md) | Install Tesota and run your first request |
+| [Guides](docs/README.md#guides) | Sessions, verification, receipts, permissions, models, hooks, MCP and more |
+| [Concepts](docs/README.md#concepts) | How Tesota is built and how it verifies |
+| [Reference](docs/README.md#reference) | Commands, configuration, proved rules, the glossary and the receipt format |
+| [Roadmap](ROADMAP.md) | Principles, non-goals and focus areas |
+| [Changelog](CHANGELOG.md) | What each release changed |
+| [Contributing](CONTRIBUTING.md) | Report an issue or propose a change |
+| [Security](SECURITY.md) | The threat model, and how to report a vulnerability |
 
-Tesota is licensed under [Apache-2.0](LICENSE). Preserve [NOTICE](NOTICE) and
-retained third-party notices. See [CONTRIBUTING.md](CONTRIBUTING.md) and
-[SECURITY.md](SECURITY.md).
+## Credits
+
+Tesota proves contracts with [LemmaScript](https://github.com/midspiral/LemmaScript)
+by Midspiral and [Dafny](https://github.com/dafny-lang/dafny). It checks
+design models with [TLC](https://github.com/tlaplus/tlaplus), and Quint
+models through your own [Quint](https://github.com/informalsystems/quint)
+install. Its contract comparison adapts the round-trip method of
+[ClaimCheck](https://github.com/metareflection/claimcheck) by
+metareflection. It reaches models through
+[pi-ai](https://github.com/earendil-works/pi), draws the terminal with
+pi-tui and connects to MCP servers with pi-mcp. It searches with
+[ripgrep](https://github.com/BurntSushi/ripgrep), reads code with
+[tree-sitter](https://github.com/tree-sitter/tree-sitter), and draws model
+graphs with [Cytoscape.js](https://js.cytoscape.org/). [NOTICE](NOTICE)
+lists every credit and license.
+
+Tesota is named for *Olneya tesota*, the desert ironwood, *palo fierro* in
+Spanish: a tree of the Sonoran Desert whose wood sinks in water, and under
+whose shelter other plants take root.
+
+Licensed under [Apache-2.0](LICENSE).

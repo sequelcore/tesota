@@ -1,0 +1,35 @@
+strict digraph DiskGraph {
+nodesep=0.35;
+subgraph cluster_graph {
+color="white";
+3588016040887795817 [label="/\\ door = \"open\"\n/\\ lamp = \"off\"\n/\\ n = 0",style = filled]
+3588016040887795817 -> -1860901837630739872 [label="Switch",color="black",fontcolor="black"];
+-1860901837630739872 [label="/\\ door = \"open\"\n/\\ lamp = \"on\"\n/\\ n = 0"];
+3588016040887795817 -> 1864311015857670523 [label="Lock",color="black",fontcolor="black"];
+1864311015857670523 [label="/\\ door = \"locked\"\n/\\ lamp = \"off\"\n/\\ n = 0"];
+-1860901837630739872 -> 3588016040887795817 [label="Switch",color="black",fontcolor="black"];
+-1860901837630739872 -> -7489905741496962076 [label="Lock",color="black",fontcolor="black"];
+-7489905741496962076 [label="/\\ door = \"locked\"\n/\\ lamp = \"on\"\n/\\ n = 0"];
+1864311015857670523 -> -7489905741496962076 [label="Switch",color="black",fontcolor="black"];
+1864311015857670523 -> 6650386497623550793 [label="Unlock",color="black",fontcolor="black"];
+6650386497623550793 [label="/\\ door = \"open\"\n/\\ lamp = \"off\"\n/\\ n = 1"];
+-7489905741496962076 -> 1864311015857670523 [label="Switch",color="black",fontcolor="black"];
+-7489905741496962076 -> -8381931732474576576 [label="Unlock",color="black",fontcolor="black"];
+-8381931732474576576 [label="/\\ door = \"open\"\n/\\ lamp = \"on\"\n/\\ n = 1"];
+6650386497623550793 -> -8381931732474576576 [label="Switch",color="black",fontcolor="black"];
+6650386497623550793 -> 8385287033566388827 [label="Lock",color="black",fontcolor="black"];
+8385287033566388827 [label="/\\ door = \"locked\"\n/\\ lamp = \"off\"\n/\\ n = 1"];
+-8381931732474576576 -> 6650386497623550793 [label="Switch",color="black",fontcolor="black"];
+-8381931732474576576 -> -752285075239298876 [label="Lock",color="black",fontcolor="black"];
+-752285075239298876 [label="/\\ door = \"locked\"\n/\\ lamp = \"on\"\n/\\ n = 1"];
+8385287033566388827 -> -752285075239298876 [label="Switch",color="black",fontcolor="black"];
+8385287033566388827 -> 3588016040887795817 [label="Unlock",color="black",fontcolor="black"];
+-752285075239298876 -> 8385287033566388827 [label="Switch",color="black",fontcolor="black"];
+-752285075239298876 -> -1860901837630739872 [label="Unlock",color="black",fontcolor="black"];
+{rank = same; 3588016040887795817;}
+{rank = same; 1864311015857670523;-1860901837630739872;}
+{rank = same; -7489905741496962076;6650386497623550793;}
+{rank = same; -8381931732474576576;8385287033566388827;}
+{rank = same; -752285075239298876;}
+}
+}

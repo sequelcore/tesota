@@ -1,5 +1,7 @@
 node_modules/
 dist/
+vendor/ripgrep/
+.bun-cache/
 .env
 .env.*
 live-runs/

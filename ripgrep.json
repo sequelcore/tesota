@@ -1,0 +1,49 @@
+{
+  "version": "15.2.0",
+  "targets": {
+    "bun-linux-x64": "x86_64-unknown-linux-musl",
+    "bun-linux-x64-baseline": "x86_64-unknown-linux-musl",
+    "bun-linux-x64-musl": "x86_64-unknown-linux-musl",
+    "bun-linux-x64-musl-baseline": "x86_64-unknown-linux-musl",
+    "bun-linux-arm64": "aarch64-unknown-linux-musl",
+    "bun-linux-arm64-musl": "aarch64-unknown-linux-musl",
+    "bun-darwin-arm64": "aarch64-apple-darwin",
+    "bun-darwin-x64": "x86_64-apple-darwin",
+    "bun-darwin-x64-baseline": "x86_64-apple-darwin",
+    "bun-windows-x64": "x86_64-pc-windows-msvc",
+    "bun-windows-x64-baseline": "x86_64-pc-windows-msvc",
+    "bun-windows-arm64": "aarch64-pc-windows-msvc"
+  },
+  "assets": {
+    "x86_64-unknown-linux-musl": {
+      "asset": "ripgrep-15.2.0-x86_64-unknown-linux-musl.tar.gz",
+      "sha256": "33e15bcf1624b25cdd2a55813a47a2f95dbe126268203e76aa6a585d1e7b149c",
+      "executableSha256": "e62198eb19b136b88c330af83647b5a962cb99b6b1f066758568f12de1974849"
+    },
+    "aarch64-unknown-linux-musl": {
+      "asset": "ripgrep-15.2.0-aarch64-unknown-linux-musl.tar.gz",
+      "sha256": "800b1e7206afe799dfb5a6901f23147cfaabe0e52210538100f61e86e1740915",
+      "executableSha256": "c14cdb389f34e504d69e386cfc67d5c5d9a730a990de03ca6910b2a15e30386a"
+    },
+    "aarch64-apple-darwin": {
+      "asset": "ripgrep-15.2.0-aarch64-apple-darwin.tar.gz",
+      "sha256": "3750b2e93f37e0c692657da574d7019a101c0084da05a790c83fd335bad973e4",
+      "executableSha256": "a326a1fb48074202e9ad41e4cd1e389eeea372c8c6f7d7e80da81176d5d9430e"
+    },
+    "x86_64-apple-darwin": {
+      "asset": "ripgrep-15.2.0-x86_64-apple-darwin.tar.gz",
+      "sha256": "af7825fcc69a2afc7a7aea55fc9af90e26421d8f20fe59df32e233c0b8a231c1",
+      "executableSha256": "0c9a0066db0d26b640777db88045b0ccdd58509a746700e43e1c4ff8707a5ed0"
+    },
+    "x86_64-pc-windows-msvc": {
+      "asset": "ripgrep-15.2.0-x86_64-pc-windows-msvc.zip",
+      "sha256": "71b2fef860abe467217a538ff31de02f5258807c0129f771846f87bd029aafc5",
+      "executableSha256": "14231169855ec5205cf5a1b6f1db358ff4aed4247c86b69ce8aae647c77f6680"
+    },
+    "aarch64-pc-windows-msvc": {
+      "asset": "ripgrep-15.2.0-aarch64-pc-windows-msvc.zip",
+      "sha256": "e4abca10c3a64ebea742667dd7009449d49403db5460dd6873e389fa2945360f",
+      "executableSha256": "d33a29a9ef03c9f4c03be9e8d88498e6e2d2e566d64cdbdef97f9afc8f13120c"
+    }
+  }
+}

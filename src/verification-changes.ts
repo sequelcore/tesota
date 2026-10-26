@@ -1,19 +1,53 @@
-import { basename } from "node:path";
-import type { WorkspaceChange, WorkspaceSnapshot } from "./workspace.js";
+import type { ts as TypeScript } from "ts-morph";
+import { posix } from "node:path";
+import type { ChangedFile, DiffLine, RemovedLine } from "./diff-lines.js";
+import { grammarCommentLines, hasGrammar } from "./grammar-source.js";
+import { testEdits, type WeakenedTest } from "./test-edits.js";
+import { packageCheckScripts } from "./projects.js";
+import { contracts, unselectedContracts } from "./proof-guarantees.js";
+import { callLines, commentOnlyLines, isScriptPath, typescript } from "./typescript-source.js";
+import { addsItems, removalCounts, testWeakens, type Token, type TokenKind } from "./verification/test-weakening-rule.js";
+import { type AnnotationKind, checkScriptWeakens, weakens } from "./verification/weakening-rule.js";
 
-/** What a flagged change can alter about how a candidate is checked (decision 015). */
-export type VerificationChangeKind =
-  | "test" | "check configuration" | "CI workflow" | "formal specification" | "package scripts" | "Tesota setup";
+/**
+ * A change, against the request's base, to the evidence its result rests on:
+ * a removed or changed `requires` or `ensures`, a `requires` added to a
+ * function the base had, and an added `assume`, in LemmaScript source or a
+ * Dafny proof, with the line as written, which in a proof includes an
+ * `{:axiom}` and a lemma left without a body, and in LemmaScript source an
+ * `//@ extern`, which trusts a function without proving it (`function` names
+ * it); an added `//@ skip` on something the base had, which leaves it out of
+ * the proof (`function` names the unit it leaves out, or the one holding the
+ * statement it leaves out, which `statement` marks), and likewise a function
+ * the base proved that a `//@ verify` on others now leaves out; and a
+ * deleted test file, or an edit to one that may weaken its tests (`testWeakens`), with how it may
+ * weaken each test where Tesota reads that from the diff (`tests`, `testEdits`); and a command
+ * or selection changed for a package check script the base selected
+ * (`checkScriptWeakens`). The operator decides whether it is legitimate.
+ */
+export type Weakening =
+  | { readonly path: string; readonly kind: "removed_contract" | "added_requires" | "added_assume" | "added_skip";
+    readonly annotation: string; readonly function?: string; readonly statement?: true }
+  | { readonly path: string; readonly kind: "deleted_test" | "edited_test"; readonly tests?: readonly WeakenedTest[] }
+  | { readonly path: string; readonly kind: "changed_check_script"; readonly script: string };
 
-/** A candidate change to something that checks the candidate; the operator decides whether it is legitimate. */
-export interface VerificationChange {
-  readonly path: string;
-  readonly status: WorkspaceChange["status"];
-  readonly kind: VerificationChangeKind;
+/**
+ * A changed file, with its content as changed and at the base where the
+ * rules need them (`needsContent`): to tell whether an added `requires`
+ * annotates a new function, which lemmas a proof leaves without a body, and
+ * which check scripts a package manifest selected. A file a grammar reads
+ * also has the comment-only lines of each side (`withGrammarComments`).
+ * A `.dfy` that LemmaScript generated also has the program it generated last
+ * (`generated`, its `.dfy.gen`), so only the lines added by hand count as the
+ * change's: the rest come from the source's annotations, which count there,
+ * or from LemmaScript's own models of JavaScript, such as `split`.
+ */
+export interface FileChange extends ChangedFile {
+  readonly content?: string | undefined;
+  readonly baseContent?: string | undefined;
+  readonly generated?: string | undefined;
+  readonly comments?: { readonly now: ReadonlySet<number>; readonly before: ReadonlySet<number> };
 }
-
-/** Reads a file as a commit or tree holds it; undefined when it is absent there. */
-export type RevisionReader = (revision: string, path: string) => string | undefined;
 
 const testPaths = [
   /(^|\/)(__tests__|tests?|specs?)\//u,
@@ -22,64 +56,404 @@ const testPaths = [
   /_test\.(go|py)$/u,
   /\.snap$/u,
 ];
-const checkConfigurationNames = new RegExp("^(" + [
-  "tsconfig(\\..+)?\\.json", "jsconfig\\.json", "\\.oxlintrc(\\..+)?", "oxlint\\.json",
-  "\\.eslintrc(\\..+)?", "eslint\\.config\\.[cm]?[jt]s", "biome\\.jsonc?", "\\.prettierrc(\\..+)?",
-  "prettier\\.config\\.[cm]?[jt]s", "(vitest|vite|jest|playwright|cypress)\\.(config|workspace)\\.[cm]?[jt]s",
-  "pyproject\\.toml", "pytest\\.ini", "tox\\.ini", "setup\\.cfg", "\\.?ruff\\.toml", "mypy\\.ini",
-  "\\.golangci\\.ya?ml", "clippy\\.toml", "rustfmt\\.toml",
-].join("|") + ")$", "u");
-const ciPaths = [/^\.github\/workflows\//u, /^\.gitlab-ci\.ya?ml$/u, /^\.circleci\//u, /^azure-pipelines\.ya?ml$/u,
-  /^\.husky\//u, /^lefthook\.ya?ml$/u];
-const formalFiles = /\.(dfy|lean|tla)$/u;
 
-function scriptsOf(text: string | undefined): string | undefined {
-  if (text === undefined) return undefined;
-  try {
-    const manifest: unknown = JSON.parse(text);
-    const scripts: unknown = typeof manifest === "object" && manifest !== null ? Reflect.get(manifest, "scripts") : undefined;
-    return scripts === undefined ? undefined : JSON.stringify(scripts);
-  } catch {
-    // An unreadable manifest cannot be shown to leave its scripts alone.
-    return `unreadable:${text}`;
-  }
+/** Whether a path holds tests, or a snapshot they compare against, by the conventions of the common test runners. */
+export function isTestPath(path: string): boolean {
+  return testPaths.some((pattern) => pattern.test(path));
 }
 
-/** Paths whose diff adds or removes a LemmaScript `//@` annotation line. */
-function annotatedPaths(diff: string): ReadonlySet<string> {
-  const paths = new Set<string>();
-  let current: string | undefined;
-  for (const line of diff.split("\n")) {
-    const header = /^diff --git a\/.+ b\/(.+)$/u.exec(line);
-    if (header !== null) { current = header[1]; continue; }
-    if (current === undefined || line.startsWith("+++") || line.startsWith("---")) continue;
-    if ((line.startsWith("+") || line.startsWith("-")) && /^[+-]\s*\/\/@/u.test(line)) paths.add(current);
-  }
-  return paths;
+/** Programming languages' file extensions; documentation, configuration, data, SQL and assets are not among them. */
+const sourceExtensions: ReadonlySet<string> = new Set(["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs", "vue", "svelte",
+  "py", "go", "rs", "java", "kt", "kts", "scala", "cs", "fs", "rb", "php", "swift", "m", "mm", "c", "h", "cc", "cpp", "cxx",
+  "hpp", "hh", "dart", "lua", "ex", "exs", "erl", "clj", "hs", "ml", "elm", "zig", "nim", "sh", "bash", "ps1"]);
+
+/** A tool's configuration written in a programming language: `vite.config.ts`, `.eslintrc.js`, `babel.config.cjs`. */
+const configPath = /(^|\/)([^/]+\.config|\.[^/]+rc)\.[^./]+$/u;
+
+/**
+ * Whether a path holds source code in a programming language, by its
+ * extension, other than a tool's configuration written in one
+ * (`changeCategory`).
+ */
+export function isSourcePath(path: string): boolean {
+  const extension = /\.([^./]+)$/u.exec(path)?.[1]?.toLowerCase();
+  return extension !== undefined && sourceExtensions.has(extension) && !configPath.test(path);
 }
 
-function kindOf(change: WorkspaceChange, snapshot: WorkspaceSnapshot, annotated: ReadonlySet<string>,
-  read: RevisionReader): VerificationChangeKind | undefined {
-  const { path } = change;
-  if (testPaths.some((pattern) => pattern.test(path))) return "test";
-  if (path.startsWith(".tesota/")) return "Tesota setup";
-  if (ciPaths.some((pattern) => pattern.test(path))) return "CI workflow";
-  if (checkConfigurationNames.test(basename(path))) return "check configuration";
-  if (formalFiles.test(path) || annotated.has(path)) return "formal specification";
-  if (basename(path) === "package.json" &&
-    scriptsOf(read(snapshot.base, path)) !== scriptsOf(read(snapshot.tree, path))) return "package scripts";
-  return undefined;
+function kindOf(path: string, line: string): AnnotationKind | undefined {
+  if (path.endsWith(".dfy")) return /^\s*assume\b|\{:axiom\b/u.test(line.replace(/\/\/.*$/u, "")) ? "assume" : undefined;
+  const word = /^\s*\/\/@\s*(\w+)/u.exec(line)?.[1];
+  if (word === undefined) return undefined;
+  // `//@ extern` takes a function's contract as given, as an assumption does: LemmaScript emits it as an `{:axiom}`.
+  if (word === "extern") return "assume";
+  return word === "requires" || word === "ensures" || word === "assume" || word === "skip" ? word : "other";
 }
 
 /**
- * The candidate's changes to what checks it: tests, check and lint
- * configuration, CI, formal specifications, package scripts and Tesota's own
- * setup. Fixed rules, so the agent cannot argue a change out of the list.
+ * Whether the rules need `file`'s content now and at the base: for a Dafny
+ * proof, for source whose comment-only lines are read from the parsed file
+ * (`commentLines`), for a package manifest's check scripts, or for a
+ * `//@ requires` it adds.
  */
-export function flagVerificationChanges(snapshot: WorkspaceSnapshot, read: RevisionReader): readonly VerificationChange[] {
-  const annotated = annotatedPaths(snapshot.diff);
-  return snapshot.changes.flatMap((change) => {
-    const kind = kindOf(change, snapshot, annotated, read);
-    return kind === undefined ? [] : [{ path: change.path, status: change.status, kind }];
+export function needsContent(file: ChangedFile): boolean {
+  return file.path.endsWith(".dfy") || isScriptPath(file.path) || hasGrammar(file.path) || posix.basename(file.path) === "package.json" ||
+    file.status === "modified" && file.added.some(({ text }) => kindOf(file.path, text) === "requires");
+}
+
+const declaration = new RegExp(String.raw`^(?:(?:ghost|static|opaque|twostate|least|greatest|abstract)\s+)*` +
+  String.raw`(?:lemma|method|function|predicate|datatype|codatatype|class|trait|module|import|const|type|newtype|iterator|constructor)\b`, "u");
+const lemmaHeader = /^(?:(?:ghost|static|opaque|twostate|least|greatest)\s+)*lemma\s+([\w'?$]+)/u;
+
+/**
+ * The lemmas a Dafny program declares without a body, which Dafny takes as
+ * axioms. Read as Dafny is conventionally written: a body opens with a `{`
+ * that begins or ends a line, before the next declaration or the `}` that
+ * closes the enclosing one.
+ */
+export function bodilessLemmas(dafny: string): string[] {
+  const lines = dafny.replace(/\/\*[\s\S]*?\*\//gu, "").split(/\r?\n/u)
+    .map((line) => line.replace(/\/\/.*$/u, "").replace(/\{:[^}]*\}/gu, "").trim());
+  return lines.flatMap((line, k) => {
+    const name = lemmaHeader.exec(line)?.[1];
+    if (name === undefined) return [];
+    for (const [j, text] of lines.slice(k).entries()) {
+      if (j > 0 && (declaration.test(text) || text === "}")) break;
+      if (text.startsWith("{") || /\{[^{}]*\}?$/u.test(text)) return [];
+    }
+    return [name];
   });
+}
+
+/**
+ * The name of a unit LemmaScript extracts on its own: a top-level function,
+ * class or variable statement, whose variables are named together, or a
+ * class's method. Undefined for anything else, or a unit without a name.
+ */
+function unitName(ts: typeof TypeScript, node: TypeScript.Node): string | undefined {
+  if (ts.isVariableStatement(node)) {
+    const names = node.declarationList.declarations.flatMap(({ name }) => ts.isIdentifier(name) ? [name.text] : []);
+    return names.length === 0 ? undefined : names.join(", ");
+  }
+  if (!ts.isFunctionDeclaration(node) && !ts.isClassDeclaration(node) && !ts.isMethodDeclaration(node)) return undefined;
+  return node.name !== undefined && ts.isIdentifier(node.name) ? node.name.text : undefined;
+}
+
+/** Whether `node` is a unit LemmaScript extracts on its own (`unitName`): a top-level statement or a class member. */
+function isUnit(ts: typeof TypeScript, node: TypeScript.Node): boolean {
+  return ts.isSourceFile(node.parent) || ts.isClassDeclaration(node.parent);
+}
+
+/** The names of the units `source` declares (`unitName`), each variable apart. */
+function unitNames(path: string, source: string): Set<string> {
+  const ts = typescript();
+  const names = new Set<string>();
+  const visit = (node: TypeScript.Node): void => {
+    for (const name of unitName(ts, node)?.split(", ") ?? []) names.add(name);
+    if (ts.isSourceFile(node) || ts.isClassDeclaration(node)) ts.forEachChild(node, visit);
+  };
+  visit(ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true));
+  return names;
+}
+
+/**
+ * What the `//@` line at line `number` of `source` annotates, as
+ * LemmaScript's extractor reads it: the outermost node whose leading comments
+ * hold the line, a unit (`unitName`) or a statement inside one, such as the
+ * first statement of a function body that a `requires` there leads, named by
+ * that unit. Undefined when no node leads with the line; at the end of the
+ * file the line leads nothing with a name.
+ */
+function annotatedUnit(path: string, source: string, number: number): { name: string | undefined; statement: boolean } | undefined {
+  const ts = typescript();
+  const file = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true);
+  const leads = (node: TypeScript.Node): boolean => (ts.getLeadingCommentRanges(source, node.pos) ?? []).some(({ pos, end }) =>
+    file.getLineAndCharacterOfPosition(pos).line + 1 === number && source.slice(pos, end).startsWith("//@"));
+  const find = (node: TypeScript.Node): TypeScript.Node | undefined =>
+    node !== file && leads(node) ? node : ts.forEachChild(node, find);
+  const led = find(file);
+  if (led === undefined) return undefined;
+  let unit = led;
+  while (!isUnit(ts, unit)) unit = unit.parent;
+  return { name: unitName(ts, unit), statement: unit !== led };
+}
+
+/**
+ * Whether the unit the `//@` line at line `number` annotates
+ * (`annotatedUnit`), or holds the statement it annotates, was in the base.
+ * When either content or the unit's name cannot be found, it counts as
+ * there, so the change is listed.
+ */
+function existed(file: FileChange, number: number): boolean {
+  if (file.status === "added") return false;
+  const name = file.content === undefined ? undefined : annotatedUnit(file.path, file.content, number)?.name;
+  if (name === undefined || file.baseContent === undefined) return true;
+  const before = unitNames(file.path, file.baseContent);
+  return name.split(", ").some((each) => before.has(each));
+}
+
+/** Each of `lines`, with whether a line of the same text, spacing aside, on the other side of the diff is left to match it. */
+function matching<T>(lines: readonly T[], text: (line: T) => string, others: readonly string[]): { line: T; matched: boolean }[] {
+  const key = (line: string): string => line.trim().replace(/\s+/gu, " ");
+  const left = new Map<string, number>();
+  for (const line of others) left.set(key(line), (left.get(key(line)) ?? 0) + 1);
+  return lines.map((line) => {
+    const count = left.get(key(text(line))) ?? 0;
+    if (count > 0) left.set(key(text(line)), count - 1);
+    return { line, matched: count > 0 };
+  });
+}
+
+/**
+ * A line as the weakening rules match it across the diff: a `//@ skip` with
+ * what it leaves out on its side (`annotatedUnit`), read from `content` at line
+ * `number`; any other line, or a skip whose side was not read, as written.
+ */
+function skipKey(path: string, text: string, content: string | undefined, number: number): string {
+  const left = content === undefined || kindOf(path, text) !== "skip" ? undefined : annotatedUnit(path, content, number);
+  return left === undefined ? text : `${text.trim()} ${left.statement ? "statement of " : ""}${left.name ?? ""}`;
+}
+
+/** An added annotation line that weakens, with the unit an `//@ extern` trusts or an `//@ skip` leaves out, when found. */
+function addedWeakening(file: FileChange, line: DiffLine, kind: AnnotationKind): Weakening {
+  const annotation = line.text.trim();
+  const unit = file.content === undefined ? undefined : annotatedUnit(file.path, file.content, line.number);
+  if (kind === "skip") {
+    return { path: file.path, kind: "added_skip", annotation, ...unit?.name === undefined ? {} : { function: unit.name },
+      ...unit?.statement === true ? { statement: true } : {} };
+  }
+  const trusted = /^\/\/@\s*extern\b/u.test(annotation) ? unit?.name : undefined;
+  return { path: file.path, kind: kind === "requires" ? "added_requires" : "added_assume", annotation,
+    ...trusted === undefined ? {} : { function: trusted } };
+}
+
+function annotationChanges(file: FileChange): Weakening[] {
+  const removed = matching(file.removed, ({ text }) => text, file.added.map(({ text }) => text)).flatMap(({ line, matched }) => {
+    const kind = kindOf(file.path, line.text);
+    return kind === undefined || !weakens(kind, true, matched, true) ? []
+      : [{ path: file.path, kind: "removed_contract", annotation: line.text.trim() } as const];
+  });
+  // In a proof LemmaScript generated, a line its last program holds is LemmaScript's, not the change's (`generated`).
+  const written = file.generated === undefined ? file.added
+    : matching(file.added, ({ text }) => text, file.generated.split(/\r?\n/u)).flatMap(({ line, matched }) => matched ? [] : [line]);
+  // Every `//@ skip` reads the same, so one moved only when it leaves out the same thing on both sides (`skipKey`).
+  const added = matching(written, ({ text, number }) => skipKey(file.path, text, file.content, number),
+    file.removed.map(({ text, base }) => skipKey(file.path, text, file.baseContent, base))).flatMap(({ line, matched }) => {
+    const kind = kindOf(file.path, line.text);
+    const had = (kind === "requires" || kind === "skip") && existed(file, line.number);
+    return kind === undefined || !weakens(kind, false, matched, had) ? [] : [addedWeakening(file, line, kind)];
+  });
+  return [...removed, ...added, ...axiomChanges(file), ...selectionChanges(file)];
+}
+
+/**
+ * Functions the base proved that the change leaves out of the proof by
+ * selecting others with `//@ verify` (`unselectedContracts`): as good as an
+ * added `//@ skip` on each, though no line of theirs says so. A base that was
+ * not read counts as having proved them, as for a skip (`existed`).
+ */
+function selectionChanges(file: FileChange): Weakening[] {
+  if (!file.path.endsWith(".ts") || file.status === "added" || file.content === undefined) return [];
+  const proved = file.baseContent === undefined ? undefined : new Set(contracts(file.path, file.baseContent).map(({ name }) => name));
+  return unselectedContracts(file.path, file.content).flatMap(({ name }) => !weakens("skip", false, false, proved?.has(name) ?? true) ? []
+    : [{ path: file.path, kind: "added_skip", annotation: "//@ verify", function: name } as const]);
+}
+
+/** Lemmas a proof leaves without a body that the base gave one or did not have: as good as an added `assume`. */
+function axiomChanges(file: FileChange): Weakening[] {
+  if (!file.path.endsWith(".dfy") || file.content === undefined) return [];
+  const before = new Set([...bodilessLemmas(file.baseContent ?? ""), ...bodilessLemmas(file.generated ?? "")]);
+  return bodilessLemmas(file.content).flatMap((name) => !weakens("assume", false, before.has(name), false) ? []
+    : [{ path: file.path, kind: "added_assume", annotation: `lemma ${name} without a body` } as const]);
+}
+
+/**
+ * Lines that change how a file's existing tests run, by the conventions of
+ * the runners Tesota finds and the test files it reads: a focus or skip
+ * marker, a setup or teardown hook, and a module mock. A mock or spy one test
+ * sets up and restores is left out, as is a fixture a test asks for by name.
+ */
+const runChanges = [
+  /\.\s*(?:only|skip|skipIf|runIf|todo)\b/u,
+  /\b(?:xit|xdescribe|xtest|xcontext|fit|fdescribe|fcontext)\s*\(/u,
+  /\b(?:beforeEach|beforeAll|afterEach|afterAll)\s*\(/u,
+  /\b(?:vi|jest)\s*\.\s*mock\s*\(|\bmock\s*\.\s*module\s*\(/u,
+  /@(?:Disabled\w*|Ignore|(?:Before|After)(?:Each|All|Class)?)\b/u,
+  /#\[ignore\b/u,
+  /\.\s*Skip(?:Now|f)?\s*\(|\bfunc\s+TestMain\s*\(/u,
+  /\bpytest\s*\.\s*(?:mark\s*\.\s*(?:skip|skipif|xfail)\b|skip\s*\(|fixture\b.*\bautouse\s*=\s*True)|@unittest\s*\.\s*skip/u,
+  /\bdef\s+(?:(?:setUp|tearDown)(?:Class|Module)?|(?:setup|teardown)_(?:method|function|class|module))\s*\(/u,
+];
+
+/**
+ * `file` with the comment-only lines of each side its grammar reads
+ * (`grammarCommentLines`, `comments`), when a grammar reads it; a side whose
+ * content was not read holds none.
+ */
+export async function withGrammarComments(file: FileChange): Promise<FileChange> {
+  if (!hasGrammar(file.path)) return file;
+  const read = (content: string | undefined): Promise<Set<number>> =>
+    content === undefined ? Promise.resolve(new Set()) : grammarCommentLines(file.path, content);
+  return { ...file, comments: { now: await read(file.content), before: await read(file.baseContent) } };
+}
+
+/**
+ * Which of a changed file's lines hold only a comment, read from the parsed
+ * file on each side, since a line alone shows neither a block comment nor a
+ * string around it: JavaScript and TypeScript by their parser
+ * (`commentOnlyLines`), where a `//@` line is an annotation, and other
+ * languages by their grammar (`comments`). A side whose content was not read,
+ * or in a language no grammar reads, holds no comment-only line.
+ */
+export function commentLines(file: FileChange): { added: (line: DiffLine) => boolean; removed: (line: RemovedLine) => boolean } {
+  const now = isScriptPath(file.path) ? commentOnlyLines(file.path, file.content ?? "") : file.comments?.now ?? new Set();
+  const before = isScriptPath(file.path) ? commentOnlyLines(file.path, file.baseContent ?? "") : file.comments?.before ?? new Set();
+  return { added: ({ number }) => now.has(number), removed: ({ base }) => before.has(base) };
+}
+
+const namedImports = [
+  /^import\s+(type\s+)?(?:([\w$]+)\s*,\s*)?\{([^}]*)\}\s*from\s*(["'][^"']*["'])\s*;?$/u,
+  /^from\s+()()([\w.]+)\s+import\s+([^()#]+)$/u,
+];
+
+/** A one-line import of named bindings: the module and form it imports in, and the names. */
+function namedImport(line: string): { form: string; names: string[] } | undefined {
+  for (const [k, pattern] of namedImports.entries()) {
+    const match = pattern.exec(line.trim());
+    if (match === null) continue;
+    const [, type = "", fallback = "", first = "", second = ""] = match;
+    const [list, module] = k === 0 ? [first, second] : [second, first];
+    return { form: [k, type.trim(), fallback, module].join(" "),
+      names: list.split(",").map((name) => name.trim().replace(/\s+/gu, " ")).filter((name) => name !== "") };
+  }
+  return undefined;
+}
+
+/** Whether an added line imports from the same module, in the same form, every name the removed `line` did. */
+function widened(line: string, added: readonly DiffLine[]): boolean {
+  const before = namedImport(line);
+  return before !== undefined && added.some(({ text }) => {
+    const after = namedImport(text);
+    return after?.form === before.form && before.names.every((name) => after.names.includes(name));
+  });
+}
+
+/**
+ * Words that check or skip something, define a test, retry it, give it more
+ * time or end it early, by the conventions of JavaScript's test runners: a
+ * line that holds one is never extended (`addsItems`), nor one an added list
+ * item puts one in.
+ */
+const checkWord = new RegExp(String.raw`^(?:expect\w*|assert\w*|should\w*|to[A-Z]\w*|not|resolves|rejects|skip\w*|only|todo|` +
+  String.raw`fail\w*|retry\w*|timeout\w*|it|test|describe|suite|context|bench|[fx](?:it|test|describe|context)|return|throw)$`, "u");
+/** The callees of an assertion: every line of its call holds what it checks, such as an expected value. */
+const assertion = /^(?:expect\w*|assert\w*|should\w*)$/u;
+/** A line's tokens: blanks, a comment, a string with its quote and closing quote, a word, or one other character. */
+const tokenPattern = /\s+|\/\/.*|\/\*[\s\S]*?(?:\*\/|$)|(["'`])((?:\\.|(?!\1)[^\\])*)(\1)?|[\w$]+|[^\s\w$]/gu;
+
+function tokenKind(text: string, quote: string | undefined, closed: string | undefined): TokenKind {
+  // A comment, a string left open or a template with an expression may hide code: count it as a check.
+  if (text.startsWith("//") || text.startsWith("/*")) return "check";
+  if (quote !== undefined) return closed === undefined || quote === "`" && text.includes("${") ? "check" : "plain";
+  if (checkWord.test(text)) return "check";
+  return "([{".includes(text) ? "open" : ")]}".includes(text) ? "close" : ",;".includes(text) ? "separator" : "plain";
+}
+
+/** The tokens of one line of JavaScript or TypeScript, without its blanks. */
+function lineTokens(line: string): Token[] {
+  return [...line.matchAll(tokenPattern)].flatMap(([text, quote, , closed]) =>
+    /^\s/u.test(text) ? [] : [{ text, kind: tokenKind(text, quote, closed) }]);
+}
+
+/** Where `after` keeps each token of `before`, each at the first place after the last one's, as far as it does. */
+function alignment(before: readonly Token[], after: readonly Token[]): number[] {
+  const at: number[] = [];
+  let next = 0;
+  for (const { text } of before) {
+    while (next < after.length && after[next]?.text !== text) next += 1;
+    if (next === after.length) break;
+    at.push(next);
+    next += 1;
+  }
+  return at;
+}
+
+/** The lines of each side of a JavaScript or TypeScript test file that an assertion's call spans, unless a side was not read. */
+function assertionLines(file: FileChange): { readonly before: Set<number>; readonly now: Set<number> } | undefined {
+  if (!isScriptPath(file.path) || file.removed.length === 0 || file.content === undefined || file.baseContent === undefined) return undefined;
+  return { before: callLines(file.path, file.baseContent, assertion), now: callLines(file.path, file.content, assertion) };
+}
+
+/**
+ * Whether a removed line of a test file was extended (`addsItems`) by the
+ * line the change added in its place: the one at its position within its run
+ * of removed lines. Neither line may lie in an assertion's call
+ * (`assertionLines`), which only a JavaScript or TypeScript file read on both
+ * sides has.
+ */
+function extended(file: FileChange, line: RemovedLine, asserted: ReturnType<typeof assertionLines>): boolean {
+  if (asserted === undefined || asserted.before.has(line.base)) return false;
+  const place = line.number + file.removed.filter(({ number, base }) => number === line.number && base < line.base).length;
+  const replacement = file.added.find(({ number }) => number === place);
+  if (replacement === undefined || asserted.now.has(place)) return false;
+  const before = lineTokens(line.text);
+  const after = lineTokens(replacement.text);
+  return addsItems(before.map(({ text }) => text), after, alignment(before, after));
+}
+
+/**
+ * A test file's change, flagged when it may weaken its tests (`testWeakens`),
+ * with how it may weaken each one when it is JavaScript or TypeScript edited
+ * and read on both sides (`testEdits`); other frameworks and languages get
+ * the flag alone.
+ */
+function testChange(file: FileChange): Weakening[] {
+  if (!isTestPath(file.path)) return [];
+  const comments = commentLines(file);
+  const asserted = assertionLines(file);
+  const edits = file.status !== "modified" || !isScriptPath(file.path) || file.content === undefined || file.baseContent === undefined
+    ? undefined : testEdits(file.path, file.baseContent, file.content);
+  const removes = file.removed.some((line) => removalCounts(line.text.trim() === "", comments.removed(line),
+    widened(line.text, file.added), extended(file, line, asserted), edits?.tightened(line) ?? false));
+  const changesRuns = file.added.some((line) => !comments.added(line) &&
+    runChanges.some((pattern) => pattern.test(line.text)));
+  if (!testWeakens(file.status, removes, changesRuns)) return [];
+  return [{ path: file.path, kind: file.status === "deleted" ? "deleted_test" : "edited_test",
+    ...edits === undefined || edits.tests.length === 0 ? {} : { tests: edits.tests } }];
+}
+
+/** Manifest edits that alter the commands discovery selected at the request's base, including replacing them with `check`. */
+function checkScriptChanges(file: FileChange): Weakening[] {
+  if (posix.basename(file.path) !== "package.json") return [];
+  const before = packageCheckScripts(file.baseContent);
+  const after = packageCheckScripts(file.content);
+  return [...before].flatMap(([script, command]) =>
+    checkScriptWeakens(true, after.has(script), command === after.get(script))
+      ? [{ path: file.path, kind: "changed_check_script" as const, script }] : []);
+}
+
+/**
+ * What a proof of these files, whole, takes on trust or leaves out, by the
+ * same rules as a change's (`weakenedEvidence`): each `//@ assume`,
+ * `//@ extern` and `//@ skip` of the source, each function with a contract
+ * that a `//@ verify` on others leaves out, and each `assume`, `{:axiom}`
+ * and lemma without a body written into the `.dfy` by hand, not generated
+ * (`generated`). Read as if every line were added to a base that had
+ * everything, since `prove` has no base to compare with.
+ */
+export function provedOnTrust(files: readonly { readonly path: string; readonly content: string; readonly generated?: string }[]):
+  OnTrust[] {
+  return weakenedEvidence(files.map(({ path, content, generated }) => ({ path, status: "modified", removed: [], content, generated,
+    added: content.split(/\r?\n/u).map((text, k) => ({ number: k + 1, text })) })))
+    .filter((change): change is OnTrust => change.kind === "added_assume" || change.kind === "added_skip");
+}
+
+/** A line a proof takes on trust (`added_assume`) or that leaves something out of it (`added_skip`). */
+export type OnTrust = Extract<Weakening, { readonly annotation: string }> & { readonly kind: "added_assume" | "added_skip" };
+
+/**
+ * The changes that may weaken the evidence, file by file. Fixed rules, so the
+ * agent cannot argue a change out of the list.
+ */
+export function weakenedEvidence(changes: readonly FileChange[]): Weakening[] {
+  return changes.flatMap((file) => [...annotationChanges(file), ...testChange(file), ...checkScriptChanges(file)]);
 }

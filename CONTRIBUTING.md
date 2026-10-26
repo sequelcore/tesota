@@ -1,63 +1,53 @@
 # Contributing to Tesota
 
-Tesota is a pre-release coding agent that checks and reviews changes before
-the operator applies them. Contributions are welcome when they advance a
-demonstrated user need without weakening command approval, review of the exact
-changes, evidence integrity or human acceptance.
+Tesota is in alpha. Contributions are welcome when they serve a real need
+without weakening the evidence a receipt reports.
 
-## Before changing code
+## Report an issue
 
-Read the [design](docs/design/overview.md),
-[roadmap](docs/roadmap.md) and [development guide](docs/development.md). For a
-substantial new capability, open a focused discussion or issue first so its user,
-owner, effect boundary and qualification evidence are explicit.
+[Open an issue](https://github.com/sequelcore/tesota/issues/new/choose)
+with the bug report or feature request form. For a bug, include the
+version (`tesota --version`, or the one the receipt names), your system,
+terminal and model, and the steps. Remove private code and secrets first.
 
-## Development setup
+Report a security vulnerability privately, as [SECURITY.md](SECURITY.md)
+says, never in a public issue.
 
-Use the versions declared in `package.json` and the dependency resolution in
-`bun.lock`.
+## Propose a change
 
-```sh
-bun install --frozen-lockfile --ignore-scripts
-bun run check
-```
+1. For a new capability, open an issue first, saying who needs it and how
+   its effect will be shown. Read the [roadmap](ROADMAP.md) for what's
+   planned and what isn't.
+2. Branch from `dev`. [Development](docs/development.md) covers building,
+   checking and proving Tesota from source, and the
+   [branch rules](docs/development.md#branches).
+3. Open a pull request against `dev`. Its template asks what changed and
+   why, how you verified it, and which checks ran.
 
-`bun run check` builds and type-checks the project, runs the test suites and
-executes Oxlint without applying fixes. Live evaluations and the proofs are
-separate commands and are not part of the offline contribution gate.
+A good change:
 
-## Change expectations
+- is focused, and leaves unrelated behavior alone;
+- puts each behavior in one owner, and adds an abstraction only for a
+  consumer that exists;
+- treats saved names, such as the receipt's fields and session entries, as
+  contracts;
+- adds the smallest test that proves it;
+- never makes a check pass by weakening, deleting or skipping what found
+  the defect;
+- keeps credentials and personal paths out of code, tests, logs and docs;
+- updates the page that owns what changed.
 
-- Keep the change focused and preserve unrelated behavior.
-- Put each behavior in one canonical owner and add abstractions only for current
-  consumers.
-- Treat public or persisted names, evidence schemas and authority rules as
-  contracts.
-- Add the smallest behavioral test that proves the change and its important
-  failure path.
-- Never make a check pass by weakening, deleting or suppressing the condition
-  that detected the defect.
-- Keep credentials, personal paths, provider routing and operator state out of
-  source, fixtures, logs and documentation.
-- Update the owning documentation when behavior, support or a consequential
-  decision changes.
+## Commits
 
-Do not commit generated `dist/`, dependency directories, local environment
-files or retained live-run artifacts.
+Commits follow [Conventional Commits](https://www.conventionalcommits.org):
+a type (`feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `ci`, `chore`),
+an optional scope, and an imperative subject under 72 characters, such as
+`fix(shell): navigate every question row with arrows`. The body says why.
+A pull request's title follows the same form.
 
-## Branch workflow
+## License
 
-Start from `dev` and follow the [branch rules](docs/development.md#branches).
-
-## Pull requests
-
-Explain the user-visible outcome, important design decision, verification run
-and remaining limitation. Separate measured evidence from inference. A passing
-check is not human acceptance, and reviewer judgment is not execution evidence.
-
-By contributing, you agree that your contribution is licensed under the
-repository's [Apache License 2.0](LICENSE). Preserve existing copyright,
-attribution and third-party notices.
-
-For security-sensitive reports, follow [SECURITY.md](SECURITY.md) instead of
-opening a public issue with exploit or credential details.
+By contributing, you license your contribution under the
+[Apache License 2.0](LICENSE). Keep existing copyright, attribution and
+third-party notices, and add one to [NOTICE](NOTICE) for any third-party
+code a change bundles or adapts.

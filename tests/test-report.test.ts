@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
@@ -9,6 +9,41 @@ import { baseTestStatus, checkOrigin, type CheckOutcome, type ReportedTest, test
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
+
+it("keeps Jest assertions in different files distinct and refuses malformed native reports", () => {
+  const root = mkdtempSync(join(tmpdir(), "tesota-jest-report-"));
+  roots.push(root);
+  // Jest names suites by real path; tmpdir() may be behind a link or a short name.
+  const real = realpathSync.native(root);
+  const report = { testResults: [
+    { name: join(real, "first.test.js"), assertionResults: [{ fullName: "adds", status: "passed" }] },
+    { name: join(real, "second.test.js"), assertionResults: [{ fullName: "adds", status: "failed" }] },
+  ] };
+  writeFileSync(join(root, "results.json"), JSON.stringify(report));
+  expect([...readTestResults(root, ["results.json"])?.tests ?? []]).toEqual([
+    ["first.test.js > adds", "passed"], ["second.test.js > adds", "failed"],
+  ]);
+  writeFileSync(join(root, "results.json"), JSON.stringify({ testResults: [{ name: join(real, "first.test.js"), assertionResults: [{ fullName: "adds", status: "unknown" }] }] }));
+  expect(readTestResults(root, ["results.json"])).toBeUndefined();
+  // A report holding fewer tests than it counts was cut short, so none of it is evidence (#615).
+  writeFileSync(join(root, "results.json"), JSON.stringify({ ...report, numTotalTests: 3 }));
+  expect(readTestResults(root, ["results.json"])).toBeUndefined();
+  writeFileSync(join(root, "results.json"), JSON.stringify({ ...report, numTotalTests: 2 }));
+  expect(readTestResults(root, ["results.json"])?.tests.size).toBe(2);
+});
+
+it("reads a real Jest report of a checkout behind a link, as macOS and Windows temp folders are", () => {
+  const real = mkdtempSync(join(tmpdir(), "tesota-jest-real-"));
+  const link = `${real}-link`;
+  roots.push(real, link);
+  symlinkSync(real, link, "junction");
+  const fixture = JSON.parse(readFileSync(join(import.meta.dirname, "fixtures", "jest-report.json"), "utf8"));
+  fixture.testResults[0].name = join(realpathSync.native(real), "math.test.cjs");
+  writeFileSync(join(real, "results.json"), JSON.stringify(fixture));
+  expect([...readTestResults(link, ["results.json"])?.tests ?? []]).toEqual([
+    ["math.test.cjs > adds", "passed"], ["math.test.cjs > subtracts badly", "failed"], ["math.test.cjs > later", "skipped"],
+  ]);
+});
 
 const outcomes: readonly CheckOutcome[] = ["passed", "failed", "timed_out", "cancelled", "not_started", "unconfirmed", "changed_files"];
 const statuses: readonly TestStatus[] = ["passed", "failed", "skipped", "absent", "unread"];
@@ -37,9 +72,18 @@ it("lets tests make a failure introduced, never already there, and only against 
     for (const base of outcomes) {
       const failing = candidate === "failed" || candidate === "timed_out";
       const byOutcome = !failing ? "unknown" : base === "passed" ? "introduced" : base === candidate ? "preexisting" : "unknown";
-      expect(checkOrigin(candidate, base, 0), `${candidate} on ${base}`).toBe(byOutcome);
+      expect(checkOrigin(candidate, base, 0, true), `${candidate} on ${base}`).toBe(byOutcome);
       const withTests = failing && (base === "failed" || base === "timed_out") ? "introduced" : byOutcome;
-      expect(checkOrigin(candidate, base, 2), `${candidate} on ${base} with tests`).toBe(withTests);
+      expect(checkOrigin(candidate, base, 2, true), `${candidate} on ${base} with tests`).toBe(withTests);
+    }
+  }
+});
+
+it("never names the cause of a failure when the two runs differed in their conditions (#267)", () => {
+  for (const candidate of outcomes) {
+    for (const base of outcomes) {
+      expect(checkOrigin(candidate, base, 0, false), `${candidate} on ${base}`).toBe("unknown");
+      expect(checkOrigin(candidate, base, 2, false), `${candidate} on ${base} with tests`).toBe("unknown");
     }
   }
 });
@@ -88,6 +132,32 @@ it.each([
   ["a truncated file", '<testsuites><testsuite name="s"><testcase name="a"/>'],
 ])("reads nothing from a report that is not whole: %s", (_label, xml) => {
   expect(parseJUnitReport(xml)).toBeUndefined();
+});
+
+// Bun 1.4's JUnit report, as written on Windows: the file only in `file`, the describe block as the class.
+const bun = `<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="bun test" tests="3" assertions="2" failures="1" skipped="1" time="0.02">
+  <testsuite name="tests\\x.test.ts" file="tests\\x.test.ts" tests="3" assertions="2" failures="1" skipped="1" time="0.001" hostname="">
+    <testsuite name="grp" file="tests\\x.test.ts" line="2" tests="2" assertions="1" failures="0" skipped="1" time="0" hostname="">
+      <testcase name="a" classname="grp" time="0.000021" file="tests\\x.test.ts" line="2" assertions="1" />
+      <testcase name="s" classname="grp" time="0" file="tests\\x.test.ts" line="2" assertions="0"><skipped /></testcase>
+    </testsuite>
+    <testcase name="b" classname="" time="0.0001" file="tests\\x.test.ts" line="3" assertions="1"><failure type="AssertionError"/></testcase>
+  </testsuite>
+</testsuites>
+`;
+
+it("names Bun's tests by their file, as the other runners' are (#615)", () => {
+  expect(parseJUnitReport(bun)).toEqual(new Map<string, ReportedStatus>([
+    ["tests/x.test.ts > grp > a", "passed"], ["tests/x.test.ts > grp > s", "skipped"], ["tests/x.test.ts > b", "failed"],
+  ]));
+});
+
+it("reads nothing from a report holding fewer or more tests than its root counts (#615)", () => {
+  expect(parseJUnitReport(bun.replace('tests="3" assertions="2" failures="1" skipped="1" time="0.02"', 'tests="4"'))).toBeUndefined();
+  expect(parseJUnitReport(bun.replace('tests="3" assertions="2" failures="1" skipped="1" time="0.02"', 'tests="2"'))).toBeUndefined();
+  expect(parseJUnitReport(bun.replace('tests="3" assertions="2" failures="1" skipped="1" time="0.02"', 'tests="many"'))).toBeUndefined();
+  expect(parseJUnitReport('<testsuites name="vitest tests" tests="0"></testsuites>')).toEqual(new Map());
 });
 
 it("counts a test named twice as failed when either run failed, and as passed only when both passed", () => {

@@ -3,6 +3,10 @@ on:
   push:
     branches: [main, dev]
   pull_request:
+  # The merge queue on dev tests each pull request merged with what's ahead of it, then merges it.
+  merge_group:
+  # The binaries workflow runs these checks on a release tag, and publishes only once they pass (#372).
+  workflow_call:
 permissions:
   contents: read
 jobs:
@@ -10,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
+        os: [windows-latest, ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
@@ -22,15 +26,42 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: package.json
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      - run: dafny --version
+      # TLC for the model-checking tests, where Tesota looks for it (docs/get-started/install.md).
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "25"
+      - name: TLC
+        shell: bash
+        run: |
+          mkdir -p ~/.tesota/tools
+          curl -fsSL -o ~/.tesota/tools/tla2tools.jar https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar
+          # sha256sum on Linux and Git's bash on Windows; shasum on macOS, which has no sha256sum.
+          if command -v sha256sum >/dev/null; then sum="sha256sum"; else sum="shasum -a 256"; fi
+          echo "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88  $HOME/.tesota/tools/tla2tools.jar" | $sum -c -
       - run: bun install --frozen-lockfile --ignore-scripts
-      - name: Prepare test temporary directory
-        run: >-
-          node -e "require('node:fs').mkdirSync(process.env.TESOTA_TEST_TEMP, { recursive: true })"
-        env:
-          TESOTA_TEST_TEMP: ${{ github.workspace }}/.tesota-test-temp
+      - run: bun run vendor
       - run: bun --no-env-file run check
-        env:
-          TEMP: ${{ github.workspace }}/.tesota-test-temp
-          TMP: ${{ github.workspace }}/.tesota-test-temp
-          TMPDIR: ${{ github.workspace }}/.tesota-test-temp
-      - run: bun --no-env-file dist/cli.js --help
+      - run: bun --no-env-file run formal:check
+      - run: bun packages/core/src/main.ts --version
+  # Linux with musl, as Alpine has it (#472): the engine's sessions and their lock, and the command starting in its sh
+  # without bash (#547). JavaScript
+  # actions do not run in an Alpine container, so the checkout runs on the runner and the checks in Bun's Alpine image.
+  musl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Sessions and the command on Alpine
+        run: |
+          bun_version=$(node -p "require('./package.json').packageManager.split('@')[1]")
+          docker run --rm -v "$PWD:/tesota" -w /tesota "oven/bun:${bun_version}-alpine" sh -euc '
+            apk add --no-cache git
+            if command -v bash; then echo "bash is installed; the job must run without it" >&2; exit 1; fi
+            bun install --frozen-lockfile --ignore-scripts
+            bun run vendor
+            cd packages/core
+            bun run test tests/session.test.ts tests/tools.test.ts
+            bun src/main.ts --version'

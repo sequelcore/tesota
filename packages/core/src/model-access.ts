@@ -1,0 +1,240 @@
+import { type Api, type CredentialStore, createModels, type LoginOptions, type Model, type Models, type MutableModels,
+  type Provider } from "@earendil-works/pi-ai";
+import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth";
+import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
+import { fileCredentialStore } from "./credentials.ts";
+import { claudeCodeProvider, claudeCodeStatus } from "./providers/claude-code.ts";
+import { type Account, deviceId, readSettings, type Settings } from "./settings.ts";
+
+/**
+ * The models a Tesota session runs on (#443): pi-ai's built-in providers,
+ * authorized by the engine's own credentials and, as pi-ai resolves them,
+ * API keys in the environment, and Claude through the operator's own Claude
+ * Code (`claude-code`, #546), on pi-ai's Anthropic catalog. Logging in and
+ * out is `Models.login` and `Models.logout` with `loginOptions`. Pi's remote
+ * catalog refresh is left out until something needs it.
+ */
+export function engineModels(credentials: CredentialStore = fileCredentialStore(), accounts: readonly Account[] = readSettings().settings.accounts ?? []): MutableModels {
+  // pi-ai imports each sign-in flow by a path a compiled `tesota` does not have, so they are embedded instead (#372).
+  // pi-ai registers its flows only all at once; Anthropic's is never reached, since no provider here offers it.
+  registerBunOAuthFlows();
+  const models = createModels({ credentials });
+  for (const provider of builtinProviders()) models.setProvider(provider.id === "anthropic" ? anthropicKeyOnly(provider) : provider);
+  models.setProvider(claudeCodeProvider(models.getModels("anthropic")));
+  for (const account of accounts) setAccountProvider(models, account);
+  return models;
+}
+
+/** `account`'s provider ID, `<provider>@<name>`. */
+export const accountId = (account: Account): string => `${account.provider}@${account.name}`;
+
+/** Adds `account`'s provider instance to `models`, as `engineModels` does for each declared one and adding an account does (#642). */
+export function setAccountProvider(models: MutableModels, account: Account): void {
+  const id = accountId(account);
+  if (account.provider === "claude-code") {
+    models.setProvider(claudeCodeProvider(models.getModels("anthropic"), { id, configDir: account.folder }));
+    return;
+  }
+  const provider = models.getProvider("openai-codex");
+  if (provider?.auth.oauth === undefined) throw new Error("pi-ai's Codex provider has no ChatGPT auth");
+  // Same pi-ai transport and OAuth flow, but auth resolves and refreshes under this instance's id only.
+  models.setProvider({ ...provider, id, name: id, auth: { oauth: provider.auth.oauth },
+    getModels: () => provider.getModels().map((model) => ({ ...model, provider: id })),
+    getAllModels: () => (provider.getAllModels?.() ?? provider.getModels()).map((model) => ({ ...model, provider: id })) });
+}
+
+/** An account as it stands: its sign-in, and whom it is signed in to when the provider says (non-secret). */
+export interface AccountState {
+  readonly id: string;
+  readonly provider: Account["provider"];
+  readonly folder?: string;
+  readonly signedIn: boolean;
+  readonly identity?: string;
+  /** The earlier account that is the same one, when another is. */
+  readonly sameAs?: string;
+  /** The label account pickers and runs show. */
+  readonly label: string;
+  /** Its sign-in is still being checked: not signed in as far as is known yet. */
+  readonly checking?: true;
+}
+
+type Instance = { readonly id: string; readonly provider: Account["provider"]; readonly folder?: string };
+type SignIn = { readonly signedIn: boolean; readonly identity?: string };
+
+/** One account's sign-in, from Claude Code's status or the ChatGPT credential's account id. */
+async function signInOf(credentials: CredentialStore, instance: Instance, status: typeof claudeCodeStatus, signal: AbortSignal | undefined): Promise<SignIn> {
+  if (instance.provider === "claude-code") {
+    const info = await status(instance.folder, undefined, signal);
+    return info.loggedIn ? { signedIn: true, ...info.email === undefined ? {} : { identity: info.email } } : { signedIn: false };
+  }
+  const credential = await credentials.read(instance.id);
+  if (credential?.type !== "oauth") return { signedIn: false };
+  return { signedIn: true, ...typeof credential["accountId"] === "string" ? { identity: credential["accountId"] } : {} };
+}
+
+/** The accounts with their sign-ins as far as known, in order, each identity's later accounts naming its first. */
+function labelled(instances: readonly Instance[], signIns: readonly (SignIn | undefined)[]): AccountState[] {
+  const seen = new Map<string, string>();
+  return instances.map((instance, index) => {
+    const signIn = signIns[index];
+    const place = { id: instance.id, provider: instance.provider, ...instance.folder === undefined ? {} : { folder: instance.folder } };
+    if (signIn === undefined) return { ...place, signedIn: false, label: "checking sign-in…", checking: true as const };
+    const { signedIn, identity } = signIn;
+    let label = signedIn ? identity ?? "signed in · account identity unavailable" : "not signed in";
+    let sameAs: string | undefined;
+    if (identity !== undefined) {
+      const key = `${instance.provider}/${identity.toLowerCase()}`;
+      sameAs = seen.get(key);
+      if (sameAs !== undefined) label += ` · same account as ${sameAs}`;
+      else seen.set(key, instance.id);
+    }
+    return { ...place, signedIn, ...identity === undefined ? {} : { identity }, ...sameAs === undefined ? {} : { sameAs }, label };
+  });
+}
+
+/** How many sign-ins `accountStates` checks at once, what stops it, and who hears of the accounts as each check returns. */
+export interface AccountStatesOptions {
+  /** One at a time unless given. */
+  readonly concurrency?: number;
+  readonly signal?: AbortSignal;
+  /** The accounts as far as known: first at once, before any check, as `checking`, then again as each check returns. */
+  readonly onUpdate?: (states: readonly AccountState[]) => void;
+}
+
+/**
+ * Each account's sign-in, in order: a provider's default sign-in when an
+ * account of that provider is declared, or when `also` names it (the one a
+ * session runs on), then the declared accounts. Identity comes from Claude
+ * Code's status or the ChatGPT credential's account id.
+ */
+export async function accountStates(credentials: CredentialStore, accounts: readonly Account[],
+  status: typeof claudeCodeStatus = claudeCodeStatus, also: readonly string[] = [],
+  { concurrency = 1, signal, onUpdate }: AccountStatesOptions = {}): Promise<readonly AccountState[]> {
+  const wanted = (provider: Account["provider"]): boolean => accounts.some((account) => account.provider === provider) || also.includes(provider);
+  const instances: readonly Instance[] = [
+    ...wanted("claude-code") ? [{ id: "claude-code", provider: "claude-code" as const }] : [],
+    ...wanted("openai-codex") ? [{ id: "openai-codex", provider: "openai-codex" as const }] : [],
+    ...accounts.map((account) => ({ ...account, id: accountId(account) })),
+  ];
+  const signIns: (SignIn | undefined)[] = instances.map(() => undefined);
+  onUpdate?.(labelled(instances, signIns));
+  let next = 0;
+  const checker = async (): Promise<void> => {
+    for (let index = next++; index < instances.length; index = next++) {
+      signal?.throwIfAborted();
+      const instance = instances[index];
+      if (instance === undefined) continue;
+      signIns[index] = await signInOf(credentials, instance, status, signal);
+      if (signal?.aborted !== true) onUpdate?.(labelled(instances, signIns));
+    }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, instances.length)) }, checker));
+  signal?.throwIfAborted();
+  return labelled(instances, signIns);
+}
+
+/** Non-secret labels for account pickers and runs. */
+export async function accountLabels(credentials: CredentialStore, accounts: readonly Account[],
+  status: typeof claudeCodeStatus = claudeCodeStatus): Promise<ReadonlyMap<string, string>> {
+  return new Map((await accountStates(credentials, accounts, status)).map(({ id, label }) => [id, label]));
+}
+
+/** A Claude plan's OAuth token, which pi-ai's Anthropic API would send as Claude Code does. */
+const planToken = (value: string | undefined): boolean => value?.includes("sk-ant-oat") === true;
+const noPlanToken = "Tesota takes no Claude plan token: use an Anthropic API key, or Claude through your own Claude Code (claude-code).";
+
+/**
+ * pi-ai's Anthropic provider with its API key alone: no Claude sign-in, and
+ * no Claude plan's token, from the environment (`ANTHROPIC_OAUTH_TOKEN`) or
+ * entered as a key, since Tesota offers no Claude login (`docs/guides/models.md`).
+ * Claude on a plan is the `claude-code` provider.
+ */
+export function anthropicKeyOnly(provider: Provider): Provider {
+  const key = provider.auth.apiKey;
+  if (key === undefined) throw new Error("pi-ai's Anthropic provider has no API key auth");
+  const login = key.login;
+  return { ...provider, auth: { apiKey: {
+    name: key.name,
+    ...login === undefined ? {} : { login: async (interaction) => {
+      const credential = await login(interaction);
+      if (planToken(credential.key)) throw new Error(noPlanToken);
+      return credential;
+    } },
+    resolve: async (input) => {
+      if (planToken(input.credential?.key)) return undefined;
+      const ctx = { env: (name: string) => name === "ANTHROPIC_OAUTH_TOKEN" ? Promise.resolve(undefined) : input.ctx.env(name),
+        fileExists: (path: string) => input.ctx.fileExists(path) };
+      const resolved = await key.resolve({ ...input, ctx });
+      const headers = Object.values(resolved?.auth.headers ?? {}).map(String);
+      return [resolved?.auth.apiKey, ...headers].some(planToken) ? undefined : resolved;
+    },
+  } } };
+}
+
+/** How Tesota introduces itself to a provider's login, with this installation's id. */
+export const loginOptions = (settingsPath?: string): LoginOptions => ({ agentName: "Tesota", getDeviceId: () => deviceId(settingsPath) });
+
+/**
+ * The model the operator chose, if it still exists, else none. Tesota never
+ * picks one for them (#425): the first a credential reaches may be one the
+ * sign-in does not serve, which failed with a provider's error; with none,
+ * the shell and `-p` say how to choose one.
+ */
+export function chosenModel(models: MutableModels, settings: Settings): Model<Api> | undefined {
+  const [provider, ...id] = settings.model?.split("/") ?? [];
+  return provider === undefined ? undefined : models.getModel(provider, id.join("/"));
+}
+
+const label = (model: Model<Api>): string => `${model.provider}/${model.id}`;
+
+/**
+ * The OpenAI models a ChatGPT sign-in serves, as `GET /models` on its token
+ * lists them (#563, #566), or none when OpenAI is not signed in with
+ * ChatGPT. Throws when the list cannot be fetched.
+ */
+async function servedByChatGPT(models: Models): Promise<ReadonlySet<unknown> | undefined> {
+  if ((await models.checkAuth("openai"))?.type !== "oauth") return undefined;
+  const token = (await models.getAuth("openai"))?.auth.apiKey;
+  let listed: readonly { slug?: unknown }[];
+  try {
+    const response = await fetch(`${models.getProvider("openai")?.baseUrl}/models`,
+      { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(5_000) });
+    if (!response.ok) throw new Error(`OpenAI answered ${response.status}`);
+    listed = (await response.json() as { models?: readonly { slug?: unknown }[] }).models ?? [];
+  } catch (error) {
+    throw new Error(`the list of the models the ChatGPT sign-in serves could not be fetched (${error instanceof Error ? error.message : String(error)})`);
+  }
+  return new Set(listed.map(({ slug }) => slug));
+}
+
+const narrowed = (available: readonly Model<Api>[], served: ReadonlySet<unknown> | undefined): readonly Model<Api>[] =>
+  served === undefined ? available : available.filter((model) => model.provider !== "openai" || served.has(model.id));
+
+/**
+ * The models Tesota can run (#563, #566): those of the providers it is
+ * signed in to, but with ChatGPT sign-in only the OpenAI models it serves;
+ * OpenAI refuses the rest of its catalog at the first request. `/model`
+ * lists them. Throws when the ChatGPT sign-in's list cannot be fetched.
+ */
+export async function runnableModels(models: Models): Promise<readonly Model<Api>[]> {
+  return narrowed(await models.getAvailable(), await servedByChatGPT(models));
+}
+
+/**
+ * The model `named`, as `provider/id`, among those Tesota can run, or why it
+ * is not one; `-p`, the shell's saved model and the `agent` tool read it. It
+ * is refused only when the ChatGPT sign-in's list arrived without it: when
+ * the list cannot be fetched, it is kept with `unchecked` saying why, since
+ * OpenAI still refuses one it does not serve at the first request (#567).
+ */
+export async function runnableModel(models: Models, named: string): Promise<{ readonly model: Model<Api>; readonly unchecked?: string } | string> {
+  const available = await models.getAvailable();
+  let served: ReadonlySet<unknown> | undefined;
+  let failed: string | undefined;
+  try { served = await servedByChatGPT(models); } catch (error) { failed = error instanceof Error ? error.message : String(error); }
+  const runnable = narrowed(available, served);
+  const model = runnable.find((candidate) => label(candidate) === named);
+  if (model === undefined) return `no model ${named} among those Tesota can run: ${runnable.map(label).join(", ") || "none"}.`;
+  return failed === undefined || model.provider !== "openai" ? { model }
+    : { model, unchecked: `${named} was not checked against the models the ChatGPT sign-in serves: ${failed}.` };
+}

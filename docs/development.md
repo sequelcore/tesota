@@ -1,195 +1,276 @@
 # Development
 
-## Toolchain and checks
+How to build, test and prove Tesota, and where things go. How Tesota works
+is in [Architecture](concepts/architecture.md) and
+[How verification works](concepts/verification.md).
 
-Use the Bun and Node versions in [package.json](../package.json). The other
-tools the checks need, ripgrep for Pi's grep tool and Dafny for
-`bun run formal:check`, are declared in [mise.toml](../mise.toml), which
-`mise install` and Tesota's sandboxes install. From the
-repository root, install with `bun install --frozen-lockfile --ignore-scripts`.
-Dependencies come from registry packages; lifecycle scripts are disabled.
+## Set up
 
-| Command | Purpose |
+Use the Bun version in `packageManager` and the Node version in `devEngines`
+of [package.json](../package.json); CI reads both from there. Dafny, which
+proving needs, is in [mise.toml](../mise.toml) for `mise install`.
+
+```sh
+bun install --frozen-lockfile --ignore-scripts
+bun run vendor
+```
+
+Dependencies come from the registry, with lifecycle scripts disabled.
+Run `bun run vendor` once after installing a source checkout. It downloads
+the pinned ripgrep archives in [ripgrep.json](../ripgrep.json), verifies
+their SHA-256 and the extracted executables, and puts each build target's
+`rg` in the ignored `vendor/ripgrep/<target>/`. Verified executables are
+skipped on later runs. Extraction uses Bun's archive API for `.tar.gz` and
+Node's zlib for the pinned ZIP executables, without external commands.
+`bun run vendor --force` downloads and verifies every archive again.
+
+`bun link` in `packages/core` puts your checkout's `tesota` on the `PATH`.
+
+## Checks
+
+| Command | |
 | --- | --- |
-| `bun run build` | Compile the CLI to `dist/` |
-| `bun run typecheck` | Check source and test types |
-| `bun run test:fast` | Run deterministic tests that launch no external process |
-| `bun run test` | Build and run all test groups, including process-backed suites |
-| `bun run lint` | Lint source and tests without fixes; reject warnings |
-| `bun run check` | Run the complete repository gate |
-| `bun run formal:check` | Prove the LemmaScript rules in `src/verification/`; requires Dafny |
+| `bun run check` | Every check: types, the verification layer's tests, lint, and the engine's check |
+| `bun run formal:check` | Prove every LemmaScript rule in `src/verification/` and `packages/core/src/`; needs Dafny |
+| `bun run typecheck` | Types of `src`, `tests` and `evaluation` |
+| `bun run test` | The verification layer's tests, with Vitest |
+| `bun run lint` | Oxlint, rejecting warnings, without fixes |
+| `bun run --cwd packages/core check` | The engine's types, its tests, and its performance budgets |
+| `bun run --cwd packages/core budget --report` | Measure the budgets without failing, to set or revise a limit |
+| `bun run --cwd packages/core screenshots` | Draw the documentation's images again |
 
-`bun run check` does not invoke Dafny or a live model. Tests exercise real Git
-workspaces, check processes, Oxlint and compiled CLI processes. Use `test:fast`
-for quick feedback on pure code, then the affected process-backed suite. Run
-`bun run check`, `bun run formal:check` when a proved rule changed, and
-`git diff --check` before completing a change. Report what actually ran;
-passing checks, live observations and human acceptance are different claims.
+Before finishing a change, run `bun run check`, `bun run formal:check` when
+a proved rule changed, and `git diff --check`. CI runs both checks on
+Ubuntu, Windows and macOS, and the engine's session and tool tests on musl
+Linux, in Alpine without bash. Report what ran: a passing check, a live
+observation and a person's acceptance are different claims.
 
-The build keeps TypeScript's compiler for the CLI and bundles the WSL sandbox
-server with Bun's Node target into one ESM file, including its Zod dependency.
-WSL starts it from the Windows drive; a single file avoids resolving and
-reading the dependency tree across that filesystem for every readiness probe
-and sandbox start. The compiled server is also tested from a folder with no
-Tesota modules or dependencies beside it.
+`bun run check` never calls a live model. The tests that prove files run
+only where Dafny is installed; the verification tests script the proofs and
+the model, and run real commands.
 
-The package binary points to `dist/cli.js`. Build before `bun link`; later
-builds refresh that linked executable, and `bun unlink` removes it. The lint
-rule limits cyclomatic complexity to 20 in `src` and `tests` with no file
-exceptions. Vitest collects this checkout's `tests/` only, leaving a nested
-checkout's tests to its own scripts. The Git workspace suites, including the
-shell's source-turn tests, run in a separate Vitest process with a 20-second
-per-test limit so a timed-out filesystem operation cannot contaminate later
-suites. Each of the two groups also writes a JUnit XML report to the ignored `test-reports/`
-(`unit.xml` and `workspace.xml`), so a Tesota session on this repository can
-approve `bun run check => test-reports/unit.xml, test-reports/workspace.xml`
-and compare its failures with the base test by test. The opt-in
-`TESOTA_LIVE_SANDBOX=1` suite exercises Docker Sandboxes' boundary live,
-`TESOTA_LIVE_WSL=1` the WSL sandbox on Windows, or its Linux side directly
-where bubblewrap runs, after `bun run build`, and
-`TESOTA_LIVE_WEB=1` reads a real page and checks that a public name resolving
-to this computer is refused; add `TESOTA_LIVE_WEB_SEARCH=1` to search through
-the SearXNG in `~/.tesota/web.json`.
+## Layout
 
-A change to an engine adapter or to the model-session contract passes
-`tests/model-session-contract.test.ts`, which holds every engine to the same
-clauses, and then the opt-in live suite, `TESOTA_LIVE_MODELS=1` with
-`TESOTA_LIVE_MODEL_CHOICES` naming the `route:model` choices (default
-`claude-code:haiku,codex:gpt-6-luna`); it uses the operator's sign-ins and a
-little model usage. A new engine joins the shared suite with a harness before
-any role uses it.
-
-## Evaluations
-
-Live evaluations use the saved login and write one JSON record under the
-ignored `live-runs/` directory.
-
-| Command | Measures |
+| Folder | |
 | --- | --- |
-| `bun run live:review` | Review on eight frozen candidates with known truth: defects found, false positives, refutation, correction, time, tokens and models. `--set=scope` runs five candidates for work beyond the request instead, scoring which extras are marked for the operator or would be sent back, and `--set=premise` runs four candidates for requests whose premise is false, scoring which changes acting on one are marked for the operator or would be sent back, and whether a case would send anything back, an obligation included, `--set=environment` runs a request a check blocks for a reason outside the change, a test that also fails on the base for a missing program, scoring whether its obligation would go back to the agent or to the operator (#224), and `--set=all` runs every set. A case no reviewer finished is recorded as not measured and the run goes on. `--depth=`, `--skip-corrections` and `--model-reviewer=`, `--model-refuter=`, `--model-validator=` (as `route:model`) vary it |
-| `bun run live:prbench` | Tesota's review answering SWE-PRBench's pull requests, before and after refutation, for the benchmark's own judge and scorer. `--split=`, `--config=`, `--max=`, `--label=`, `--depth=` and the model flags vary it |
-| `bun run live:agent` | The working agent with Tesota's own prompt, for issue #165: a request already fixed (the right result is no change), one partly fixed and one not fixed, each decided by a hidden test run afterwards; five requests beside a temptation to do more (a bug in the next function, old-style code, a TODO, a duplicated helper, a poor name) and a control that needs two files, each in scope only when it changes no path the case does not allow, keeps the case's code verbatim and passes a preserved-behavior test, with whether the reply reports the temptation recorded apart; four requests whose premise is false (behavior documented as intended, a function that does not exist, a bug in a vendored copy, a symptom that does not occur), each right only when no production code changed and the behavior holds as it was, with whether the reply says why recorded apart, and a control that makes the same report against a policy the code breaks; and fifteen questions measured in words, median and 90th percentile, with the facts each must state. It may run only `node --test`. Run it before and after a change to the working agent's prompt. `--runs=`, `--set=all\|fixes\|scope\|premise\|questions` and `--model-agent=` vary it |
-| `bun run live:answer` | The answer check on 16 registered turns that changed no files: the first pass on every turn, scoring checkable turns skipped and conversation checked, and the full check on the 10 with a known verdict, scoring requests judged held that did not hold (missed) and the reverse (false alarms), and on a rightly declined false premise, scoring whether it is left to the operator, sent back or cleared, with time and tokens. `--stage=first-pass`, `--stage=review`, `--runs=` and `--model-triage=`, `--model-reviewer=`, `--model-refuter=` vary it |
-| `bun run live:delegation` | The agent with and without explorers on questions about a frozen copy of this repository. `--runs=`, `--model-agent=` and `--model-explorer=` vary it |
+| `packages/core/src` | The engine: `main.ts` is the `tesota` command; `loop.ts`, `session*.ts`, `permissions.ts`, `workspace.ts`, `hooks.ts`, `mcp*.ts`, `instructions.ts`, `print.ts`, and `shell/` |
+| `packages/core/tests` | The engine's tests, run with `bun run test` (`bun test` with a home and temporary folder of their own, removed after); an emulated terminal (`@xterm/headless`) for the shell |
+| `src` | The verification layer, written against `src/contract.ts`; the engine gives it its parts through `src/host.ts` |
+| `src/verification` | Verification's proved rules and LemmaScript runner |
+| `tests` | The verification layer's tests, with Vitest, on a test host (`tests/host.ts`) |
+| `evaluation` | Measurements of Tesota's defaults on live models, run on the engine from your Tesota sign-in, and Claude through `claude -p` on your Claude sign-in (`engine-session.ts`) |
+| `themes`, `terminal-schemes`, `grammars` | The two themes, the terminal color schemes, and the tree-sitter grammars coverage reads |
 
-A scope instruction in the working agent's prompt, registered with its
-cases on 2026-09-30 before any run, is adopted only if, over two runs on one
-agent model, the tempted cases kept in scope rise, none of them or of the fix
-cases loses its resolution, the control stays resolved and in scope, and the
-questions state as many facts. A baseline with every tempted case in scope
-leaves nothing to show, and no instruction is adopted.
+`lemmascript` and `web-tree-sitter` are runtime dependencies. The grammars
+are development dependencies, pinned exactly, kept as each one's `.wasm` in
+`grammars/`; a test fails when a kept file differs from the pinned
+package's.
 
-A check of the request's premise was registered with its cases on 2026-09-30,
-before any run: `live:agent --set=premise` for the working agent and
-`live:review --set=premise` for the review
-([design](design/assurance.md#the-requests-premise)). The
-baseline, recorded there, ran on `codex:gpt-6-luna` and `claude-code:haiku`;
-a change is measured before and after on the same model. A change to the
-working agent's prompt is adopted only if the false-premise cases left alone
-rise, the control stays resolved, and neither the fix, scope nor question
-results fall. A change to review is adopted only if false premises marked for
-the operator rise, none is sent back, the control's planted claim is still
-refuted, and `live:review`'s core and scope totals do not lose precision. A
-baseline with every false premise left alone and marked leaves nothing to
-show, and nothing is adopted.
+## Tests
 
-Run the relevant evaluation before and after a change in this repository to
-a reviewer, the refuter, origin checking, explorers, the answer check, their
-prompts or a role's built-in model, and record the result with the change; a
-change that lowers precision or adds cost without a gain is not adopted.
-This rule governs what Tesota ships to everyone. An operator's own team,
-chosen with `tesota roles`, needs no evaluation: each user may set any model
-for any role, Tesota warns where a judge shares a model or lab with what it
-judges and never refuses, and running the evaluations on a chosen team stays
-an optional, separate activity. `live:review`'s eight candidates
-were written with Tesota's prompts and every model finds their defects, so
-they check Tesota's machinery, not which model or prompt reviews better; that
-is SWE-PRBench's job.
+- **Behavior, not wording.** The loop and tool tests check what happened to
+  files and which calls failed, not how a message is worded.
+- **Engine home isolation.** Run engine tests with `bun run --cwd packages/core test`.
+  Direct `bun test` runs from the root or engine folder refuse to start outside
+  the isolated wrapper, before tests can read or write your home folder.
+- **Real processes.** Session tests kill a process mid-run, and mid-settle,
+  to check recovery: that shows what survives a killed process, not a
+  power cut.
+- **The shell** is drawn into an emulated terminal. Flicker and stale
+  fragments on a real Windows console still need a person to look.
+- **Imports:** a test fails when Tesota imports a Pi package other than
+  `pi-ai`, `pi-tui` or `pi-mcp`.
+- **Complexity:** the lint rule limits cyclomatic complexity to 20, with no
+  file exceptions.
 
-**SWE-PRBench** scores
-Tesota's review against human reviewers' comments on 100 real pull requests
-with the benchmark's own code, pinned at pipeline v0.4.1 (commit `379f0bf`).
-Set it up once under the ignored `live-runs/swe-prbench/`:
+## Proved rules
 
-```
-git clone https://github.com/FoundryHQ-AI/swe-prbench.git live-runs/swe-prbench/harness
-git -C live-runs/swe-prbench/harness checkout 379f0bf
-python -m venv live-runs/swe-prbench/.venv
-live-runs/swe-prbench/.venv/Scripts/python -m pip install -r live-runs/swe-prbench/harness/requirements.txt huggingface_hub
-live-runs/swe-prbench/.venv/Scripts/hf download foundry-ai/swe-prbench --repo-type dataset --local-dir live-runs/swe-prbench/data
+A pure decision that can be stated precisely, such as a permission, a budget
+or a test's origin, carries LemmaScript `//@` specifications taken from its
+requirement, in a `*-rule.ts` file named in `formal:check`. Check that the
+proof means something: a deliberately wrong version must fail it.
+[Proved rules](reference/proved-rules.md) lists them.
+
+A rule's proof lives in its `.dfy`: the program LemmaScript generates, kept
+also as `.dfy.gen`, plus any proof added by hand. After changing a
+specified function:
+
+```sh
+./node_modules/.bin/lsc regen --backend=dafny src/verification/gate-rule.ts
+./node_modules/.bin/lsc check --backend=dafny src/verification/gate-rule.ts
 ```
 
-Put the judge's `OPENAI_API_KEY=` line in `live-runs/swe-prbench/harness/.env`,
-never in the repository; the official judge, GPT-5.2, is billed per token to
-that key. Then answer and score:
+`regen` generates the program again, keeps the proof additions, refuses a
+`.dfy` whose generated lines were edited, and verifies the result. Running
+`check` first rewrites the `.dfy.gen` that `regen` compares against, and
+`regen` then refuses: restore the committed `.dfy.gen` with Git and run it
+again. Never delete a `.dfy` to regenerate it; that discards its proof
+additions.
 
-```
-bun run live:prbench --label=astra-sol
-live-runs/swe-prbench/.venv/Scripts/python evaluations/swe-prbench/score.py --label=astra-sol
-live-runs/swe-prbench/.venv/Scripts/python evaluations/swe-prbench/score.py --label=astra-sol --response=unrefuted
-```
+## Performance budgets
 
-Tesota's reviewer receives the official context and an empty checkout, as the
-benchmark's agents do, so its scores compare with the published ones; scores
-from another judge or split do not.
+The budget check compiles the engine as a release would, with code
+splitting so the loop loads only when used, and fails a pull request when a
+measurement exceeds its platform's limit in both of two attempts in
+[budgets.json](../packages/core/budgets.json): `--version` startup, binary
+size, the scripted loop's time and memory, the request's base, the number
+of syncs to disk, settlement, resuming a session of about 1,000 entries,
+that session's size, the shell's first frame, and its memory. On Windows the
+first frame is limited divided by the same attempt's median startup, since
+runners there differ in speed for the whole job, with a looser limit in
+milliseconds for a regression that slows both. Linux does the same
+with the median resume, which tracks the first frame there more closely. A
+second attempt measures everything again only when the first exceeds a
+budget. A sync's time depends on the disk, so it's only reported; their
+number has the limit.
+New or changed limits are proposed from measurements, and need the owner's
+approval.
+
+## Binaries
+
+[build.ts](../packages/core/scripts/build.ts) is the one build: the budget
+measures its binary, and `bun packages/core/scripts/build.ts <folder>`
+builds every release target into a folder. A binary embeds LemmaScript and
+the TypeScript parser as code, and tree-sitter's runtime and grammars as
+files, and that target's pinned ripgrep executable, so it verifies and
+searches without the checkout. Ripgrep is extracted once under
+`~/.tesota/ripgrep/<version>-<sha256>/`, verified before an atomic rename;
+there is no runtime download or PATH lookup. Inside a binary, the verifier runs
+LemmaScript as the binary's own `__lsc` command. The binaries workflow
+builds every target on each pull request, with their `SHA256SUMS`, starts
+each one a runner can run, and installs one with
+[install.sh](../install.sh) or [install.ps1](../install.ps1) from a local
+server; `binary.test.ts` proves and reads source from a binary run outside
+the checkout, including a search with the embedded ripgrep.
+
+## Releases
+
+A release is a GitHub Release of the binaries, published by the binaries
+workflow from a tag; no one publishes from their own machine.
+
+Until the first stable release, versions are prereleases, numbered
+`0.1.0-alpha.<n>`. A fix that stops sessions, loses work, makes the receipt
+claim more than it observed, or crosses a permission or security boundary
+ships in a release of its own; other fixes wait for the next one.
+
+1. Set `<version>` in [package.json](../package.json) and
+   [packages/core/package.json](../packages/core/package.json). In
+   [CHANGELOG.md](../CHANGELOG.md), give the release's section that
+   version and the date. Merge it to `dev`.
+2. Tag that commit `v<version>` and push the tag.
+3. The workflow refuses a tag that isn't both versions, or a version
+   already released. It builds and starts every target and runs the whole
+   check (`ci.yml`) on the tagged commit. Only once all of them pass, the
+   publish job, the only one that may write, checks the files against their
+   `SHA256SUMS`, attests each binary's provenance, and publishes them
+   unchanged. A version with a suffix, such as `0.1.0-alpha.<n>`, is a
+   prerelease and never becomes the latest release. The release is titled
+   `Tesota <version>`, and its notes are a fixed line pointing to the
+   install scripts and `gh attestation verify`. The workflow doesn't
+   generate notes, so the categories in
+   [release.yml](../.github/release.yml) apply only to notes generated by
+   hand on GitHub.
+4. Check it: `gh attestation verify <binary> --repo sequelcore/tesota`,
+   then install with the script and run a request through to a receipt.
+
+A published version is never reused: a fix gets a new version.
+
+## Effect
+
+Code that coordinates processes, time limits, cancellation, resources or
+concurrency is written with [Effect](https://effect.website) 4, moved over
+one part at a time, each measured against the budgets; `src/process.ts` is
+the first. A resource is acquired with its release (`acquireUseRelease`), so
+a stop and a time limit are interruptions rather than flags to check. Until
+its callers move, a part keeps its `Promise` signature and runs its Effect
+with `Effect.runPromise(effect, { signal })`.
+
+- **Import a module by its path** (`effect/Effect`), never the root
+  `effect`, which evaluates the whole package: run from source, the root
+  costs about 35 MB, the modules Tesota uses about 16 MB.
+  `inventory.test.ts` fails on an import of the root. The shell loads those
+  modules through `src/process.ts`; code on the shell's path that would load
+  more, as the gate's checks would, loads it when first used (`loadChecks`
+  in `src/gate.ts`).
+- **A verification step that is interrupted is awaited.** `Effect.promise`
+  abandons its promise when interrupted. A gate step that started processes
+  aborts them and waits, as the gate's `step` does, so no check runs after
+  Tesota reports. A stopped run's inventory runs no check, only Git: past
+  its time limit it is abandoned, and its Git is stopped with every process
+  it started (`gitStopped`) before the receipt.
+- **Your stop interrupts the model's turns, as Codex's does**
+  (`step` in `packages/core/src/loop.ts`). Each step a turn waits on (a
+  reply, a call, a summary) is told by the run's signal and gets a short
+  grace to report on its own; past that the run records it as stopped and
+  goes on. Every call still ends with a result: what it reported in time,
+  `Stopped: … s into this call`, or `Not run` for the calls after it. A
+  promise can't be ended, so work that ignores the signal settles
+  unobserved; the processes a tool starts are stopped by `process.ts`.
+  Settlement is not interrupted: the stop only signals it, so the verifier
+  can finalize the stopped run.
+- **Stable core modules only.** Effect tags each module's stability, and an
+  `unstable` one may break in a minor release, an `experimental` one in a
+  patch release. Every
+  submodule (`effect/process`, `effect/ai`, `effect/cli`, `effect/http`, …)
+  is unstable in 4.0, and so are some core modules, such as `FileSystem`,
+  `Path` and `Terminal`. `inventory.test.ts` fails on an import of either.
+- **Proved rules stay plain functions.** LemmaScript proves TypeScript
+  functions, not Effect programs, so a decision with a `//@` contract is
+  called from Effect code, never written in it.
+- **Write Effect 4, not 3.** Models know Effect 3 better, and the API
+  changed, for example `Effect.async` is `Effect.callback`; check a name in
+  the installed `effect` package before using it.
+- Model access stays in `pi-ai` and the terminal in `pi-tui`; Effect's own
+  `ai` and `cli` modules are not used.
 
 ## Adding a capability
 
 A capability is added for a real consumer, and one that claims to improve
 results is measured against the simplest alternative before it becomes a
 default. Prefer an existing owner, keep one owner per behavior, and add
-modules only for implemented consumers. There are no external consumers of
-Tesota's internal contracts: obsolete code and documentation are removed, not
-kept behind aliases or compatibility paths. Pure decision rules that can be
-stated precisely, such as permissions, budgets and finding origins, carry
-LemmaScript specifications and are proved by `bun run formal:check`.
+modules only for implemented consumers. Nothing outside the repository
+uses Tesota's internal contracts: obsolete code and docs are removed, never
+kept behind aliases.
 
-A rule's proof lives in its `.dfy`: the program LemmaScript generates, kept
-also as `.dfy.gen`, plus any proof added by hand. When a specified function
-changes, run `lsc regen --backend=dafny <file>.ts` before `lsc check`. Regen
-generates the program again, keeps the proof additions, refuses a `.dfy`
-whose generated lines were edited, and verifies the result. Running `check`
-first rewrites the `.dfy.gen` that regen compares against, and regen then
-refuses; restore the committed `.dfy.gen` with Git and run regen again. Never
-delete a `.dfy` to regenerate it: that discards its proof additions.
-
-Changes to verification rules, evidence formats, permissions or acceptance
-criteria need rationale and checks at the affected boundary. A change must not
-appear successful because it removed the condition that detected a failure.
+A change to a verification rule, an evidence format or what counts as
+accepted needs its reason and checks at that boundary. A change must never
+look successful because it removed the condition that detected a failure.
 
 ## Branches
 
-`main` is the stable default branch and `dev` the protected integration
-branch. Work starts on a short-lived branch from `dev` and returns through a
-pull request; integrated increments move from `dev` to `main` through a pull
-request with a merge commit. A hotfix starts from `main` and is merged back
-into `dev` promptly. Both branches require the Ubuntu and Windows checks, an
-up-to-date pull request and resolved conversations, and forbid force pushes
-and deletion.
+`main` is the stable branch and `dev` the protected integration branch.
+Work starts on a short branch from `dev` and returns through a pull
+request, through a merge queue that checks it merged with what's ahead of
+it. `dev` reaches `main` through a pull request with a merge commit, which
+must be up to date. A hotfix starts from `main` and is merged back into
+`dev` promptly. Both branches require the Ubuntu and Windows checks and
+resolved conversations, and forbid force pushes and deletion.
 
 ## Documentation
 
-Write maintained documentation in English, with identifiers from code and
-plain explanations. Update the owner below rather than repeating its content
-elsewhere. Public wording leads with what the person can do, then why the
-evidence matters, then mechanism, and never claims more than was exercised.
+The docs are for people and agents alike.
 
-| Content | Owner |
+- **One page, one subject, one owner.** Update the page that owns a fact;
+  link to it from elsewhere.
+- **What you can do first,** then why, then how it works. An example
+  before the explanation.
+- **Only what the code does today.** No history, no "previously", no plans
+  outside the [roadmap](../ROADMAP.md); Git keeps the history. Check each
+  claim against the code, and never claim more than was exercised.
+- **Plain words, short sentences,** identifiers as code. No credentials,
+  personal paths, transcripts or scratch notes.
+
+| Content | Page |
 | --- | --- |
-| Orientation | [README](../README.md) |
-| The user workflow | [Using Tesota](guide/using-tesota.md), [authentication](guide/authentication.md), [choosing models](guide/choosing-models.md) |
-| Built behavior and its rationale | [Design](design/overview.md); planned sections are labelled |
-| Status and priorities | [Roadmap](roadmap.md) |
-| Build, test and contribution practice | This page |
-| Agent working instructions | [AGENTS.md](../AGENTS.md) |
+| What Tesota is, and how to start | [README](../README.md) |
+| Installing and a first session | [Get started](get-started/install.md) |
+| Using a feature | [Guides](README.md#guides) |
+| How it's built, and why | [Concepts](README.md#concepts) |
+| Exact commands, keys and files | [Reference](README.md#reference) |
+| The receipt's format | [Receipt v2](receipt-v2.md); keep its path, which receipts name |
+| Direction and non-goals | [Roadmap](../ROADMAP.md) |
+| What each release changed | [Changelog](../CHANGELOG.md) |
+| Building and testing Tesota | This page |
+| Instructions for agents working on Tesota | [AGENTS.md](../AGENTS.md) |
 
-Put the current rule in its owning design page and mark proposals explicitly.
-The roadmap contains only current status and unfinished priorities. Record
-evaluation results with the change that used them; Git retains the earlier
-proposals and observations. Do not add protocols, transcripts or machine
-evidence to the repository.
-
-Keep credentials, conversation exports, scratch notes and session bookkeeping
-outside tracked documentation, and do not use Kiln's private state namespace.
-When moving or removing a document, update its links, and verify changed
-claims against code.
+When moving or removing a page, update its links.

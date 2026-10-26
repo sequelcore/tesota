@@ -1,0 +1,13 @@
+[colors]
+foreground = "#24211f"
+background = "#edede5"
+cursor_bg = "#6d4b78"
+cursor_border = "#6d4b78"
+cursor_fg = "#edede5"
+selection_bg = "#d3c2dc"
+selection_fg = "#24211f"
+ansi = ["#24211f", "#8e3b3b", "#4f624a", "#6e602c", "#3f5578", "#6d4b78", "#3d6b66", "#c9c7bd"]
+brights = ["#5f6258", "#a8504f", "#64795d", "#857538", "#536b92", "#84618f", "#4f827c", "#faf7fb"]
+
+[metadata]
+name = "Tesota Light"
