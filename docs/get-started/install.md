@@ -3,13 +3,13 @@
 On macOS or Linux:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/sequelcore/tesota/dev/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/sequelcore/tesota/main/install.sh | sh
 ```
 
 On Windows, in PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/sequelcore/tesota/dev/install.ps1 | iex
+irm https://raw.githubusercontent.com/sequelcore/tesota/main/install.ps1 | iex
 ```
 
 Open a new terminal and check it:
@@ -31,11 +31,11 @@ With no version, the script installs the newest release, prereleases
 included. To install a given one, pass its number:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/sequelcore/tesota/dev/install.sh | sh -s -- <version>
+curl -fsSL https://raw.githubusercontent.com/sequelcore/tesota/main/install.sh | sh -s -- <version>
 ```
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/sequelcore/tesota/dev/install.ps1))) <version>
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/sequelcore/tesota/main/install.ps1))) <version>
 ```
 
 To update, run the script again. `TESOTA_INSTALL_DIR` installs somewhere

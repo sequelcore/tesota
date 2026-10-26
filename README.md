@@ -11,16 +11,30 @@
   <img alt="A verified run in Tesota: the request, the agent's file changes and its answer, then the receipt, which shows a contract proved with Dafny and a test that passes and catches the change." src="docs/assets/tesota-turn-dark.svg">
 </picture>
 
+## What you get
+
+- You see what was actually checked, instead of taking the agent's word that it's done.
+- A deleted test, an added `.skip` or a loosened contract is flagged in the
+  receipt before the change reaches your pull request.
+- The receipt says plainly what Tesota couldn't check, such as changed lines
+  no check covered or a checker that wasn't installed.
+- `tesota receipt` prints the receipt as Markdown for a pull request, and
+  `tesota receipt --json` prints it for CI.
+- **Use the model you already pay for.** Any [pi-ai](https://github.com/earendil-works/pi)
+  provider works, such as OpenAI, Anthropic, Google, OpenRouter, Mistral,
+  xAI, Amazon Bedrock or Azure. A Claude plan runs through your own Claude
+  Code, and a ChatGPT plan through its sign-in. See [Models](docs/guides/models.md).
+
 ## Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/sequelcore/tesota/dev/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/sequelcore/tesota/main/install.sh | sh
 ```
 
 On Windows, in PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/sequelcore/tesota/dev/install.ps1 | iex
+irm https://raw.githubusercontent.com/sequelcore/tesota/main/install.ps1 | iex
 ```
 
 If the Linux or macOS script added Tesota to your `PATH`, open a new
@@ -39,19 +53,43 @@ is in alpha, released as prerelease binaries. You need Git, and
 ## The receipt
 
 When the agent finishes, Tesota verifies the change and writes a receipt.
-It records:
+The run in the image above ends with this one:
+
+```text
+Tesota receipt
+No review flags · no verification limits
+Check evidence, not your acceptance.
+
+✓ Tested      npm run test · 0:00
+✓ Proved      src/total.ts · 0:02
+○ Models      none recorded
+✓ Exercised   1 test file failed on the base and passed with the change
+✓ Contracts   1 contract: every decided change broke its proof
+```
+
+A receipt records:
 
 - what was proved, tested and model-checked;
 - any weakened evidence it found, such as a loosened contract, a deleted
   test or an added `.skip`;
 - what it couldn't verify: changed lines and files that no check covered.
 
-A run ends verified only when that evidence holds. `tesota receipt` writes
-the receipt for a pull request. The receipt is evidence; accepting the
-change is up to you. See [Receipts](docs/guides/receipts.md) and the
+A run ends verified only when that evidence holds. The receipt is
+evidence; accepting the change is up to you. See [Receipts](docs/guides/receipts.md) and the
 [receipt format](docs/receipt-v2.md).
 
 ## The checks
+
+On a project with no contracts or design models, a run still runs your
+project's tests on the change, checks whether a new or changed test
+catches it, flags weakened tests and names the changed files no proof
+covers. Tests run only through the commands Tesota finds, such as a
+`package.json` `check` or `test` script, `cargo test` or `go test`; a
+project with none gets no tests. Whether a test catches the change is
+checked only when the current checks pass and Tesota has a trustworthy
+starting commit, and stays unknown when the change touches dependency
+files. Contracts and design models, when you add them, add the checks
+below.
 
 - **Proofs:** TypeScript functions with LemmaScript contracts, proved with
   Dafny. A contract that still proves after the code is changed is too weak,

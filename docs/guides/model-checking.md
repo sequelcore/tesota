@@ -11,6 +11,20 @@ breaks it.
 Write one when the code has steps that can interleave: workers sharing a
 counter, a lock, a retry, two sessions writing one file.
 
+```mermaid
+flowchart LR
+  fn["TypeScript function with //@ contracts"] --> lsc["LemmaScript"] --> dafny["Dafny"] --> proved{"Proved or not"}
+  tla["TLA+ design model"] --> tlc["TLC"]
+  qnt["Quint design model"] -- "translated by Apalache" --> tlc
+  tlc --> states{"States explored: invariants hold, or a counterexample"}
+  proved --> receipt["Receipt"]
+  states --> receipt
+  code["Code named in covers"] -- "changed: checked again" --> tlc
+  code -- "changed without the design model" --> stale["Possibly stale"] --> receipt
+```
+
+A proof checks a function against its contract; a design model checks the design its header says the code follows.
+
 ## An example: two workers and a counter
 
 Two workers each read a stored count and write it back plus one. With a
