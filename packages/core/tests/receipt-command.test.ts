@@ -69,6 +69,17 @@ function provedReceipt(base: string, changed: Receipt["changed"] = []): Receipt 
   uncovered: [{ path: "src/rule.ts", lines: [[4, 6]] }] };
 }
 
+/** `provedReceipt` with every changed line under a contract, so it stands verified. */
+function verifiedReceipt(base: string, changed: Receipt["changed"] = []): Receipt {
+  return { ...provedReceipt(base, changed), uncovered: [] };
+}
+
+/** A session store holding one session whose branch settled with `receipt`. */
+function holding(receipt: unknown): SessionStore {
+  return { list: () => Promise.resolve([{ path: "one", modified: new Date() }]),
+    open: () => ({ getSessionId: () => "id", getBranch: () => [{ type: "custom_message", customType: "tesota-receipt", details: receipt }] }) };
+}
+
 /** A scripted model giving `replies`, for a session. */
 function scripted(replies: readonly Parameters<typeof scriptedReply>[0][]) {
   const faux = fauxProvider();
@@ -125,18 +136,23 @@ it("writes the last receipt for a pull request as Markdown and as an in-toto Sta
   git(root, "commit", "-qm", "the change");
   const commit = git(root, "rev-parse", "HEAD");
   const changed = [{ path: "notes.md", blob: git(root, "hash-object", "notes.md") }];
-  const sessionId = await session(root, [{ ...emptyReceipt, base }, provedReceipt(base, changed)]);
+  const incomplete = await session(root, [{ ...emptyReceipt, base }, provedReceipt(base, changed)]);
   const markdown = tesota(root);
   expect(markdown.stderr).toBe("");
   expect(markdown.status).toBe(0);
   expect(markdown.stdout).toContain(`Commit \`${commit.slice(0, 12)}\`, changes from \`${base.slice(0, 12)}\`; Tesota 0.1.0, ` +
-    `model \`provider/model\`; session \`${sessionId}\``);
+    `model \`provider/model\`; session \`${incomplete}\``);
   expect(markdown.stdout).toContain("```text\nTesota receipt\nNo review flags · 1 verification limit\nCheck evidence, not your acceptance.\n");
   expect(markdown.stdout).toContain("\nDetails\n  proved        src/rule.ts\n");
   expect(markdown.stdout).toContain("  not verified  src/rule.ts lines 4-6: outside the contracts that proved");
   expect(markdown.stdout).not.toContain("Not this commit's content");
   expect(markdown.stdout).not.toContain("Changed after the receipt");
   expect(markdown.stdout).toContain("This is check evidence, not a reviewer's acceptance.");
+  // An incomplete receipt has no truthful process result, so it is not written as a Statement.
+  const refused = tesota(root, "--json");
+  expect(refused.status).toBe(1);
+  expect(refused.stdout).toBe("");
+  const sessionId = await session(root, [verifiedReceipt(base, changed)]);
   const json = tesota(root, "--json");
   expect(json.status).toBe(0);
   const statement = JSON.parse(json.stdout) as Record<string, unknown>;
@@ -148,7 +164,7 @@ it("writes the last receipt for a pull request as Markdown and as an in-toto Sta
       providers: [{ harness: { name: "tesota", version: "0.1.0" }, languageModels: [{ inferenceProvider: "provider/model" }] }],
       traceId: sessionId,
       custom: { baseCommit: { uri: `git+https://github.com/example/project@${base}`, digest: { gitCommit: base } },
-        receipt: provedReceipt(base, changed), stale: [], changedAfter: [] },
+        receipt: verifiedReceipt(base, changed), stale: [], changedAfter: [] },
       result: "COMPLETED",
       owner: "operator@example.com",
       startTimestamp: emptyReceipt.startedAt,
@@ -193,14 +209,126 @@ it("lists the files the commit changed after the receipt, and not an uncommitted
 
 it("says which evidence the commit no longer holds, committed or not", async () => {
   const root = repository();
-  await session(root, [provedReceipt(git(root, "rev-parse", "HEAD"))]);
+  await session(root, [verifiedReceipt(git(root, "rev-parse", "HEAD"))]);
   writeFileSync(join(root, "src", "rule.ts"), `${rule}// edited\n`);
   const uncommitted = tesota(root);
   expect(uncommitted.stdout).toContain("**Not this commit's content:** what these checked has changed since they ran: `src/rule.ts`.");
   git(root, "add", "-A");
   git(root, "commit", "-qm", "edited after the proof");
-  expect(JSON.parse(tesota(root, "--json").stdout)).toMatchObject({ predicate: { custom: { stale: ["src/rule.ts"] } } });
+  // A Statement is written only when the commit holds exactly what the checks saw.
+  const refused = tesota(root, "--json");
+  expect(refused.status).toBe(1);
+  expect(refused.stdout).toBe("");
+  expect(refused.stderr).toContain("what these checked changed after they ran: src/rule.ts.");
+  expect(refused.stderr).toContain("Run the request again");
 }, 120_000);
+
+it("refuses to export a verified receipt whose commit holds files changed after the run, or when Git can't tell", async () => {
+  const root = repository();
+  const base = git(root, "rev-parse", "HEAD");
+  const errors: string[] = [];
+  const out: string[] = [];
+  const write = { out: (text: string) => { out.push(text); }, error: (text: string) => { errors.push(text); } };
+  expect(await receiptCommand(["--json"], root, holding(verifiedReceipt(base)), write)).toBe(0);
+  writeFileSync(join(root, "extra.md"), "# Added after\n");
+  git(root, "add", "-A");
+  git(root, "commit", "-qm", "more after the run");
+  out.length = 0;
+  expect(await receiptCommand(["--json"], root, holding(verifiedReceipt(base)), write)).toBe(1);
+  expect(out).toEqual([]);
+  expect(errors.pop()).toContain("These files changed after the run: extra.md.");
+  expect(await receiptCommand(["--json"], root, holding(verifiedReceipt("f".repeat(40))), write)).toBe(1);
+  expect(errors.pop()).toContain("Git could not tell which files this commit changed after the run");
+  // The Markdown still says so, as it did.
+  expect(await receiptCommand([], root, holding(verifiedReceipt(base)), write)).toBe(0);
+  expect(out.pop()).toContain("**Changed after the receipt:**");
+});
+
+it("exports each standing with the result it observed, and refuses one no result states truthfully", async () => {
+  const root = repository();
+  const base = git(root, "rev-parse", "HEAD");
+  const failedProof: Receipt = { ...provedReceipt(base), uncovered: [], unverified: ["src/rule.ts"],
+    proofs: provedReceipt(base).proofs.map((proof) => ({ ...proof, verdict: "no_progress" as const,
+      evidence: { ...proof.evidence, outcome: "failed" as const, output: "1 verified, 1 error" } })) };
+  const notes: Receipt = { ...emptyReceipt, base, changed: [{ path: "notes.md", blob: null }], unverified: ["notes.md"] };
+  const cases: [string, Receipt, string | undefined][] = [
+    ["verified", verifiedReceipt(base), "COMPLETED"],
+    ["unchanged", { ...emptyReceipt, base }, "COMPLETED"],
+    ["failed", failedProof, "FAILED"],
+    ["failed, with an unresolved question", { ...failedProof, unresolvedQuestion: "Which behavior?" }, "FAILED"],
+    ["incomplete", provedReceipt(base), undefined],
+    ["incomplete, with an unresolved question", { ...verifiedReceipt(base), unresolvedQuestion: "Which behavior?" }, undefined],
+    ["unverified", notes, undefined],
+  ];
+  for (const [standing, receipt, result] of cases) {
+    const out: string[] = [];
+    const errors: string[] = [];
+    const write = { out: (text: string) => { out.push(text); }, error: (text: string) => { errors.push(text); } };
+    expect(await receiptCommand(["--json"], root, holding(receipt), write), standing).toBe(result === undefined ? 1 : 0);
+    if (result === undefined) {
+      expect(out, standing).toEqual([]);
+      expect(errors.join(""), standing).toContain(`stands ${standing.split(",")[0]}`);
+      expect(errors.join(""), standing).toContain("Run tesota receipt without --json");
+    } else {
+      expect(errors, standing).toEqual([]);
+      expect(JSON.parse(out.join("")), standing).toMatchObject({ predicate: { result } });
+    }
+    // The Markdown says where the receipt stands in its own words, whatever it is.
+    expect(await receiptCommand([], root, holding(receipt), write), standing).toBe(0);
+  }
+});
+
+it("never exports FAILED for a design model that never ran, as one whose header names no invariant", async () => {
+  const root = repository();
+  const spec = "---- MODULE Rule ----\n====\n";
+  mkdirSync(join(root, "models"));
+  writeFileSync(join(root, "models", "Rule.tla"), spec);
+  git(root, "add", "-A");
+  git(root, "commit", "-qm", "model");
+  const base = git(root, "rev-parse", "HEAD");
+  // As checkModel records a header it refuses before TLC starts: `malformed`, with an outcome of `failed` the gate sends back.
+  const refused = { path: "models/Rule.tla", language: "tla", header: { covers: [{ path: "src/rule.ts", names: [] }], invariants: [],
+    atomic: [], omits: [], faults: [] }, problems: ["its tesota-model header names no invariant"], run: "malformed", states: 0, faults: [],
+    staleness: "current", stale: [], writtenWithCode: false, link: "no_replay", evidence: { verifier: "tlc", claim: "", limits: "",
+      outcome: "failed", output: "its tesota-model header names no invariant", durationMs: 0, files: ["models/Rule.tla", "src/rule.ts"],
+      contentHash: contentHash([{ path: "models/Rule.tla", content: spec }, { path: "src/rule.ts", content: rule }]) } };
+  for (const verdict of ["send_back", "no_progress"] as const) {
+    const receipt = { ...verifiedReceipt(base), models: [{ ...refused, verdict }] } as Receipt;
+    // Its evidence is current, so only the standing decides the export.
+    expect(await subjectOf(root, receipt, "id")).toMatchObject({ stale: [], changedAfter: [] });
+    const out: string[] = [];
+    const errors: string[] = [];
+    const write = { out: (text: string) => { out.push(text); }, error: (text: string) => { errors.push(text); } };
+    expect(await receiptCommand(["--json"], root, holding(receipt), write), verdict).toBe(1);
+    expect(out, verdict).toEqual([]);
+    expect(errors.join(""), verdict).toContain("stands incomplete");
+    expect(await receiptCommand(["--json"], root, holding({ ...receipt, proofs: [] }), write), verdict).toBe(1);
+    expect(errors.pop(), verdict).toContain("stands unverified");
+  }
+});
+
+it("reports a design model stale when a file it covers changed after the run", async () => {
+  const root = repository();
+  const spec = "---- MODULE Rule ----\n====\n";
+  mkdirSync(join(root, "models"));
+  writeFileSync(join(root, "models", "Rule.tla"), spec);
+  git(root, "add", "-A");
+  git(root, "commit", "-qm", "model");
+  const base = git(root, "rev-parse", "HEAD");
+  const files = ["models/Rule.tla", "src/rule.ts"];
+  const model = { path: "models/Rule.tla", language: "tla", header: { covers: [{ path: "src/rule.ts", names: [] }], invariants: ["Safe"],
+    atomic: [], omits: [], faults: [] }, problems: [], run: "passed", states: 9, faults: [], staleness: "current", stale: [],
+    writtenWithCode: false, link: "no_replay", verdict: "proved", evidence: { verifier: "tlc", claim: "", limits: "", outcome: "passed",
+      output: "", durationMs: 1, files, contentHash: contentHash([{ path: "models/Rule.tla", content: spec }, { path: "src/rule.ts", content: rule }]) } };
+  const receipt = { ...verifiedReceipt(base), models: [model] } as Receipt;
+  expect(await subjectOf(root, receipt, "id")).toMatchObject({ stale: [] });
+  writeFileSync(join(root, "src", "rule.ts"), `${rule}// edited\n`);
+  // Dirty in the checkout, and then committed.
+  expect(await subjectOf(root, receipt, "id")).toMatchObject({ stale: ["src/rule.ts", "models/Rule.tla"] });
+  git(root, "add", "-A");
+  git(root, "commit", "-qm", "edited after the run");
+  expect(await subjectOf(root, receipt, "id")).toMatchObject({ stale: ["src/rule.ts", "models/Rule.tla"] });
+});
 
 it("refuses without a receipt this Tesota reads, or with arguments it does not take", async () => {
   const output: string[] = [];
@@ -219,19 +347,17 @@ it("refuses without a receipt this Tesota reads, or with arguments it does not t
   expect(output.pop()).toContain("not --owner.");
 });
 
-it("refuses a receipt from a run that ended before verification", async () => {
+it("exports a receipt from a run that ended before verification as cancelled", async () => {
+  const root = repository();
   const output: string[] = [];
   const errors: string[] = [];
   const write = { out: (text: string) => { output.push(text); }, error: (text: string) => { errors.push(text); } };
-  const sessions: SessionStore = { list: () => Promise.resolve([{ path: "stopped", modified: new Date() }]),
-    open: () => ({ getSessionId: () => "id", getBranch: () => [{ type: "custom_message", customType: "tesota-receipt",
-      details: { ...emptyReceipt, stopped: "quota exhausted" } }] }) };
-  for (const args of [[], ["--json"]]) {
-    expect(await receiptCommand(args, "here", sessions, write)).toBe(1);
-    expect(errors.pop()).toBe("The last run here ended before Tesota verified it; this Tesota cannot write it " +
-      "for a pull request. Run the request again.\n");
-  }
-  expect(output).toEqual([]);
+  const stopped = holding({ ...emptyReceipt, base: git(root, "rev-parse", "HEAD"), stopped: "quota exhausted" });
+  expect(await receiptCommand(["--json"], root, stopped, write)).toBe(0);
+  expect(errors).toEqual([]);
+  expect(JSON.parse(output.pop() ?? "")).toMatchObject({ predicate: { result: "CANCELLED", custom: { receipt: { stopped: "quota exhausted" } } } });
+  expect(await receiptCommand([], root, stopped, write)).toBe(0);
+  expect(output.pop()).toContain("quota exhausted");
 });
 
 it("reads a repository's HTTPS URL from its origin remote, however it is written", () => {
@@ -260,7 +386,7 @@ it("writes, in a repository of a folder of repositories, the part of that folder
   expect(output.pop()).toContain("The last receipt here covers several repositories.");
 });
 
-it("refuses, in a repository of a folder of repositories, its part of a stopped run's inventory (#599)", async () => {
+it("exports, in a repository of a folder of repositories, its part of a stopped run's inventory only as it stands (#599)", async () => {
   const workspace = folder();
   const root = repository(join(workspace, "api"));
   const base = git(root, "rev-parse", "HEAD");
@@ -268,8 +394,13 @@ it("refuses, in a repository of a folder of repositories, its part of a stopped 
     units: [{ ...emptyReceipt, folder: "api", base, changed: [{ path: "src/rule.ts", blob: null }] }] }]);
   const output: string[] = [];
   const write = { out: (text: string) => { output.push(text); }, error: (text: string) => { output.push(text); } };
-  expect(await receiptCommand([], root, sessionStore, write)).toBe(1);
-  expect(output.pop()).toContain("ended before Tesota verified it");
+  // Its inventory says the run deleted src/rule.ts, which the commit still holds: never a Statement.
+  expect(await receiptCommand(["--json"], root, sessionStore, write)).toBe(1);
+  expect(output.pop()).toContain("These files changed after the run: src/rule.ts.");
+  expect(await receiptCommand([], root, sessionStore, write)).toBe(0);
+  const markdown = output.pop() ?? "";
+  expect(markdown).toContain("the operator stopped the run");
+  expect(markdown).toContain("**Changed after the receipt:**");
 });
 
 it("leaves out a receipt whose run never ended, as when Tesota was killed after recording it", async () => {

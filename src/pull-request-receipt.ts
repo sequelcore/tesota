@@ -1,7 +1,8 @@
 import { basename, dirname } from "node:path";
 import { type Evidence, currentContent } from "./evidence.js";
 import { git, headCommit } from "./git.js";
-import { entryReceipt, isReceipt, type Receipt, type ReceiptEntry, renderReceipt, unitReceipt } from "./receipt.js";
+import { entryReceipt, isReceipt, type Receipt, type ReceiptEntry, receiptStanding, renderReceipt, unitReceipt, unverifiedWhy } from "./receipt.js";
+import { statementResult } from "./verification/verdict-rule.js";
 
 /**
  * The receipt for a pull request (`tesota receipt`): the last receipt a Pi
@@ -52,8 +53,8 @@ export interface Subject {
   readonly owner: string;
   readonly sessionId: string;
   /**
-   * The proofs, by path, and the commands whose checked content the commit
-   * does not hold: changed or uncommitted since they ran.
+   * The proofs and design models, by path, and the commands whose checked
+   * content the commit does not hold: changed or uncommitted since they ran.
    */
   readonly stale: readonly string[];
   /** The files whose content in the commit differs from what the run left (`changedAfter`), or `unreadable`. */
@@ -125,7 +126,8 @@ export async function subjectOf(root: string, receipt: Receipt, sessionId: strin
   const remote = await git(root, ["remote", "get-url", "origin"]);
   const repository = remote === undefined ? undefined : httpsRepository(remote);
   const checked = [...receipt.proofs.map(({ path, evidence }) => ({ name: path, evidence })),
-    ...receipt.tests.map(({ command, evidence }) => ({ name: command, evidence }))];
+    ...receipt.tests.map(({ command, evidence }) => ({ name: command, evidence })),
+    ...(receipt.models ?? []).map(({ path, evidence }) => ({ name: path, evidence }))];
   const stale: string[] = [];
   for (const { name, evidence } of checked) if (!await current(root, evidence)) stale.push(name);
   return { commit, ...repository === undefined ? {} : { repository }, owner, sessionId, stale,
@@ -140,8 +142,12 @@ function commitDescriptor(commit: string, repository: string | undefined): objec
   return { ...repository === undefined ? {} : { uri: `git+${repository}@${commit}` }, digest: { gitCommit: commit } };
 }
 
-/** The receipt as an in-toto Statement about the commit, with the agentic process evidence proposal's predicate fields. */
-export function receiptStatement(receipt: Receipt, subject: Subject, createdAt: string): object {
+/**
+ * The receipt as an in-toto Statement about the commit, with the agentic
+ * process evidence proposal's predicate fields; `result` is the process
+ * result its standing states truthfully (`statementResult`).
+ */
+export function receiptStatement(receipt: Receipt, subject: Subject, createdAt: string, result: "CANCELLED" | "COMPLETED" | "FAILED"): object {
   const models = [...new Set([receipt.model, ...receipt.claimcheck?.status === "judged"
     ? [receipt.claimcheck.restatedBy, receipt.claimcheck.comparedBy] : [],
   ...receipt.openCases?.status === "listed" ? [receipt.openCases.model] : []].filter((model) => model !== undefined))];
@@ -155,7 +161,7 @@ export function receiptStatement(receipt: Receipt, subject: Subject, createdAt: 
       traceId: subject.sessionId,
       custom: { ...receipt.base === null ? {} : { baseCommit: commitDescriptor(receipt.base, subject.repository) },
         receipt, stale: subject.stale, changedAfter: subject.changedAfter },
-      result: "COMPLETED",
+      result,
       owner: subject.owner,
       startTimestamp: receipt.startedAt,
       endTimestamp: receipt.settledAt,
@@ -198,6 +204,46 @@ export function receiptMarkdown(receipt: Receipt, subject: Subject): string {
 }
 
 /**
+ * Why `tesota receipt` cannot write `found` for a pull request, or the
+ * receipt and the result its Statement states (`statementResult`): a
+ * stopped run's is `CANCELLED`. With `json`, a receipt that stands neither
+ * completed nor failed is refused, since no result says so truthfully; its
+ * Markdown states its standing.
+ */
+function refusal(found: unknown, json: boolean): string | { readonly receipt: Receipt; readonly result: ReturnType<typeof statementResult> } {
+  if (isReceipt(found) && found.units !== undefined) {
+    return "The last receipt here covers several repositories. Run tesota receipt in the repository of the pull request.\n";
+  }
+  if (!isReceipt(found) || !found.repository) {
+    return "The last receipt here came from an earlier Tesota, or from a run outside Git; this Tesota cannot write it " +
+      "for a pull request. Run the request again.\n";
+  }
+  const standing = receiptStanding(found);
+  const result = statementResult(found.stopped !== undefined, standing);
+  if (!json || result !== "none") return { receipt: found, result };
+  return `The last receipt here stands ${standing}: ${standing === "unverified" ? unverifiedWhy(found)
+    : "a check could not run, a gap remains, a changed path isn't covered, or something needs your decision"}. ` +
+    "An exported Statement's result says only that the run completed or failed, and neither is true of it, " +
+    "so Tesota writes no Statement for it. Run tesota receipt without --json to read it, gaps and all.\n";
+}
+
+/**
+ * Why a Statement about the commit would claim more than the checks saw:
+ * evidence the commit no longer holds (`stale`), files it changed after the
+ * run (`changedAfter`), or Git unable to tell; nothing when it holds exactly
+ * what they saw.
+ */
+function staleRefusal({ stale, changedAfter }: Subject): string | undefined {
+  const again = " Tesota writes a Statement only when the commit holds exactly what the checks saw. " +
+    "Run the request again on this commit, or run tesota receipt without --json to read the receipt with what changed.\n";
+  if (changedAfter === "unreadable") return `Git could not tell which files this commit changed after the run.${again}`;
+  if (stale.length === 0 && changedAfter.length === 0) return undefined;
+  return "This commit doesn't hold what the run's checks saw:" +
+    `${stale.length === 0 ? "" : ` what these checked changed after they ran: ${stale.join(", ")}.`}` +
+    `${changedAfter.length === 0 ? "" : ` These files changed after the run: ${changedAfter.join(", ")}.`}${again}`;
+}
+
+/**
  * `tesota receipt [--json] [--owner <login or email>]` in `cwd`: writes the
  * last receipt as Markdown, or as the in-toto Statement with `--json`, and
  * returns the exit code.
@@ -222,26 +268,23 @@ export async function receiptCommand(args: readonly string[], cwd: string, sessi
     write.error("No session in this folder settled with a Tesota receipt. Run tesota receipt where the session ran.\n");
     return 1;
   }
-  if (isReceipt(found.receipt) && found.receipt.stopped !== undefined) {
-    write.error("The last run here ended before Tesota verified it; this Tesota cannot write it " +
-      "for a pull request. Run the request again.\n");
+  const refused = refusal(found.receipt, json);
+  if (typeof refused === "string") {
+    write.error(refused);
     return 1;
   }
-  if (isReceipt(found.receipt) && found.receipt.units !== undefined) {
-    write.error("The last receipt here covers several repositories. Run tesota receipt in the repository of the pull request.\n");
-    return 1;
-  }
-  if (!isReceipt(found.receipt) || !found.receipt.repository) {
-    write.error("The last receipt here came from an earlier Tesota, or from a run outside Git; this Tesota cannot write it " +
-      "for a pull request. Run the request again.\n");
-    return 1;
-  }
-  const subject = await subjectOf(cwd, found.receipt, found.sessionId, owner);
+  const { receipt, result } = refused;
+  const subject = await subjectOf(cwd, receipt, found.sessionId, owner);
   if (typeof subject === "string") {
     write.error(`${subject}\n`);
     return 1;
   }
-  write.out(json ? `${JSON.stringify(receiptStatement(found.receipt, subject, new Date().toISOString()), null, 2)}\n`
-    : `${receiptMarkdown(found.receipt, subject)}\n`);
+  const stale = json ? staleRefusal(subject) : undefined;
+  if (stale !== undefined) {
+    write.error(stale);
+    return 1;
+  }
+  write.out(json && result !== "none" ? `${JSON.stringify(receiptStatement(receipt, subject, new Date().toISOString(), result), null, 2)}\n`
+    : `${receiptMarkdown(receipt, subject)}\n`);
   return 0;
 }

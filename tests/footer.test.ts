@@ -85,6 +85,37 @@ it("sums up the receipt, leading with whether anything in it needs the operator"
     .toBe("! receipt · 1 proved · tests pass · contracts strong · weakening not checked");
 });
 
+it("counts a proof that doesn't hold apart from one that checked nothing or couldn't run", () => {
+  const failing = { ...proved, verdict: "send_back", evidence: evidence("failed") } as const;
+  const settledWith = (proof: Receipt["proofs"][number], level: "full" | "glyphs" = "full"): string =>
+    words({ step: "settled", receipt: { ...emptyReceipt, proofs: [proof] } }, level);
+  expect(settledWith(failing)).toContain("1 not proved");
+  expect(settledWith(failing, "glyphs")).toContain("✗1");
+  // Dafny verified nothing, the proof didn't start, or its content changed: a gap, never red.
+  for (const gap of [{ ...proved, verdict: "send_back", evidence: evidence("vacuous") }, { ...proved, verdict: "no_progress", evidence: evidence("vacuous") },
+    { ...proved, verdict: "operator", evidence: evidence("not_started") },
+    { ...proved, verdict: "operator", evidence: { ...evidence("passed"), invalidated: "content_changed" } }] as const) {
+    expect(settledWith(gap), gap.evidence.outcome).not.toContain("not proved");
+    expect(settledWith(gap, "glyphs"), gap.evidence.outcome).not.toContain("✗");
+    expect(settledWith(gap), gap.evidence.outcome).toContain("1 not checked");
+  }
+});
+it("says tests fail only for a command that ran and failed, and counts one that didn't run or is stale as not checked", () => {
+  const settledWith = (command: Receipt["tests"][number], level: "full" | "glyphs" = "full"): string =>
+    words({ step: "settled", receipt: { ...emptyReceipt, tests: [command] } }, level);
+  const failing = { ...passing, verdict: "send_back", evidence: evidence("failed") } as const;
+  expect(settledWith(failing)).toContain("tests fail");
+  expect(settledWith(failing, "glyphs")).toContain("tests ✗");
+  for (const gap of [{ ...passing, verdict: "operator", evidence: evidence("not_started") }, { ...passing, verdict: "operator", evidence: evidence("timed_out") },
+    { ...passing, verdict: "operator", evidence: { ...evidence("passed"), invalidated: "content_changed" } }] as const) {
+    expect(settledWith(gap), gap.evidence.outcome).not.toContain("tests fail");
+    expect(settledWith(gap, "glyphs"), gap.evidence.outcome).not.toContain("✗");
+    expect(settledWith(gap), gap.evidence.outcome).toContain("1 not checked");
+  }
+  // A failure beside a gap still reads as failing.
+  expect(words({ step: "settled", receipt: { ...emptyReceipt, tests: [failing, { ...passing, verdict: "operator", evidence: evidence("not_started") }] } }))
+    .toContain("tests fail");
+});
 it("names the model being checked, then sums up the models: checked, still failing, and possibly stale", () => {
   expect(words({ step: "checking", path: "models/Stock.tla", startedAt: 0, tally: { proved: 0, notProved: 0, tests: "pass" } }))
     .toBe("◐ checking models… · 0s · tests pass");
@@ -92,11 +123,20 @@ it("names the model being checked, then sums up the models: checked, still faili
     header: { covers: [{ path: "src/stock.mjs", names: [] }], invariants: ["NeverOversold"], atomic: ["each await"], omits: ["failures"], faults: [] },
     evidence: { ...evidence("passed"), verifier: "tlc" }, faults: [], staleness: "possibly_stale", stale: ["src/stock.mjs"],
     writtenWithCode: false, link: "no_replay", verdict: "proved" };
+  // Still failing: TLC ran and found a counterexample, as a model whose check went back records it.
+  const violated: typeof model = { ...model, run: "violated", evidence: { ...evidence("failed"), verifier: "tlc" }, staleness: "current" };
   expect(words({ step: "settled", receipt: { ...emptyReceipt, models: [model] } })).toBe("○ receipt · 1 model checked · 1 model possibly stale");
-  expect(words({ step: "settled", receipt: { ...emptyReceipt, models: [{ ...model, verdict: "no_progress", staleness: "current" }] } }))
+  expect(words({ step: "settled", receipt: { ...emptyReceipt, models: [{ ...violated, verdict: "no_progress" }] } }))
     .toBe("! receipt · 1 model fails");
   expect(words({ step: "settled", receipt: { ...emptyReceipt, unresolvedQuestion: "Which option?",
-    models: [{ ...model, verdict: "send_back", staleness: "current" }] } })).toContain("1 model fails");
+    models: [{ ...violated, verdict: "send_back" }] } })).toContain("1 model fails");
+  // A model TLC could not read went back to the agent, but nothing ran: a gap, never a failure.
+  const malformed: typeof model = { ...model, run: "malformed", states: 0, evidence: { ...evidence("failed"), verifier: "tlc" }, staleness: "current" };
+  for (const verdict of ["send_back", "no_progress"] as const) {
+    const shown = words({ step: "settled", receipt: { ...emptyReceipt, models: [{ ...malformed, verdict }] } });
+    expect(shown).not.toContain("model fails");
+    expect(shown).toContain("1 not checked");
+  }
   expect(words({ step: "settled", receipt: { ...emptyReceipt, models: [{ ...model, verdict: "operator", staleness: "current" }] } }))
     .toBe("○ receipt · 1 not checked");
 });

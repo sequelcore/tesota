@@ -3,7 +3,7 @@ import { sep } from "node:path";
 import { type ContextUsage, type FooterData, QUESTION_STATUS, type Theme, type ThemeColor } from "./contract.js";
 import { type Component, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { GateProgress, GateStatus, Tally } from "./gate.js";
-import { addedAssumptions, allEvidence, coveredCount, type Finding, type Receipt, receiptDecisions, receiptFindings, type ReceiptStanding, receiptStanding,
+import { addedAssumptions, allEvidence, coveredCount, evidenceEnd, type Finding, modelEnd, type Receipt, receiptDecisions, receiptFindings, type ReceiptStanding, receiptStanding,
   receiptTone, type UnitEvidence, unverifiedWhy, verified } from "./receipt.js";
 import { elapsedTime, type EvidenceLevel, footerLayout } from "./verification/footer-rule.js";
 
@@ -59,7 +59,8 @@ function lineCount(uncovered: Receipt["uncovered"]): number {
 /** The models' parts of the receipt's row: how many were model-checked, how many still fail, and how many may be stale. */
 function modelParts(models: NonNullable<Receipt["models"]>): EvidencePart[] {
   const checked = models.filter(({ verdict }) => verdict === "proved").length;
-  const fails = models.filter(({ verdict }) => verdict === "no_progress" || verdict === "send_back").length;
+  // Only an observed violation fails (`modelEnd`); a model that couldn't be checked is one of the gaps counted as not checked.
+  const fails = models.filter((model) => modelEnd(model) === "failed").length;
   const stale = models.filter(({ staleness }) => staleness !== "current").length;
   return [...checked > 0 ? [part(plural(checked, "model checked", "models checked"), `${checked} modeled`, `model ${checked}`, "success")] : [],
     ...fails > 0 ? [part(plural(fails, "model fails", "models fail"), `${fails} model ✗`, `model ✗${fails}`, "error")] : [],
@@ -93,8 +94,11 @@ function receiptParts(settled: Receipt): EvidencePart[] {
   const findings = receiptFindings(settled);
   const unchecked = uncheckedGaps(findings, receipt, coveredCount(settled));
   const listed = [
-    ...tallyParts({ proved, notProved: receipt.proofs.length - proved,
-      ...receipt.tests.length === 0 ? {} : { tests: passed ? "pass" : "fail" }, weak }, assumed),
+    // Only a proof that ran and doesn't hold is not proved (`evidenceEnd`); one that couldn't run, checked nothing or is stale is counted as not checked.
+    ...tallyParts({ proved, notProved: receipt.proofs.filter(({ evidence }) => evidenceEnd("proof", evidence) === "failed").length,
+      // Only a command that ran and failed reads as failing (`evidenceEnd`); one that didn't run or is stale is counted as not checked.
+      ...receipt.tests.some(({ evidence }) => evidenceEnd("command", evidence) === "failed") ? { tests: "fail" }
+        : receipt.tests.length > 0 && passed ? { tests: "pass" } : {}, weak }, assumed),
     // Narrower rows keep what needs the operator, so they leave out contracts that held.
     // Strength needs a change the proof caught, as the receipt in the conversation says.
     ...receipt.contracts.length > 0 && receipt.contracts.every(({ mutation }) => mutation.survived.length === 0 && mutation.rejected > 0)

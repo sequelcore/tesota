@@ -1,3 +1,6 @@
+import type { ModelRun } from "./model-rule.js";
+import type { ProofOutcome } from "./proof-outcome-rule.js";
+
 /**
  * What one finding of a receipt asks of the operator: a decision before
  * accepting the change (`decide`), such as a proof or command that still
@@ -81,6 +84,64 @@ export function methodStanding(held: number, partly: number, failed: number, run
 }
 
 /**
+ * How one check of a receipt ended, for the standing (`runStanding`) and the
+ * findings alike: `failed` only when it ran and showed the change wrong;
+ * `passed` when it held on current content; otherwise a `gap`.
+ *
+ * A failing test or a proof that doesn't hold (`outcome` `failed`) fails. A
+ * design model fails only on an observed violation: a counterexample,
+ * deadlock, liveness or assertion failure (`run` `violated`), or a planted
+ * fault its check didn't catch (`faultPasses`), which shows the model can't
+ * tell the fault from the code. Everything else is a gap: evidence the
+ * settled content no longer holds (`stale`); a check that couldn't run, ran
+ * past its limit or was stopped; one that checked nothing (a proof Dafny
+ * verified nothing of, a model with no reachable state); and a model TLC or
+ * Quint couldn't read, including one whose header Tesota refused before TLC
+ * started, or with only broken faults or none. `run` is a model's own run,
+ * and is not read for a proof or a command.
+ */
+//@ ensures \result === "failed" <==> !stale && ((kind === "model" && (run === "violated" || (run === "passed" && faultPasses))) || (kind !== "model" && outcome === "failed"))
+//@ ensures \result === "passed" <==> !stale && outcome === "passed" && (kind !== "model" || (run === "passed" && !faultPasses))
+//@ ensures \result === "passed" || \result === "failed" || \result === "gap"
+//@ ensures stale ==> \result === "gap"
+//@ ensures kind !== "model" && (outcome === "vacuous" || outcome === "not_started" || outcome === "timed_out" || outcome === "cancelled") ==> \result === "gap"
+//@ ensures kind === "model" && (run === "malformed" || run === "vacuous" || run === "timed_out" || run === "cancelled" || run === "not_started") ==> \result === "gap"
+export function checkEnd(kind: "proof" | "command" | "model", stale: boolean, outcome: ProofOutcome, run: ModelRun,
+  faultPasses: boolean): "passed" | "failed" | "gap" {
+  if (stale) return "gap";
+  if (kind === "model") {
+    if (run === "violated" || (run === "passed" && faultPasses)) return "failed";
+    return outcome === "passed" && run === "passed" ? "passed" : "gap";
+  }
+  if (outcome === "failed") return "failed";
+  return outcome === "passed" ? "passed" : "gap";
+}
+
+/**
+ * The process result an exported receipt states (`tesota receipt --json`),
+ * from the values the agentic process evidence proposal defines for
+ * `predicate.result`: `CANCELLED` ("stopped before completion") when the
+ * run stopped before Tesota verified it; otherwise `COMPLETED` ("finished
+ * successfully") only when the run stands `verified` or `unchanged`;
+ * `FAILED` ("ended unsuccessfully") when a check ran and showed the change
+ * wrong; and `none` for `incomplete` and `unverified`, which no value states
+ * truthfully and which the export refuses, so it never states a success it
+ * didn't observe.
+ */
+//@ requires standing === "verified" || standing === "incomplete" || standing === "failed" || standing === "unverified" || standing === "unchanged"
+//@ ensures \result === "CANCELLED" <==> stopped
+//@ ensures \result === "COMPLETED" <==> (!stopped && (standing === "verified" || standing === "unchanged"))
+//@ ensures \result === "FAILED" <==> (!stopped && standing === "failed")
+//@ ensures \result === "none" <==> (!stopped && (standing === "incomplete" || standing === "unverified"))
+export function statementResult(stopped: boolean, standing: "verified" | "incomplete" | "failed" | "unverified" | "unchanged"):
+  "CANCELLED" | "COMPLETED" | "FAILED" | "none" {
+  if (stopped) return "CANCELLED";
+  if (standing === "verified" || standing === "unchanged") return "COMPLETED";
+  if (standing === "failed") return "FAILED";
+  return "none";
+}
+
+/**
  * Whether one changed path is covered (#668), in the standing and the
  * receipt's summary alike: it proved, or it was tested and exercised, as
  * `runStanding` reads each of them from the receipt.
@@ -93,7 +154,12 @@ export function pathCovered(proved: boolean, tested: boolean, exercised: boolean
 /**
  * Where a run's verification stands (#668), one meaning on every surface:
  * `failed` when it stopped or something needs the operator (`decisions`) and
- * a check failed, `incomplete` when either holds without a failed check;
+ * a check failed, `incomplete` when either holds without a failed check.
+ * A check failed only when it ran and showed the change wrong: a failing
+ * test, a proof that doesn't hold, a model that breaks a rule, alike for
+ * proofs, commands and models (`checkEnd`). One that could
+ * not run, ran past its limit, was stopped or whose evidence is stale is a
+ * gap (`gaps`), never `failed`;
  * otherwise `unchanged` when nothing changed, so there is nothing to claim;
  * `unverified` when something changed and no piece of evidence (a test,
  * proof or model check that ran) passed; `incomplete` when one did but a gap

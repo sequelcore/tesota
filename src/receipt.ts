@@ -13,7 +13,7 @@ import type { Weakening } from "./verification-changes.js";
 import { attributionResolved, type StartState, type UnmeasuredPath } from "./request-fingerprint.js";
 import type { GateVerdict } from "./verification/gate-rule.js";
 import { clock } from "./operations.js";
-import { decisions, methodStanding, partlyHolds, pathCovered, runStanding, type Standing, verdictTone } from "./verification/verdict-rule.js";
+import { checkEnd, decisions, methodStanding, partlyHolds, pathCovered, runStanding, type Standing, verdictTone } from "./verification/verdict-rule.js";
 
 /**
  * What a run that changed files leaves the operator when it settles: each
@@ -300,13 +300,26 @@ function why(evidence: Evidence): string {
 /** A proof that holds only given what the change trusts without proving it (`addedAssumptions`), in plain words (#399). */
 const trusting = (assumed: number): string => `trusting ${plural(assumed, "unproved part", "unproved parts")}`;
 
+/**
+ * What a proof that holds covers: LemmaScript models `number` as an exact
+ * integer or real, never an IEEE 754 double, and leaves out `await` and
+ * other features it does not support (LemmaScript's SPEC.md, "Not Yet
+ * Supported").
+ */
+const proofScope = "Proved in LemmaScript's model: numbers are exact integers or reals, not floating-point, so rounding, NaN and Infinity " +
+  "aren't covered; nor are await and other unsupported features";
+
 function line(path: string, verdict: GateVerdict, evidence: Evidence, assumed: number): string {
   if (evidence.invalidated === "content_changed") return `  stale         ${path}: ${staleEvidenceWords}`;
   if (verdict === "proved") return `  proved        ${path}${assumed === 0 ? "" : `, ${trusting(assumed)} the change added`}`;
   if (verdict === "operator") return `  NOT proved    ${path}: the proof ${why(evidence)}`;
   const what = evidence.outcome === "vacuous" ? "Dafny verified nothing" : "an obligation fails";
-  return `  NOT proved    ${path}: ${what}${verdict === "send_back" ? "; generation ended before repair" : ", repeating a failure already sent back"}`;
+  return `  NOT proved    ${path}: ${what}${verdict === "send_back" ? "; generation ended before repair" : again(evidenceEnd("proof", evidence))}`;
 }
+
+/** How a check that went back and came back unchanged ended: failing again only when it ran and failed (`checkEnd`), otherwise still a gap. */
+const again = (end: ReturnType<typeof checkEnd>): string =>
+  end === "failed" ? ", repeating a failure already sent back" : ", still could not be checked after being sent back";
 
 function testLine({ command, verdict, evidence, failingTests }: Receipt["tests"][number]): string {
   if (evidence.invalidated === "content_changed") return `  stale         ${command}: ${staleEvidenceWords}`;
@@ -594,16 +607,29 @@ export function contractFinding({ path, name, mutation }: ContractStrength): Fin
     more: [...mutation.survived.map(({ line: at, before, after }) => `line ${at}: ${before} → ${after}`), `Of ${tried} changes tried: ${tally}.`] };
 }
 
-/** A command's run as a finding: passed, still failing after it went back, or the operator's because it did not run. */
+/**
+ * How a proof or command ended (`checkEnd`, proved), from its evidence:
+ * `failed` only when it ran and showed the change wrong, a gap when it
+ * couldn't run, checked nothing or is stale. A model's run is not read.
+ */
+export const evidenceEnd = (kind: "proof" | "command", evidence: Evidence): ReturnType<typeof checkEnd> =>
+  checkEnd(kind, evidence.invalidated !== undefined, evidence.outcome, "not_started", false);
+
+/** How a design model ended (`checkEnd`): `failed` only on an observed violation or a planted fault it didn't catch. */
+export const modelEnd = ({ evidence, run, faults }: Pick<ModelResult, "evidence" | "run" | "faults">): ReturnType<typeof checkEnd> =>
+  checkEnd("model", evidence.invalidated !== undefined, evidence.outcome, run, faults.some(({ verdict }) => verdict === "passes"));
+
+/** A command's run as a finding: passed, still failing after it went back, or a gap because it did not run or is stale. */
 export function commandFinding({ command, verdict, evidence, failingTests }: Pick<Receipt["tests"][number],
   "command" | "verdict" | "evidence" | "failingTests">): Finding {
   const more = [`Ran in ${seconds(evidence.durationMs)} · sha256 ${evidence.contentHash.slice(0, 12)}`];
   if (evidence.invalidated === "content_changed") {
-    return { standing: "decide", check: "tests", failed: true, label: "Tests stale", subject: command, detail: staleEvidenceWords, more };
+    return { standing: "gap", check: "tests", label: "Tests stale", subject: command, detail: staleEvidenceWords, more };
   }
-  if (verdict === "proved") return { standing: "holds", check: "tests", label: "Tests pass", subject: command, detail: "", more };
-  if (verdict === "operator") {
-    return { standing: "decide", check: "tests", failed: true, label: "Tests did not run", subject: command, detail: `it ${why(evidence)}`, more };
+  const end = evidenceEnd("command", evidence);
+  if (end === "passed" && verdict === "proved") return { standing: "holds", check: "tests", label: "Tests pass", subject: command, detail: "", more };
+  if (end !== "failed") {
+    return { standing: "gap", check: "tests", label: "Tests did not run", subject: command, detail: `it ${why(evidence)}`, more };
   }
   return { standing: "decide", check: "tests", failed: true, label: "Tests fail", subject: command,
     detail: failingTests === undefined || failingTests.length === 0 ? "the command fails"
@@ -669,14 +695,18 @@ export function modelFinding(model: ModelResult): Finding {
       detail: `${modelHolds(model)}; ${linkWords[model.link]}`, more };
   }
   if (verdict === "operator") return { standing: "gap", check: "model", label: "Model not checked", subject: path, detail: modelWhy(model), more };
+  // Only an observed violation or a planted fault it didn't catch fails (`modelEnd`); a model that couldn't be checked is a gap.
+  if (modelEnd(model) !== "failed") {
+    return { standing: "gap", check: "model", label: model.run === "passed" ? "Model too weak" : "Model not checkable", subject: path,
+      detail: model.run === "passed" ? failingFaults(model) : modelWhy(model), more };
+  }
   if (counterexample !== undefined) {
     return { standing: "decide", check: "model", failed: true, label: "Model fails", subject: path, detail: counterexample.violation,
       more: [...counterexampleSteps(counterexample), ...more] };
   }
-  if (model.run === "passed") {
-    return { standing: "decide", check: "model", failed: true, label: "Model too weak", subject: path, detail: failingFaults(model), more };
-  }
-  return { standing: "decide", check: "model", failed: true, label: "Model not checkable", subject: path, detail: modelWhy(model), more };
+  return model.run === "passed"
+    ? { standing: "decide", check: "model", failed: true, label: "Model too weak", subject: path, detail: failingFaults(model), more }
+    : { standing: "decide", check: "model", failed: true, label: "Model fails", subject: path, detail: modelWhy(model), more };
 }
 
 /**
@@ -711,8 +741,9 @@ function modelLines(model: ModelResult): string[] {
     return [`  model fails   ${path}: ${counterexample.violation}${verdict === "send_back" ? unrepaired : ", repeating a counterexample already sent back"}`,
       ...counterexampleSteps(counterexample).map((step) => `                ${step}`), ...abstraction, ...stale];
   }
-  return [model.run === "passed" ? `  weak model    ${path}: ${failingFaults(model)}${verdict === "send_back" ? unrepaired : ", after they went back"}`
-    : `  NOT checked   ${path}: ${modelWhy(model)}${verdict === "send_back" ? unrepaired : ", repeating a failure already sent back"}`, ...stale];
+  const repeated = modelEnd(model) === "failed" ? undefined : again("gap");
+  return [model.run === "passed" ? `  weak model    ${path}: ${failingFaults(model)}${verdict === "send_back" ? unrepaired : repeated ?? ", after they went back"}`
+    : `  NOT checked   ${path}: ${modelWhy(model)}${verdict === "send_back" ? unrepaired : repeated ?? again("failed")}`, ...stale];
 }
 
 /**
@@ -728,8 +759,13 @@ export function proofFinding({ path, verdict, evidence }: Pick<Receipt["proofs"]
       subject: path, detail: assumed === 0 ? summary.words : "its contracts hold only if what the change trusts is right",
       more: [checked(evidence)] };
   }
-  return { standing: "decide", check: "proof", failed: true, label: evidence.invalidated === "content_changed" ? "Proof stale" : verdict === "operator" ? "Proof did not run" : "Proof fails",
-    subject: path, detail: summary.words, more: [...summary.at === undefined ? [] : [`at ${summary.at}`], checked(evidence)] };
+  const more = [...summary.at === undefined ? [] : [`at ${summary.at}`], checked(evidence)];
+  // A proof that could not run, verified nothing or is stale shows nothing about the change: a gap (`evidenceEnd`).
+  if (evidenceEnd("proof", evidence) !== "failed") {
+    return { standing: "gap", check: "proof", label: evidence.invalidated === "content_changed" ? "Proof stale"
+      : evidence.outcome === "vacuous" ? "Proof proved nothing" : "Proof did not run", subject: path, detail: summary.words, more };
+  }
+  return { standing: "decide", check: "proof", failed: true, label: "Proof fails", subject: path, detail: summary.words, more };
 }
 
 const judgmentWords: Readonly<Record<NonNullable<ContractStrength["judgment"]>["verdict"], string>> = {
@@ -1004,7 +1040,8 @@ export function coveredCount(receipt: Receipt): number {
  * verified unit's changed paths, read per unit, never guessing for verified;
  * whether anything changed, from those paths, an unreadable inventory or a
  * change of comments alone; the proofs, commands and models that passed on
- * current content; whether one failed; its other gaps, an unreadable
+ * current content; whether one ran and showed the change wrong
+ * (`checkEnd`), one that couldn't be checked or is stale being a gap; its other gaps, an unreadable
  * inventory among them; what needs the operator; and whether it stopped.
  */
 export function receiptStanding(receipt: Receipt): ReceiptStanding {
@@ -1012,7 +1049,8 @@ export function receiptStanding(receipt: Receipt): ReceiptStanding {
   const evidence = allEvidence(receipt);
   const { proofs, tests, models = [] } = evidence;
   const passed = [...proofs, ...tests, ...models].filter(({ verdict, evidence: run }) => verdict === "proved" && run.invalidated === undefined).length;
-  const failed = [...proofs, ...tests].some(({ verdict }) => verdict !== "proved") || models.some(({ verdict }) => verdict === "no_progress" || verdict === "send_back");
+  const failed = [...proofs.map(({ evidence: run }) => evidenceEnd("proof", run)), ...tests.map(({ evidence: run }) => evidenceEnd("command", run)),
+    ...models.map(modelEnd)].includes("failed");
   const units = receiptUnits(receipt).filter(verified).map(fromFolder);
   const paths = units.flatMap(changedPaths);
   // An inventory Git couldn't read is a gap: nothing shows every path it changed was covered.
@@ -1076,11 +1114,11 @@ function methodRow(method: string, runs: readonly { readonly ran: Ran; readonly 
     text: runs.map(({ text }) => text).join("; ") };
 }
 
-/** How a proof, command or model that did not hold ended, in a word or two. */
-function notHeld(verdict: GateVerdict, evidence: Evidence): { readonly ran: Ran; readonly words: string } {
+/** How a proof, command or model that did not hold ended (`checkEnd`), in a word or two: only a failure is ✗. */
+function notHeld(end: ReturnType<typeof checkEnd>, evidence: Evidence): { readonly ran: Ran; readonly words: string } {
   if (evidence.invalidated === "content_changed") return { ran: "none", words: "stale" };
-  return verdict === "operator" ? { ran: "none", words: "did not run" }
-    : { ran: "failed", words: evidence.outcome === "vacuous" ? "verified nothing" : "fails" };
+  if (end === "failed") return { ran: "failed", words: "fails" };
+  return { ran: "none", words: evidence.outcome === "vacuous" ? "verified nothing" : "did not run" };
 }
 
 /** A count of `of` in which `held` hold, said as all of them or as how many of them. */
@@ -1091,11 +1129,11 @@ function methodRows(evidence: Pick<UnitEvidence, "proofs" | "tests" | "models" |
   const proofs = evidence.proofs.map(({ path, verdict, evidence: run }) => {
     const assumed = addedAssumptions(run.files, evidence.weakened);
     const ended = verdict === "proved" ? { ran: assumed === 0 ? "holds" as const : "partly" as const,
-      words: assumed === 0 ? "" : trusting(assumed) } : notHeld(verdict, run);
+      words: assumed === 0 ? "" : trusting(assumed) } : notHeld(evidenceEnd("proof", run), run);
     return { ran: ended.ran, text: [path, ended.words, clock(run.durationMs)].filter((part) => part !== "").join(" · ") };
   });
   const tests = evidence.tests.map(({ command, verdict, evidence: run }) => {
-    const ended = verdict === "proved" ? { ran: "holds" as const, words: "" } : notHeld(verdict, run);
+    const ended = verdict === "proved" ? { ran: "holds" as const, words: "" } : notHeld(evidenceEnd("command", run), run);
     return { ran: ended.ran, text: [command, ended.words, clock(run.durationMs)].filter((part) => part !== "").join(" · ") };
   });
   // A passing model is model-checked, about the model: never proved, and its row says whether anything links it to the code.
@@ -1106,7 +1144,7 @@ function methodRows(evidence: Pick<UnitEvidence, "proofs" | "tests" | "models" |
   const models = (evidence.models ?? []).map((model) => {
     const { path, verdict, link, writtenWithCode, evidence: run } = model;
     const ended = verdict === "proved" ? { ran: outright(model) ? "holds" as const : "partly" as const,
-      words: `model-checked, ${linkWords[link]}${writtenWithCode ? ", written with the code" : ""}` } : notHeld(verdict, run);
+      words: `model-checked, ${linkWords[link]}${writtenWithCode ? ", written with the code" : ""}` } : notHeld(modelEnd(model), run);
     return { ran: ended.ran, text: [path, ended.ran === "none" ? "not checked" : ended.words, clock(run.durationMs)].join(" · ") };
   });
   const noticing = evidence.exercises.filter(({ sensitivity }) => sensitivity === "fails_then_passes").length;
@@ -1328,7 +1366,9 @@ function unitLines(receipt: UnitEvidence): string[] {
       ...receipt.inherited.map((path) => `                ${path}`),
       "                The tests ran with them; an exercise test relying on them may be misjudged against the base."],
     ...receipt.proofs.flatMap(({ path, verdict, evidence }) =>
-      [line(path, verdict, evidence, addedAssumptions(evidence.files, receipt.weakened)), `                content sha256 ${evidence.contentHash}`]),
+      [line(path, verdict, evidence, addedAssumptions(evidence.files, receipt.weakened)),
+        ...verdict === "proved" && evidence.invalidated === undefined ? [`                ${proofScope}`] : [],
+        `                content sha256 ${evidence.contentHash}`]),
     ...receipt.contracts.flatMap(mutationLines),
     ...claimcheckLines(receipt.claimcheck, receipt.contracts),
     ...receipt.tests.map(testLine),
