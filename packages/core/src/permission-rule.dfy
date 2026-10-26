@@ -8,6 +8,16 @@ datatype RuleVerdict = ask | allow | deny | unmatched
 
 datatype Decision = ask | allow | deny
 
+function isDataCommand(command: string): bool
+{
+  ((((command == "rg") || (command == "grep")) || (command == "select-string")) || (command == "echo"))
+}
+
+lemma isDataCommand_ensures(command: string)
+  ensures (isDataCommand(command) == ((((command == "rg") || (command == "grep")) || (command == "select-string")) || (command == "echo")))
+{
+}
+
 function decide(floor: bool, mode: Mode, access: Access, rule: RuleVerdict, present: bool): Decision
 {
   if floor then

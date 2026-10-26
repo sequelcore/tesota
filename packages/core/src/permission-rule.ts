@@ -10,6 +10,16 @@ export type RuleVerdict = "allow" | "ask" | "deny" | "unmatched";
 export type Decision = "allow" | "ask" | "deny";
 
 /**
+ * The closed set of normalized command names whose literal quoted arguments
+ * may be treated as data (#681). Callers must still reject execution options,
+ * interpolation, ambiguous syntax and unrecognized pipeline consumers.
+ */
+//@ ensures \result === (command === "rg" || command === "grep" || command === "select-string" || command === "echo")
+export function isDataCommand(command: string): boolean {
+  return command === "rg" || command === "grep" || command === "select-string" || command === "echo";
+}
+
+/**
  * The strongest verdict among the rules that match a call (#449): a deny
  * wins over an ask, which wins over an allow, so one rule can never loosen
  * what another tightens.
