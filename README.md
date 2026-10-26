@@ -28,13 +28,13 @@
 ## Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/sequelcore/tesota/dev/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/sequelcore/tesota/main/install.sh | sh
 ```
 
 On Windows, in PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/sequelcore/tesota/dev/install.ps1 | iex
+irm https://raw.githubusercontent.com/sequelcore/tesota/main/install.ps1 | iex
 ```
 
 If the Linux or macOS script added Tesota to your `PATH`, open a new
@@ -53,7 +53,21 @@ is in alpha, released as prerelease binaries. You need Git, and
 ## The receipt
 
 When the agent finishes, Tesota verifies the change and writes a receipt.
-It records:
+The run in the image above ends with this one:
+
+```text
+Tesota receipt
+No review flags · no verification limits
+Check evidence, not your acceptance.
+
+✓ Tested      npm run test · 0:00
+✓ Proved      src/total.ts · 0:02
+○ Models      none recorded
+✓ Exercised   1 test file failed on the base and passed with the change
+✓ Contracts   1 contract: every decided change broke its proof
+```
+
+A receipt records:
 
 - what was proved, tested and model-checked;
 - any weakened evidence it found, such as a loosened contract, a deleted
@@ -65,6 +79,12 @@ evidence; accepting the change is up to you. See [Receipts](docs/guides/receipts
 [receipt format](docs/receipt-v2.md).
 
 ## The checks
+
+On a project with no contracts or design models, a run still runs your
+project's tests on the change, checks whether a new or changed test
+catches it, flags weakened tests and names the changed files no proof
+covers. Contracts and design models, when you add them, add the checks
+below.
 
 - **Proofs:** TypeScript functions with LemmaScript contracts, proved with
   Dafny. A contract that still proves after the code is changed is too weak,

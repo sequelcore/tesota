@@ -1,7 +1,7 @@
 # Installs tesota on Windows from its GitHub Releases (#372), or updates it when run again:
 #
-#   irm https://raw.githubusercontent.com/sequelcore/tesota/dev/install.ps1 | iex
-#   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/sequelcore/tesota/dev/install.ps1))) 0.1.0-alpha.1
+#   irm https://raw.githubusercontent.com/sequelcore/tesota/main/install.ps1 | iex
+#   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/sequelcore/tesota/main/install.ps1))) 0.1.0-alpha.1
 #
 # With no version it installs the newest release, prereleases included. It picks the binary for this system,
 # checks it against the release's SHA256SUMS before installing it, puts it in TESOTA_INSTALL_DIR
