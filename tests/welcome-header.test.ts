@@ -92,13 +92,12 @@ it("shows a folder under the home folder from ~, as the footer does", () => {
   expect(written).not.toContain(homedir());
 });
 
-it("keeps the header at four rows, with the 19-column mark beside the three text rows", () => {
+it("keeps the header at three rows, with the 11-column mark beside the three text rows", () => {
   const { view } = header();
   const plain = view.render(100).map(stripTerminalSequences);
-  expect(plain).toHaveLength(4);
-  expect(plain[0]!.slice(21)).toMatch(/^Tesota (v\d|dev)/u);
-  expect(plain.slice(1, 3).map((row) => row.slice(21))).toEqual(["C:\\work\\tesota", WELCOME_TAGLINE]);
-  expect(plain[3]!.slice(21).trim()).toBe("");
+  expect(plain).toHaveLength(3);
+  expect(plain[0]!.slice(13)).toMatch(/^Tesota (v\d|dev)/u);
+  expect(plain.slice(1, 3).map((row) => row.slice(13))).toEqual(["C:\\work\\tesota", WELCOME_TAGLINE]);
   const art = view.renderStage(100).map(stripTerminalSequences).filter((line) => braille.test(line));
   expect(art).toHaveLength(9);
   expect(art.at(-1)).toBe(" ".repeat(25) + "▀".repeat(49));
@@ -106,9 +105,9 @@ it("keeps the header at four rows, with the 19-column mark beside the three text
 
 it("keeps the folder's last segment when the model and folder share a narrow row", () => {
   const { view } = header({ model: () => "a-long-model-name" });
-  const row = stripTerminalSequences(view.render(61)[1]!.slice(0)).slice(21);
+  const row = stripTerminalSequences(view.render(53)[1]!.slice(0)).slice(13);
   expect(row).toBe("a-long-model-name · C:\\work\\tesota");
-  const narrow = stripTerminalSequences(view.render(49)[1]!.slice(0)).slice(21);
+  const narrow = stripTerminalSequences(view.render(41)[1]!.slice(0)).slice(13);
   expect(narrow).toBe("a-long-model-name · …\\tesota");
 });
 

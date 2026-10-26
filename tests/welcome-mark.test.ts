@@ -24,7 +24,7 @@ it.each(grids)("renders every pixel of %s in half blocks, padding ragged rows", 
 
 it("keeps the silhouette, including protruding blossoms, without color", () => {
   const silhouette = (name: MarkName) => renderMark(name, 0, false, false).map((row) => row.map((cell) => cell.glyph).join(""));
-  expect(silhouette("small")).toEqual(["  ▄▄███▄▄████▄▄▄▄  ", "▄█████████████████▀", " ▀▀▀███▀▀▀▀▀▀▀     ", "    ▄█▄            "]);
+  expect(silhouette("small")).toEqual(["▄███▄███▄▄▄", " ▀▀███▀▀▀  ", "   ▄█▄     "]);
   expect(silhouette("small-bloom")).not.toEqual(silhouette("small"));
   for (const name of Object.keys(MARK_GRIDS) as MarkName[]) {
     const pixels = markPixels(name);
