@@ -153,7 +153,7 @@ it("mutates and has a model judge only the changed contracts, and labels the ver
     content: [{ type: "toolCall", id: "1", name: context.tools[0]?.name, arguments: context.tools[0]?.name === "record_comparisons"
       ? { comparisons: [{ function: 1, verdict: "partially_justified", explanation: "It excludes negative amounts." }] }
       : { informalizations: [{ function: 1, preconditions: "amount >= 0", postcondition: "returns amount", strength: "moderate" }] } }] }));
-  const ctx = { model: { provider: "provider", id: "model" } as never, modelRegistry: { complete } as never };
+  const ctx = { model: { provider: "provider", id: "model", contextWindow: 128_000, maxTokens: 4096 } as never, modelRegistry: { complete } as never };
   const strength = await contractStrength(ctx, ["total keeps negative amounts"], [{ path: "src/rules.ts", source: changed, baseSource: base }],
     new AbortController().signal);
   expect(strength).toEqual({ claimcheck: { status: "judged", restatedBy: "provider/model", comparedBy: "provider/model" }, contracts: [{ path: "src/rules.ts", name: "total",
@@ -172,7 +172,7 @@ it("publishes each contract's mutation and ClaimCheck as operations that ran at 
     content: [{ type: "toolCall", id: "1", name: context.tools[0]?.name, arguments: context.tools[0]?.name === "record_comparisons"
       ? { comparisons: [{ function: 1, verdict: "justified", explanation: "Yes." }] }
       : { informalizations: [{ function: 1, preconditions: "amount >= 0", postcondition: "returns amount", strength: "moderate" }] } }] }));
-  const ctx = { model: { provider: "provider", id: "model" } as never, modelRegistry: { complete } as never };
+  const ctx = { model: { provider: "provider", id: "model", contextWindow: 128_000, maxTokens: 4096 } as never, modelRegistry: { complete } as never };
   const ops = new GateOperations();
   ops.beginRun("r");
   ops.beginAttempt();

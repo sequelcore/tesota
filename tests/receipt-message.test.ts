@@ -1,6 +1,35 @@
 import { expect, it } from "vitest";
 import { noEvidence, receiptFindings, receiptStanding, renderReceipt, renderReceiptMessage } from "../src/receipt.js";
 import { emptyReceipt } from "./receipts.js";
+import { receiptMarkdown, receiptStatement } from "../src/pull-request-receipt.js";
+import { unitReceipt } from "../src/receipt.js";
+
+it("stores and exports the requests each judge received and names context omissions (#627)", () => {
+  const requestJudgments = [{ method: "claimcheck" as const, folder: "app", requests: [
+    { run: 1, text: ["Original requirement", "Amendment"] }, { run: 3, text: ["continue"] },
+  ], omitted: [2] }];
+  const receipt = JSON.parse(JSON.stringify({ ...emptyReceipt, requestJudgments }));
+  const subject = { commit: "abc", owner: "operator", sessionId: "session", stale: [], changedAfter: [] };
+  expect(receipt.requestJudgments).toEqual(requestJudgments);
+  for (const text of [renderReceipt(receipt), renderReceiptMessage(receipt), receiptMarkdown(receipt, subject)]) {
+    expect(text).toContain("ClaimCheck context: requests 1 and 3");
+    expect(text).toContain("left out request 2: context capacity");
+  }
+  expect(receiptStatement(receipt, subject, "2026-10-26", "COMPLETED"))
+    .toMatchObject({ predicate: { custom: { receipt: { requestJudgments } } } });
+  const openContext = { method: "open_cases" as const, folder: "", requests: [{ run: 3, text: ["continue"] }], omitted: [] };
+  const openCases = { status: "not_listed" as const, reason: "test/lister: provider unavailable" };
+  const workspace = { ...receipt, openCases, requestJudgments: [...requestJudgments,
+    { method: "claimcheck" as const, folder: "other", requests: [{ run: 3, text: ["continue"] }], omitted: [1, 2] }, openContext],
+    units: [{ ...emptyReceipt, folder: "app" }] };
+  expect(unitReceipt(workspace, "app")?.requestJudgments).toEqual([...requestJudgments, openContext]);
+  expect(unitReceipt(workspace, "app")?.openCases).toEqual(openCases);
+  expect(receiptMarkdown(unitReceipt(workspace, "app")!, subject)).toContain("test/lister: provider unavailable");
+  expect(receiptMarkdown(unitReceipt(workspace, "app")!, subject)).not.toContain("left out requests 1 and 2");
+  expect(renderReceipt(receipt)).toMatchSnapshot();
+  // An absent optional context field (including in existing local sessions) needs no migration.
+  expect(() => renderReceipt(emptyReceipt)).not.toThrow();
+});
 
 it("says a receipt in one word: nothing to claim when nothing changed, failed when a check failed, even in a unit, incomplete otherwise (#455, #668)", () => {
   expect(receiptStanding(emptyReceipt)).toBe("unchanged");

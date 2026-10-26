@@ -85,10 +85,12 @@ requests and issues in [sequelcore/tesota](https://github.com/sequelcore/tesota)
 - Multi-line text pasted into a question keeps its line breaks as spaces
   (#624).
 - `/resume` reopens a session that worked in the folder's checkout (#625).
-- A request like "continue" after runs that never completed, such as one
-  stopped or ended by an error or a limit, is judged by open cases and
-  ClaimCheck against those requests too, back to the last run that
-  completed, not by its own text alone (#627).
+- A request like "continue" is judged by open cases and ClaimCheck against
+  earlier requests whose changes were never verified, back to the last
+  successful verifier settlement with a non-stopped receipt. A tool-free
+  completed answer does not discard them. The receipt stores which requests
+  each judge received and names any left out for model context capacity
+  (#627).
 
 ## [0.1.0-alpha.3] - 2026-10-23
 

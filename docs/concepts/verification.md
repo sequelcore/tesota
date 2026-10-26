@@ -46,10 +46,20 @@ Two additional checks use a model's judgment. ClaimCheck compares contracts
 with your request. Open cases list inputs your request may leave ambiguous.
 They appear separately in the receipt and do not count as check evidence
 or decisions required by the receipt. On `@tesota/core` both read, before
-your request, the earlier requests whose runs ended without completing,
-such as one stopped or ended by an error or a limit, back to the last run
-that completed: "continue" is judged against what those asked. A request
-after a completed run is judged on its own.
+your request, the earlier requests whose changes were never verified,
+such as one stopped or ended by an error or a limit, back to the last
+final successful verifier settlement with a non-stopped receipt. A tool-free
+answer that completes without a receipt does not end that chain.
+
+Each complete prompt is estimated against its model's context capacity,
+including its system prompt, tool schema and maximum output allowance.
+ClaimCheck also includes the contracts and restatements. When the chain
+does not fit, the judge receives the newest whole requests that fit, never
+part of one request. The receipt stores their text and numbers and plainly
+names any requests left out. If no whole request fits, the step does not
+run and says why. The two judges may receive different subsets because
+their models and prompt sizes differ. These are token estimates, not exact
+provider counts.
 
 ## Change scope
 

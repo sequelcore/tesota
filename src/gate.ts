@@ -12,6 +12,8 @@ import type { ModelCheck } from "./model-check.js";
 import { OPEN_CASES_MODEL, openCases } from "./open-cases.js";
 import { type AttemptEnd, GateOperations, type OperationSink, type OperationSpec } from "./operations.js";
 import type { ContractStrength } from "./proof-guarantees.js";
+import type { JudgmentContext } from "./pi-claimcheck.js";
+import type { RequestJudgment } from "./receipt.js";
 import { inFolder, owningProjects, suggestChecks } from "./projects.js";
 import { proofReport } from "./prove-tool.js";
 import { entryReceipt, type FloorRefusal, inUnit, isReceipt, type ModelResult, noEvidence, type Receipt, type ReceiptChild, receiptEntry, receiptGraphEntry,
@@ -446,6 +448,10 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
   let fingerprints: Promise<ReadonlyMap<string, Fingerprint>> | undefined;
   /** What the operator asked during the request, for ClaimCheck to compare the contracts with. */
   let requests: string[] = [];
+  let judgingRequests: RequestJudgment["requests"] = [];
+  let requestJudgments: RequestJudgment[] = [];
+  const judging = (folder = ""): JudgmentContext => ({ folder, requests: judgingRequests, record: (judgment) => { requestJudgments.push(judgment); } });
+  const judgedContext = (): Pick<Receipt, "requestJudgments"> => requestJudgments.length === 0 ? {} : { requestJudgments };
   let clarifications: readonly Clarification[] = [];
   /** The subagents the request started (#525), as the ledger recorded their ends. */
   let children: readonly ReceiptChild[] = [];
@@ -503,16 +509,19 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
   pi.on("agent_before_settle", async (event, ctx) => {
     if (!mayHaveChanged) { progress.reset(); return undefined; }
     await loadChecks();
+    requestJudgments = [];
     const request = recorded?.();
     if (request !== undefined) {
-      // The earlier requests it follows whose runs never completed come first (#627): "continue" asks for what they asked.
-      requests = [...request.uncompleted ?? [], request].flatMap(operatorText);
+      // Only a receipt that verified changes ends the chain, not a tool-free answer (#627).
+      judgingRequests = judgedRequests(request, requestNumber);
+      requests = judgingRequests.flatMap(({ text }) => text);
       clarifications = request.inputs.flatMap((input) => input.kind === "clarification" ? [input.clarification] : []);
       children = request.children ?? [];
       floorRefusals = request.refusals ?? [];
       startedAt = request.at;
       start = Promise.resolve(recordedStart(request.base));
     }
+    if (request === undefined) judgingRequests = [{ run: requestNumber, text: requests }];
     // One pass over the request: it closes as returned to the agent, settled or stopped, whatever it published.
     progress.operations.beginAttempt();
     let closed: AttemptEnd = "stopped";
@@ -588,7 +597,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     const lister = listWith(pi);
     return lister === undefined ? effect().succeed({})
       : effect().map(step((signal) => progress.operations.run({ method: "open_cases", unit: "", target: lister },
-        () => openCases(ctx, requests, lister, signal), () => "done")), (listed) => ({ openCases: listed }));
+        () => openCases(ctx, requests, lister, signal, judging()), () => "done")), (listed) => ({ openCases: listed }));
   };
   const failure = (proof: Evidence): string => `${proof.outcome}\n${proof.output}`;
   const sendBack = (content: string, details: SentBack): SettleResult =>
@@ -647,7 +656,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
       if (sources.length > 0) progress.publish({ step: "measuring", startedAt: performance.now(), tally: tallied });
       const strength = attributionResolved(unit.base, unit.startState, unit.endState, unit.snapshot === undefined)
         ? yield* step((signal) => checks().contractStrength(ctx, requests, sources, signal, restateWith(pi),
-          progress.operations.forUnit(unit.folder))) : { contracts: [] };
+          progress.operations.forUnit(unit.folder), judging(unit.folder))) : { contracts: [] };
       measured.set(unit.folder, { sources, strength });
     }
     return measured;
@@ -766,8 +775,9 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
       () => "done"));
     const settledAt = new Date().toISOString();
     const only = workspace ? undefined : evidence[0];
-    const receipt: Receipt = only !== undefined ? { version: 2, ...run, ...only, ...open, settledAt }
-      : { version: 2, repository: true, ...run, ...noEvidence, ...open, settledAt, units: [
+    const receipt: Receipt = only !== undefined ? { version: 2, ...run, ...only, ...open, settledAt, ...judgedContext() }
+      : { version: 2, repository: true, ...run, ...noEvidence, ...open, settledAt,
+        ...judgedContext(), units: [
         ...evidence.map((unit, k) => ({ ...unit, folder: changed[k]?.folder ?? "" })),
         ...plain.map(({ folder }) => ({ folder, repository: false, base: null, ...noEvidence,
           reason: refused.get(folder) ?? "Git could not read it, so Tesota cannot tell what changed" }))]
@@ -801,6 +811,7 @@ interface Start {
  * repository's commit, a snapshot, or why there is neither.
  */
 export interface RecordedRequest {
+  readonly run?: number;
   readonly text: string;
   readonly at: string;
   readonly inputs: readonly RequestInput[];
@@ -811,8 +822,14 @@ export interface RecordedRequest {
   readonly base: { readonly units: readonly RecordedUnit[] };
   /** The earlier request this one continues (#651), and what the gate saved as it ended on its question (`savedStart`). */
   readonly continues?: { readonly run: number; readonly start?: unknown };
-  /** The earlier requests it follows whose runs never completed, so their changes were never verified (#627), oldest first, judged with it. */
-  readonly uncompleted?: readonly Pick<RecordedRequest, "text" | "inputs">[];
+  /** Earlier requests since the last non-stopped receipt (#627), oldest first, judged with it. */
+  readonly unverifiedRequests?: readonly (Pick<RecordedRequest, "text" | "inputs"> & { readonly run: number })[];
+}
+
+/** Each whole request in the verification chain, with its ordered operator text. */
+function judgedRequests(request: RecordedRequest, run: number): RequestJudgment["requests"] {
+  return [...request.unverifiedRequests ?? [], { ...request, run: request.run ?? run }]
+    .map((item) => ({ run: item.run, text: operatorText(item) }));
 }
 
 /** What the operator asked in a recorded request: its text, then its amendments and answers in order, none an extension's. */

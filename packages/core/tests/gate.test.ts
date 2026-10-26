@@ -590,6 +590,10 @@ describe("a request that follows an unverified one (#627)", () => {
     expect(receiptOf(session)?.contracts).toMatchObject([{ name: "f", judgment: { verdict: "justified" } }]);
     expect(compared).toHaveLength(1);
     expect(lister).toHaveLength(1);
+    expect(receiptOf(session)?.requestJudgments).toEqual([
+      { method: "claimcheck", folder: "", requests: [...first === "error" ? [{ run: 1, text: [asked] }] : [], { run: 2, text: ["continue"] }], omitted: [] },
+      { method: "open_cases", folder: "", requests: [...first === "error" ? [{ run: 1, text: [asked] }] : [], { run: 2, text: ["continue"] }], omitted: [] },
+    ]);
     // ClaimCheck compares the contracts with each request it was given, numbered; open cases lists them in the same order.
     const requests = compared[0]?.slice(compared[0].indexOf("## The user's requests, verbatim"), compared[0].indexOf("## Contracts"));
     if (first === "error") {
@@ -604,6 +608,58 @@ describe("a request that follows an unverified one (#627)", () => {
     }
   });
 
+  test("a crash after a mid-run receipt and more work does not establish a verification boundary", async () => {
+    const session = gated(repository(), [edit(changed), "done"]);
+    await session.prompt("Original requirement");
+    open.splice(open.indexOf(session), 1);
+    await session.dispose();
+    const lines = readFileSync(session.file, "utf8").trimEnd().split("\n");
+    const entries = lines.slice(1).map((line) => JSON.parse(line));
+    // A pending steer made settlement resume generation. The process then died after another write,
+    // before another settle or run_end. Reuse the recorded tool turn as that later write's journal.
+    const writeTurn = entries.filter((entry) => ["assistant", "call_intent", "decision", "tool_result"].includes(entry.type));
+    const beforeEnd = entries.filter((entry) => entry.type !== "run_end");
+    const receiptAt = beforeEnd.findIndex((entry) => entryReceipt(entry) !== undefined);
+    beforeEnd.splice(receiptAt, 0, { type: "amendment", run: 1, id: 1, behavior: "steer", origin: "interactive", text: "More work", at: new Date().toISOString() });
+    writeFileSync(session.file, `${[lines[0], ...beforeEnd.map((entry) => JSON.stringify(entry)), ...writeTurn.map((entry) => JSON.stringify(entry))].join("\n")}\n`);
+    const resumed = openSession(session.file, scriptless());
+    open.push(resumed);
+    expect(resumed.outcome()).toBe("interrupted");
+    await resumed.prompt("continue");
+    expect(resumed.ledger()[1]?.unverifiedRequests.map(({ run }) => run)).toEqual([1]);
+  });
+
+  test("a local session without judged-request metadata still opens and renders", async () => {
+    const session = gated(repository(), [edit(changed), "done"]);
+    await session.prompt("change f");
+    open.splice(open.indexOf(session), 1);
+    await session.dispose();
+    const lines = readFileSync(session.file, "utf8").trimEnd().split("\n").map((line) => {
+      const entry = JSON.parse(line);
+      const receipt = entryReceipt(entry);
+      if (isReceipt(receipt)) Reflect.deleteProperty(receipt, "requestJudgments");
+      return JSON.stringify(entry);
+    });
+    writeFileSync(session.file, `${lines.join("\n")}\n`);
+    const resumed = openSession(session.file, scriptless());
+    open.push(resumed);
+    expect(() => renderReceipt(receiptOf(resumed)!)).not.toThrow();
+    expect(resumed.outcome()).toBe("completed");
+  });
+
+  test("a completed tool-free answer is not a verification boundary between an error and continue", async () => {
+    const session = gated(repository(), [edit(changed), { error: "quota exhausted" }, "acknowledged",
+      edit(`${changed}// continued\n`), "done"]);
+    await session.prompt("Implement the original requirement.");
+    expect(session.outcome()).toBe("error");
+    await session.prompt("Are you there?");
+    expect(session.outcome()).toBe("completed");
+    await session.prompt("continue");
+    expect(session.ledger()[2]?.unverifiedRequests.map(({ run, text }) => [run, text])).toEqual([
+      [1, "Implement the original requirement."], [2, "Are you there?"],
+    ]);
+  });
+
   test("an answer that continues a question (#651) carries the request it continues, which is not judged twice", async () => {
     const questions = [{ question: "Which option?", options: [{ label: "A", description: "Use A." }, { label: "B", description: "Use B." }] }];
     const session = gated(repository(), [{ tool: "ask_user", args: { questions } }, { error: "usage limit reached" },
@@ -616,11 +672,11 @@ describe("a request that follows an unverified one (#627)", () => {
     await session.prompt("continue");
     const [first, answered, again, last] = session.ledger();
     expect(answered?.continues?.run).toBe(1);
-    expect(answered?.uncompleted).toEqual([]);
-    expect(again?.uncompleted.map(({ run }) => run)).toEqual([2]);
+    expect(answered?.unverifiedRequests).toEqual([]);
+    expect(again?.unverifiedRequests.map(({ run }) => run)).toEqual([2]);
     // Run 1's text is in run 2's, which continues it: run 1 is left out, and runs 2 and 3 come oldest first.
-    expect(last?.uncompleted.map(({ run }) => run)).toEqual([2, 3]);
-    expect(last?.uncompleted[0]?.text).toContain(first?.text ?? "missing");
+    expect(last?.unverifiedRequests.map(({ run }) => run)).toEqual([2, 3]);
+    expect(last?.unverifiedRequests[0]?.text).toContain(first?.text ?? "missing");
   });
 });
 

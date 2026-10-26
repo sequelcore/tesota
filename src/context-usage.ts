@@ -1,6 +1,7 @@
-import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
-import type { ContextUsage } from "../../../src/contract.ts";
-import type { HistoryMessage } from "./loop.ts";
+import type { ImageContent, Message, TextContent } from "@earendil-works/pi-ai";
+import type { ContextUsage } from "./contract.js";
+
+type EstimatedMessage = Message | { readonly role: "custom"; readonly content: string };
 
 /** Pi's character estimate: text as written, and 1,200 tokens per image (#441). */
 function contentChars(content: string | readonly (TextContent | ImageContent)[]): number {
@@ -9,7 +10,7 @@ function contentChars(content: string | readonly (TextContent | ImageContent)[])
 }
 
 /** Pi rounds each message's character estimate up separately (#441). */
-export function estimateTokens(message: HistoryMessage): number {
+export function estimateTokens(message: EstimatedMessage): number {
   let chars = 0;
   if (message.role === "assistant") {
     for (const part of message.content) {
@@ -33,7 +34,7 @@ export function estimateTokens(message: HistoryMessage): number {
  * Pi estimates it. Replies before `counted` were answers to a conversation
  * compaction has since replaced (#451), so their usage counts nothing now.
  */
-export function contextUsage(history: readonly HistoryMessage[], systemPrompt: string, tools: readonly object[],
+export function contextUsage(history: readonly EstimatedMessage[], systemPrompt: string, tools: readonly object[],
   contextWindow: number | undefined, counted = 0): ContextUsage | undefined {
   if (contextWindow === undefined || contextWindow <= 0) return undefined;
   let trailing = 0;
