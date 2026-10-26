@@ -7,6 +7,13 @@ function dotOrSpaceAt(segment: string, i: int): bool
   ((segment[i..(i + 1)] == ".") || (segment[i..(i + 1)] == " "))
 }
 
+lemma dotOrSpaceAt_ensures(segment: string, i: int)
+  requires (0 <= i)
+  requires (i < |segment|)
+  ensures (dotOrSpaceAt(segment, i) <==> ((segment[i..(i + 1)] == ".") || (segment[i..(i + 1)] == " ")))
+{
+}
+
 function reach(segments: seq<string>, k: int): int
   requires (0 <= k)
   requires (k <= |segments|)

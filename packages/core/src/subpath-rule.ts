@@ -1,5 +1,6 @@
 /** A trailing character Windows may discard from a segment. */
 //@ requires 0 <= i && i < segment.length
+//@ ensures \result <==> segment.slice(i, i + 1) === "." || segment.slice(i, i + 1) === " "
 export function dotOrSpaceAt(segment: string, i: number): boolean {
   return segment.slice(i, i + 1) === "." || segment.slice(i, i + 1) === " ";
 }
