@@ -247,10 +247,13 @@ produced. Its suggestions remain a model's opinion for you to review.
 
 ## Standing
 
-The receipt derives a standing from its evidence and findings. A check
-that could not run, or has unavailable or stale evidence, leaves a gap.
-The run is incomplete, or unverified if nothing else passed, rather than
-failed for that reason.
+The receipt derives a standing from its evidence and findings. A receipt
+stands `failed` only when a check ran and showed the change wrong: a
+failing test, a proof that doesn't hold, or a design model with a
+counterexample or a planted fault it didn't catch. A check that couldn't
+run, ran past its limit, was stopped, checked nothing, couldn't be read or
+is stale is a gap: the run is incomplete, or unverified if nothing else
+passed.
 
 | Standing | Meaning |
 | --- | --- |
