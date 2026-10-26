@@ -1027,7 +1027,7 @@ for (const mode of ["fullscreen", "inline"] as const) test(`empty stage stays ou
   surface.ui.setEditorComponent((tui, look) => new BarEditor(tui, look, () => theme));
   const { terminal, session, shell } = shellOn(["A reply."], mode, [100, 40], { surface });
   const opening = await terminal.until("Shows evidence");
-  expect(opening.split("\n").slice(0, 3).map((row) => row.slice(21))).toEqual([
+  expect(opening.split("\n").slice(0, 3).map((row) => row.slice(13))).toEqual([
     expect.stringMatching(/^Tesota v/u), "scripted model · /work/shop", "Shows evidence that the change does what you asked.",
   ]);
   await new Promise((resolve) => setTimeout(resolve, 60));

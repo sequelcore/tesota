@@ -86,8 +86,8 @@ describe("Tesota's interface on the engine", () => {
     await terminal.until("▀".repeat(49));
     const screen = await terminal.screen();
     expect(screen.join("\n")).toContain("Shows evidence that the change does what you asked.");
-    expect(screen.filter((line) => /[▀▄█]/u.test(line))).toHaveLength(13);
-    expect(screen.slice(0, 4).every((line) => /[▀▄█]/u.test(line))).toBe(true);
+    expect(screen.filter((line) => /[▀▄█]/u.test(line))).toHaveLength(12);
+    expect(screen.slice(0, 3).every((line) => /[▀▄█]/u.test(line))).toBe(true);
     expect(screen.filter((line) => line.startsWith("› "))).toHaveLength(1);
     expect(screen.join("\n")).not.toContain("▌");
     // The footer is one row: the evidence, and the permission mode (#449), a status it never drops; this temporary folder's long

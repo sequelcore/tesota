@@ -23,7 +23,7 @@ it("reads the receipt standing in the header and resets on the next request", ()
     requestRender: () => undefined, terminalRows: () => 40, stageShare: 0.5,
     standing: () => standing, now: () => 0, setTimer: () => () => undefined,
   });
-  const mark = () => view.render(100).map((row) => stripTerminalSequences(row).slice(0, 19));
+  const mark = () => view.render(100).map((row) => stripTerminalSequences(row).slice(0, 11));
   const expected = (bloom: boolean) => renderMark(bloom ? "small-bloom" : "small").map((row) => row.map((cell) => cell.glyph).join(""));
   expect(mark()).toEqual(expected(false));
   standing = receiptStanding(receipt); expect(mark()).toEqual(expected(true));

@@ -1,24 +1,20 @@
 /** Owner-approved pixel grids (2026-10-25); ragged source rows padded with empty pixels. */
 export const MARK_GRIDS = {
   "small": [
-    "....ggg..gggg......",
-    "..ggggggggggggggg..",
-    ".gggggggggggggggggg",
-    "gggggggggggggggggg.",
-    ".ggGGGGGGGGGGG.....",
-    "....GtG............",
-    ".....t.............",
-    "....ttt............"
+    ".ggg.ggg...",
+    "ggggggggggg",
+    ".gGGGGGGg..",
+    "...GtG.....",
+    "....t......",
+    "...ttt....."
   ],
   "small-bloom": [
-    "....ggg..gggg..p...",
-    "..ggggggggggggggg.p",
-    ".gggggggggggggggggg",
-    "gggggggggggggggggg.",
-    ".ggGGGGGGGGGGG.....",
-    "....GtG............",
-    ".....t.............",
-    "....ttt............"
+    ".ggg.ggg.p.",
+    "ggggggggggg",
+    ".gGGGGGGg.p",
+    "...GtG.....",
+    "....t......",
+    "...ttt....."
   ],
   "favicon": [
     "................",
@@ -103,8 +99,8 @@ export function markPixels(name: MarkName, progress = 0, leaf = false): readonly
   }
   if (leaf) {
     const small = name.startsWith("small");
-    const x = small ? 15 : 36;
-    const y = Math.min(grid.length - 2, (small ? 3 : 7) + Math.floor(progress * (small ? 4 : 8)));
+    const x = small ? 9 : 36;
+    const y = Math.min(grid.length - 2, (small ? 3 : 7) + Math.floor(progress * (small ? 2 : 8)));
     if (out[y]?.[x] === ".") out[y]![x] = "g";
   }
   return out.map((row) => row.join(""));

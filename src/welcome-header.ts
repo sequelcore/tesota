@@ -85,7 +85,7 @@ export class WelcomeHeader implements Component {
     return this.#gesture(event);
   }
   clickHeader(event: TuiMouseEvent): TuiMouseEventResult | undefined {
-    if (event.x < 0 || event.x >= Math.min(19, this.#headerWidth) || event.y < 0 || event.y >= 4) return undefined;
+    if (event.x < 0 || event.x >= Math.min(11, this.#headerWidth) || event.y < 0 || event.y >= 3) return undefined;
     return this.#gesture(event);
   }
 
@@ -93,7 +93,7 @@ export class WelcomeHeader implements Component {
     this.#headerWidth = width;
     const progress = this.#advance();
     const mark = this.#paint(markBlooms(this.#options.standing?.() ?? "none") ? "small-bloom" : "small", progress, 1);
-    const text = this.#text(Math.max(0, width - 21));
+    const text = this.#text(Math.max(0, width - 13));
     return mark.map((row, index) => truncateToWidth(row + "  " + (text[index] ?? ""), width, ""));
   }
 
