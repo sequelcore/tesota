@@ -100,6 +100,22 @@ it("counts a proof that doesn't hold apart from one that checked nothing or coul
     expect(settledWith(gap), gap.evidence.outcome).toContain("1 not checked");
   }
 });
+it("says tests fail only for a command that ran and failed, and counts one that didn't run or is stale as not checked", () => {
+  const settledWith = (command: Receipt["tests"][number], level: "full" | "glyphs" = "full"): string =>
+    words({ step: "settled", receipt: { ...emptyReceipt, tests: [command] } }, level);
+  const failing = { ...passing, verdict: "send_back", evidence: evidence("failed") } as const;
+  expect(settledWith(failing)).toContain("tests fail");
+  expect(settledWith(failing, "glyphs")).toContain("tests ✗");
+  for (const gap of [{ ...passing, verdict: "operator", evidence: evidence("not_started") }, { ...passing, verdict: "operator", evidence: evidence("timed_out") },
+    { ...passing, verdict: "operator", evidence: { ...evidence("passed"), invalidated: "content_changed" } }] as const) {
+    expect(settledWith(gap), gap.evidence.outcome).not.toContain("tests fail");
+    expect(settledWith(gap, "glyphs"), gap.evidence.outcome).not.toContain("✗");
+    expect(settledWith(gap), gap.evidence.outcome).toContain("1 not checked");
+  }
+  // A failure beside a gap still reads as failing.
+  expect(words({ step: "settled", receipt: { ...emptyReceipt, tests: [failing, { ...passing, verdict: "operator", evidence: evidence("not_started") }] } }))
+    .toContain("tests fail");
+});
 it("names the model being checked, then sums up the models: checked, still failing, and possibly stale", () => {
   expect(words({ step: "checking", path: "models/Stock.tla", startedAt: 0, tally: { proved: 0, notProved: 0, tests: "pass" } }))
     .toBe("◐ checking models… · 0s · tests pass");

@@ -96,7 +96,9 @@ function receiptParts(settled: Receipt): EvidencePart[] {
   const listed = [
     // Only a proof that ran and doesn't hold is not proved (`evidenceEnd`); one that couldn't run, checked nothing or is stale is counted as not checked.
     ...tallyParts({ proved, notProved: receipt.proofs.filter(({ evidence }) => evidenceEnd("proof", evidence) === "failed").length,
-      ...receipt.tests.length === 0 ? {} : { tests: passed ? "pass" : "fail" }, weak }, assumed),
+      // Only a command that ran and failed reads as failing (`evidenceEnd`); one that didn't run or is stale is counted as not checked.
+      ...receipt.tests.some(({ evidence }) => evidenceEnd("command", evidence) === "failed") ? { tests: "fail" }
+        : receipt.tests.length > 0 && passed ? { tests: "pass" } : {}, weak }, assumed),
     // Narrower rows keep what needs the operator, so they leave out contracts that held.
     // Strength needs a change the proof caught, as the receipt in the conversation says.
     ...receipt.contracts.length > 0 && receipt.contracts.every(({ mutation }) => mutation.survived.length === 0 && mutation.rejected > 0)
