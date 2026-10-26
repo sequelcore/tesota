@@ -4,7 +4,7 @@ import type { Contract } from "./proof-guarantees.js";
 
 /**
  * ClaimCheck's round-trip method (metareflection/claimcheck, MIT), adapted to
- * LemmaScript contracts that proved, run through Pi's model registry. Pass 1
+ * LemmaScript contracts that proved, run through pi-ai's model registry. Pass 1
  * restates each contract without seeing the operator's request; pass 2, a
  * separate request, compares that restatement with the request. ClaimCheck
  * uses two different models for the passes; unless a second model is set,
@@ -135,7 +135,7 @@ export async function recorded<T>(ctx: ModelAccess, model: NonNullable<ModelAcce
 
 export const named = (model: NonNullable<ModelAccess["model"]>): string => `${model.provider}/${model.id}`;
 
-/** The model `name`, a `provider/id`, in Pi's model registry; undefined when it is not one. */
+/** The model `name`, a `provider/id`, in pi-ai's model registry; undefined when it is not one. */
 export function registered(ctx: ModelAccess, name: string): ModelAccess["model"] {
   const slash = name.indexOf("/");
   return slash > 0 ? ctx.modelRegistry.find(name.slice(0, slash), name.slice(slash + 1)) : undefined;
@@ -143,7 +143,7 @@ export function registered(ctx: ModelAccess, name: string): ModelAccess["model"]
 
 /**
  * ClaimCheck on `items` against the operator's `requests`. The session's
- * model compares; `restateWith`, a `provider/id` in Pi's model registry,
+ * model compares; `restateWith`, a `provider/id` in pi-ai's model registry,
  * restates when set, as ClaimCheck's method uses a second model for that
  * pass, and the session's model restates otherwise. Not judged when a model
  * is missing, or when a pass gives no usable answer within
@@ -155,7 +155,7 @@ export async function claimCheck(ctx: ModelAccess, requests: readonly string[], 
   if (model === undefined) return { status: "not_judged", reason: "no model is selected" };
   const restater = restateWith === undefined ? model : registered(ctx, restateWith);
   if (restater === undefined) {
-    return { status: "not_judged", reason: `its restating model ${restateWith ?? ""} is not a provider/id in Pi's model registry` };
+    return { status: "not_judged", reason: `its restating model ${restateWith ?? ""} isn't a model Tesota knows (provider/id)` };
   }
   const limited = AbortSignal.any([signal, AbortSignal.timeout(CLAIMCHECK_TIME_LIMIT_MS)]);
   const first = await recorded<{ informalizations: Informalization[] }>(ctx, restater, comparing, "record_informalizations",

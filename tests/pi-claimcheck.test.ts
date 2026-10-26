@@ -76,7 +76,7 @@ it("restates with the second model when one is set, and judges nothing when the 
   for (const setting of ["other/missing", "restater"]) {
     const missing = session(informalized, comparisons);
     expect(await claimCheck(missing.ctx, requests, items, new AbortController().signal, setting)).toEqual({ status: "not_judged",
-      reason: `its restating model ${setting} is not a provider/id in Pi's model registry` });
+      reason: `its restating model ${setting} isn't a model Tesota knows (provider/id)` });
     expect(missing.asked).toEqual([]);
   }
 });

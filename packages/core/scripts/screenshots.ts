@@ -1,11 +1,13 @@
-import { createModels, fauxProvider, InMemoryCredentialStore } from "@earendil-works/pi-ai";
+import { type TranscriptContext, createModels, fauxAssistantMessage, fauxProvider, fauxToolCall, InMemoryCredentialStore } from "@earendil-works/pi-ai";
 import { setCapabilityOverrides } from "@earendil-works/pi-tui";
 import type xterm from "@xterm/headless";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WELCOME_SCENE_MS } from "../../../src/welcome-header.ts";
+import { entryReceipt, isReceipt, receiptStanding } from "../../../src/receipt.ts";
+import { peekSessionFile } from "../src/session-file.ts";
 import { runApp } from "../src/shell/app.ts";
 import type { ScriptStep } from "../tests/engine.ts";
 import { scriptedReply } from "../tests/scripted.ts";
@@ -16,7 +18,7 @@ import { VirtualTerminal } from "../tests/virtual-terminal.ts";
  * driven in an emulated terminal on a scripted model, and written as SVG in
  * `docs/assets`, light and dark. Run it again when the screen changes:
  * `bun run --cwd packages/core screenshots`. The verified turn runs the
- * project's own tests, so it needs Node and Git.
+ * fixture's real tests and LemmaScript proofs, so it needs Bun, Git and Dafny.
  */
 const root = join(import.meta.dir, "..", "..", "..");
 /** The home folder the shell runs in, a new temporary one, which the footer and header show as `~`. */
@@ -158,12 +160,30 @@ async function shell(cwd: string, script: readonly ScriptStep[], appearance: App
   const models = createModels({ credentials });
   // A scripted model, named as no real one is, which the footer shows.
   const faux = fauxProvider({ tokensPerSecond: 400, provider: "scripted", models: [{ id: "your-model" }] });
-  faux.setResponses(script.map(scriptedReply));
+  const replies = script.map(scriptedReply);
+  // Verification's model opinions are scripted too, never passed off as proof or live-model judgment.
+  const respond = (context: TranscriptContext) => {
+    const tool = context.messages.flatMap((message) => message.role === "system" ? message.toolsAdded ?? [] : [])[0]?.name;
+    if (tool === "record_open_cases") return fauxAssistantMessage(fauxToolCall(tool, { status: "listed", cases: [] }));
+    if (tool === "record_informalizations") return fauxAssistantMessage(fauxToolCall(tool, { informalizations: [{
+      function: 1, preconditions: "None.",
+      postcondition: "Above 100 subtract 10; otherwise keep the amount.", strength: "strong",
+    }] }));
+    if (tool === "record_comparisons") return fauxAssistantMessage(fauxToolCall(tool, { comparisons: [{
+      function: 1, verdict: "justified", explanation: "The contract states the requested discount and its boundary.",
+    }] }));
+    const next = replies.shift();
+    if (next === undefined || typeof next === "function") throw new Error("Unexpected screenshot model request");
+    return next;
+  };
+  faux.setResponses(Array.from({ length: script.length + 3 }, () => respond));
   models.setProvider(faux.provider);
   const terminal = new VirtualTerminal(100, rows);
   const settingsPath = join(mkdtempSync(join(tmpdir(), "tesota-screenshot-settings-")), "settings.json");
   writeFileSync(settingsPath, JSON.stringify({ permissionMode: "full", model: "scripted/your-model" }));
-  const running = runApp({ cwd, terminal, models, credentials, settingsPath, sessions: mkdtempSync(join(tmpdir(), "tesota-screenshot-sessions-")) });
+  const sessions = mkdtempSync(join(tmpdir(), "tesota-screenshot-sessions-"));
+  const running = runApp({ cwd, terminal, models, credentials, settingsPath,
+    flags: { "open-cases-model": "scripted/your-model" }, sessions });
   await terminal.until("Tesota v");
   if (appearance === "light") {
     // The terminal's answers to the shell's questions about its colors: a light background.
@@ -173,7 +193,7 @@ async function shell(cwd: string, script: readonly ScriptStep[], appearance: App
       terminal.type("\x1b[?62;c");
     }
   }
-  return { terminal, running };
+  return { terminal, running, sessions };
 }
 
 const quit = async ({ terminal, running }: { terminal: VirtualTerminal; running: Promise<void> }): Promise<void> => {
@@ -200,27 +220,46 @@ async function welcome(appearance: Appearance): Promise<void> {
   await quit(app);
 }
 
-const totalBefore = "export const total = (prices) => prices.reduce((sum, price) => sum + price, 0);\n";
-const totalAfter = "export const total = (prices) => {\n  const sum = prices.reduce((all, price) => all + price, 0);\n" +
-  "  return sum > 100 ? sum * 0.9 : sum;\n};\n";
-const totalTest = "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { total } from \"../src/total.mjs\";\n\n" +
-  "test(\"orders over 100 get 10% off\", () => {\n  assert.equal(total([80, 40]), 108);\n  assert.equal(total([60, 40]), 100);\n});\n";
+const totalBefore = "export function total(amount: number): number {\n  return amount;\n}\n";
+const totalAfter = "//@ ensures amount > 100 ==> \\result === amount - 10\n" +
+  "//@ ensures amount <= 100 ==> \\result === amount\n" +
+  "export function total(amount: number): number {\n  return amount > 100 ? amount - 10 : amount;\n}\n";
+const totalTest = "import { test, expect } from \"bun:test\";\nimport { total } from \"../src/total.ts\";\n\n" +
+  "test(\"orders over 100 get 10 off\", () => {\n  expect(total(120)).toBe(110);\n  expect(total(101)).toBe(91);\n" +
+  "  expect(total(100)).toBe(100);\n  expect(total(0)).toBe(0);\n});\n";
 
-/** A small JavaScript project with a test command: the shell starts ready to run its tests. */
+/** A small TypeScript project with a test command: the shell starts ready to run its tests. */
 const shop: Readonly<Record<string, string>> = {
-  "package.json": `${JSON.stringify({ name: "shop", type: "module", scripts: { test: "node --test" } }, null, 2)}\n`,
-  "src/total.mjs": totalBefore,
-  "test/total-base.test.mjs": "import { test } from \"node:test\";\ntest(\"loads\", async () => { await import(\"../src/total.mjs\"); });\n",
+  "package.json": `${JSON.stringify({ name: "shop", type: "module", scripts: { test: "bun test" } }, null, 2)}\n`,
+  "src/total.ts": totalBefore,
+  "test/total-base.test.ts": "import { test } from \"bun:test\";\ntest(\"loads\", async () => { await import(\"../src/total.ts\"); });\n",
 };
 
 /** A verified turn: the request, the agent's change and answer, and Tesota's receipt, its tests run on the change and on the base. */
 async function turn(appearance: Appearance): Promise<void> {
-  const app = await shell(project(shop), [{ tool: "write", args: { path: "src/total.mjs", content: totalAfter } },
-    { tool: "write", args: { path: "test/total.test.mjs", content: totalTest } },
-    "Orders over 100 now get 10% off, and test/total.test.mjs checks both sides of 100."], appearance, turnRows);
-  app.terminal.type("Take 10% off orders over 100, and add a test for it.");
+  const cwd = project(shop);
+  const app = await shell(cwd, [{ tool: "write", args: { path: "src/total.ts", content: totalAfter } },
+    { tool: "write", args: { path: "test/total.test.ts", content: totalTest } },
+    "Orders over 100 now get 10 off; the contract and test cover both sides of 100."], appearance, turnRows);
+  app.terminal.type("For nonnegative amounts, take 10 off orders over 100; keep the rest unchanged. Add a contract and test.");
   app.terminal.type(enter);
-  await app.terminal.until("receipt ·", 120_000);
+  await app.terminal.until("✓ Proved", 240_000);
+  await app.terminal.until("✓ Tested", 240_000);
+  const screen = (await app.terminal.screen()).join("\n");
+  const session = readdirSync(app.sessions).find((file) => file.endsWith(".jsonl"));
+  const receipt = session === undefined ? undefined : peekSessionFile(join(app.sessions, session)).entries.map(entryReceipt).findLast(isReceipt);
+  if (receipt === undefined || receiptStanding(receipt) !== "verified" || !screen.includes("✓ Proved") || !screen.includes("✓ Tested")
+    || !screen.includes("failed on the base and passed with the change")
+    || receipt.openCases?.status !== "listed" || receipt.openCases.cases.length !== 0) {
+    throw new Error(`The screenshot run did not verify with an exercised test and no open cases:\n${screen}`);
+  }
+  // Independently check the generated proof with the installed CLI, not a scripted proof result.
+  const lsc = join(root, "node_modules", ".bin", process.platform === "win32" ? "lsc.exe" : "lsc");
+  const proof = spawnSync(lsc, ["check", "--backend=dafny", "src/total.ts"], { cwd, encoding: "utf8" });
+  if (proof.status !== 0 || !/finished with [1-9]\d* verified/u.test(proof.stdout + proof.stderr)) {
+    throw new Error(`Screenshot proof failed:\n${proof.stdout}${proof.stderr}`);
+  }
+  console.log(`${appearance}: ${proof.stdout.trim()}`);
   await new Promise((resolve) => setTimeout(resolve, 500));
   await write(app.terminal, "tesota-turn", appearance, turnRows,
     "A verified turn in Tesota: a blooming pixel ironwood in the header, the request, two file writes and the answer, then the receipt card with the passing tests and the new test exercising the change.");

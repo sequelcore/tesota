@@ -63,10 +63,10 @@ export function openCasesPrompt(requests: readonly string[]): string {
     "Leave out inputs of a kind the request never mentions, such as NaN, Infinity, -0, or values that are not of the type it names.";
 }
 
-/** The open cases of `requests`, listed by `model`, a `provider/id` in Pi's model registry, within `OPEN_CASES_TIME_LIMIT_MS`. */
+/** The open cases of `requests`, listed by `model`, a `provider/id` Tesota knows, within `OPEN_CASES_TIME_LIMIT_MS`. */
 export async function openCases(ctx: ModelAccess, requests: readonly string[], model: string, signal: AbortSignal): Promise<OpenCases> {
   const lister = registered(ctx, model);
-  if (lister === undefined) return { status: "not_listed", reason: `${model} is not a provider/id in Pi's model registry` };
+  if (lister === undefined) return { status: "not_listed", reason: `${model} isn't a model Tesota knows (provider/id)` };
   const listed = await recorded<ListAnswer>(ctx, lister, openCasesSystemPrompt, "record_open_cases", listSchema,
     openCasesPrompt(requests), AbortSignal.any([signal, AbortSignal.timeout(OPEN_CASES_TIME_LIMIT_MS)]));
   if (typeof listed === "string") return { status: "not_listed", reason: `${named(lister)} ${listed}` };
