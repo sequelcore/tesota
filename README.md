@@ -23,7 +23,8 @@ On Windows, in PowerShell:
 irm https://raw.githubusercontent.com/sequelcore/tesota/dev/install.ps1 | iex
 ```
 
-Then, in your project:
+If the Linux or macOS script added Tesota to your `PATH`, open a new
+terminal first, or run the line it prints. Then, in your project:
 
 ```sh
 tesota
@@ -54,7 +55,8 @@ change is up to you. See [Receipts](docs/guides/receipts.md) and the
 
 - **Proofs:** TypeScript functions with LemmaScript contracts, proved with
   Dafny. A contract that still proves after the code is changed is too weak,
-  and goes back to the agent.
+  and goes back to the agent, unless Dafny proves the changed code returns
+  the same result for every input the contract admits.
 - **Tests:** your project's own commands, run against the change, with a
   check that a new test catches it.
 - **Design models:** TLA+ and Quint models of the design, checked with TLC
