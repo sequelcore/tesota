@@ -17,6 +17,7 @@ optional.
 | `agents/` | Your [agent types](../guides/subagents.md#agent-types), beside `~/.agents/agents` |
 | `auth.json` | Model sign-ins, readable only by you |
 | `mcp-auth.json` | MCP servers' sign-ins, readable only by you |
+| `usage.json` | The usage panel's last readings of each account's limits, with their time and a one-way fingerprint of whom they were read for; no token, credential, email or account ID ([Usage of your accounts](../guides/models.md#usage-of-your-accounts)) |
 | `trust.json` | The projects whose hooks and MCP servers you trusted, as they were then |
 | `sessions/` | Every session, one JSON Lines file each, by project |
 | `worktrees/` | The Git worktrees of [sessions](../guides/sessions.md) that run beside another |

@@ -43,38 +43,100 @@ export function setAccountProvider(models: MutableModels, account: Account): voi
     getAllModels: () => (provider.getAllModels?.() ?? provider.getModels()).map((model) => ({ ...model, provider: id })) });
 }
 
-/** Non-secret labels for account pickers and runs. Identity comes from Claude Code's status or the ChatGPT credential's account id. */
-export async function accountLabels(credentials: CredentialStore, accounts: readonly Account[],
-  status: typeof claudeCodeStatus = claudeCodeStatus): Promise<ReadonlyMap<string, string>> {
-  const labels = new Map<string, string>();
+/** An account as it stands: its sign-in, and whom it is signed in to when the provider says (non-secret). */
+export interface AccountState {
+  readonly id: string;
+  readonly provider: Account["provider"];
+  readonly folder?: string;
+  readonly signedIn: boolean;
+  readonly identity?: string;
+  /** The earlier account that is the same one, when another is. */
+  readonly sameAs?: string;
+  /** The label account pickers and runs show. */
+  readonly label: string;
+  /** Its sign-in is still being checked: not signed in as far as is known yet. */
+  readonly checking?: true;
+}
+
+type Instance = { readonly id: string; readonly provider: Account["provider"]; readonly folder?: string };
+type SignIn = { readonly signedIn: boolean; readonly identity?: string };
+
+/** One account's sign-in, from Claude Code's status or the ChatGPT credential's account id. */
+async function signInOf(credentials: CredentialStore, instance: Instance, status: typeof claudeCodeStatus, signal: AbortSignal | undefined): Promise<SignIn> {
+  if (instance.provider === "claude-code") {
+    const info = await status(instance.folder, undefined, signal);
+    return info.loggedIn ? { signedIn: true, ...info.email === undefined ? {} : { identity: info.email } } : { signedIn: false };
+  }
+  const credential = await credentials.read(instance.id);
+  if (credential?.type !== "oauth") return { signedIn: false };
+  return { signedIn: true, ...typeof credential["accountId"] === "string" ? { identity: credential["accountId"] } : {} };
+}
+
+/** The accounts with their sign-ins as far as known, in order, each identity's later accounts naming its first. */
+function labelled(instances: readonly Instance[], signIns: readonly (SignIn | undefined)[]): AccountState[] {
   const seen = new Map<string, string>();
-  const instances: readonly { readonly id: string; readonly provider: Account["provider"]; readonly folder?: string }[] = [
-    ...accounts.some(({ provider }) => provider === "claude-code") ? [{ id: "claude-code", provider: "claude-code" as const }] : [],
-    ...accounts.some(({ provider }) => provider === "openai-codex") ? [{ id: "openai-codex", provider: "openai-codex" as const }] : [],
-    ...accounts.map((account) => ({ ...account, id: accountId(account) })),
-  ];
-  for (const instance of instances) {
-    let identity: string | undefined;
-    let signedIn = false;
-    if (instance.provider === "claude-code") {
-      const info = await status(instance.folder);
-      signedIn = info.loggedIn;
-      if (signedIn) identity = info.email;
-    } else {
-      const credential = await credentials.read(instance.id);
-      signedIn = credential?.type === "oauth";
-      if (credential?.type === "oauth" && typeof credential["accountId"] === "string") identity = credential["accountId"];
-    }
+  return instances.map((instance, index) => {
+    const signIn = signIns[index];
+    const place = { id: instance.id, provider: instance.provider, ...instance.folder === undefined ? {} : { folder: instance.folder } };
+    if (signIn === undefined) return { ...place, signedIn: false, label: "checking sign-in…", checking: true as const };
+    const { signedIn, identity } = signIn;
     let label = signedIn ? identity ?? "signed in · account identity unavailable" : "not signed in";
+    let sameAs: string | undefined;
     if (identity !== undefined) {
       const key = `${instance.provider}/${identity.toLowerCase()}`;
-      const previous = seen.get(key);
-      if (previous !== undefined) label += ` · same account as ${previous}`;
+      sameAs = seen.get(key);
+      if (sameAs !== undefined) label += ` · same account as ${sameAs}`;
       else seen.set(key, instance.id);
     }
-    labels.set(instance.id, label);
-  }
-  return labels;
+    return { ...place, signedIn, ...identity === undefined ? {} : { identity }, ...sameAs === undefined ? {} : { sameAs }, label };
+  });
+}
+
+/** How many sign-ins `accountStates` checks at once, what stops it, and who hears of the accounts as each check returns. */
+export interface AccountStatesOptions {
+  /** One at a time unless given. */
+  readonly concurrency?: number;
+  readonly signal?: AbortSignal;
+  /** The accounts as far as known: first at once, before any check, as `checking`, then again as each check returns. */
+  readonly onUpdate?: (states: readonly AccountState[]) => void;
+}
+
+/**
+ * Each account's sign-in, in order: a provider's default sign-in when an
+ * account of that provider is declared, or when `also` names it (the one a
+ * session runs on), then the declared accounts. Identity comes from Claude
+ * Code's status or the ChatGPT credential's account id.
+ */
+export async function accountStates(credentials: CredentialStore, accounts: readonly Account[],
+  status: typeof claudeCodeStatus = claudeCodeStatus, also: readonly string[] = [],
+  { concurrency = 1, signal, onUpdate }: AccountStatesOptions = {}): Promise<readonly AccountState[]> {
+  const wanted = (provider: Account["provider"]): boolean => accounts.some((account) => account.provider === provider) || also.includes(provider);
+  const instances: readonly Instance[] = [
+    ...wanted("claude-code") ? [{ id: "claude-code", provider: "claude-code" as const }] : [],
+    ...wanted("openai-codex") ? [{ id: "openai-codex", provider: "openai-codex" as const }] : [],
+    ...accounts.map((account) => ({ ...account, id: accountId(account) })),
+  ];
+  const signIns: (SignIn | undefined)[] = instances.map(() => undefined);
+  onUpdate?.(labelled(instances, signIns));
+  let next = 0;
+  const checker = async (): Promise<void> => {
+    for (let index = next++; index < instances.length; index = next++) {
+      signal?.throwIfAborted();
+      const instance = instances[index];
+      if (instance === undefined) continue;
+      signIns[index] = await signInOf(credentials, instance, status, signal);
+      if (signal?.aborted !== true) onUpdate?.(labelled(instances, signIns));
+    }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, instances.length)) }, checker));
+  signal?.throwIfAborted();
+  return labelled(instances, signIns);
+}
+
+/** Non-secret labels for account pickers and runs. */
+export async function accountLabels(credentials: CredentialStore, accounts: readonly Account[],
+  status: typeof claudeCodeStatus = claudeCodeStatus): Promise<ReadonlyMap<string, string>> {
+  return new Map((await accountStates(credentials, accounts, status)).map(({ id, label }) => [id, label]));
 }
 
 /** A Claude plan's OAuth token, which pi-ai's Anthropic API would send as Claude Code does. */

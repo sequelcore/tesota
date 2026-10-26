@@ -112,6 +112,12 @@ export interface Shell {
   show(session: EngineSession, surface?: Surface, state?: "working" | "settling"): void;
   /** Shows `body` over the whole shell with the keyboard's focus; the returned function takes it away again. */
   overlay(body: Component & { dispose?: () => void }): () => void;
+  /**
+   * Shows `body` as a dialog under `title`, framed and in the input's place as
+   * `pick` and `confirm` are, with the keyboard's focus, until the returned
+   * function takes it away and disposes of it, or the shell stops.
+   */
+  panel(title: string, body: Component & Focusable & { dispose?: () => void }): () => void;
   /** Registers an explicit batch of operator questions for `owner`, and removes it when its run releases the callback. */
   askUser(owner: EngineSession, questions: readonly ClarificationQuestion[], submit: QuestionSubmit,
     finish: (outcome: Exclude<QuestionOutcome, { readonly status: "answered" }>) => void): () => void;
@@ -249,6 +255,8 @@ export function startShell(options: ShellOptions): Shell {
     covering = questions.at(-1)?.body;
     tui.setFocus(covering ?? editor);
   };
+  /** What closes each dialog `panel` shows, so stopping the shell disposes of it. */
+  const openPanels = new Set<() => void>();
   /** The questions shown in the input's place, the latest in front: a permission, a picker, a prompt. */
   const questions: { readonly box: Component; readonly body: Component & Focusable }[] = [];
   /** The input's slot: the latest question while one waits, the editor otherwise; the footer says when one waits. */
@@ -496,6 +504,8 @@ export function startShell(options: ShellOptions): Shell {
     if (ending) return;
     ending = true;
     hideOverlay?.();
+    // Each removes itself; a Set iterates on past what is deleted from it.
+    for (const close of openPanels) close();
     for (const registrations of clarifications.values()) {
       for (const registration of registrations) registration.finish({ status: "cancelled", reason: "The shell stopped." });
     }
@@ -671,6 +681,19 @@ export function startShell(options: ShellOptions): Shell {
       };
       hideOverlay = hide;
       return hide;
+    },
+    panel(title, body) {
+      if (ending) { body.dispose?.(); return () => undefined; }
+      let close = (): void => undefined;
+      void dialog<undefined>(heading(title), body, (settle) => {
+        close = () => {
+          if (!openPanels.delete(close)) return;
+          body.dispose?.();
+          settle(undefined);
+        };
+        openPanels.add(close);
+      });
+      return () => { close(); };
     },
     askUser(owner, asked, submitAnswer, finish) {
       const registration: ClarificationRegistration = { owner, questions: asked, submit: submitAnswer, draft: createQuestionDraft(asked), finish, mount: undefined,
