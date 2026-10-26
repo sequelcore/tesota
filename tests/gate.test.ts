@@ -1158,7 +1158,7 @@ it("restates with the model the claimcheck-model flag names", async () => {
   await run.input();
   await run.tool("write");
   writeFileSync(join(root, "src", "rule.ts"), `//@ ensures true\n${contract}`);
-  expect(entry(await run.settle()).content).toContain("ClaimCheck its restating model other/missing is not a provider/id in Pi's model registry");
+  expect(entry(await run.settle()).content).toContain("ClaimCheck its restating model other/missing isn't a model Tesota knows (provider/id)");
 });
 
 it("lists the cases the request leaves open with GPT-6 Sol unless the operator names another model", async () => {
@@ -1223,8 +1223,8 @@ it("leaves the open cases out when the operator turns the list off, and says why
   await missing.tool("write");
   writeFileSync(join(root, "src", "notes.md"), "more notes\n");
   const settled = entry(await missing.settle());
-  expect((settled.details as Receipt).openCases).toEqual({ status: "not_listed", reason: "nobody/none is not a provider/id in Pi's model registry" });
-  expect(facts(settled.content)).toContain("  not listed    the cases the request leaves open: nobody/none is not a provider/id in Pi's model registry");
+  expect((settled.details as Receipt).openCases).toEqual({ status: "not_listed", reason: "nobody/none isn't a model Tesota knows (provider/id)" });
+  expect(facts(settled.content)).toContain("  not listed    the cases the request leaves open: nobody/none isn't a model Tesota knows (provider/id)");
 });
 
 it("sends a weak contract back once, then lists it in the receipt", async () => {

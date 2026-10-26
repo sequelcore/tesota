@@ -10,7 +10,7 @@ import { host } from "./host.js";
 export const WELCOME_SCENE_MS = 800;
 export const WELCOME_FRAME_MS = 50;
 export const WELCOME_STATIC_OPACITY = 0.30;
-export const WELCOME_TAGLINE = "Shows evidence that the change does what you asked.";
+export const WELCOME_TAGLINE = "A coding agent that ends every run with a receipt.";
 const fallbackBackground: Readonly<Record<"dark" | "light", Rgb>> = { dark: [32, 32, 32], light: [237, 237, 229] };
 
 function rgb(color: Color | undefined): Rgb {

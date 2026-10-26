@@ -15,6 +15,30 @@ import manifest from "../package.json" with { type: "json" };
 /** The verifier's flags (`gate.ts`), taken wherever they come, for the shell and `-p`. */
 const verifierFlags = new Set(["claimcheck-model", "open-cases-model"]);
 
+/** One command list for help and argument errors; internal entry points stay out of it. */
+const usage: readonly (readonly [string, string] | string)[] = [
+  ["tesota", "Open the shell in the current folder."],
+  ["tesota -p, --print \"<request>\"", "Run one request without the shell."],
+  ["  -c, --continue", "Continue this folder's latest session."],
+  ["  -r, --resume <session>", "Continue the session with this id."],
+  ["  --model <provider>/<id>", "Choose the model for this run."],
+  ["tesota receipt [--json] [--owner <who>]", "Write the last run's receipt."],
+  ["tesota accounts", "List your accounts."],
+  ["tesota accounts add <provider> <name>", "Sign in and add an account (claude-code or openai-codex)."],
+  ["tesota accounts login <provider>@<name>", "Sign an account in again."],
+  ["tesota accounts remove <provider>@<name>", "Remove an account no session uses."],
+  ["tesota graph --plain|--html <manifest>", "Print a captured model graph, or write its HTML page."],
+  ["tesota --version", "Print the version."],
+  ["tesota --help, -h", "Print this help."],
+  "",
+  "The shell and -p also take:",
+  ["  --open-cases-model <provider>/<id>|off", "Choose the open-cases model, or turn it off."],
+  ["  --claimcheck-model <provider>/<id>", "Choose the model that restates contracts."],
+];
+const column = Math.max(...usage.map((row) => typeof row === "string" ? 0 : row[0].length)) + 2;
+const commands = usage.map((row) => typeof row === "string" ? row && `  ${row}` : `  ${row[0].padEnd(column)}${row[1]}`).join("\n");
+const documentation = "Docs: https://github.com/sequelcore/tesota/tree/main/docs";
+
 /** `args` without the verifier's flags, and their values by name. */
 function splitFlags(args: readonly string[]): { flags: Record<string, string>; rest: string[] } {
   const flags: Record<string, string> = {};
@@ -43,6 +67,11 @@ function exitWith(work: Promise<number | void>): void {
 }
 
 if (command === "--version") console.log(manifest.version);
+else if (command === "--help" || command === "-h") {
+  exitWith(import("../../../src/welcome-header.ts").then(({ WELCOME_TAGLINE }) => {
+    console.log(`${WELCOME_TAGLINE}\n\n${commands}\n\n${documentation}`);
+  }));
+}
 else if (command === undefined) exitWith(import("./shell/app.ts").then(({ runApp }) => runApp({ cwd: process.cwd(), flags })));
 else if (command === "-p" || command === "--print") {
   exitWith(import("./print.ts").then(({ runPrint }) => runPrint(rest, process.cwd(), output, flags)));
@@ -69,8 +98,6 @@ else if (command === "__lsc") {
   });
 }
 else {
-  console.error(`Unknown argument ${command}. Use: tesota (the shell), tesota -p [-c | --resume <session>] "<request>", tesota receipt [--json], ` +
-    "tesota accounts [add <provider> <name> | login <account> | remove <account>], tesota --version; " +
-    "the shell and -p take --open-cases-model <provider>/<id>|off and --claimcheck-model <provider>/<id>.");
+  console.error(`Unknown argument ${command}. Use:\n${commands}\n\n${documentation}`);
   process.exitCode = 2;
 }
