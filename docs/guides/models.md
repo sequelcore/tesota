@@ -39,6 +39,16 @@ Claude Code only answers: Tesota's own tools, permissions, hooks and
 verification do the rest, and your Claude Code settings, skills and MCP
 servers don't load. Usage draws on your plan's limits.
 
+**Known issue:** users report that headless Claude Code sessions, such as
+Tesota's, use more of the 5-hour window than interactive Claude Code. The
+original controlled comparison measured about 1.8 times as much for the
+same work, and later measurements vary. Whether the weekly limit is affected
+is unverified. Anthropic tracks it as
+[anthropics/claude-code#97074](https://github.com/anthropics/claude-code/issues/97074),
+open as of 2026-10-26. Tesota doesn't disguise its sessions as interactive
+ones to avoid it. For long runs, plan for the 5-hour window running out
+sooner, or use another provider.
+
 An Anthropic API key is a separate route, through the `anthropic`
 provider, with no Claude Code: set `ANTHROPIC_API_KEY`, or enter the key
 in `/login`. It takes an API key only, not a Claude plan's sign-in. Heavy
