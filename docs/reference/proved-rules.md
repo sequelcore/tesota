@@ -44,6 +44,7 @@ Run `bun run formal:check` to check the full list.
 | [`packages/core/src/reconcile-rule.ts`](../../packages/core/src/reconcile-rule.ts) | What recovery records for unfinished calls without replaying them | `lsc check --backend=dafny packages/core/src/reconcile-rule.ts` |
 | [`packages/core/src/settle-rule.ts`](../../packages/core/src/settle-rule.ts) | Whether a run continues, reaches verification or ends | `lsc check --backend=dafny packages/core/src/settle-rule.ts` |
 | [`packages/core/src/permission-rule.ts`](../../packages/core/src/permission-rule.ts) | Whether the permission floor, mode and matching rules allow a call | `lsc check --backend=dafny packages/core/src/permission-rule.ts` |
+| [`packages/core/src/subpath-rule.ts`](../../packages/core/src/subpath-rule.ts) | How guarded subpaths climb and how Windows dot/space segments normalize conservatively | `lsc check --backend=dafny packages/core/src/subpath-rule.ts` |
 | [`packages/core/src/compact-rule.ts`](../../packages/core/src/compact-rule.ts) | When to summarize conversation and where its verbatim tail starts | `lsc check --backend=dafny packages/core/src/compact-rule.ts` |
 | [`packages/core/src/catalog-rule.ts`](../../packages/core/src/catalog-rule.ts) | How much context instruction files and the skill catalog may use | `lsc check --backend=dafny packages/core/src/catalog-rule.ts` |
 | [`packages/core/src/invocation-rule.ts`](../../packages/core/src/invocation-rule.ts) | Whether you or the model may start a skill | `lsc check --backend=dafny packages/core/src/invocation-rule.ts` |
