@@ -169,7 +169,7 @@ describe("the engine's models", () => {
     expect(await models.checkAuth("anthropic")).toMatchObject({ type: "api_key" });
   });
 
-  test("no provider offers a Claude sign-in: Anthropic takes an API key alone (claude-code-route-terms.md)", () => {
+  test("no provider offers a Claude sign-in: Anthropic takes an API key alone", () => {
     const models = engineModels(new InMemoryCredentialStore());
     expect(models.getProvider("anthropic")?.auth.oauth).toBeUndefined();
     const signIns = models.getProviders().flatMap(({ id, auth }) => auth.oauth === undefined ? [] : [`${id}: ${auth.oauth.name}`]);

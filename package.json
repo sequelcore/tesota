@@ -2,7 +2,7 @@
   "name": "tesota",
   "version": "0.1.0-alpha.4",
   "private": true,
-  "description": "Makes your coding agent show evidence that its change does what you asked",
+  "description": "A coding agent that ends every run with a receipt.",
   "license": "Apache-2.0",
   "type": "module",
   "packageManager": "bun@1.4.2",
