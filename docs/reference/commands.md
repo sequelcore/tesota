@@ -44,15 +44,23 @@ repair command from [Install](../get-started/install.md#repair-commands).
 
 Every row is labelled **core** or **optional** in human output and has a
 `requirement` field (`"core"` or `"optional"`) in JSON. Git, Dafny with
-LemmaScript (`lsc`), and Java with TLC are core; Quint is optional. A missing
-or platform-unavailable Quint is still reported but does not affect the exit
-code. A failed optional tool still triggers exit 1. Provider rows retain
-their existing exit behavior and are labelled core for exit accounting;
-Claude sign-in remains unchecked, not failed.
+LemmaScript (`lsc`), Java with TLC, and **model provider** are core. Quint
+and every individual provider row (including default and named Claude Code
+accounts) are optional. Unavailable optional rows remain visible but do not
+affect the exit code. Any failed row, including an optional tool or provider,
+still triggers exit 1.
+
+The core **model provider** row is available when at least one individual
+provider row is available, and unavailable when none is. Its repair line
+points to `/login` and the [Models guide](../guides/models.md). An
+OpenRouter-only installation does not need Claude Code. This summary uses
+the local row results, not a model request; Claude Code rows still mean only
+that the executable's version probe passed, with sign-in unchecked.
 
 - **available:** the local version/help or sign-in probe passed.
 - **unavailable:** the executable, LemmaScript entry point or TLC jar was not
-  found, or a working Quint cannot use its TLC backend on Windows because
+  found, no provider row is available for the core model provider summary,
+  or a working Quint cannot use its TLC backend on Windows because
   Apalache cannot start there. The Quint row retains its successful version
   probe and explains the platform limit.
 - **failed:** found but its probe failed, timed out, or returned an unsupported
@@ -84,9 +92,9 @@ paths are null.
 
 | Exit | Meaning (human and JSON) |
 | --- | --- |
-| 0 | No failures or unavailable core capabilities/providers; optional capabilities may be unavailable |
+| 0 | No failures or unavailable core capabilities; optional capabilities/providers may be unavailable |
 | 1 | At least one failed, including optional tools, even if others are unavailable; also an unexpected command error |
-| 2 | At least one core capability/provider unavailable, none failed |
+| 2 | At least one core capability unavailable (including model provider when no provider row is available), none failed |
 | 3 | Invalid doctor arguments |
 
 A nonzero doctor result does not prevent you from using Tesota with the

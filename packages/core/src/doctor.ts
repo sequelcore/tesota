@@ -67,7 +67,7 @@ const providerLoss = "Not verified: no run with this provider until its sign-in 
 async function claudeDiagnosis(id: string): Promise<Diagnosis> {
   const executable = claudeCodeExecutable();
   const repair = `${repairCommand("claude-code")}; then ${id === "claude-code" ? "claude (then /login)" : `tesota accounts login ${id}`}`;
-  const version = await probe({ id, requirement: "core", executable: executable ?? "claude", args: ["--version"],
+  const version = await probe({ id, requirement: "optional", executable: executable ?? "claude", args: ["--version"],
     consequence: "Not verified: no run with Claude Code when its executable is unavailable; other providers are unaffected.", repair });
   // `auth status` writes .claude.json and backups. Never invoke it or read Claude's files from doctor.
   return { ...version, smoke: { ...version.smoke, output: `${version.smoke.output}\nSign-in not checked (version-only probe).` } };
@@ -105,11 +105,11 @@ export async function doctorReport(): Promise<{ capabilities: Diagnosis[]; exitC
       repair: repairCommand("tlc"), successExitCode: 1, accepts: /TLC - provides model checking.*Version \d/u });
     capabilities.push({ ...tlc, entryPoint: jar });
   }
-  capabilities.push(await claudeDiagnosis("claude-code"));
+  const providers: Diagnosis[] = [await claudeDiagnosis("claude-code")];
   const accounts = readSettings().settings.accounts ?? [];
   for (const account of accounts) {
     if (account.provider !== "claude-code") continue;
-    capabilities.push(await claudeDiagnosis(`claude-code@${account.name}`));
+    providers.push(await claudeDiagnosis(`claude-code@${account.name}`));
   }
   const credentials = fileCredentialStore();
   const stored = new Set((await credentials.list()).map(({ providerId }) => providerId));
@@ -119,17 +119,24 @@ export async function doctorReport(): Promise<{ capabilities: Diagnosis[]; exitC
       // checkAuth reads local auth only: unlike getAuth, it never refreshes OAuth credentials.
       const auth = await models.checkAuth(provider.id, { signal: AbortSignal.timeout(5_000) });
       if (auth === undefined && !stored.has(provider.id)) continue;
-      capabilities.push({ id: `provider:${provider.id}`, requirement: "core", status: doctorStatus(true, auth !== undefined), path: null,
+      providers.push({ id: `provider:${provider.id}`, requirement: "optional", status: doctorStatus(true, auth !== undefined), path: null,
         version: `pi-ai ${manifest.dependencies["@earendil-works/pi-ai"]}`,
         smoke: { ended: "exited", exitCode: auth === undefined ? 1 : 0,
           output: auth === undefined ? "Stored sign-in is not usable locally." : "Local sign-in present; no model request sent or credential refreshed." },
         consequence: providerLoss, repair: `${repairCommand("provider")} (then /login)` });
     } catch {
-      capabilities.push({ id: `provider:${provider.id}`, requirement: "core", status: "failed", path: null, version: null,
+      providers.push({ id: `provider:${provider.id}`, requirement: "optional", status: "failed", path: null, version: null,
         smoke: { ended: "cancelled", exitCode: null, output: "Local auth lookup failed or exceeded its five-second limit." },
         consequence: providerLoss, repair: `${repairCommand("provider")} (then /login)` });
     }
   }
+  const providerAvailable = providers.some(({ status }) => status === "available");
+  capabilities.push(...providers, { id: "model provider", requirement: "core", status: doctorStatus(providerAvailable, true),
+    path: null, version: null, smoke: { ended: "exited", exitCode: providerAvailable ? 0 : 1,
+      output: providerAvailable ? "At least one provider row is available; Claude Code rows are version-only, with sign-in unchecked."
+        : "No provider row is available." },
+    consequence: "Not verified: no run can start without a model provider.",
+    repair: `${repairCommand("provider")} (then /login); Models guide: https://github.com/sequelcore/tesota/blob/main/docs/guides/models.md` });
   return { capabilities, exitCode: doctorExitCode(capabilities.some(({ status }) => status === "failed"),
     capabilities.some(({ status, requirement }) => status === "unavailable" && requirement === "core")) };
 }
@@ -138,7 +145,7 @@ export async function doctorReport(): Promise<{ capabilities: Diagnosis[]; exitC
 export async function doctorCommand(args: readonly string[], output: { out(text: string): void; error(text: string): void }): Promise<number> {
   if (args.length > 1 || (args.length === 1 && args[0] !== "--json")) {
     const help = args.length === 1 && (args[0] === "--help" || args[0] === "-h");
-    (help ? output.out : output.error)("Use: tesota doctor [--json]\nRead-only local probes, five seconds each. Core: Git, Dafny with lsc, Java with TLC. Optional: Quint. Providers keep their current exit behavior.\nExit: 0 no failures or unavailable core/providers, 1 any failed tool/provider (including optional), 2 core/provider unavailable without failures, 3 usage error. Unavailable optional tools do not affect the exit code.\n");
+    (help ? output.out : output.error)("Use: tesota doctor [--json]\nRead-only local probes, five seconds each. Core: Git, Dafny with lsc, Java with TLC, model provider (at least one provider row available). Optional: Quint and individual provider rows, including Claude Code accounts.\nExit: 0 no failures or unavailable core capabilities, 1 any failed tool/provider (including optional), 2 core capability unavailable without failures, 3 usage error. Unavailable optional tools do not affect the exit code.\n");
     return help ? 0 : 3;
   }
   const report = await doctorReport();

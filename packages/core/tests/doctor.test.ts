@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runProcess } from "../../../src/process.ts";
+import { build } from "../scripts/build.ts";
 
 const main = fileURLToPath(new URL("../src/main.ts", import.meta.url));
 const isolatedEnvironment = (home: string): NodeJS.ProcessEnv => ({ ...process.env, PATH: "", HOME: home, USERPROFILE: home,
@@ -95,7 +96,8 @@ test("help and invalid arguments do not run any probe", async () => {
   const output = { out: (text: string) => { out.push(text); }, error: (text: string) => { error.push(text); } };
   expect(await doctorCommand(["--help"], output)).toBe(0);
   expect(out.join("")).toContain("tesota doctor [--json]");
-  expect(out.join("")).toContain("Optional: Quint");
+  expect(out.join("")).toContain("model provider (at least one provider row available)");
+  expect(out.join("")).toContain("Optional: Quint and individual provider rows");
   expect(out.join("")).toContain("Unavailable optional tools do not affect the exit code");
   expect(await doctorCommand(["--install"], output)).toBe(3);
   expect(error.join("")).toContain("Read-only");
@@ -138,6 +140,8 @@ test("the default and declared Claude accounts are version-only, without touchin
     expect(named?.smoke.output).toContain("Sign-in not checked (version-only probe).");
     expect(named?.path).toBe(defaults?.path);
     expect(named?.status).toBe(defaults?.status);
+    expect(defaults?.requirement).toBe("optional");
+    expect(named?.requirement).toBe("optional");
     expect(existsSync(folder)).toBe(false);
     expect(readdirSync(home)).toEqual([".tesota"]);
     expect(readdirSync(join(home, ".tesota"))).toEqual(["settings.json"]);
@@ -181,6 +185,7 @@ test.skipIf(process.platform !== "win32")("working Quint on Windows is unavailab
 
 let toolFixture = "";
 let toolRoot = "";
+let doctorBinary = "";
 beforeAll(() => {
   toolRoot = mkdtempSync(join(tmpdir(), "tesota-doctor-tools-"));
   const source = join(toolRoot, "tool.ts");
@@ -196,6 +201,8 @@ console.log(name === "dafny" ? "4.11.0" : name === "java" ? 'openjdk version "21
 `);
   const built = Bun.spawnSync([process.execPath, "build", "--compile", source, "--outfile", toolFixture], { stdout: "ignore", stderr: "pipe" });
   if (built.exitCode !== 0) throw new Error(built.stderr.toString());
+  doctorBinary = join(toolRoot, process.platform === "win32" ? "tesota.exe" : "tesota");
+  build(doctorBinary);
 });
 afterAll(() => { if (toolRoot) rmSync(toolRoot, { recursive: true, force: true, maxRetries: 3 }); });
 
@@ -224,6 +231,44 @@ test.each([
     expect(report.capabilities.find(({ id }) => id === "git")).toMatchObject({ requirement: "core", status: git });
     for (const id of ["dafny", "lsc", "java", "tlc"]) {
       expect(report.capabilities.find((item) => item.id === id)).toMatchObject({ requirement: "core", status: "available" });
+    }
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
+test.each([
+  { scenario: "OpenRouter only without Claude Code gives 0", key: "fake-openrouter-key", exit: 0, status: "available", failed: false },
+  { scenario: "no provider at all gives 2", key: "", exit: 2, status: "unavailable", failed: false },
+  { scenario: "failed optional provider still gives 1 with OpenRouter available", key: "fake-openrouter-key", exit: 1, status: "available", failed: true },
+])("model provider capability: $scenario", async ({ key, exit, status, failed }) => {
+  const home = mkdtempSync(join(tmpdir(), "tesota-doctor-provider-"));
+  try {
+    for (const name of ["git", "dafny", "java"]) {
+      linkSync(toolFixture, join(home, process.platform === "win32" ? `${name}.exe` : name));
+    }
+    mkdirSync(join(home, ".tesota", "tools"), { recursive: true });
+    writeFileSync(join(home, ".tesota", "tools", "tla2tools.jar"), "local tool-boundary fixture");
+    if (failed) {
+      writeFileSync(join(home, ".tesota", "auth.json"), JSON.stringify({ anthropic: { type: "api_key", key: "sk-ant-oat-fake-plan-token" } }));
+    }
+    const result = await runProcess(doctorBinary, ["doctor", "--json"], home, new AbortController().signal, 25_000,
+      undefined, { env: { PATH: home, HOME: home, USERPROFILE: home, APPDATA: home, LOCALAPPDATA: home,
+        SystemRoot: process.env["SystemRoot"], TMPDIR: home, TEMP: home, TMP: home, OPENROUTER_API_KEY: key } });
+    expect(result.ended).toBe("exited");
+    const report = JSON.parse(result.stdout) as { exitCode: number; capabilities: Diagnosis[] };
+    expect(result.exitCode).toBe(exit);
+    expect(report.exitCode).toBe(exit);
+    expect(report.capabilities.find(({ id }) => id === "claude-code")).toMatchObject({ requirement: "optional", status: "unavailable" });
+    const summary = report.capabilities.find(({ id }) => id === "model provider");
+    expect(summary).toMatchObject({ requirement: "core", status });
+    expect(summary?.repair).toContain("/login");
+    expect(summary?.repair).toContain("docs/guides/models.md");
+    if (failed) {
+      expect(report.capabilities.find(({ id }) => id === "provider:anthropic")).toMatchObject({ requirement: "optional", status: "failed" });
+    }
+    if (key) {
+      expect(report.capabilities.find(({ id }) => id === "provider:openrouter")).toMatchObject({ requirement: "optional", status: "available" });
+    } else {
+      expect(report.capabilities.some(({ id, status }) => (id.startsWith("provider:") || id.startsWith("claude-code")) && status === "available")).toBe(false);
     }
   } finally { rmSync(home, { recursive: true, force: true }); }
 });

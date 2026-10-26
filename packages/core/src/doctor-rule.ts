@@ -7,7 +7,7 @@ export function doctorStatus(found: boolean, passed: boolean): string {
   return passed ? "available" : "failed";
 }
 
-/** Any failure (including optional tools) takes precedence. Only missing core capabilities or providers trigger 2; missing optional tools do not. */
+/** Any failure (including optional tools/providers) takes precedence. Only unavailable core capabilities trigger 2; missing optional rows do not. */
 //@ ensures failed ==> \result === 1
 //@ ensures !failed && coreUnavailable ==> \result === 2
 //@ ensures !failed && !coreUnavailable ==> \result === 0
