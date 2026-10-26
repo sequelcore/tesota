@@ -1,6 +1,6 @@
 # Subagents
 
-The agent can hand a task to a **subagent**: another agent with its own
+The agent can hand part of your request to a subagent: another agent with its own
 context, such as one that explores a large codebase or fixes one bug while
 the main agent goes on. A subagent's work comes back with evidence: one
 that changes files ends with its own receipt.
@@ -46,7 +46,7 @@ in an error, such as a provider's refusal, tells the agent why.
 The receipt lists each subagent the run started, with how it ended and
 where its own receipt stands. See [Receipt v2](../receipt-v2.md#child).
 
-### Its branch, and no other (#619)
+### Its branch, and no other
 
 Worktrees share their repository's branches, so a subagent's shell could
 move a branch another worktree has checked out, yours included. Git keeps
@@ -127,7 +127,7 @@ You review a change. Read the diff, then report each defect with its file and li
 | `description` | When to use it. A file without one is left out |
 | `model` | `provider/id`. Anything else, such as Claude Code's `sonnet` or `inherit`, leaves it to the call or the session |
 | `writes` | `true` for a subagent that writes |
-| `background` | `false` to wait for it; pstack's `is_background` says the same |
+| `background` | `false` to wait for it; `is_background` is read the same way |
 
 Other fields are ignored. The body is added to the subagent's instructions.
 

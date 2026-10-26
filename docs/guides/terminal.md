@@ -4,10 +4,10 @@
 
 | | |
 | --- | --- |
-| **Fullscreen** (default) | Tesota takes the whole window, as Claude Code and Codex do: scroll, search with Ctrl+Shift+F, select text to copy it. When the shell ends, the conversation is written to your terminal's scrollback |
-| **Inline** | Tesota prints into the terminal like a command, and the scrollback is your terminal's own |
+| Fullscreen (default) | Tesota takes the whole window, as Claude Code and Codex do: scroll, search with Ctrl+Shift+F, select text to copy it. When the shell ends, the conversation is written to your terminal's scrollback |
+| Inline | Tesota prints into the terminal like a command, and the scrollback is your terminal's own |
 
-`/settings` → **Terminal** switches between them, from the next start. On
+`/settings` → Terminal switches between them, from the next start. On
 Windows over SSH Tesota always runs inline, which remote terminals draw
 reliably. On Windows, fullscreen redraws every cell, as Windows' console
 needs.
@@ -18,17 +18,16 @@ terminal selects and copies as usual.
 
 ## The screen
 
-- **The header:** a four-row pixel ironwood beside Tesota's name and version,
-  the model and folder, and its purpose. Blossoms follow the latest receipt's
-  `verified` standing; a new request clears them. The receipt's text remains
-  the primary signal.
-- **The empty stage:** a fixed pixel ironwood and armless saguaro seedling,
-  centered between the header and input at 30% opacity. It stays while you
-  type and disappears when you send a message. It never enters scrollback
-  or appears over a resumed conversation. The crown rustles once at opening;
-  clicking either mark restarts the rustle and drops one leaf. Each gesture
-  ends within a second, with nothing moving otherwise or while working.
-  Without extended colors, the marks are static default-foreground silhouettes.
+- **The header:** a small pixel ironwood beside Tesota's name and version,
+  the model and folder, and its purpose. The tree blossoms when the latest
+  receipt is verified; a new request clears it. The receipt's text says
+  the same in words.
+- **The empty stage:** a larger, faded ironwood and a saguaro seedling,
+  centered between the header and the input. It stays while you type and
+  goes when you send a message; it never enters scrollback. The crown
+  rustles once when Tesota opens, and again, dropping a leaf, when you
+  click either tree. Without extended colors both trees are plain
+  silhouettes that don't move.
 - **The input:** a full-width band with a `›` prompt, like your messages in
   the conversation. Without background-color support, both use plain rows
   and the prompt. Enter sends; while the agent works, Enter
@@ -36,15 +35,16 @@ terminal selects and copies as usual.
   above it, labeled with when they will be delivered. Alt+Up (Alt+Q on
   Windows) returns them to the input to edit or withdraw; stopping the run
   restores them too. See [Commands and keys](../reference/commands.md#keys).
-- **The footer:**
-  - first, what Tesota knows about the request (`● ready · tests only`,
-    the gate's step and timer while it verifies, or the receipt in brief),
-    with the context window's use at the right;
-  - then the folder and branch, with the model;
-  - then statuses: the permission mode, and sessions waiting for you.
+- **The footer:** one row. On the left, what Tesota knows about the
+  request: what it can verify (`● ready · tests only`), the step and its
+  timer while it verifies, or the receipt in brief (`✓ receipt · 1 proved
+  · tests pass`). On the right, the folder and branch, the model, the
+  context window's use (`ctx 12%`), and statuses such as the permission
+  mode and the sessions waiting for you.
 
-On a narrow terminal the model goes first, then the evidence shortens, and
-the context's use goes last.
+On a narrow terminal the folder goes first, then the model; then the
+evidence shortens, and the context's use goes last. The statuses always
+show.
 
 [Commands and keys](../reference/commands.md) lists every key.
 
@@ -59,9 +59,9 @@ set that canvas and a matching ANSI palette. They're optional:
 
 - **Windows Terminal:** copy `windows-terminal/tesota.json` to
   `%LOCALAPPDATA%\Microsoft\Windows Terminal\Fragments\Tesota\`, restart
-  Windows Terminal, and choose **Tesota Dark** or **Tesota Light** as a
-  profile's color scheme. Set the profile's **Intense text style** to
-  **Bold font** to draw bold text bold rather than brighter.
+  Windows Terminal, and choose Tesota Dark or Tesota Light as a
+  profile's color scheme. Set the profile's Intense text style to
+  Bold font to draw bold text bold rather than brighter.
 - **Ghostty:** copy the files in `ghostty` to `~/.config/ghostty/themes/`
   and set `theme = light:Tesota Light,dark:Tesota Dark`.
 - **WezTerm:** copy the files in `wezterm` to `~/.config/wezterm/colors/`
