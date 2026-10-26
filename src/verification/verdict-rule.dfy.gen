@@ -57,6 +57,30 @@ lemma methodStanding_ensures(held: int, partly: int, failed: int, runs: int)
 {
 }
 
+function statementResult(stopped: bool, standing: string): string
+  requires (((((standing == "verified") || (standing == "incomplete")) || (standing == "failed")) || (standing == "unverified")) || (standing == "unchanged"))
+{
+  if stopped then
+    "CANCELLED"
+  else
+    if ((standing == "verified") || (standing == "unchanged")) then
+      "COMPLETED"
+    else
+      if (standing == "failed") then
+        "FAILED"
+      else
+        "none"
+}
+
+lemma statementResult_ensures(stopped: bool, standing: string)
+  requires (((((standing == "verified") || (standing == "incomplete")) || (standing == "failed")) || (standing == "unverified")) || (standing == "unchanged"))
+  ensures ((statementResult(stopped, standing) == "CANCELLED") <==> stopped)
+  ensures ((statementResult(stopped, standing) == "COMPLETED") <==> (!(stopped) && ((standing == "verified") || (standing == "unchanged"))))
+  ensures ((statementResult(stopped, standing) == "FAILED") <==> (!(stopped) && (standing == "failed")))
+  ensures ((statementResult(stopped, standing) == "none") <==> (!(stopped) && ((standing == "incomplete") || (standing == "unverified"))))
+{
+}
+
 function pathCovered(proved: bool, tested: bool, exercised: bool): bool
 {
   (proved || (tested && exercised))

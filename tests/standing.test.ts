@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { noEvidence, type Receipt, receiptStanding, receiptSummary, renderReceipt } from "../src/receipt.js";
+import { commandFinding, type ModelResult, modelFinding, noEvidence, proofFinding, type Receipt, receiptDetailLines, receiptFindings, receiptStanding, receiptSummary,
+  receiptTone, renderReceipt } from "../src/receipt.js";
 import type { Evidence } from "../src/evidence.js";
 import { emptyReceipt } from "./receipts.js";
 
@@ -63,6 +64,65 @@ describe("the receipt's standing (#668)", () => {
     expect(receiptStanding({ ...tested, unresolvedQuestion: "Which behavior?" })).toBe("incomplete");
   });
 
+  // A check that couldn't run, or whose evidence is stale, is a gap: `failed` means a check ran and showed the change wrong.
+  const stale = (evidence: Evidence): Evidence => ({ ...evidence, outcome: "not_started", invalidated: "content_changed" });
+  const noDafny = { ...proof, verdict: "operator" as const,
+    evidence: { ...proof.evidence, outcome: "not_started" as const, output: "Dafny could not start: dafny is not installed" } };
+  const timedOut = { ...passing, verdict: "operator" as const, evidence: ran("timed_out") };
+  const staleTest = { ...passing, verdict: "operator" as const, evidence: stale(passing.evidence) };
+  const staleProof = { ...proof, verdict: "operator" as const, evidence: stale(proof.evidence) };
+  const model = (verdict: ModelResult["verdict"], run: ModelResult["run"]): ModelResult => ({ path: "models/Add.tla", language: "tla",
+    header: { covers: [{ path: "src/add.ts", names: [] }], invariants: ["Safe"], atomic: [], omits: [], faults: [] }, problems: [],
+    evidence: { ...ran(run === "passed" ? "passed" : run === "violated" ? "failed" : run === "timed_out" ? "timed_out" : "not_started"),
+      verifier: "tlc" }, run, states: 9, faults: [], staleness: "current", stale: [], writtenWithCode: false, link: "no_replay", verdict,
+    ...run === "violated" ? { counterexample: { violation: "Invariant Safe is violated.", steps: [] } } : {} });
+  const provedAdd: Receipt = { ...emptyReceipt, changed: [blob("src/add.ts")], proofs: [proof] };
+  const unprovedAdd: Receipt = { ...emptyReceipt, changed: [blob("src/add.ts")], unverified: ["src/add.ts"] };
+
+  it("is never failed when a check could not run, ran past its limit, or its evidence is stale", () => {
+    // Dafny missing, with nothing else that passed, and beside a test that passed.
+    expect(receiptStanding({ ...unprovedAdd, proofs: [noDafny] })).toBe("unverified");
+    expect(receiptStanding({ ...tested, proofs: [noDafny] })).toBe("incomplete");
+    // A command past its time limit.
+    expect(receiptStanding({ ...unprovedAdd, tests: [timedOut] })).toBe("unverified");
+    expect(receiptStanding({ ...provedAdd, tests: [timedOut] })).toBe("incomplete");
+    // Evidence the settled content no longer holds.
+    expect(receiptStanding({ ...unprovedAdd, tests: [staleTest] })).toBe("unverified");
+    expect(receiptStanding({ ...provedAdd, tests: [staleTest] })).toBe("incomplete");
+    expect(receiptStanding({ ...unprovedAdd, proofs: [staleProof], tests: [passing] })).toBe("incomplete");
+    // A model TLC could not run.
+    expect(receiptStanding({ ...provedAdd, models: [model("operator", "timed_out")] })).toBe("incomplete");
+    // Nor while a decision is pending, as an unresolved question is.
+    for (const receipt of [{ ...tested, proofs: [noDafny] }, { ...provedAdd, tests: [timedOut] }, { ...provedAdd, tests: [staleTest] },
+      { ...provedAdd, models: [model("operator", "not_started")] }]) {
+      expect(receiptStanding({ ...receipt, unresolvedQuestion: "Which behavior?" })).toBe("incomplete");
+    }
+  });
+
+  it("is failed when a test fails, a proof does not hold, or a model breaks a rule", () => {
+    expect(receiptStanding({ ...provedAdd, tests: [failing] })).toBe("failed");
+    expect(receiptStanding({ ...unprovedAdd, tests: [passing], proofs: [{ ...proof, verdict: "send_back", evidence: ran("failed") }] }))
+      .toBe("failed");
+    expect(receiptStanding({ ...provedAdd, proofs: [proof, { ...proof, path: "src/sub.ts", verdict: "no_progress", evidence: ran("failed") }] }))
+      .toBe("failed");
+    expect(receiptStanding({ ...provedAdd, models: [model("send_back", "violated")] })).toBe("failed");
+  });
+
+  it("colours a check that could not run as a gap, and one that failed red", () => {
+    for (const finding of [proofFinding(noDafny), proofFinding(staleProof), commandFinding(timedOut), commandFinding(staleTest),
+      modelFinding(model("operator", "timed_out"))]) {
+      expect(finding).toMatchObject({ standing: "gap" });
+      expect(finding.failed).toBeUndefined();
+    }
+    expect(receiptTone(receiptFindings({ ...provedAdd, tests: [timedOut] }))).toBe("warning");
+    expect(receiptSummary({ ...provedAdd, tests: [timedOut] }).counts).not.toContain("failed check");
+    for (const finding of [proofFinding({ ...proof, verdict: "send_back", evidence: ran("failed") }), commandFinding(failing),
+      modelFinding(model("send_back", "violated"))]) {
+      expect(finding).toMatchObject({ standing: "decide", failed: true });
+    }
+    expect(receiptTone(receiptFindings({ ...provedAdd, tests: [failing] }))).toBe("error");
+  });
+
   it("leaves a covered file out of the summary's limits, and still says no proof covers it", () => {
     const summary = receiptSummary(tested);
     expect(summary.counts).not.toMatch(/verification limit(?!s)|[1-9]\d* verification limits/u);
@@ -91,5 +151,25 @@ describe("the receipt's standing (#668)", () => {
     // The other unit's file is unproved and has no test of its own: app's test says nothing of it.
     expect(receiptStanding({ ...units, units: [...units.units, { ...unit, folder: "web", changed: [blob("page.ts")],
       unverified: ["page.ts"] }] })).toBe("incomplete");
+  });
+});
+
+describe("what a proof covers (alpha.4)", () => {
+  const scope = "                Proved in LemmaScript's model: numbers are exact integers or reals, not floating-point, so rounding, NaN and Infinity aren't covered; nor are await and other unsupported features";
+
+  it("says under each proved path, in the details, that LemmaScript's numbers are exact, not floating-point", () => {
+    const receipt: Receipt = { ...emptyReceipt, changed: [blob("src/add.ts"), blob("src/sub.ts")],
+      proofs: [proof, { ...proof, path: "src/sub.ts" }] };
+    for (const text of [renderReceipt(receipt), receiptDetailLines(receipt).join("\n")]) {
+      const lines = text.split("\n");
+      for (const path of ["src/add.ts", "src/sub.ts"]) expect(lines[lines.indexOf(`  proved        ${path}`) + 1]).toBe(scope);
+    }
+  });
+
+  it("says nothing of a proof's scope under one that did not hold, did not run or is stale", () => {
+    const receipt: Receipt = { ...emptyReceipt, changed: [blob("src/add.ts")], unverified: ["src/add.ts"],
+      proofs: [{ ...proof, verdict: "send_back", evidence: ran("failed") }, { ...proof, path: "src/sub.ts", verdict: "operator",
+        evidence: { ...proof.evidence, outcome: "not_started", invalidated: "content_changed" } }] };
+    expect(renderReceipt(receipt)).not.toContain("Proved in LemmaScript's model");
   });
 });

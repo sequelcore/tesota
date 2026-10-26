@@ -855,7 +855,7 @@ it("keeps the agent working while a changed contract fails, and settles with a r
   const proved = await run.settle();
   expect(proved?.continue).toBeUndefined();
   expect(entry(proved).customType).toBe("tesota-receipt");
-  expect(facts(entry(proved).content)).toBe(["  proved        src/rule.ts",
+  expect(facts(entry(proved).content)).toBe(["  proved        src/rule.ts", "                Proved in LemmaScript's model: numbers are exact integers or reals, not floating-point, so rounding, NaN and Infinity aren't covered; nor are await and other unsupported features",
     "                content sha256 ccc652fa505b947431e0e61131cecc92a08ca3084e7c79b4171999fc6f20a74f",
     "  not verified  src/rule.ts line 3: outside the contracts that proved, and no verifier covers them",
     "  not verified  notes.md: no verifier covers it",
@@ -1705,6 +1705,7 @@ it("verifies each repository the request changed in a folder of repositories, fr
     "  not proved    api/src/price.mjs: no proof covers it; the project's commands pass with it",
     "  not verified  notes/todo.md: no verifier covers it",
     "  proved        rules/src/rule.ts",
+    "                Proved in LemmaScript's model: numbers are exact integers or reals, not floating-point, so rounding, NaN and Infinity aren't covered; nor are await and other unsupported features",
     "                content sha256 e8cda4ec2c6b993b18bb0e32a0a802c2a8f8c0cd3ffce5cb3023500d04d3e639",
     "  changed lines implementation +2 -1 · other +1 -0"].join("\n"));
   const receipt = entry(settled).details as Receipt;

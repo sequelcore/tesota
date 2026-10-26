@@ -81,6 +81,30 @@ export function methodStanding(held: number, partly: number, failed: number, run
 }
 
 /**
+ * The process result an exported receipt states (`tesota receipt --json`),
+ * from the values the agentic process evidence proposal defines for
+ * `predicate.result`: `CANCELLED` ("stopped before completion") when the
+ * run stopped before Tesota verified it; otherwise `COMPLETED` ("finished
+ * successfully") only when the run stands `verified` or `unchanged`;
+ * `FAILED` ("ended unsuccessfully") when a check ran and showed the change
+ * wrong; and `none` for `incomplete` and `unverified`, which no value states
+ * truthfully and which the export refuses, so it never states a success it
+ * didn't observe.
+ */
+//@ requires standing === "verified" || standing === "incomplete" || standing === "failed" || standing === "unverified" || standing === "unchanged"
+//@ ensures \result === "CANCELLED" <==> stopped
+//@ ensures \result === "COMPLETED" <==> (!stopped && (standing === "verified" || standing === "unchanged"))
+//@ ensures \result === "FAILED" <==> (!stopped && standing === "failed")
+//@ ensures \result === "none" <==> (!stopped && (standing === "incomplete" || standing === "unverified"))
+export function statementResult(stopped: boolean, standing: "verified" | "incomplete" | "failed" | "unverified" | "unchanged"):
+  "CANCELLED" | "COMPLETED" | "FAILED" | "none" {
+  if (stopped) return "CANCELLED";
+  if (standing === "verified" || standing === "unchanged") return "COMPLETED";
+  if (standing === "failed") return "FAILED";
+  return "none";
+}
+
+/**
  * Whether one changed path is covered (#668), in the standing and the
  * receipt's summary alike: it proved, or it was tested and exercised, as
  * `runStanding` reads each of them from the receipt.
@@ -93,7 +117,12 @@ export function pathCovered(proved: boolean, tested: boolean, exercised: boolean
 /**
  * Where a run's verification stands (#668), one meaning on every surface:
  * `failed` when it stopped or something needs the operator (`decisions`) and
- * a check failed, `incomplete` when either holds without a failed check;
+ * a check failed, `incomplete` when either holds without a failed check.
+ * A check failed only when it ran and showed the change wrong: a failing
+ * test, a proof that doesn't hold, a model that breaks a rule, alike for
+ * proofs, commands and models (`ranAndFailed` in receipt.ts). One that could
+ * not run, ran past its limit, was stopped or whose evidence is stale is a
+ * gap (`gaps`), never `failed`;
  * otherwise `unchanged` when nothing changed, so there is nothing to claim;
  * `unverified` when something changed and no piece of evidence (a test,
  * proof or model check that ran) passed; `incomplete` when one did but a gap
