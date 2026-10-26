@@ -116,6 +116,12 @@ describe("the floor, which no mode crosses", () => {
     "Remove-Item -Recurse C:\\",
     "Remove-Item -Recurse $HOME",
     "Remove-Item -Recurse $env:SystemRoot",
+    // Only literal children establish a subpath; dynamic values and globs are not evaluated.
+    "Remove-Item -Recurse (Join-Path $HOME '*')",
+    "Remove-Item -Recurse (Join-Path $env:USERPROFILE $child)",
+    "Remove-Item -Recurse (Join-Path $HOME @children)",
+    "Remove-Item -Recurse (Join-Path -Path $HOME -ChildPath '*')",
+    "Remove-Item -Recurse (Join-Path -Path $HOME -ChildPath \"$child\")",
     "Remove-Item -Recurse -Force (Get-Item $env:USERPROFILE -Force)",
     "Remove-Item -Recurse (Get-ChildItem $HOME -Force)",
     "Remove-Item -Recurse (Resolve-Path ~ -Relative)",

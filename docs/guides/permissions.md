@@ -43,9 +43,10 @@ A home subfolder is not home itself: for example,
 `Remove-Item (Join-Path $env:USERPROFILE 'sub\folder') -Recurse` is not
 refused as a whole-home deletion. A literal subpath that ends back at home
 (`.`, `x/..`) or climbs above it (`../x`) is still refused. The patterns
-recognize flat, parent-first `Join-Path` pairs, optionally with `-Path` and
-`-ChildPath`; they do not bind arbitrary parameters, evaluate expressions,
-expand variables or wildcards, or resolve symbolic links.
+recognize flat, parent-first `Join-Path` pairs with literal children,
+optionally with `-Path` and `-ChildPath`. Dynamic children and wildcards do
+not exempt a home argument. The patterns do not bind arbitrary parameters,
+evaluate expressions, expand variables or wildcards, or resolve symbolic links.
 
 The floor is a net of patterns, not a sandbox: a command can do harm it
 doesn't recognize. Tesota has no sandbox of its own. It judges what a call

@@ -151,15 +151,15 @@ const guardedWord = new RegExp(
 
 /**
  * Only the flat, parent-first two-argument spelling: `(Join-Path $HOME 'sub')`,
- * optionally with `-Path` and `-ChildPath`. Other expressions stay visible to the net.
+ * optionally with `-Path` and `-ChildPath`. Dynamic children and globs stay visible to the net.
  * This is not parameter binding or evaluation of PowerShell expressions.
  */
 const joinPath = /\(\s*join-path\s+(?:-path\s+)?("[^"\n()]*"|'[^'\n()]*'|[^\s()'";|&]+)\s+(?:-childpath\s+)?("[^"\n()]*"|'[^'\n()]*'|[^\s()'";|&]+)\s*\)/giu;
 
 /** Whether a recursive deletion names a guarded folder, or a subpath of one that climbs back to it or above it (#633). */
 function deletesGuarded(command: string): boolean {
-  const flat = command.replace(joinPath, (_, parent: string, child: string) =>
-    ` "${parent.replace(/["']/gu, "")}/${child.replace(/["']/gu, "")}" `);
+  const flat = command.replace(joinPath, (group: string, parent: string, child: string) =>
+    /[$@`*?[\]]/u.test(child) ? group : ` "${parent.replace(/["']/gu, "")}/${child.replace(/["']/gu, "")}" `);
   const words = [...[...flat.matchAll(rmWords)].map((found) => found[1]!),
     ...[...flat.matchAll(removeItemWords)].map((found) => found[1]!).filter((said) => /-recurse\b/iu.test(said))];
   return words.some((said) => [...said.matchAll(guardedWord)].some(([, doubled, single, rest]) =>
