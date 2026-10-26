@@ -11,6 +11,26 @@ Verification is part of every run's lifecycle. It checks observed results;
 A receipt records evidence and its limits. You decide whether to accept
 the change.
 
+```mermaid
+flowchart TD
+  request["Your request"] --> agent["The agent works"]
+  agent -- "asks a question" --> question["The question waits for you"]
+  question -- "you answer" --> agent
+  agent -- "generation ends" --> proofs
+  subgraph checks["Checks, in order"]
+    proofs["Proofs"] --> tests["Tests and exercises"] --> contracts["Contract strength"] --> models["Design models"]
+  end
+  checks -- "a check failed" --> agent
+  checks -- "the same failure again" --> standing
+  checks -- "a check couldn't run" --> gap["A gap, never a failure"]
+  models --> weakening["Weakening flags, for you to decide"]
+  gap --> standing
+  weakening --> standing{"Standing: verified, incomplete, unverified, unchanged or failed"}
+  standing --> receipt["Receipt"]
+```
+
+A run's cycle: failed checks go back to the agent, and what couldn't be checked stays a gap in the receipt.
+
 ## Evidence kinds
 
 | Kind | What it establishes | Main limit |

@@ -11,6 +11,20 @@
   <img alt="A verified run in Tesota: the request, the agent's file changes and its answer, then the receipt, which shows a contract proved with Dafny and a test that passes and catches the change." src="docs/assets/tesota-turn-dark.svg">
 </picture>
 
+## What you get
+
+- You see what was actually checked, instead of taking the agent's word that it's done.
+- A deleted test, an added `.skip` or a loosened contract is flagged in the
+  receipt before the change reaches your pull request.
+- The receipt says plainly what Tesota couldn't check, such as changed lines
+  no check covered or a checker that wasn't installed.
+- `tesota receipt` writes the receipt into a pull request, and
+  `tesota receipt --json` writes it for CI.
+- **Use the model you already pay for.** Any [pi-ai](https://github.com/earendil-works/pi)
+  provider works, such as OpenAI, Anthropic, Google, OpenRouter, Mistral,
+  xAI, Amazon Bedrock or Azure. A Claude plan runs through your own Claude
+  Code, and a ChatGPT plan through its sign-in. See [Models](docs/guides/models.md).
+
 ## Install
 
 ```sh
@@ -46,9 +60,8 @@ It records:
   test or an added `.skip`;
 - what it couldn't verify: changed lines and files that no check covered.
 
-A run ends verified only when that evidence holds. `tesota receipt` writes
-the receipt for a pull request. The receipt is evidence; accepting the
-change is up to you. See [Receipts](docs/guides/receipts.md) and the
+A run ends verified only when that evidence holds. The receipt is
+evidence; accepting the change is up to you. See [Receipts](docs/guides/receipts.md) and the
 [receipt format](docs/receipt-v2.md).
 
 ## The checks

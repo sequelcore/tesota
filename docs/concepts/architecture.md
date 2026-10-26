@@ -15,6 +15,32 @@ and your original request survives conversation compaction.
 | Verification layer | `src/` | Proofs, project checks, design model checks, evidence limits and receipts |
 | Integration contract | `src/contract.ts`, `src/host.ts` | The events, tools, model access and terminal features the verification layer uses |
 
+```mermaid
+flowchart LR
+  shell["Shell: tesota"] --> loop
+  print["Print mode: tesota -p"] --> loop
+  subgraph engine["Engine: @tesota/core"]
+    loop["Agent loop"] --> tools["Tools, permissions, hooks"]
+  end
+  subgraph providers["Model providers: pi-ai"]
+    builtin["Built-in providers"]
+    claude["claude-code: your Claude Code"]
+  end
+  loop <--> providers
+  loop -- "generation ends" --> gate
+  subgraph verification["Verification layer: src/"]
+    gate["Gate"] --> proofs["Proofs: LemmaScript, Dafny"]
+    gate --> tests["Tests: your project's commands"]
+    gate --> models["Design models: TLC"]
+  end
+  gate -- "a failed check" --> loop
+  gate --> receipt["Receipt"]
+  loop --> sessions[("Sessions on disk")]
+  receipt --> sessions
+```
+
+The engine runs the agent, the verification layer checks its change, and both write to the saved session.
+
 The engine runs on [Bun](https://bun.sh). Model access comes from pi-ai,
 the terminal from pi-tui and MCP integration from pi-mcp. Proofs use
 LemmaScript and Dafny; tests use your project's commands. Tesota does not
