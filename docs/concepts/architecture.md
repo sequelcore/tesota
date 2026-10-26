@@ -29,7 +29,7 @@ flowchart LR
   loop <--> providers
   loop -- "generation ends" --> gate
   subgraph verification["Verification layer: src/"]
-    gate["Gate"] --> proofs["Proofs: LemmaScript, Dafny"]
+    gate["Verification"] --> proofs["Proofs: LemmaScript, Dafny"]
     gate --> tests["Tests: your project's commands"]
     gate --> models["Design models: TLC"]
   end

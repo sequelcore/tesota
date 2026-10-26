@@ -21,15 +21,16 @@ flowchart TD
     proofs["Proofs"] --> tests["Tests and exercises"] --> contracts["Contract strength"] --> models["Design models"]
   end
   checks -- "a check failed" --> agent
+  checks -- "a repairable gap: verified nothing, or an unreadable design model" --> agent
   checks -- "the same failure again" --> standing
-  checks -- "a check couldn't run" --> gap["A gap, never a failure"]
+  checks -- "couldn't run, or a gap came back again" --> gap["A gap, never a failure"]
   models --> weakening["Weakening flags, for you to decide"]
   gap --> standing
   weakening --> standing{"Standing: verified, incomplete, unverified, unchanged or failed"}
   standing --> receipt["Receipt"]
 ```
 
-A run's cycle: failed checks go back to the agent, and what couldn't be checked stays a gap in the receipt.
+A run's cycle: failed checks and repairable gaps go back to the agent, and the gaps that remain reach the receipt.
 
 ## Evidence kinds
 

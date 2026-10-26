@@ -18,8 +18,8 @@
   receipt before the change reaches your pull request.
 - The receipt says plainly what Tesota couldn't check, such as changed lines
   no check covered or a checker that wasn't installed.
-- `tesota receipt` writes the receipt into a pull request, and
-  `tesota receipt --json` writes it for CI.
+- `tesota receipt` prints the receipt as Markdown for a pull request, and
+  `tesota receipt --json` prints it for CI.
 - **Use the model you already pay for.** Any [pi-ai](https://github.com/earendil-works/pi)
   provider works, such as OpenAI, Anthropic, Google, OpenRouter, Mistral,
   xAI, Amazon Bedrock or Azure. A Claude plan runs through your own Claude
@@ -83,7 +83,12 @@ evidence; accepting the change is up to you. See [Receipts](docs/guides/receipts
 On a project with no contracts or design models, a run still runs your
 project's tests on the change, checks whether a new or changed test
 catches it, flags weakened tests and names the changed files no proof
-covers. Contracts and design models, when you add them, add the checks
+covers. Tests run only through the commands Tesota finds, such as a
+`package.json` `check` or `test` script, `cargo test` or `go test`; a
+project with none gets no tests. Whether a test catches the change is
+checked only when the current checks pass and Tesota has a trustworthy
+starting commit, and stays unknown when the change touches dependency
+files. Contracts and design models, when you add them, add the checks
 below.
 
 - **Proofs:** TypeScript functions with LemmaScript contracts, proved with
