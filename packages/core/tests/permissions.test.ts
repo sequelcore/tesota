@@ -88,6 +88,8 @@ describe("the floor, which no mode crosses", () => {
     "Remove-Item -Recurse (Join-Path ~ 'sub/folder')",
     "Remove-Item -Recurse (Join-Path -Path $HOME -ChildPath 'sub/folder')",
     "Remove-Item -Recurse (Join-Path $HOME sub/folder)",
+    "Remove-Item -Recurse (Join-Path $env:USERPROFILE 'x. ')",
+    "Remove-Item -Recurse (Join-Path $env:USERPROFILE '.tesota\\sessions\\x.. ')",
     "Remove-Item -Recurse (Join-Path $env:SystemRoot 'Temp')",
     "Remove-Item -Recurse $env:USERPROFILE\\sub",
     "Remove-Item -Recurse $env:USERPROFILE/sub",
@@ -161,6 +163,36 @@ describe("the floor, which no mode crosses", () => {
     "rm -rf $HOME/sub/../..",
     "rm -rf \"$HOME\"/..",
   ])("home subpaths that climb back are home or above it (#633): %s", (command) => {
+    for (const tool of ["powershell", "bash"]) {
+      expect(floor(tool, { command }, "run")).toMatchObject({ decision: "deny", by: "floor" });
+    }
+  });
+
+  test.each([
+    "Remove-Item -Recurse (Join-Path (Join-Path $env:USERPROFILE 'a') '..')",
+    "Remove-Item -Recurse (Join-Path (Join-Path $env:USERPROFILE 'x') '..\\..\\..')",
+    "Remove-Item -Recurse (Join-Path $env:USERPROFILE (Join-Path 'b' '..\\..\\..'))",
+    "Remove-Item -Recurse (Join-Path (Join-Path $HOME\\a '..') '.')",
+    "Remove-Item -Recurse (Join-Path (Join-Path $HOME\\a 'b') '..\\..')",
+    "Remove-Item -Recurse (Join-Path (Join-Path ~/a '..') '.')",
+    "Remove-Item -Recurse (Join-Path (Join-Path \"$HOME/a\" '..') '.')",
+    "Remove-Item -Recurse (Join-Path $HOME/a '..'); Write-Output (Join-Path x $y)",
+  ])("nested Join-Path does not exempt home (#692 F1): %s", (command) => {
+    for (const tool of ["powershell", "bash"]) {
+      expect(floor(tool, { command }, "run")).toMatchObject({ decision: "deny", by: "floor" });
+    }
+  });
+
+  test.each([
+    "Remove-Item -Recurse (Join-Path $env:USERPROFILE '...')",
+    "Remove-Item -Recurse (Join-Path $env:USERPROFILE '. ')",
+    "Remove-Item -Recurse (Join-Path $env:USERPROFILE '.. ')",
+    "Remove-Item -Recurse (Join-Path $env:USERPROFILE '....')",
+    "Remove-Item -Recurse (Join-Path $env:USERPROFILE 'x\\.. \\..')",
+    "Remove-Item -Recurse \"$env:USERPROFILE\\.. \"",
+    "Remove-Item -Recurse \"$env:USERPROFILE\\....\"",
+    "Remove-Item -Recurse (Join-Path $env:USERPROFILE '   ')",
+  ])("Windows dot/space segments do not exempt home (#692 F2): %s", (command) => {
     for (const tool of ["powershell", "bash"]) {
       expect(floor(tool, { command }, "run")).toMatchObject({ decision: "deny", by: "floor" });
     }

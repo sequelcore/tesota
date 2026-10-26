@@ -1,3 +1,27 @@
+/** A trailing character Windows may discard from a segment. */
+//@ requires 0 <= i && i < segment.length
+export function dotOrSpaceAt(segment: string, i: number): boolean {
+  return segment.slice(i, i + 1) === "." || segment.slice(i, i + 1) === " ";
+}
+
+/**
+ * Conservative Windows segment normalization for the floor: strip trailing
+ * dots/spaces from names. An all-dot/space segment is empty, except a leading
+ * `..` stays a parent step (including ambiguous `...` or `.. ` spellings).
+ */
+//@ ensures forall(i: nat, i < segment.length ==> dotOrSpaceAt(segment, i)) ==> \result === (segment.length >= 2 && segment.slice(0, 1) === "." && segment.slice(1, 2) === "." ? ".." : "")
+//@ ensures exists(i: nat, i < segment.length && !dotOrSpaceAt(segment, i)) ==> 0 < \result.length && \result.length <= segment.length && \result === segment.slice(0, \result.length) && !dotOrSpaceAt(\result, \result.length - 1) && forall(j: nat, \result.length <= j && j < segment.length ==> dotOrSpaceAt(segment, j))
+export function normalizeWindowsSegment(segment: string): string {
+  let end = segment.length;
+  while (end > 0 && dotOrSpaceAt(segment, end - 1)) {
+    //@ invariant 0 <= end && end <= segment.length
+    //@ invariant forall(j: nat, end <= j && j < segment.length ==> dotOrSpaceAt(segment, j))
+    end = end - 1;
+  }
+  if (end === 0) return segment.length >= 2 && segment.slice(0, 1) === "." && segment.slice(1, 2) === "." ? ".." : "";
+  return segment.slice(0, end);
+}
+
 /**
  * How far the first `k` segments of a subpath go below the folder it starts
  * from (#633): one down for a name, one up for `..`, none for `.` or an empty

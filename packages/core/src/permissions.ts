@@ -5,7 +5,7 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
 import { parseJson } from "../../../src/json.ts";
 import { type Access, type Decision, decide, type Mode, type RuleVerdict, strongest, within, writable } from "./permission-rule.ts";
-import { climbsBack } from "./subpath-rule.ts";
+import { climbsBack, normalizeWindowsSegment } from "./subpath-rule.ts";
 import type { FloorRefusal } from "../../../src/receipt.ts";
 
 /** Rules as an operator or a project writes them (#449): `tool(pattern)`, or a tool's name alone, by verdict. */
@@ -160,10 +160,15 @@ const joinPath = /\(\s*join-path\s+(?:-path\s+)?("[^"\n()]*"|'[^'\n()]*'|[^\s()'
 function deletesGuarded(command: string): boolean {
   const flat = command.replace(joinPath, (group: string, parent: string, child: string) =>
     /[$@`*?[\]]/u.test(child) ? group : ` "${parent.replace(/["']/gu, "")}/${child.replace(/["']/gu, "")}" `);
-  const words = [...[...flat.matchAll(rmWords)].map((found) => found[1]!),
-    ...[...flat.matchAll(removeItemWords)].map((found) => found[1]!).filter((said) => /-recurse\b/iu.test(said))];
+  // A remaining Join-Path may enclose a group we just flattened. Do not grant
+  // any exemption in that case, even for a guarded word with a written subpath:
+  // the unjoined arguments could climb out of it. This deliberately fails closed.
+  const unjoined = /\bjoin-path\b/iu.test(flat);
+  const targets = unjoined ? command : flat;
+  const words = [...[...targets.matchAll(rmWords)].map((found) => found[1]!),
+    ...[...targets.matchAll(removeItemWords)].map((found) => found[1]!).filter((said) => /-recurse\b/iu.test(said))];
   return words.some((said) => [...said.matchAll(guardedWord)].some(([, doubled, single, rest]) =>
-    climbsBack(((doubled ?? single ?? "") + rest!.replace(/["']/gu, "")).split(/[\\/]/u))));
+    unjoined || climbsBack(((doubled ?? single ?? "") + rest!.replace(/["']/gu, "")).split(/[\\/]/u).map(normalizeWindowsSegment))));
 }
 
 /** Secrets no call may touch: Tesota's credentials and its MCP sign-ins (#459), SSH's keys, and `.env` files, by any of the names given. */
