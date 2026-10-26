@@ -80,10 +80,14 @@ describe("the floor, which no mode crosses", () => {
 
   // These only judge command text; no deletion command is executed.
   test.each([
+    "Remove-Item (Join-Path $env:USERPROFILE '.tesota\\sessions\\x') -Recurse -Force",
+    "Remove-Item (Join-Path $env:USERPROFILE '.tesota\\sessions\\tesota-core-session-…') -Recurse -Force; …",
     "Remove-Item (Join-Path $env:USERPROFILE 'sub\\folder') -Recurse",
     "Remove-Item -Recurse (Join-Path $env:USERPROFILE 'sub\\folder')",
     "Remove-Item -Recurse -Force (Join-Path $HOME 'sub/folder')",
     "Remove-Item -Recurse (Join-Path ~ 'sub/folder')",
+    "Remove-Item -Recurse (Join-Path -Path $HOME -ChildPath 'sub/folder')",
+    "Remove-Item -Recurse (Join-Path $HOME sub/folder)",
     "Remove-Item -Recurse (Join-Path $env:SystemRoot 'Temp')",
     "Remove-Item -Recurse $env:USERPROFILE\\sub",
     "Remove-Item -Recurse $env:USERPROFILE/sub",
@@ -125,6 +129,32 @@ describe("the floor, which no mode crosses", () => {
     "Remove-Item -Recurse (Join-Path $HOME 'sub'); Remove-Item -Recurse $HOME",
     "rm -rf $HOME; rm -rf $HOME/sub",
   ])("whole homes and roots are still refused (#633): %s", (command) => {
+    for (const tool of ["powershell", "bash"]) {
+      expect(floor(tool, { command }, "run")).toMatchObject({ decision: "deny", by: "floor" });
+    }
+  });
+
+  // A subpath that is empty, or whose `.` and `..` climb back, is the folder itself or above it.
+  test.each([
+    "Remove-Item -Recurse (Join-Path $env:USERPROFILE '..')",
+    "Remove-Item -Recurse (Join-Path $env:USERPROFILE '.')",
+    "Remove-Item -Recurse (Join-Path $env:USERPROFILE 'x/..')",
+    "Remove-Item -Recurse (Join-Path $env:USERPROFILE '../x')",
+    "Remove-Item -Recurse $env:USERPROFILE/x/..",
+    "Remove-Item -Recurse $env:USERPROFILE/../x",
+    "Remove-Item -Recurse (Join-Path $HOME '')",
+    "Remove-Item -Recurse (Join-Path -Path $HOME -ChildPath 'x/..')",
+    "Remove-Item -Recurse (Join-Path -Path $HOME -ChildPath '../x')",
+    "rm -rf $HOME/x/..",
+    "rm -rf $HOME/../x",
+    "Remove-Item -Recurse (Join-Path ~ '..\\..')",
+    "rm -rf $HOME/..",
+    "rm -rf ~/..",
+    "rm -rf $HOME/.",
+    "rm -rf ~/./",
+    "rm -rf $HOME/sub/../..",
+    "rm -rf \"$HOME\"/..",
+  ])("home subpaths that climb back are home or above it (#633): %s", (command) => {
     for (const tool of ["powershell", "bash"]) {
       expect(floor(tool, { command }, "run")).toMatchObject({ decision: "deny", by: "floor" });
     }
