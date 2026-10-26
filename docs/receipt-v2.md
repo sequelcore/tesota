@@ -67,7 +67,7 @@ literal output values.
 | `predicate.custom.receipt` | The receipt, specified below |
 | `predicate.custom.stale` | Proof and design model paths, and command strings, whose evidence fails the checkout hash or Git cleanliness check (see below) |
 | `predicate.custom.changedAfter` | The files whose content in the commit differs from what the run left (see below), or `"unreadable"` when Git could not tell |
-| `predicate.result` | Always `COMPLETED`; this export field does not encode the receipt standing |
+| `predicate.result` | The process result the receipt states truthfully, from the values the agentic process evidence proposal defines: `CANCELLED` when the run stopped before Tesota verified it; otherwise `COMPLETED` when it stands `verified` or `unchanged`, and `FAILED` when it stands `failed`. A receipt that stands `incomplete` or `unverified` has no truthful result, so it isn't exported (see below) |
 | `predicate.owner` | Who is accountable: `--owner`, or else Git's `user.email` |
 | `predicate.startTimestamp`, `predicate.endTimestamp` | The receipt's `startedAt` and `settledAt` |
 | `createdAt` | When `tesota receipt` wrote the Statement |
@@ -93,14 +93,19 @@ nothing. It lists, sorted:
   one, a file the commit lacks counting as `null`.
 
 The Statement is not signed. Only a receipt with `version` 2 and
-`repository` true is written as a Statement. Export refuses a receipt with
-`stopped`, but does not require its standing to be `verified` or its run to
-have completed successfully. A receipt with `units` cannot be exported as
+`repository` true is written as a Statement; a stopped run's receipt is
+written with `result` `CANCELLED`. `tesota receipt --json` refuses, and
+exits 1, when the receipt stands `incomplete` or `unverified`, or when the
+commit doesn't hold exactly what the checks saw: when `stale` or
+`changedAfter` lists anything, or Git could not tell which files changed.
+It names what changed and suggests running the request again.
+`tesota receipt` without `--json` still writes the receipt as Markdown,
+with those files named. A receipt with `units` cannot be exported as
 a single Statement. Run `tesota receipt` in one of its repositories to
 export that repository's unit as a receipt of its own, with the run's `version`, `startedAt`,
 `settledAt`, `engine`, `model`, `clarifications`, `unresolvedQuestion` and
-`stopped`, when present, and the unit's `folder` kept. The export refusal
-for `stopped` still applies.
+`stopped`, when present, and the unit's `folder` kept. The same refusals
+apply.
 
 ## The receipt
 
