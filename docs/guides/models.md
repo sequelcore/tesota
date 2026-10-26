@@ -15,6 +15,23 @@ take an API key, which you paste without it showing. When a provider
 offers both, Tesota asks which. Sign-ins are kept in `~/.tesota/auth.json`,
 readable only by you, and no tool call may touch that file.
 
+For browser sign-in, Tesota temporarily gives the shell's terminal to the
+sign-in flow. It starts your browser and prints the complete link on its
+own line, outside the dialog frame. The terminal may visually wrap it;
+Tesota does not split or shorten it. Terminals that support hyperlinks
+also get a clickable link. If the browser cannot be started, sign-in keeps
+waiting: Ctrl+click the link or select and copy it yourself.
+
+Press `c` while the paste field is empty to copy the link. Once you have
+typed any text, `c` types normally; pasting a code or redirect URL also
+works, including one that starts with `c`. Ctrl+C cancels the sign-in.
+Tesota confirms a checked clipboard copy, or says when it could only send
+the link to the terminal's clipboard without checking it. Keep any device
+code the provider shows, and complete sign-in in the browser. When asked,
+you can still paste the authorization code or redirect URL into the terminal.
+The shell returns when sign-in ends. `tesota accounts add|login` and MCP
+sign-in use the same browser opening and link fallback.
+
 An API key in the environment works without `/login`, such as
 `OPENAI_API_KEY` or `OPENROUTER_API_KEY`.
 

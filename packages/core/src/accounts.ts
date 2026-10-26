@@ -189,7 +189,11 @@ export async function accountsView(hands: AccountHands): Promise<string> {
  * not know.
  */
 export async function accountsCommand(args: readonly string[], output: { out(text: string): void; error(text: string): void },
-  hands: AccountHands = cliHands(output)): Promise<number> {
+  hands?: AccountHands): Promise<number> {
+  if (hands === undefined) {
+    const { terminalSignIn } = await import("./shell/sign-in.ts");
+    return terminalSignIn(async (interaction) => accountsCommand(args, output, cliHands(interaction)), { write: output.error });
+  }
   const [action, first, second] = args;
   try {
     if (action === undefined || action === "list") output.out(await accountsView(hands));
@@ -205,31 +209,11 @@ export async function accountsCommand(args: readonly string[], output: { out(tex
 }
 
 /** The operator's own settings, credentials and models, and a sign-in that asks on this terminal. */
-function cliHands(output: { error(text: string): void }): AccountHands {
+function cliHands(interaction: AuthInteraction): AccountHands {
   const settingsPath = join(tesotaHome(), "settings.json");
   const credentials = fileCredentialStore();
   return { settingsPath, credentials, models: engineModels(credentials, readSettings(settingsPath).settings.accounts ?? []),
-    cwd: process.cwd(), interaction: terminalInteraction(output) };
-}
-
-/** A sign-in's link, code and questions on the terminal: on standard error, so standard output stays the command's answer. */
-function terminalInteraction(output: { error(text: string): void }): AuthInteraction {
-  return {
-    notify: (event) => {
-      output.error(`${event.type === "auth_url" ? `Open ${event.url}${event.instructions === undefined ? "" : ` (${event.instructions})`}`
-        : event.type === "device_code" ? `Enter ${event.userCode} at ${event.verificationUri}` : event.message}\n`);
-    },
-    prompt: async (prompt) => {
-      const { createInterface } = await import("node:readline/promises");
-      const lines = createInterface({ input: process.stdin, output: process.stderr });
-      const options = prompt.type === "select" ? prompt.options : [];
-      try {
-        const answer = await lines.question(`${[prompt.message, ...options.map(({ label }, at) => `${at + 1}. ${label}`)].join("\n")}\n> `,
-          prompt.signal === undefined ? {} : { signal: prompt.signal });
-        return options[Number(answer) - 1]?.id ?? answer.trim();
-      } finally { lines.close(); }
-    },
-  };
+    cwd: process.cwd(), interaction };
 }
 
 /** Whether two folders are the same; by name without case, since the file systems of Windows and macOS do not tell case apart. */

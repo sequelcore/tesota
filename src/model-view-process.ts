@@ -40,10 +40,11 @@ async function modelWorkerRequest(manifest: string, request: ViewRequest, signal
 }
 
 /** Windows' ShellExecute entry point avoids cmd.exe's built-in `start` and its shell parsing. */
-export async function openGraphHtml(path: string, platform: NodeJS.Platform = process.platform,
+export async function openBrowser(path: string, platform: NodeJS.Platform = process.platform,
   launch: (file: string, args: readonly string[]) => Promise<void> = launchBrowser): Promise<void> {
-  await launch(platform === "win32" ? win32.join(process.env["SystemRoot"] ?? "C:\\Windows", "explorer.exe")
-    : platform === "darwin" ? "/usr/bin/open" : "xdg-open", [path]);
+  const url = /^https?:\/\//iu.test(path);
+  await launch(platform === "win32" ? win32.join(process.env["SystemRoot"] ?? "C:\\Windows", url ? "System32\\rundll32.exe" : "explorer.exe")
+    : platform === "darwin" ? "/usr/bin/open" : "xdg-open", platform === "win32" && url ? ["url.dll,FileProtocolHandler", path] : [path]);
 }
 
 async function launchBrowser(file: string, args: readonly string[]): Promise<void> {

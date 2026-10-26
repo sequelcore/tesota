@@ -1,6 +1,6 @@
 import {
   backgroundAnsi, type Color, foregroundAnsi, parseColor, type SelectListTheme,
-  type TerminalColorMode,
+  stripTerminalSequences, truncateToWidth, type TerminalColorMode, visibleWidth,
 } from "@earendil-works/pi-tui";
 import type { Theme, ThemeColor } from "./contract.js";
 import dark from "../themes/tesota-dark.json" with { type: "json" };
@@ -32,6 +32,14 @@ function colorsOf(file: ThemeFile): Map<string, Color> {
   return colors;
 }
 
+/** Finish a pi-tui list row at its owner's width; only the selected row gets a band, including any inset. */
+export function listRow(theme: ShellTheme, line: string, width: number, inset = 0): string {
+  const row = `${" ".repeat(inset)}${line}`;
+  if (!stripTerminalSequences(line).startsWith("› ")) return row;
+  const fitted = truncateToWidth(row, width, "");
+  return theme.bg("selectedBg", fitted + " ".repeat(Math.max(0, width - visibleWidth(fitted))));
+}
+
 /** Tesota's theme for a dark or light terminal, drawn in `mode`'s colors. */
 export function shellTheme(appearance: "dark" | "light", mode: TerminalColorMode): ShellTheme {
   let file: ThemeFile = appearance === "dark" ? dark : light;
@@ -57,7 +65,7 @@ export function shellTheme(appearance: "dark" | "light", mode: TerminalColorMode
   const underline = wrap("4", "24");
   const strikethrough = wrap("9", "29");
   const selectList: SelectListTheme = {
-    selectedPrefix: (text) => fg("accent", text), selectedText: (text) => fg("accent", bold(text)),
+    selectedPrefix: (text) => fg("text", text.replace(/^→ /u, "› ")), selectedText: (text) => fg("text", text.replace(/^→ /u, "› ")),
     description: (text) => fg("muted", text), scrollInfo: (text) => fg("dim", text), noMatch: (text) => fg("muted", text),
   };
   return {

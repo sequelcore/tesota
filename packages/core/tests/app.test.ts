@@ -4,7 +4,7 @@ import {
 } from "@earendil-works/pi-ai";
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -114,9 +114,14 @@ async function app(replies: readonly ScriptStep[] = [], { repository = false, ea
       { type: "request", run: 1, text: earlier, origin: "interactive", at, base: { units: [] } },
       { type: "assistant", run: 1, message: fauxAssistantMessage("earlier answer") }].map((line) => JSON.stringify(line)).join("\n") + "\n");
   }
-  const running = runApp({ cwd, terminal, models, credentials, settingsPath, sessions, claude, usage }).finally(signOut);
+  const openedPages: string[] = [];
+  let graphOpened = (_path: string): void => undefined;
+  const openedGraph = new Promise<string>((resolve) => { graphOpened = resolve; });
+  const running = runApp({ cwd, terminal, models, credentials, settingsPath, sessions, claude, usage,
+    openSignInPage: async (url) => { openedPages.push(url); },
+    openGraphFile: async (path) => { graphOpened(path); } }).finally(signOut);
   await terminal.until("tesota-core");
-  return { terminal, credentials, settingsPath, sessions, running, cwd };
+  return { terminal, credentials, settingsPath, sessions, running, cwd, openedPages, openedGraph };
 }
 
 const send = (terminal: VirtualTerminal, text: string): void => { terminal.type(text); terminal.type(enter); };
@@ -263,7 +268,7 @@ describe("tesota-core", () => {
     } };
   };
   const choose = async (terminal: VirtualTerminal, item: string): Promise<void> => {
-    for (let down = 0; down < 40 && !(await terminal.screen()).join("\n").includes(`→ ${item}`); down++) terminal.type("\x1b[B");
+    for (let down = 0; down < 40 && !(await terminal.screen()).join("\n").includes(`› ${item}`); down++) terminal.type("\x1b[B");
     terminal.type(enter);
   };
 
@@ -548,12 +553,16 @@ describe("tesota-core", () => {
   });
 
   test("/graph opens the shown session's captured graph full-screen, or appends its text with --plain or where a full screen does not fit (#592)", async () => {
-    const { terminal, sessions, running, cwd } = await app();
+    const { terminal, sessions, running, cwd, openedGraph } = await app();
     try {
       send(terminal, "/graph");
       await terminal.until("No captured graph in this session");
       // A session whose receipt carries a real TLC capture, as the gate records it.
-      const manifest = join(import.meta.dir, "fixtures", "model-viewer", "lights-complete.manifest.json");
+      const capture = folder("tesota-core-graph-open-");
+      for (const name of ["lights-complete.manifest.json", "lights-complete.dot"]) {
+        copyFileSync(join(import.meta.dir, "fixtures", "model-viewer", name), join(capture, name));
+      }
+      const manifest = join(capture, "lights-complete.manifest.json");
       const at = new Date(0).toISOString();
       writeFileSync(join(sessions, "graphs.jsonl"), [{ type: "session", format: "tesota-session", version: 6, id: "graphs", cwd, createdAt: at, checkout: cwd },
         { type: "request", run: 1, text: "check the lights", origin: "interactive", at, base: { units: [] } },
@@ -566,6 +575,10 @@ describe("tesota-core", () => {
       await terminal.until("the receipt");
       send(terminal, "/graph");
       expect(await terminal.until("grouped by door > lamp")).toContain("Model graph · models/Lights.tla");
+      terminal.type("o");
+      const opened = await openedGraph;
+      expect(opened).toEndWith(".html");
+      expect(existsSync(opened)).toBe(true);
       terminal.type("\x1b");
       await terminal.untilGone("Model graph");
       send(terminal, "/graph lights-other");
@@ -663,13 +676,14 @@ describe("tesota-core", () => {
   });
 
   test("/login runs a provider's sign-in, showing its link and asking for the code; /logout forgets it", async () => {
-    const { terminal, credentials, running } = await app();
+    const { terminal, credentials, running, openedPages } = await app();
     send(terminal, "/login");
     await terminal.until("Scripted login");
-    for (let down = 0; down < 40 && !(await terminal.screen()).join("\n").includes("→ Scripted login"); down++) terminal.type("\x1b[B");
+    for (let down = 0; down < 40 && !(await terminal.screen()).join("\n").includes("› Scripted login"); down++) terminal.type("\x1b[B");
     terminal.type(enter);
     await terminal.until("Paste the code");
     expect((await terminal.screen()).join("\n")).toContain("https://example.test/authorize");
+    expect(openedPages).toEqual(["https://example.test/authorize"]);
     send(terminal, "1234");
     await terminal.until("Logged in to Scripted login.");
     expect(await credentials.read("scripted-login")).toMatchObject({ access: "token-1234" });
@@ -686,7 +700,7 @@ describe("tesota-core", () => {
     const { terminal, credentials, running } = await app();
     send(terminal, "/login");
     await terminal.until("Scripted key");
-    for (let down = 0; down < 40 && !(await terminal.screen()).join("\n").includes("→ Scripted key"); down++) terminal.type("\x1b[B");
+    for (let down = 0; down < 40 && !(await terminal.screen()).join("\n").includes("› Scripted key"); down++) terminal.type("\x1b[B");
     terminal.type(enter);
     await terminal.until("Paste the key");
     terminal.type("sk-secret-123");

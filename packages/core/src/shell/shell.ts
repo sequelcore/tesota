@@ -10,7 +10,7 @@ import type { TuiMode } from "../settings.ts";
 import { copyToClipboard } from "./clipboard.ts";
 import { FileAutocompleteProvider } from "./autocomplete.ts";
 import { expandKey, type Surface } from "./surface.ts";
-import type { ShellTheme } from "../../../../src/theme.ts";
+import { listRow, type ShellTheme } from "../../../../src/theme.ts";
 import type { ClarificationQuestion } from "../../../../src/clarification.ts";
 import { Transcript } from "./transcript.ts";
 import type { QuestionOutcome, QuestionSubmit } from "../questions.ts";
@@ -78,11 +78,23 @@ export interface Confirmation {
   readonly items: readonly SelectItem[];
 }
 
-/** A list whose numbered items a digit picks at once, as Claude Code and Codex answer a permission. */
-class NumberedList extends SelectList implements Focusable {
+/** pi-tui owns layout and interaction; the shell supplies the width of the selection band. */
+class BandedList extends SelectList implements Focusable {
   focused = false;
+  readonly #look: ShellTheme;
+  constructor(items: SelectItem[], maxVisible: number, theme: ShellTheme) {
+    super(items, maxVisible, theme.selectList);
+    this.#look = theme;
+  }
+  override render(width: number): string[] {
+    return super.render(width).map((line) => listRow(this.#look, line, width));
+  }
+}
+
+/** A list whose numbered items a digit picks at once, as Claude Code and Codex answer a permission. */
+class NumberedList extends BandedList {
   readonly #items: readonly SelectItem[];
-  constructor(items: SelectItem[], maxVisible: number, theme: ConstructorParameters<typeof SelectList>[2]) {
+  constructor(items: SelectItem[], maxVisible: number, theme: ShellTheme) {
     super(items, maxVisible, theme);
     this.#items = items;
   }
@@ -604,15 +616,15 @@ export function startShell(options: ShellOptions): Shell {
 
   return {
     pick: (title, items) => {
-      const list = new SelectList([...items], Math.min(items.length, 12), theme.selectList);
-      return dialog<string>(heading(title), list as SelectList & Focusable, (settle) => {
+      const list = new BandedList([...items], Math.min(items.length, 12), theme);
+      return dialog<string>(heading(title), list, (settle) => {
         list.onSelect = (item) => { settle(item.value); };
         list.onCancel = () => { settle(undefined); };
       });
     },
     confirm: ({ title, body, note, items }) => {
       const list = new NumberedList(items.map((item, index) => ({ ...item, label: `${index + 1}. ${item.label}` })), items.length,
-        theme.selectList);
+        theme);
       const top = new Container();
       top.addChild(heading(title));
       if (body !== undefined && body !== "") {
