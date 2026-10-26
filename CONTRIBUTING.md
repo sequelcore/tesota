@@ -1,52 +1,53 @@
 # Contributing to Tesota
 
-Tesota is pre-release. Contributions are welcome when they serve a real
-need without weakening the evidence or a person's acceptance.
+Tesota is in alpha. Contributions are welcome when they serve a real need
+without weakening the evidence a receipt reports.
 
-## Before you start
+## Report an issue
 
-Read the [roadmap](ROADMAP.md) and [development](docs/development.md). For
-a new capability, open an [issue](https://github.com/sequelcore/tesota/issues/new)
-first, saying who needs it and how its effect will be shown.
+[Open an issue](https://github.com/sequelcore/tesota/issues/new/choose)
+with the bug report or feature request form. For a bug, include the
+version (`tesota --version`, or the one the receipt names), your system,
+terminal and model, and the steps. Remove private code and secrets first.
 
-## Set up
+Report a security vulnerability privately, as [SECURITY.md](SECURITY.md)
+says, never in a public issue.
 
-```sh
-bun install --frozen-lockfile --ignore-scripts
-bun run vendor
-bun run check
-```
+## Propose a change
 
-`bun run check` type-checks, runs the tests and lints, without fixing
-anything, and runs the engine's tests and performance budgets. The proofs
-are `bun run formal:check`, which needs Dafny (`mise install`); CI runs
-both, so a change that breaks a proof fails CI.
+1. For a new capability, open an issue first, saying who needs it and how
+   its effect will be shown. Read the [roadmap](ROADMAP.md) for what's
+   planned and what isn't.
+2. Branch from `dev`. [Development](docs/development.md) covers building,
+   checking and proving Tesota from source, and the
+   [branch rules](docs/development.md#branches).
+3. Open a pull request against `dev`. Its template asks what changed and
+   why, how you verified it, and which checks ran.
 
-## A good change
+A good change:
 
-- Is focused, and leaves unrelated behavior alone.
-- Puts each behavior in one owner, and adds an abstraction only for a
-  consumer that exists.
-- Treats public and saved names, such as the receipt's fields and session
-  entries, as contracts.
-- Adds the smallest test that proves it, and its important failure.
-- Never makes a check pass by weakening, deleting or silencing what found
-  the defect.
-- Keeps credentials, personal paths and your own state out of code, tests,
-  logs and docs.
-- Updates the page that owns what changed.
+- is focused, and leaves unrelated behavior alone;
+- puts each behavior in one owner, and adds an abstraction only for a
+  consumer that exists;
+- treats saved names, such as the receipt's fields and session entries, as
+  contracts;
+- adds the smallest test that proves it;
+- never makes a check pass by weakening, deleting or skipping what found
+  the defect;
+- keeps credentials and personal paths out of code, tests, logs and docs;
+- updates the page that owns what changed.
 
-## Branches and pull requests
+## Commits
 
-Start from `dev` and follow the [branch rules](docs/development.md#branches).
-A pull request says what changes for the user, the decision behind it, the
-checks that ran and what's left. Keep measured evidence apart from
-inference: a passing check isn't acceptance, and a reviewer's judgment isn't
-evidence it ran.
+Commits follow [Conventional Commits](https://www.conventionalcommits.org):
+a type (`feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `ci`, `chore`),
+an optional scope, and an imperative subject under 72 characters, such as
+`fix(shell): navigate every question row with arrows`. The body says why.
+A pull request's title follows the same form.
 
-By contributing, you license your contribution under the repository's
-[Apache License 2.0](LICENSE). Preserve existing copyright, attribution and
-third-party notices.
+## License
 
-Report security issues as [SECURITY.md](SECURITY.md) says, never in a
-public issue.
+By contributing, you license your contribution under the
+[Apache License 2.0](LICENSE). Keep existing copyright, attribution and
+third-party notices, and add one to [NOTICE](NOTICE) for any third-party
+code a change bundles or adapts.

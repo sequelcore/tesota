@@ -1,0 +1,24 @@
+# Groups a release's generated notes by each pull request's label: the repository's own labels, or one named
+# for the pull request's Conventional Commit type.
+changelog:
+  exclude:
+    labels:
+      - duplicate
+      - invalid
+      - wontfix
+  categories:
+    - title: Features
+      labels:
+        - feat
+        - enhancement
+    - title: Fixes
+      labels:
+        - fix
+        - bug
+    - title: Docs
+      labels:
+        - docs
+        - documentation
+    - title: Other
+      labels:
+        - "*"

@@ -1,44 +1,17 @@
 # Tesota
 
-<picture>
-  <source media="(prefers-color-scheme: light)" srcset="docs/assets/tesota-welcome-light.svg">
-  <img alt="Tesota's shell as it opens: a half-block ironwood mark beside the name, model, folder and purpose; a faded ironwood and armless seedling centered above the input band and footer." src="docs/assets/tesota-welcome-dark.svg">
-</picture>
+**A coding agent that ends every run with a receipt.**
 
-**Tesota is a coding agent that shows evidence its change does what you
-asked.** When the agent finishes, Tesota proves the change where it can,
-tests it where it can't, and tells you plainly what it couldn't verify.
-The run doesn't end until that's done.
+[![CI](https://github.com/sequelcore/tesota/actions/workflows/ci.yml/badge.svg)](https://github.com/sequelcore/tesota/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/sequelcore/tesota?include_prereleases&sort=semver)](https://github.com/sequelcore/tesota/releases)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/tesota-turn-light.svg">
-  <img alt="A verified turn: the ironwood mark blooms beside the header; below, the request, two file writes, the answer and the receipt. The text remains the primary signal: the tests pass and the new test notices the change." src="docs/assets/tesota-turn-dark.svg">
+  <img alt="A verified run in Tesota: the request, the agent's file changes and its answer, then the receipt, which shows a contract proved with Dafny and a test that passes and catches the change." src="docs/assets/tesota-turn-dark.svg">
 </picture>
 
-## What Tesota checks
-
-- **Proofs.** TypeScript functions with LemmaScript contracts are proved
-  with Dafny.
-- **Tests.** Your project's own check and test commands run against the
-  change, and Tesota tells you whether a new test actually catches it.
-- **Contract strength.** A contract that still proves when the code is
-  changed is too weak to trust, and goes back to the agent.
-- **Models.** A TLA+ or Quint model of the design is checked with TLC
-  whenever the change touches the code it covers, and each planted fault
-  must break it. The receipt shows it as model-checked, apart from proofs.
-- **Weakened evidence.** A loosened contract, a deleted test or an added
-  `.skip` is listed for you to decide.
-- **What nothing verified.** Changed lines and files outside any check are
-  listed, never hidden behind a passing check.
-
-Failures go back to the agent until they're fixed or stop changing. Every
-run ends with a **receipt**, which `tesota receipt` writes for a pull
-request. A receipt is check evidence: accepting the change is still yours.
-
-## Get started
-
-Tesota is in alpha, released as prerelease binaries. You need Git;
-[Dafny 4](https://dafny.org) to prove contracts.
+## Install
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/sequelcore/tesota/dev/install.sh | sh
@@ -53,34 +26,79 @@ irm https://raw.githubusercontent.com/sequelcore/tesota/dev/install.ps1 | iex
 Then, in your project:
 
 ```sh
-cd my-project
 tesota
 ```
 
-Type `/login` to sign in to a model provider, and ask for a change.
+Type `/login` to sign in to a model provider, then ask for a change. Tesota
+is in alpha, released as prerelease binaries. You need Git, and
+[Dafny 4](https://dafny.org) to prove contracts.
 [Install](docs/get-started/install.md) and
 [your first session](docs/get-started/first-session.md) go step by step.
+
+## The receipt
+
+When the agent finishes, Tesota verifies the change and writes a receipt.
+It records:
+
+- what was proved, tested and model-checked;
+- any weakened evidence it found, such as a loosened contract, a deleted
+  test or an added `.skip`;
+- what it couldn't verify: changed lines and files that no check covered.
+
+A run ends verified only when that evidence holds. `tesota receipt` writes
+the receipt for a pull request. The receipt is evidence; accepting the
+change is up to you. See [Receipts](docs/guides/receipts.md) and the
+[receipt format](docs/receipt-v2.md).
+
+## The checks
+
+- **Proofs:** TypeScript functions with LemmaScript contracts, proved with
+  Dafny. A contract that still proves after the code is changed is too weak,
+  and goes back to the agent.
+- **Tests:** your project's own commands, run against the change, with a
+  check that a new test catches it.
+- **Design models:** TLA+ and Quint models of the design, checked with TLC
+  when the change touches the code they cover. Each planted fault must
+  break one.
+
+A failing check goes back to the agent. [Verification](docs/guides/verification.md)
+and [model checking](docs/guides/model-checking.md) show how to give
+Tesota more to check; [how verification works](docs/concepts/verification.md)
+explains the rest.
+
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/tesota-welcome-light.svg">
+  <img alt="Tesota's shell as it opens: the ironwood mark beside the name, model, folder and tagline; a faded ironwood and its saguaro seedling centered above the input band and footer." src="docs/assets/tesota-welcome-dark.svg">
+</picture>
 
 ## Documentation
 
 | | |
 | --- | --- |
-| [Get started](docs/get-started/install.md) | Install Tesota and run your first verified request |
+| [Get started](docs/get-started/install.md) | Install Tesota and run your first request |
 | [Guides](docs/README.md#guides) | Sessions, verification, receipts, permissions, models, hooks, MCP and more |
 | [Concepts](docs/README.md#concepts) | How Tesota is built and how it verifies |
-| [Reference](docs/README.md#reference) | Commands, keys, configuration files and the receipt format |
-| [Roadmap](ROADMAP.md) | What Tesota is for, what it won't do, and what comes next |
-| [Contributing](CONTRIBUTING.md) | Build, test and send a change |
+| [Reference](docs/README.md#reference) | Commands, configuration, proved rules, the glossary and the receipt format |
+| [Roadmap](ROADMAP.md) | Principles, non-goals and focus areas |
+| [Changelog](CHANGELOG.md) | What each release changed |
+| [Contributing](CONTRIBUTING.md) | Report an issue or propose a change |
+| [Security](SECURITY.md) | The threat model, and how to report a vulnerability |
 
 ## Credits
 
 Tesota proves contracts with [LemmaScript](https://github.com/midspiral/LemmaScript)
-by Midspiral and [Dafny](https://github.com/dafny-lang/dafny), and checks
-models with [TLC](https://github.com/tlaplus/tlaplus). Its contract
-comparison adapts the round-trip method of
-[ClaimCheck](https://github.com/metareflection/claimcheck) by metareflection.
-It runs on [pi-ai](https://github.com/earendil-works/pi) for model access and
-pi-tui for the terminal. See [NOTICE](NOTICE).
+by Midspiral and [Dafny](https://github.com/dafny-lang/dafny). It checks
+design models with [TLC](https://github.com/tlaplus/tlaplus), and Quint
+models through your own [Quint](https://github.com/informalsystems/quint)
+install. Its contract comparison adapts the round-trip method of
+[ClaimCheck](https://github.com/metareflection/claimcheck) by
+metareflection. It reaches models through
+[pi-ai](https://github.com/earendil-works/pi), draws the terminal with
+pi-tui and connects to MCP servers with pi-mcp. It searches with
+[ripgrep](https://github.com/BurntSushi/ripgrep), reads code with
+[tree-sitter](https://github.com/tree-sitter/tree-sitter), and draws model
+graphs with [Cytoscape.js](https://js.cytoscape.org/). [NOTICE](NOTICE)
+lists every credit and license.
 
 Tesota is named for *Olneya tesota*, the desert ironwood, *palo fierro* in
 Spanish: a tree of the Sonoran Desert whose wood sinks in water, and under

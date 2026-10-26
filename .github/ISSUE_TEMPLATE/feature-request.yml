@@ -1,0 +1,34 @@
+name: Feature request
+description: A problem Tesota could solve
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Search the [open issues](https://github.com/sequelcore/tesota/issues) and read the
+        [roadmap](https://github.com/sequelcore/tesota/blob/dev/ROADMAP.md) first: it lists what isn't planned.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you were trying to do, and what got in the way. Describe the problem before any solution.
+    validations:
+      required: true
+  - type: textarea
+    id: who
+    attributes:
+      label: Who needs it
+      description: Who runs into this today, and how often.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: A possible solution
+      description: Optional. What you would like Tesota to do, and how its effect could be shown.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do now
+      description: Optional. Workarounds or other tools you use instead.
