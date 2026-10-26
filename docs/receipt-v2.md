@@ -4,32 +4,32 @@ This page specifies version 2 of Tesota's receipt. It is the in-toto
 `predicateType` that `tesota receipt --json` writes:
 `https://github.com/sequelcore/tesota/blob/main/docs/receipt-v2.md`. The
 types are defined in `src/receipt.ts` and the modules it imports. The
-Statement is built in `src/pull-request-receipt.ts`. The
-[How verification works](concepts/verification.md) explains what each finding
-means.
+Statement is built in `src/pull-request-receipt.ts`.
+[How verification works](concepts/verification.md) explains the checks.
 
 A receipt exists in two places:
 
 - **In the session:** the `details` of a `custom_message` entry whose
   `customType` is `tesota-receipt`, or the `data` of a `custom` entry of
-  that type in print mode. With model graph previews, the message type is
-  `tesota-receipt-graphs`: `details.receipt` holds the same receipt v2,
+  that type in print mode. Outside print mode, a receipt with design model
+  check entries uses `tesota-receipt-graphs`, even if graph capture was
+  unavailable: `details.receipt` holds the same receipt v2,
   and `details.graphs` holds bounded transcript metadata, not receipt evidence.
   A message's `content` is its text; the shell draws from `details`.
   Presentation does not change the structured receipt or its version.
 - **In a Statement:** inside an unsigned
   [in-toto Statement v1](https://github.com/in-toto/attestation/blob/main/spec/v1/statement.md)
-  about a commit. The Statement uses the predicate fields of the agentic
-  process evidence proposal
-  ([in-toto/attestation#600](https://github.com/in-toto/attestation/issues/600),
-  specified in
-  [jfrog/agentic-process-evidence](https://github.com/jfrog/agentic-process-evidence/blob/main/spec/agentic-process-evidence.md)).
+  about a commit. The Statement uses the predicate fields of the
+  [agentic process evidence proposal](https://github.com/jfrog/agentic-process-evidence/blob/main/spec/agentic-process-evidence.md).
 
 Optional fields are absent, never `null`, unless a field says otherwise.
 Timestamps are ISO 8601 in UTC, as JavaScript's `toISOString` writes them.
 Paths are relative to the project folder where the session ran, with `/`.
 
 ## The Statement
+
+This schematic example abbreviates `custom.receipt`; placeholders are not
+literal output values.
 
 ```json
 {
@@ -65,9 +65,9 @@ Paths are relative to the project folder where the session ran, with `/`.
 | `predicate.traceId` | The id of the session the receipt came from |
 | `predicate.custom.baseCommit` | The receipt's `base` as a resource descriptor; absent when `base` is null |
 | `predicate.custom.receipt` | The receipt, specified below |
-| `predicate.custom.stale` | The proofs, by `path`, and the commands, by `command`, whose evidence the commit no longer holds (see below) |
+| `predicate.custom.stale` | Proof and design model paths, and command strings, whose evidence fails the checkout hash or Git cleanliness check (see below) |
 | `predicate.custom.changedAfter` | The files whose content in the commit differs from what the run left (see below), or `"unreadable"` when Git could not tell |
-| `predicate.result` | Always `COMPLETED`: the receipt exists only for a completed run |
+| `predicate.result` | Always `COMPLETED`; this export field does not encode the receipt standing |
 | `predicate.owner` | Who is accountable: `--owner`, or else Git's `user.email` |
 | `predicate.startTimestamp`, `predicate.endTimestamp` | The receipt's `startedAt` and `settledAt` |
 | `createdAt` | When `tesota receipt` wrote the Statement |
@@ -78,10 +78,11 @@ When the `origin` remote can be written as an HTTPS URL, it also has
 `"uri": "git+<url>@<id>"`, with the URL's `.git` removed; SSH and scp-style
 remotes are converted.
 
-A proof or command is **stale** when its evidence does not hold for the
-commit. This happens when the SHA-256 of its `files` no longer matches its
-`contentHash` as they are in the checkout, or when Git shows any of those
-files as changed or untracked.
+Proof, command or design model evidence is stale when export cannot
+confirm its checked content in the current checkout and commit. This
+happens when the SHA-256 of its `files` no longer matches its `contentHash`
+in the checkout, or when Git shows any of those files as changed or
+untracked.
 
 **`changedAfter`** compares Git blob ids, so line-ending conversion changes
 nothing. It lists, sorted:
@@ -92,35 +93,38 @@ nothing. It lists, sorted:
   one, a file the commit lacks counting as `null`.
 
 The Statement is not signed. Only a receipt with `version` 2 and
-`repository` true is written as a Statement. A receipt with `units` is not:
-run in one of its repositories, `tesota receipt` writes that repository's
-unit as a receipt of its own, with the run's `version`, `startedAt`,
-`settledAt`, `engine`, `model`, `clarifications` and `unresolvedQuestion`,
-and the unit's `folder` kept.
+`repository` true is written as a Statement. Export refuses a receipt with
+`stopped`, but does not require its standing to be `verified` or its run to
+have completed successfully. A receipt with `units` cannot be exported as
+a single Statement. Run `tesota receipt` in one of its repositories to
+export that repository's unit as a receipt of its own, with the run's `version`, `startedAt`,
+`settledAt`, `engine`, `model`, `clarifications`, `unresolvedQuestion` and
+`stopped`, when present, and the unit's `folder` kept. The export refusal
+for `stopped` still applies.
 
 ## The receipt
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `version` | `2` | This format. Version 2 gives each test its provenance and sensitivity apart, where version 1 had one `finding`, and adds `lines` |
-| `repository` | boolean | False when the project has no Git repository. Unless `snapshot` is present, every list is then empty, `base` is null, and nothing was verified |
+| `version` | `2` | This format |
+| `repository` | boolean | Whether the unit is a Git repository. Without a repository or `snapshot`, no checks establish the changes and `base` is null; request context can still be present |
 | `snapshot` | `true`, optional | Present when the project has no Git repository and Tesota measured the request against its own snapshot of it. `base` is then that snapshot's commit, which no one else can fetch |
-| `tooLarge` | string[], optional | With `snapshot`, the files the snapshot left out for being over 10 MB, so nothing verified them |
+| `tooLarge` | string[], optional | With `snapshot`, the files the snapshot left out for being over 10 MiB, so nothing verified them |
 | `reason` | string, optional | When nothing was verified, why: Tesota does not snapshot a home folder or a drive's root, or the folder is past a snapshot's limits. On a stopped run, why `changed` is `unreadable` |
-| `stopped` | string, optional | Present only when the run ended before Tesota verified it: why, and when a stop came during verification, which checks it interrupted or never started. Nothing is checked after a stop and no check runs again, so the receipt holds no evidence and always reads incomplete. `changed` then holds a read-only inventory of what the run left, with the paths its captures left out, or `unreadable` with `reason`: an empty list only when Git read that nothing changed, never when it couldn't tell, nor when reading took more than 30 seconds (`the inventory ran past its time limit`, for the whole receipt, a folder of repositories included). A receipt recovery records for a run whose process ended says so, with `changed: "unreadable"`: no inventory was saved, so what changed is unknown, and the files on disk at reopening are not claimed to be what the run left |
+| `stopped` | string, optional | Why the run ended before verification completed, including interrupted or unstarted checks. Claims no evidence and reads incomplete. `changed` holds a read-only inventory or `"unreadable"` with `reason`; inventory has a 30-second limit. Recovery after process death records `changed: "unreadable"` because no final inventory was saved. See [Stops and recovery](concepts/verification.md#stops-and-recovery) |
 | `unresolvedQuestion` | string, optional | The unresolved question that ended generation. The run is incomplete; the receipt still records verification of its changes |
-| `base` | string or null | The commit `HEAD` named when the operator's request started, or Tesota's snapshot then. Null before the first commit and when nothing was verified |
-| `startedAt` | timestamp | When the operator's request started |
-| `settledAt` | timestamp | When the run settled |
+| `base` | string or null | The commit `HEAD` named when your request started, or Tesota's snapshot then. Null before the first commit and when nothing was verified |
+| `startedAt` | timestamp | When your request started |
+| `settledAt` | timestamp | When the run ended |
 | `engine` | string | The Tesota the run used. A released binary: its plain version. A build from source: the version, `+`, the first eight characters of the commit of Tesota's own checkout (never the workspace's), and `.dirty` when that checkout has changes, as `0.1.0-alpha.3+d4175524.dirty`; `+unknown` when Git can't read that commit. Read once, when the first receipt needs it |
-| `model` | string, optional | The session's model when the run settled, as `provider/id` |
+| `model` | string, optional | The session's model when the run ended, as `provider/id` |
 | `proofs` | Proof[] | Each changed file with contracts that was proved |
 | `contracts` | ContractStrength[] | Each contract the request added or changed in a file that proved |
 | `claimcheck` | ClaimCheckRun, optional | Which models ClaimCheck asked, or why it judged nothing. Absent when `contracts` is empty |
-| `tests` | CommandRun[] | Each project command the gate ran |
+| `tests` | CommandRun[] | Each project command verification ran |
 | `exercises` | TestExercise[] | Each changed or added test file run over the base |
-| `models` | ModelResult[], optional | Each model whose own files or covered files the request changed, checked with TLC, or kept from the session's passing check of the same content. Evidence about the model, never a proof of the code. Absent when the request touched no model |
-| `unheaded` | string[], optional | TLA+ (with a `.cfg` beside it) and Quint files the request changed that declare no `tesota-model` header and no model names as a fault, so nothing checked them |
+| `models` | ModelResult[], optional | Each design model whose own files or covered files the request changed, checked with TLC, or kept from the session's passing check of the same content. Describes what the design model check established about its declared abstraction. Absent when the request touched no design model |
+| `unheaded` | string[], optional | TLA+ (with a `.cfg` beside it) and Quint files the request changed that declare no `tesota-model` header and no design model names as a fault, so nothing checked them |
 | `weakened` | Weakening[], or `"too_large"`, or `"unreadable"` | The changes that may weaken the evidence. `too_large` when Git's diff from the base passed 16 MiB; `unreadable` when Git could not show it |
 | `unverified` | string[] | Changed files no proof's evidence covers, other than test files and files whose changed lines are all blank or comment-only |
 | `commentsOnly` | `true`, optional | Present when every line the request added or removed is blank or comment-only, a `//@` line not counting as a comment. When nothing else is listed, the receipt says there was nothing to verify |
@@ -128,45 +132,56 @@ and the unit's `folder` kept.
 | `changed` | Changed[], or `"unreadable"` | Files changed during the request (by anyone), as the run left them, sorted by path: differences between fingerprints plus files changed between `base` and current `HEAD`. Unmeasured paths are listed separately. On a stopped run, the same inventory, read and never checked |
 | `lines` | ChangeLines, or `"unreadable"` | The files in `changed` in lines by category. `unreadable` when Git could not show the change |
 | `inherited` | string[] | Paths dirty at the first non-reader tool whose blobs stayed unchanged; not proved or exercised as this request's change. Tests ran with them |
-| `unmeasured` | { path: string, reason: string }[] | Paths not hashed at either capture: a dirty file over 10 MiB or an untracked directory with 200 or more files. These make the unit eligible and are never called unchanged |
-| `startState`, `endState` | CaptureState, optional | Each repository's capture at the first non-reader tool and at settlement. Absent for snapshots, runs recovered after their process ended, older receipts, and when no capture was taken |
-| `units` | Unit[], optional | Present when the session ran in a folder that is in no Git repository and holds repositories directly. Then the fields from `snapshot` to `endState` are empty or absent, `repository` is true and `base` is null |
-| `openCases` | OpenCases, optional | The cases the operator's request leaves open, as a model listed them for the operator to settle. A model's opinion, never evidence, and never one of the receipt's decisions. Absent when the operator ran Tesota with `--open-cases-model off` |
-| `clarifications` | Clarification[], optional | Explicitly submitted answers to the agent's questions, in submission order. Request context, never evidence, execution permission or acceptance. Absent when no batch was submitted |
-| `children` | Child[], optional | The [subagents](guides/subagents.md) the run started, in the order they ended: who did what. Never this receipt's evidence: a child's own receipt covers its own branch. Absent when the run started none |
-| `floorRefusals` | FloorRefusal[], optional | The calls Tesota's [floor](guides/permissions.md#the-floor) refused in the request, in order: `tool`, `subject` (what the call named, on one line and cut to 80 characters) and `reason`. Rendered without `subject`, which may be a secret's path. A refusal shows that one call didn't run, not what ran instead: never evidence, and never part of the verdict. Absent when there were none |
+| `unmeasured` | { path: string, reason: string }[] | Paths not hashed at either capture: a dirty file over 10 MiB or an untracked directory with 200 or more files. These require verification of the repository or folder because its content may have changed |
+| `startState`, `endState` | CaptureState, optional | Each repository's capture at the first non-reader tool and at final verification. Absent for snapshots, runs recovered after their process ended, older receipts, and when no capture was taken |
+| `units` | Unit[], optional | Per-folder evidence when the session runs outside Git across folders. Top-level check lists and change inventory are empty, `repository` is true and `base` is null; shared run metadata remains at the top level |
+| `openCases` | OpenCases, optional | Cases your request leaves open, as a model listed them for you to resolve. These suggestions appear separately from check evidence and do not count toward decisions required by the receipt. Absent when listing is disabled with `--open-cases-model off`; otherwise listing uses `openai/gpt-6-sol` by default |
+| `clarifications` | Clarification[], optional | Explicitly submitted answers to the agent's questions, in submission order. Records request context; submitting an answer does not establish check evidence, execution permission or acceptance. Absent when no batch was submitted |
+| `children` | Child[], optional | The [subagents](guides/subagents.md) the run started, in the order they ended: who did what. Each child's receipt covers its own branch; the parent checks adopted changes in its workspace. Absent when the run started none |
+| `floorRefusals` | FloorRefusal[], optional | The calls Tesota's [floor](guides/permissions.md#the-floor) refused in the request, in order: `tool`, `subject` (what the call named, on one line and cut to 80 characters) and `reason`. Rendered without `subject`, which may be a secret's path. A refusal records that one call did not run. It does not establish what ran instead and contributes neither check evidence nor a standing decision. Absent when there were none |
 
 ### Standing
 
-Where a receipt stands is read from it, never stored (`receiptStanding`,
-whose rule `runStanding` is proved). Print mode's last line, the footer,
-the dashboard and a subagent's end show it, with one meaning:
+Standing is derived from the receipt rather than stored as a field. Print
+mode, the footer, the dashboard and a subagent's end use the same decision.
+A check that could not run, or whose evidence is unavailable or stale,
+leaves a gap. That gap makes the run incomplete, or unverified if nothing
+else passed.
 
 | Standing | Shown as | When |
 | --- | --- | --- |
-| `failed` | `failed` | The run stopped, or something needs a decision, and a proof, command or model failed |
-| `incomplete` | `incomplete` | The run stopped, or something needs a decision, with no failed check; or evidence passed but a gap remains or a changed path isn't covered |
-| `unchanged` | `Completed (nothing to verify)` | Nothing changed: no path the receipt records as changed, and no change of comments alone. There's nothing to claim |
-| `unverified` | `unverified`, and why | Something changed, and no proof, command or model passed on current content |
+| `failed` | `failed` | A check ran and showed the change wrong |
+| `incomplete` | `incomplete` | The run stopped or needs a decision without the failure condition above; or evidence passed but a gap remains or a changed path isn't covered |
+| `unchanged` | Print: `Completed (nothing to verify)`; elsewhere: `nothing to verify` | Nothing changed: no path the receipt records as changed, and no change of comments alone. There's nothing to claim |
+| `unverified` | `unverified`, and why | Something changed, and no proof, command or design model passed on current content |
 | `verified` | `verified` | None of the above: evidence passed, no gap, every changed path covered, nothing to decide, not stopped |
 
-A changed path is every path in `changed`, `unverified`, `proofs`,
-`uncovered` and `models`. It's covered when `unverified` doesn't list it,
-or, read per unit, when it was tested and exercised: its unit's
-`unverified` holds that one path alone, every command in the unit passed,
-and the unit records at least one exercise, each `fails_then_passes`.
-Nothing in the receipt maps a test to the file it exercises, so with two
-unproved files neither counts as exercised. A gap is any other finding
-the receipt lists as a verification limit, such as uncovered lines, a test
-not checked, a model not checked or attribution unresolved, and a `changed`
-that is `unreadable`, since then nothing shows every changed path covered.
+For standing, changed paths are collected from `changed`, `unverified`,
+`proofs`, `uncovered` and `models`. Coverage is evaluated separately for
+each unit: a repository or snapshot folder with its own checks.
 
-A green summary means `verified`: one that verified nothing is amber.
-The summary reads coverage from the same rule (`pathCovered`), so a file
-that is covered though no proof covers it is no verification limit: it
-is neither counted nor amber, and shows as a muted line, such as
-`add.js: tested and exercised; no proof covers it`. A file that isn't
-covered stays a limit.
+A path counts as covered if `unverified` does not list it. Test files and
+comment-only changes are excluded from that list. A listed path can also
+count as covered through tests, but only when all these conditions hold:
+
+- It is the only path in the unit's `unverified` list.
+- The unit ran at least one command, and every command passed.
+- The unit records at least one exercise, and every exercise has
+  `sensitivity: "fails_then_passes"`.
+
+The receipt does not map a test to the implementation file it exercises.
+If two files lack proof coverage, test exercise cannot establish which
+one was tested. Both remain coverage limits.
+
+A gap is a verification limit, such as uncovered lines, a check that could
+not run, stale evidence or an uncertain starting point for measuring the
+request's contribution. An unreadable `changed` inventory also leaves a
+gap because Tesota cannot establish coverage of every changed path.
+
+A green summary means `verified`; a run that verified nothing is amber.
+A file covered through tests is shown as a muted line, such as
+`add.js: tested and exercised; no proof covers it`, and does not count as a
+coverage limit. A file without coverage remains a limit.
 
 ### Clarification
 
@@ -177,7 +192,7 @@ and call identify the invocation; a call ID can recur in another reply.
 A question has `question`, `options` (`label` and `description`), optional
 `multiple` and optional `recommended` (zero-based option index). These words
 were supplied by the agent. Its matching answer has `selected` (zero-based
-option indices) and optional `text`, the operator's words kept verbatim.
+option indices) and optional `text`, your words kept verbatim.
 An answer can include both selections and text. Unsubmitted drafts,
 dismissed questions and unavailable answers do not enter this list.
 
@@ -190,7 +205,7 @@ dismissed questions and unavailable answers do not enter this list.
 | `model` | string, optional | Its model, as `provider/id` |
 | `writes` | boolean | Whether it could change files, in a worktree of its own |
 | `outcome` | string | How its run ended: `completed`, `aborted`, `error`, `incomplete`, or `unknown` when the process ended while it ran |
-| `verification` | `verified`, `incomplete` or `failed`, optional | Where its own receipt stands ([Standing](#standing)), when its run settled with one. Absent when it stands `unverified` or `unchanged`, which this field doesn't store |
+| `verification` | `verified`, `incomplete` or `failed`, optional | Where its own receipt stands ([Standing](#standing)), when its run ended with one. Absent when it stands `unverified` or `unchanged`, which this field doesn't store |
 | `session` | string | Its session's file |
 | `branch` | string, optional | The branch its work stays on, when it wrote something |
 | `floorRefusals` | number, optional | How many of its calls Tesota's floor refused; its own session lists them |
@@ -201,10 +216,13 @@ into its own workspace, where this receipt's checks measured it.
 
 ### Unit
 
-A unit is an eligible repository, or a folder in no repository,
-in name order. A unit has the fields from `repository` through `endState` of the
-receipt, about that unit alone, with paths relative to it and commands run
-from it, and:
+A unit is a repository or snapshot folder, in name order. It has the
+receipt's `repository`, `snapshot`, `tooLarge`, `reason`, `base`, `proofs`,
+`contracts`, `claimcheck`, `tests`, `exercises`, `models`, `unheaded`,
+`weakened`, `unverified`, `commentsOnly`, `uncovered`, `changed`, `lines`,
+`inherited`, `unmeasured`, `startState` and `endState` fields, with the same
+optionality. Run metadata and request context stay on the parent receipt.
+Paths and commands are relative to the unit. It also has:
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -222,77 +240,60 @@ way.
 
 `{ "status": "known", "head": <commit or null> }`, or
 `{ "status": "unknown", "reason": <why> }` when Git failed or the index was
-in conflict. An unknown capture keeps the unit eligible; verification
-compares every changed path against the admission `base`, and the receipt
-shows the reason. Limits keep paths unmeasured even if their names and
-`HEAD` were readable.
+in conflict. An unknown capture still requires verification of the
+repository or folder. Verification compares changed paths with `base`,
+the commit recorded when your request started, and the receipt explains
+what could not be read. A readable path name and `HEAD` do not establish
+that the file's content was measured.
 
-For a repository, contribution attribution needs known captures and a start
-`head` equal to the admission `base`. An end `head` still at `base` resolves
-attribution (including null before the first commit). Otherwise the end
-capture's optional `history` records four boolean facts: `sameBranch`,
-`descends`, `exclusive`, and `timely`. All four must be true: the branch is
-unchanged, `base` is an ancestor of the end HEAD, no commit in `base..HEAD`
-is reached by a local branch, remote-tracking ref or tag as each pointed
-when the request was admitted, and every commit's committer date is at or
-after the request's start, at Git's whole-second precision. Admission
-records those tips that `base` does not already reach, with `base`; they are
-not part of the receipt. No branch
-or remote name is assumed. Missing facts, starting refs that were not
-recorded or cannot be read, and other failed reads cannot resolve moved
-history. The same proved pure rule
-governs gate selection and every presentation surface.
+Contribution attribution determines whether the observed changes can be
+credited to your request. It requires known captures and a starting `head`
+equal to `base`. If ending `head` still equals `base`, these facts establish
+credit, including null before the first commit.
 
-An unresolved unit still records all observed `changed` paths and final
-blobs, including imported files and paths touched both locally and upstream.
-It still checks the resulting checkout. It does not run test exercise or
-contract-strength and ClaimCheck selection against the stale base:
-`exercises` and `contracts` are empty, and `claimcheck` is absent. These are
-**not measured**, not successful empty measurements. The receipt shows one
-prominent attribution limit per unit, naming the repository in a workspace.
-It says once that changes are **compared with the request's start**, not
-claims that this request authored or deleted them; individual findings and
-line totals do not repeat it. Resolved receipts show no attribution notice.
-JSON consumers derive this interpretation from `base`, `startState` and
-`endState`, including its `history` facts, using the same rule. Export keeps those facts and does not rewrite stored
-receipts. If a stored receipt has measurements but lacks readable captures,
-its notice qualifies those recorded measurements rather than claiming they
-never ran; its exercise provenance is not presented as request authorship.
+When history moves, the end capture can include `history`:
 
-Ordinary local commits keep contribution-specific credit, as do pushing
-them during the request and merging a branch the request created, such as a
-subagent's, or tagging them: a ref withholds only the commits its tip
-reached at admission, so one the request moved or created withholds none of
-the request's own. Merging a
-branch that existed at admission, or a fetch of commits made before the
-request, stays unresolved. The remaining ambiguity: commits someone else
-made during the request that no starting tip reached are credited once
-merged, such as a fetch of upstream work committed during the request or
-new commits on a branch that existed at admission; so are a fast-forward to
-a commit no ref reached at admission, made inside the request's time, and
-a URL pull of commits made during the request or dated ahead. Squash
-merges, cherry-picks and applied patches can likewise create new commits
-that satisfy these facts; they do not prove authorship. Making the
-first commit in an unborn repository stays unresolved, since there is no
-admission commit from which to establish ancestry.
-`inherited` is not widened to mean imported work. Retaining imported paths in `changed` also keeps
-`changedAfter` empty when exporting an unchanged settled commit.
+| Field | Type | Required fact |
+| --- | --- | --- |
+| `sameBranch` | boolean | The branch is unchanged |
+| `descends` | boolean | `base` is an ancestor of ending `HEAD` |
+| `exclusive` | boolean | No commit in `base..HEAD` is reachable from a local branch, remote-tracking ref or tag as it pointed when your request started |
+| `timely` | boolean | Every commit in that range has a committer date at or after the request's start, at Git's whole-second precision |
 
-The gate observes results, not authors. A stash that removes old dirt is a
-change during the request, including when it restores the admission base's
-content. Inherited paths appear in one collapsed card row, with the paths
-under Ctrl+O. Weakening still compares all paths against the admission base.
-Tests run with inherited files; when attribution is resolved, exercise uses
-the admission base, so a test
-relying on inherited changes may be misjudged. Folders outside Git retain
-their per-request snapshots and have empty `inherited` and `unmeasured` lists.
+All four facts must be true. When your request starts, Tesota saves the
+commit IDs named by refs that `base` does not already reach. Those IDs are
+used for comparison but are not receipt fields. Missing or unreadable
+facts prevent credit when history moves. A repository's first commit has
+no starting commit from which to establish ancestry.
+
+When Tesota cannot establish credit, it still records observed paths and
+final blobs, including imported work, and checks the resulting checkout.
+It omits measurements that depend on separating your contribution from
+other changes: test exercise, contract strength and ClaimCheck.
+`exercises` and `contracts` are then empty, and `claimcheck` is absent.
+These empty lists mean the measurements were not made. Weakening flags
+and line counts still compare with the request's starting commit. Stored
+measurements are preserved, with a notice explaining the uncertainty.
+
+Ordinary local commits, pushing them and merging a branch created during
+the request can satisfy these rules. Importing commits reached by refs at
+the request's start cannot. These facts do not prove authorship: another person's
+new commits, future-dated commits, squash merges, cherry-picks and patches
+can also satisfy them.
+
+`inherited` means existing dirty paths whose content stayed unchanged;
+it does not include imported work. A stash that removes old changes counts
+as a change during the request, even if it restores the starting commit's
+content. Tests run with inherited files, while exercise compares against
+`base`, so inherited dependencies can distort that measurement. Snapshots
+outside Git have empty `inherited` and `unmeasured` lists.
 
 ### Proof
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `path` | string | The TypeScript file |
-| `verdict` | GateVerdict | The gate's last verdict on its proof |
+| `verdict` | GateVerdict | Verification's last verdict on its proof |
 | `evidence` | Evidence | The proof's evidence |
 
 ### CommandRun
@@ -302,32 +303,35 @@ their per-request snapshots and have empty `inherited` and `unmeasured` lists.
 | `command` | string | The command, as a POSIX shell runs it from the project folder, such as `cd web && bun run check` |
 | `evidence` | Evidence | The command's evidence |
 | `failingTests` | string[], optional | The failing tests' names, sorted, from the JUnit XML reports the command wrote. Absent when it wrote none |
-| `verdict` | GateVerdict | The gate's last verdict on the command |
+| `verdict` | GateVerdict | Verification's last verdict on the command |
 
 ### GateVerdict
 
+`GateVerdict` records how verification handles a check: accept its pass,
+request a repair, record a repeated failure or leave a limit for you.
+
 | Value | Meaning |
 | --- | --- |
-| `proved` | The proof, command or model passed |
-| `send_back` | It failed or was vacuous and needs repair. Normally it goes back to the agent instead of settling. With `unresolvedQuestion`, generation has ended: the receipt records the failure without sending it back |
-| `no_progress` | It failed or was vacuous, repeating a failure the gate already sent back during the request |
-| `operator` | It could not run, ran past its limit, was stopped, or its evidence was invalidated when checked content changed before settlement; the operator's to resolve |
+| `proved` | The proof, command or design model passed |
+| `send_back` | It failed or was vacuous and needs repair. Normally it goes back to the agent before the run ends. With `unresolvedQuestion`, generation has ended: the receipt records the failure without sending it back |
+| `no_progress` | It failed or was vacuous, repeating a failure verification already sent back during the request |
+| `operator` | It could not run, ran past its limit, was stopped, or its evidence was invalidated when checked content changed before final verification; the operator's to resolve |
 
 ### Evidence
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `verifier` | `"lemmascript"`, `"command"` or `"tlc"` | LemmaScript with Dafny, a project command, or TLC on a model |
+| `verifier` | `"lemmascript"`, `"command"` or `"tlc"` | LemmaScript with Dafny, a project command, or TLC on a design model |
 | `claim` | string | What a pass establishes, in words a reviewer can confirm |
 | `limits` | string | What a pass does not establish |
-| `outcome` | Outcome | How the run ended; `not_started` when invalidated at settlement, since the current content was not checked |
-| `invalidated` | `"content_changed"`, optional | Settlement found that the current `files` no longer matched `contentHash`. The receipt renders this evidence as stale, not as a check that did not run. The verdict is `operator` and outcome is `not_started`; the original hashes, duration and output remain, with a stale note appended to the output |
+| `outcome` | Outcome | How the run ended; `not_started` when invalidated at final verification, since the current content was not checked |
+| `invalidated` | `"content_changed"`, optional | Final verification found that the current `files` no longer matched `contentHash`. The receipt renders this evidence as stale, not as a check that did not run. The verdict is `operator` and outcome is `not_started`; the original hashes, duration and output remain, with a stale note appended to the output |
 | `output` | string | The end of what the verifier printed: at most the last 8,192 characters of a process's output, with a note after a vacuous proof. Or why it did not run |
 | `durationMs` | number | How long the run took, in milliseconds |
-| `files` | string[] | The files the run checked, in the order `contentHash` covers them: for a proof, the TypeScript file and then its `.dfy`; for a command, the changed files; for a model, the model, a TLA+ model's `.cfg`, each fault (with a TLA+ fault's `.cfg`), then each covered file |
+| `files` | string[] | The files the run checked, in the order `contentHash` covers them: for a proof, the TypeScript file and then its `.dfy`; for a command, the changed files; for a design model, the design model, a TLA+ model's `.cfg`, each fault (with a TLA+ fault's `.cfg`), then each covered file |
 | `contentHash` | string | Lowercase hex SHA-256 of the UTF-8 JSON array `[[path, content], …]` for `files` in order, `content` being the file's text or `null` when unreadable, as `JSON.stringify` writes it |
 
-`invalidated` records the reason settlement rejected existing evidence, not a
+`invalidated` records the reason final verification rejected existing evidence, not a
 second verification status. The hashes detect the content mismatch; this
 reason lets a saved receipt distinguish it from a verifier that never
 started, without interpreting words in `output`.
@@ -336,9 +340,9 @@ The `outcome` values are:
 
 | Value | Meaning |
 | --- | --- |
-| `passed` | A proof that regenerated, checked cleanly and verified at least one obligation, a command that exited 0, or a model that passed with every planted fault caught or unfinished |
-| `failed` | A proof whose regeneration or check failed, a command that exited non-zero, or a model that broke an invariant, that TLC could not read, or whose planted fault passed or could not be read |
-| `vacuous` | A proof that checked cleanly but verified nothing, or a model with no reachable state or no planted fault |
+| `passed` | A proof that regenerated, checked cleanly and verified at least one obligation, a command that exited 0, or a design model whose declared properties hold in every reachable state as configured, with every planted fault caught or unfinished |
+| `failed` | A proof whose regeneration or check failed, a command that exited non-zero, or a design model with a property violation (including deadlock, liveness, assumption or assertion failure), a malformed specification, or a planted fault that passed, was malformed or reached no state |
+| `vacuous` | A proof that checked cleanly but verified nothing, or a design model with no reachable state or no planted fault |
 | `timed_out` | It ran past its limit: 5 minutes for each proof process and each TLC run, 15 minutes for a command |
 | `cancelled` | It was stopped |
 | `not_started` | It could not start, for example when Dafny is not installed; with `invalidated`, a run checked earlier content but the current content was not checked |
@@ -347,20 +351,20 @@ The `outcome` values are:
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `path` | string | The model file |
+| `path` | string | The design model file |
 | `language` | `"tla"` or `"quint"` | Its language, by extension |
 | `header` | ModelHeader | What its header declares |
-| `problems` | string[] | What the header misses; the model went back without running TLC while any was listed |
-| `evidence` | Evidence | The check's evidence, with `verifier` `tlc` and the outcome the gate judged: the model's run and its planted faults together |
-| `run` | `"passed"`, `"vacuous"`, `"violated"`, `"malformed"`, `"timed_out"`, `"cancelled"` or `"not_started"` | How TLC ended on the model itself |
+| `problems` | string[] | What the header misses; the design model went back without running TLC while any was listed |
+| `evidence` | Evidence | The check's evidence, with `verifier` `tlc` and the outcome verification judged: the design model's run and its planted faults together |
+| `run` | `"passed"`, `"vacuous"`, `"violated"`, `"malformed"`, `"timed_out"`, `"cancelled"` or `"not_started"` | How TLC ended on the design model itself; `passed` establishes the declared properties in every reachable state of the design model as configured |
 | `states` | number | The distinct states TLC reported; 0 when it reported none |
-| `faults` | FaultCheck[] | Each planted fault TLC ran, once the model passed |
+| `faults` | FaultCheck[] | Each planted fault TLC ran, once the design model passed |
 | `counterexample` | Counterexample, optional | The steps to the broken property, when `run` is `violated` |
-| `staleness` | `"current"`, `"possibly_stale"` or `"unknown"` | Whether a covered file differs from the `confirmed` commit; `unknown` without one or when it isn't in the repository; always `current` for a model written with its code whose check passed |
+| `staleness` | `"current"`, `"possibly_stale"` or `"unknown"` | Whether a covered file differs from the `confirmed` commit; `unknown` without one or when it isn't in the repository; always `current` for a design model written with its code whose check passed |
 | `stale` | string[] | The covered files that differ from it |
-| `writtenWithCode` | boolean | The request changed both the model's own files and a covered file, so the evidence counts as weaker |
-| `link` | `"no_replay"`, `"linked"` or `"replay_failed"` | Whether the header's `replay` command passed after the model did. Only `linked` ties the model to the code |
-| `verdict` | GateVerdict | The gate's last verdict on the model |
+| `writtenWithCode` | boolean | The request changed both the design model's own files and a covered file, so the evidence counts as weaker |
+| `link` | `"no_replay"`, `"linked"` or `"replay_failed"` | Whether the header's `replay` command passed after the design model did. `linked` records that replay; it does not prove the design model matches all code behavior |
+| `verdict` | GateVerdict | Verification's last verdict on the design model |
 
 A ModelHeader has `covers` ({ path, names }[], the files from the project
 root and the functions named), `invariants`, `atomic` and `omits`
@@ -380,7 +384,7 @@ state.
 | `name` | string | The function the contract governs |
 | `lines` | string[] | The contract's `//@` lines as written, trimmed |
 | `mutation` | Mutation | What proof-based mutation found |
-| `judgment` | object, optional | ClaimCheck's `verdict` and `explanation`, present when ClaimCheck judged. A model's judgment, never a proof |
+| `judgment` | object, optional | ClaimCheck's `verdict` and `explanation`, present when ClaimCheck judged. The model's assessment of the contract, kept separate from proof evidence |
 
 `judgment.verdict` is one of:
 
@@ -429,7 +433,7 @@ One of:
 - `{ "status": "listed", "model": "<provider/id>", "cases": [...] }`. Each
   case is `{ "input": "<the input>", "outcomes": ["<a result someone could expect>", ...] }`;
   `cases` is empty when the model found none. The model reads the
-  operator's messages for the request, not the change.
+  messages you supplied for the request, without the change.
 - `{ "status": "not_listed", "reason": "<why>" }`. The reasons are:
   - the model is not among Tesota's models;
   - the model reports that listing depends on reference contents missing
@@ -443,10 +447,18 @@ One of:
 | --- | --- | --- |
 | `path` | string | The test file |
 | `provenance` | `"added"` or `"changed"` | `changed` when the base held the file and this request changed it; `added` when this request added it, so what it expects is the request's own |
-| `sensitivity` | `"fails_then_passes"`, `"passes_on_base"` or `"unknown"` | `fails_then_passes` when it fails on the base while the base passes without it, or the tests it adds newly fail there by the base's test reports, or, for a `bun test` script, the same holds with `--pass-with-no-tests`. `passes_on_base` when it passes on the base too. A runner on the file alone counts only when its report holds a test from the file that ran and passed, on the base and, to credit it, on the change (#615). To credit it, what ran it also passes with the whole change in the same base worktree, which lacks the files the repository ignores (#618). `unknown` otherwise |
+| `sensitivity` | `"fails_then_passes"`, `"passes_on_base"` or `"unknown"` | Whether the test detects the change, passes without it, or could not be measured reliably; see below |
 | `reason` | string | Why, in words |
 
-Provenance and sensitivity are two facts, never one score. A test that
+`fails_then_passes` requires a failure on the base that is absent without
+the changed test, or newly failing tests distinguished by reports when
+the base already fails. The same checking command must pass with the whole
+change in the worktree environment. A per-file runner must report tests
+from the credited file that actually ran and passed. Empty-suite exit
+success is insufficient. `passes_on_base` means the test also passed there;
+other results are `unknown`.
+
+Provenance and sensitivity are separate facts. A test that
 fails then passes notices the change, but may expect the wrong thing; one
 that passes on the base doesn't depend on the change, but may still guard
 against a regression. Only changed and added test files are listed: tests
@@ -462,15 +474,15 @@ base.
 | `generated` | string[] | The files the repository marks as generated, whatever category they count in: a generated test counts in `tests` and is listed here |
 
 `lines` is `"unreadable"` when Git could not show the change or an untracked
-file could not be read, never a count that leaves a file out.
+file could not be read. A partial count would leave a file unaccounted for.
 
-A file's category, in this order: `tests` by the gate's test paths; then
+A file's category, in this order: `tests` by verification's test paths; then
 `other` when the repository marks it as generated (`linguist-generated` in
 `.gitattributes`) or it is in no programming language, such as
 documentation, configuration (including a tool's configuration written in
 one, such as `vite.config.ts` or `.eslintrc.js`), a manifest or lockfile,
-SQL, or an asset; then `implementation`. A category says where lines are, never how risky
-they are or what verified them. In a folder of repositories, the receipt's
+SQL, or an asset; then `implementation`. A category describes the type of
+changed content. It does not assess risk or verification coverage. In a folder of repositories, the receipt's
 one row adds every unit's lines together.
 
 ### Weakening
@@ -510,8 +522,8 @@ The kinds are:
 
 ### WeakenedTest
 
-A heuristic reading of the diff, never a verdict: what Tesota recognizes,
-not every change the file has.
+Heuristic findings from the parts of the diff Tesota recognizes. The list
+may miss other changes to the tests.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
