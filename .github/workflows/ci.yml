@@ -1,5 +1,5 @@
 name: Tesota checks
-# Keep the full verification surface when changing CI topology (#706).
+# Preserve every check while measuring CI topology changes (#706).
 on:
   push:
     branches: [main, dev]
