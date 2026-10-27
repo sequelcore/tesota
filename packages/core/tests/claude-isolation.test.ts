@@ -21,6 +21,21 @@ test("the isolated runner redirects default Claude status away from the installe
   expect(Bun.which("claude")).toBe(process.env["CLAUDE_CODE_EXECUTABLE"] ?? null);
 });
 
+test.skipIf(process.platform !== "win32")("the runner replaces Windows Path regardless of its inherited casing (#680)", () => {
+  const inherited = { SystemRoot: process.env["SystemRoot"], TEMP: tmpdir(), TMP: tmpdir() };
+  const original = join(tmpdir(), "synthetic-tool-directory");
+  const probe = `console.log(JSON.stringify({ keys: Object.keys(process.env).filter(name => /^path$/i.test(name)), path: process.env.PATH.split(';'), which: Bun.which('claude'), fake: process.env.CLAUDE_CODE_EXECUTABLE }));`;
+  for (const name of ["PATH", "Path", "pAtH"]) {
+    const child = Bun.spawnSync([process.execPath, join(import.meta.dir, "../scripts/isolated.ts"), process.execPath, "-e", probe],
+      { stdout: "pipe", stderr: "pipe", env: { ...inherited, [name]: original } });
+    expect(child.exitCode).toBe(0);
+    const result = JSON.parse(child.stdout.toString()) as { keys: string[]; path: string[]; which: string | null; fake: string };
+    expect(result.keys).toEqual(["PATH"]);
+    expect(result.which).toBe(result.fake);
+    expect(result.path).toEqual([join(result.fake, ".."), original]);
+  }
+});
+
 test("forgotten status and SDK fakes cannot start real Claude Code (#680)", async () => {
   expect(await claudeCodeStatus()).toEqual({ loggedIn: false });
   const models = createModels({ credentials: new InMemoryCredentialStore() });
