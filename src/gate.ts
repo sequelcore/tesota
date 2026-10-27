@@ -9,7 +9,8 @@ import { git, gitOutput, gitStopped, headCommit } from "./git.js";
 import { engineName } from "./engine-name.js";
 import { host } from "./host.js";
 import type { ModelCheck } from "./model-check.js";
-import { OPEN_CASES_MODEL, openCases } from "./open-cases.js";
+import { openCases } from "./open-cases.js";
+import { roleModel } from "./verification/role-model-rule.js";
 import { type AttemptEnd, GateOperations, type OperationSink, type OperationSpec } from "./operations.js";
 import type { ContractStrength } from "./proof-guarantees.js";
 import type { JudgmentContext } from "./pi-claimcheck.js";
@@ -258,19 +259,28 @@ function unprovedFiles(changes: Awaited<ReturnType<typeof fileChanges>>, changed
 /** The Pi flag that names ClaimCheck's second model (`claimCheck`). */
 const claimcheckModelFlag = "claimcheck-model";
 
-function restateWith(pi: ExtensionAPI): string | undefined {
-  const value = pi.getFlag(claimcheckModelFlag);
-  return typeof value === "string" && value !== "" ? value : undefined;
+function restateWith(pi: ExtensionAPI, ctx: ExtensionContext): string | undefined {
+  const selected = selectedRoleModel(pi, ctx, claimcheckModelFlag, host().verificationModels().claimcheckModel);
+  // The session's own model restates as itself, without a registry lookup.
+  return ctx.model !== undefined && selected === `${ctx.model.provider}/${ctx.model.id}` ? undefined : selected;
+}
+
+/** One precedence owner for both model-judged roles; no session model is an empty selection. */
+function selectedRoleModel(pi: ExtensionAPI, ctx: ExtensionContext, flag: string, setting: string | undefined): string | undefined {
+  const value = pi.getFlag(flag);
+  const selected = roleModel(typeof value === "string" ? value : "", setting ?? "",
+    ctx.model === undefined ? "" : `${ctx.model.provider}/${ctx.model.id}`);
+  return selected === "" ? undefined : selected;
 }
 
 /** The Pi flag that names the model listing the cases a request leaves open (`openCases`), or `off`. */
 const openCasesModelFlag = "open-cases-model";
 
-/** The model that lists open cases, `OPEN_CASES_MODEL` unless the operator names another; undefined when turned off. */
-function listWith(pi: ExtensionAPI): string | undefined {
-  const value = pi.getFlag(openCasesModelFlag);
-  if (value === "off") return undefined;
-  return typeof value === "string" && value !== "" ? value : OPEN_CASES_MODEL;
+/** The model that lists open cases; undefined when explicitly turned off. */
+function listWith(pi: ExtensionAPI, ctx: ExtensionContext): string | undefined {
+  const selected = selectedRoleModel(pi, ctx, openCasesModelFlag, host().verificationModels().openCasesModel);
+  // No selected session model still produces a receipt reason through openCases.
+  return selected === "off" ? undefined : selected ?? "";
 }
 
 /** What a weak contract's correction must change before it goes back again: the changes to its code that still prove. */
@@ -428,9 +438,9 @@ export class GateProgress {
 export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest | undefined): GateProgress {
   const progress = new GateProgress();
   pi.registerFlag(claimcheckModelFlag, { type: "string",
-    description: "The provider/id of a second model for ClaimCheck to restate contracts with; the session's model otherwise" });
+    description: "The provider/id of ClaimCheck's restating model; overrides settings.claimcheckModel, then the session's model" });
   pi.registerFlag(openCasesModelFlag, { type: "string",
-    description: `The provider/id of the model that lists the cases a request leaves open, or off; ${OPEN_CASES_MODEL} otherwise` });
+    description: "The provider/id of the open-cases model, or off; overrides settings.openCasesModel, then the session's model" });
   /** What went back, by path or by contract as seen from the folder Pi runs in, and by command within each repository's folder. */
   let sentBack = new Map<string, string[]>();
   let commandsSentBack = new Map<string, Map<string, string[]>>();
@@ -594,7 +604,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
   };
   /** The cases the request leaves open, for the receipt; nothing when the operator turned the list off. */
   const listOpen = (ctx: ExtensionContext): Effect.Effect<Pick<Receipt, "openCases">> => {
-    const lister = listWith(pi);
+    const lister = listWith(pi, ctx);
     return lister === undefined ? effect().succeed({})
       : effect().map(step((signal) => progress.operations.run({ method: "open_cases", unit: "", target: lister },
         () => openCases(ctx, requests, lister, signal, judging()), () => "done")), (listed) => ({ openCases: listed }));
@@ -655,7 +665,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
       const sources = yield* step(() => provedSources(unit.root, unit.base, judged));
       if (sources.length > 0) progress.publish({ step: "measuring", startedAt: performance.now(), tally: tallied });
       const strength = attributionResolved(unit.base, unit.startState, unit.endState, unit.snapshot === undefined)
-        ? yield* step((signal) => checks().contractStrength(ctx, requests, sources, signal, restateWith(pi),
+        ? yield* step((signal) => checks().contractStrength(ctx, requests, sources, signal, restateWith(pi, ctx),
           progress.operations.forUnit(unit.folder), judging(unit.folder))) : { contracts: [] };
       measured.set(unit.folder, { sources, strength });
     }

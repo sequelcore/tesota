@@ -12,6 +12,7 @@ import { type AgentType, agentTypes } from "./agents.ts";
 import { branchOf } from "./branch.ts";
 import { agentHost, type AgentTree, defaultAgentLimit, maxDepth } from "./children.ts";
 import type { GuardSetting } from "./agent-rule.ts";
+import { providerRetryTokens, providerRetryType } from "./provider-retry.ts";
 import type { StartedSkill } from "./instructions.ts";
 import {
   compactedHead, type Continuation, continuesType, createLoop, type HistoryMessage, jobMessage, type LoopOptions, type LoopSession, type LoopState, skillMessage,
@@ -101,6 +102,8 @@ export interface EngineSession extends LoopSession {
    * new request as the shell sends one.
    */
   reply(text: string): Promise<void>;
+  /** In plain words, the question the last run ended on and that a reply continues it (#713); none when no question is pending. */
+  awaiting(): string | undefined;
 }
 
 /**
@@ -521,6 +524,16 @@ export function pendingQuestion(entries: readonly SessionEntry[]):
   return { run, reply: Math.max(0, replies.length - 1), callId: "", questions: [{ question: reason.slice(unresolvedPrefix.length), options: [] }] };
 }
 
+/** What to tell the operator when a run ended on a question: the question itself, not its JSON, and that replying continues the work (#713). */
+export function awaitingNotice(entries: readonly SessionEntry[]): string | undefined {
+  const pending = pendingQuestion(entries);
+  if (pending === undefined) return undefined;
+  const asked = pending.questions.map(({ question, options }) =>
+    [`  ${question}`, ...options.map(({ label, description }) => `    - ${label}: ${description}`)].join("\n")).join("\n");
+  return `The agent wanted to ask you something before going on:\n${asked}\n`
+    + "Reply with your answer to continue the work; nothing done so far is lost.";
+}
+
 /**
  * The run that `answer` starts when the session's last run ended on an
  * unresolved question (#651): the earlier request's text, its base, and the
@@ -583,6 +596,10 @@ function stateOf(entries: readonly SessionEntry[]): LoopState {
       tokens.input += entry.input;
       tokens.output += entry.output;
       tokens.total += entry.total;
+    }
+    if (entry.type === "custom" && entry.customType === providerRetryType) {
+      const retry = providerRetryTokens(entry.data);
+      if (retry !== undefined) { tokens.input += retry.input; tokens.output += retry.output; tokens.total += retry.total; }
     }
     if (entry.type !== "assistant") continue;
     tokens.input += entry.message.usage.input;
@@ -652,6 +669,7 @@ function engineSession(file: string, release: () => void, entries: SessionEntry[
     ...loop,
     file,
     ledger: () => ledgerOf(entries),
+    awaiting: () => awaitingNotice(entries),
     workspace: { cwd, checkout, ...worktree === undefined ? {} : { worktree }, ...branch === undefined ? {} : { branch } },
     kept: () => kept,
     types,

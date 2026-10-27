@@ -72,6 +72,35 @@ footer shows it beside the model when it isn't off.
 Verification can ask a model for its opinion too;
 [Verification](verification.md#the-models-opinions) covers which.
 
+## Provider errors and retries
+
+Tesota retries clearly transient rate limits, overload, server errors (5xx)
+and transport failures. It retries only the model call, never a tool call,
+and keeps the same model and account. There are at most three retries after
+the initial call, within two minutes of the first failure. Backoff starts at
+one second and doubles. Where pi-ai exposes it, a provider's `Retry-After`
+can lengthen the wait; if it would reach or exceed the remaining window,
+the run stops instead.
+
+The installed pi-ai adapters for Google Generative AI and Google Vertex
+AI discard failed-response headers and reject a per-call fetch observer.
+Tesota cannot honor a `Retry-After` those adapters do not expose: it uses
+its own backoff, with the same three-retry and two-minute bounds. No
+provider or dependency is patched to work around this limitation.
+
+The shell shows a countdown; Esc stops it. Print mode writes a retry line
+to standard error; Ctrl+C cancels it. Quota or plan exhaustion, spending
+limits, exhausted credits, authentication failures and other terminal
+errors end the run without retrying. Tesota does not resume automatically
+when a plan resets. The session keeps the request for your next message.
+
+The provider's reason is shown in the shell and, before `Ended error.`, on
+print mode's standard error. Displayed diagnostics are limited to 2,000
+characters, with credential-shaped values redacted and terminal controls
+removed. Retry classification uses pi-ai's transient-error classifier plus
+HTTP status, provider type and retry headers where the adapter supplies
+them. Adapters that discard metadata limit what Tesota can recognize.
+
 ## Several accounts of one provider
 
 Add each account with its provider and a name of yours:

@@ -82,6 +82,33 @@ test("a request asks the operator at most three times, and the next request may 
   expect(opened).toBe(4);
 });
 
+test("a fourth question tells the operator in plain words what the agent wanted, and a reply continues the work with it answered (#713)", async () => {
+  const ask = { tool: "ask_user", args: { questions } };
+  const fourth = [{ question: "Which port should it listen on?", options: [
+    { label: "80", description: "Use port 80." }, { label: "8080", description: "Use port 8080." },
+  ] }];
+  let seen = "";
+  const session = start([ask, ask, ask, { tool: "ask_user", args: { questions: fourth } },
+    { seen: (context) => { seen = JSON.stringify(context.messages); }, reply: "Listening on 8080." }], {
+    questions: (_batch, submit) => { submit([{ selected: [0] }]); return () => undefined; },
+  });
+  await session.prompt("Set it up.");
+  expect(session.outcome()).toBe("incomplete");
+  const notice = session.awaiting() ?? "";
+  expect(notice).toContain("Which port should it listen on?");
+  expect(notice).toContain("8080: Use port 8080.");
+  expect(notice).toContain("Reply with your answer to continue the work");
+  expect(notice).not.toContain("{");
+  expect(notice).not.toContain("Generation ends incomplete");
+  await session.reply("Use 8080.");
+  expect(session.outcome()).toBe("completed");
+  expect(session.awaiting()).toBeUndefined();
+  expect(seen).toContain("Operator text (verbatim):\\nUse 8080.");
+  const [first, second] = session.ledger();
+  expect(second?.continues?.run).toBe(first?.run);
+  expect(second?.inputs.some((input) => input.kind === "clarification")).toBe(true);
+});
+
 test("after the floor refuses, a session someone can answer tells the model it may ask what they want instead (#622)", async () => {
   const session = start([{ tool: process.platform === "win32" ? "powershell" : "bash", args: { command: "cat .env" } }, "done"], {
     questions: () => () => undefined, permissions: { mode: () => "full", rules: [] },

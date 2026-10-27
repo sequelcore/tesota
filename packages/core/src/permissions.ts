@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
 import { parseJson } from "../../../src/json.ts";
-import { type Access, type Decision, decide, type Mode, type RuleVerdict, strongest, within, writable } from "./permission-rule.ts";
+import { type Access, type Decision, decide, isDataCommand, type Mode, type RuleVerdict, strongest, within, writable } from "./permission-rule.ts";
 import { climbsBack, normalizeWindowsSegment } from "./subpath-rule.ts";
 import type { FloorRefusal } from "../../../src/receipt.ts";
 
@@ -171,6 +171,47 @@ function deletesGuarded(command: string): boolean {
     unjoined || climbsBack(((doubled ?? single ?? "") + rest!.replace(/["']/gu, "")).split(/[\\/]/u).map(normalizeWindowsSegment))));
 }
 
+/**
+ * Quoted arguments of simple data commands are not commands (#681). Recognize
+ * the whole input before hiding anything: unknown syntax or a pipeline consumer
+ * could execute the data. This is deliberately not a general shell parser.
+ * Escapes, interpolation, redirection, comments and grouping fall back to the
+ * original net, as do rg's options that run another program.
+ */
+function destructiveSubject(command: string): string {
+  // PowerShell also treats typographic quotes as delimiters, including when
+  // paired with ASCII quotes. Never mask across an unrecognized delimiter.
+  if (/[\u2018-\u201f]/u.test(command)) return command;
+  const tokens = command.match(/'[^'\r\n]*'|"[^"$`\\\r\n]*"|[^\s'"$`\\;&|(){}<>#]+|[ \t]+|&&|\|\||[;|\r\n]/gu) ?? [];
+  if (tokens.join("") !== command) return command;
+  let head = true;
+  let separated = true;
+  const visible: string[] = [];
+  for (const token of tokens) {
+    if (/^[ \t]+$/u.test(token)) { separated = true; visible.push(token); continue; }
+    if (/^(?:&&|\|\||[;|\r\n])$/u.test(token)) {
+      if (head) return command;
+      head = true;
+      separated = true;
+      visible.push(token);
+      continue;
+    }
+    if (!separated) return command; // No concatenated or doubled quotes.
+    if (head) {
+      if (!isDataCommand(token.toLowerCase())) return command;
+      head = false;
+      visible.push(token);
+    } else {
+      const quoted = /^["']/u.test(token);
+      const argument = quoted ? token.slice(1, -1) : token;
+      if (/^--(?:pre|hostname-bin)(?:=|$)/u.test(argument)) return command;
+      visible.push(quoted ? "__quoted_data__" : token);
+    }
+    separated = false;
+  }
+  return head ? command : visible.join("");
+}
+
 /** Secrets no call may touch: Tesota's credentials and its MCP sign-ins (#459), SSH's keys, and `.env` files, by any of the names given. */
 function secretPath(...paths: readonly string[]): boolean {
   const ssh = canonicalOnce(join(homedir(), ".ssh"));
@@ -196,7 +237,8 @@ function subjectOf(call: ToolCall): string {
 function floorReason(call: ToolCall, access: Access, cwd: string, scratch: string | undefined): string | undefined {
   const subject = subjectOf(call);
   if (shells.has(call.name)) {
-    if (destructive.some((pattern) => pattern.test(subject)) || deletesGuarded(subject)) return "it would destroy a disk, the root or a home folder";
+    const destructiveText = destructiveSubject(subject);
+    if (destructive.some((pattern) => pattern.test(destructiveText)) || deletesGuarded(destructiveText)) return "it would destroy a disk, the root or a home folder";
     if (namesSecret(subject)) return "it names a secret: an .env file, SSH's keys or Tesota's credentials";
     return undefined;
   }

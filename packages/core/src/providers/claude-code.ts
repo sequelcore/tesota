@@ -70,9 +70,10 @@ export const claudeCodeSignIn = "Claude through your own Claude Code: sign in th
  * The Claude Code program to run: the one the SDK installs for this
  * platform, when Tesota runs from source, or else the operator's own
  * `claude` on the `PATH`, since a compiled `tesota` has no SDK install to
- * find it in (#570). None when neither is there.
+ * find it in (#570). `CLAUDE_CODE_EXECUTABLE` explicitly selects a program
+ * instead (also used by the isolated test runner). None when neither is there.
  */
-export function claudeCodeExecutable(installed: () => string | undefined = sdkClaudeCode): string | undefined {
+export function claudeCodeExecutable(installed: () => string | undefined = () => process.env["CLAUDE_CODE_EXECUTABLE"] ?? sdkClaudeCode()): string | undefined {
   // The PATH as it is now: Bun's default lookup keeps the one the process started with.
   return installed() ?? Bun.which("claude", { PATH: process.env["PATH"] ?? "" }) ?? undefined;
 }

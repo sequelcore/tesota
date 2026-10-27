@@ -66,7 +66,11 @@ const providerLoss = "Not verified: no run with this provider until its sign-in 
 
 async function claudeDiagnosis(id: string): Promise<Diagnosis> {
   const executable = claudeCodeExecutable();
-  const repair = `${repairCommand("claude-code")}; then ${id === "claude-code" ? "claude (then /login)" : `tesota accounts login ${id}`}`;
+  const chosen = process.env["CLAUDE_CODE_EXECUTABLE"];
+  // A stale explicit path would otherwise look like a missing install or a signed-out account.
+  const repair = chosen !== undefined && !existsSync(chosen)
+    ? `CLAUDE_CODE_EXECUTABLE is set to ${chosen}, which does not exist: correct it or unset it`
+    : `${repairCommand("claude-code")}; then ${id === "claude-code" ? "claude (then /login)" : `tesota accounts login ${id}`}`;
   const version = await probe({ id, requirement: "optional", executable: executable ?? "claude", args: ["--version"],
     consequence: "Not verified: no run with Claude Code when its executable is unavailable; other providers are unaffected.", repair });
   // `auth status` writes .claude.json and backups. Never invoke it or read Claude's files from doctor.

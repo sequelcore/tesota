@@ -39,6 +39,15 @@ No mode or rule allows these:
   `Remove-Item -Recurse C:\`, `format`, `mkfs`, `dd` onto a disk, a fork
   bomb.
 
+Quoted arguments in simple `rg`, `grep`, `Select-String` and `echo`
+commands are data, not destructive commands: `echo "rm -rf /"` is not
+refused as a deletion. This exemption requires the whole command line to
+use recognized data commands and literal arguments. Unknown pipeline
+consumers, execution options such as `rg --pre`, interpolation, escapes,
+redirection and ambiguous syntax leave the original text visible to the
+floor. Secret names are still checked in the original text, and modes and
+permission rules still apply.
+
 A home subfolder is not home itself: for example,
 `Remove-Item (Join-Path $env:USERPROFILE 'sub\folder') -Recurse` is not
 refused as a whole-home deletion. A literal subpath that ends back at home

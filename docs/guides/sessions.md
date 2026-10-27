@@ -14,6 +14,17 @@ history, permissions and receipts. Tesota's shell runs several at once.
 | `/compact` | Summarizes the older conversation to free context |
 | `/quit`, or Ctrl+C twice | Ends the shell |
 
+`/resume` continues on the model and account of the session's last reply,
+not the shell's current model. To continue on another model, run `/model`
+after resuming. A session with no reply yet keeps the current model.
+Resuming doesn't change your saved model preference for the next shell.
+
+If the session's model can no longer run, for example after signing out or
+removing its account, Tesota names it, explains why it cannot run, and opens
+the session on the shell's current model with a warning. Use `/model` to
+choose another. If there is no current model either, Tesota doesn't resume
+the session; choose a model with `/model` first.
+
 Every session is saved as it runs, in `~/.tesota/sessions`. A session that
 was cut off, by a crash or a closed terminal, resumes where its file ends:
 a call that only reads says it changed nothing. Other calls that started
@@ -51,8 +62,13 @@ is only a suggestion: nothing is picked for you.
 
 The run waits for your answer and then carries on; asking doesn't end it
 or produce a receipt. The agent gets three tries at asking in one request.
-When it needs more, the run ends incomplete with the open decision
-rather than choosing for you.
+When it needs more, the run ends incomplete rather than choosing for you.
+The shell and print mode show the question it wanted to ask, and your
+next message answers it and continues the same request, so nothing done
+before is lost or redone. Each continuation gets three new tries, so a
+long guided task is not capped, only a model asking in a loop within one
+request. Three stays: it is enough for one stretch of work, and the
+reply is the point where you can steer.
 
 If the agent ends with a question in plain text, such as “Should I…?” or
 “¿Qué…?”, Tesota tells it once to ask through the question form

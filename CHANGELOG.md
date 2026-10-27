@@ -5,7 +5,53 @@ Each release of Tesota, newest first. The format follows
 the first stable release are prereleases. Numbers in parentheses are pull
 requests and issues in [sequelcore/tesota](https://github.com/sequelcore/tesota).
 
-## [0.1.0-alpha.5] - Unreleased
+## [0.1.0-alpha.6] - 2026-10-27
+
+### Changed
+
+- Open cases and ClaimCheck's restating model default to the session's
+  model. Each can be set once in `~/.tesota/settings.json`
+  (`openCasesModel`, `claimcheckModel`), and `--open-cases-model` and
+  `--claimcheck-model` override the setting for one run (#711, #709).
+- In a workspace (npm, Bun or pnpm), a member's tests run with that
+  member's own test script, not the root's runner. A member without one uses
+  the nearest workspace ancestor's; with neither, the receipt says its tests
+  were not run (#708, #674, #638).
+- `/resume` continues on the model and account of the session's last reply.
+  When that model cannot run, the shell opens the session on its current
+  model and says why (#702, #679).
+
+### Fixed
+
+- Tesota starts on a machine without Git instead of crashing. Git is still
+  needed to measure and verify changes (#710).
+- Ctrl+V pastes the clipboard's text into the focused input, including a
+  sign-in key field and a question's answer, in Windows' classic console
+  too. On Windows, right-click also pastes in fullscreen mode, except in VS
+  Code's terminal. A terminal's own paste is used as before and never
+  doubled. On Linux the clipboard is read through X11, so under Wayland
+  without `DISPLAY`, use the terminal's own paste (#720, #718).
+- When a request has asked three times and asks again, that question is
+  shown in plain words, and your reply continues the same request, with three
+  more asks, instead of starting over (#716, #713).
+- Provider failures show a bounded, redacted reason before print mode's
+  `Ended error.`, and the shell reports thrown failures too (#696).
+- Transient model-call failures retry up to three times within two minutes,
+  respecting `Retry-After` where pi-ai exposes it, with a cancellable shell
+  countdown and a print mode line. Exhausted quotas, plans, spending limits
+  and credits, and authentication or terminal errors stop without retrying.
+  Retries never switch model or account or re-run a tool (#698).
+- Quoted arguments in simple `rg`, `grep`, `Select-String` and `echo`
+  commands are read as data, so searching for destructive text no longer
+  trips the destructive-command floor. Pipelines into unknown commands,
+  options that execute, substitution, redirection and ambiguous syntax are
+  still checked as before (#703, #681).
+- `CLAUDE_CODE_EXECUTABLE` selects the Claude Code program, before the
+  SDK's own and `claude` on `PATH`. `tesota doctor` names it when it points to
+  a missing file, instead of reporting Claude Code as not installed (#707,
+  #680).
+
+## [0.1.0-alpha.5] - 2026-10-27
 
 ### Added
 
@@ -191,7 +237,8 @@ The first published prerelease.
   (#492).
 - One folder's snapshots are taken one at a time across processes (#477).
 
-[0.1.0-alpha.5]: https://github.com/sequelcore/tesota/compare/v0.1.0-alpha.4...dev
+[0.1.0-alpha.6]: https://github.com/sequelcore/tesota/releases/tag/v0.1.0-alpha.6
+[0.1.0-alpha.5]: https://github.com/sequelcore/tesota/releases/tag/v0.1.0-alpha.5
 [0.1.0-alpha.4]: https://github.com/sequelcore/tesota/releases/tag/v0.1.0-alpha.4
 [0.1.0-alpha.3]: https://github.com/sequelcore/tesota/releases/tag/v0.1.0-alpha.3
 [0.1.0-alpha.2]: https://github.com/sequelcore/tesota/releases/tag/v0.1.0-alpha.2

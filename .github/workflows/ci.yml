@@ -10,13 +10,14 @@ on:
 permissions:
   contents: read
 jobs:
-  check:
+  root:
     strategy:
       fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    # Windows runners have varied by about 40% on identical runs; a limit only stops a hung job.
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && 15 || 10 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -43,15 +44,74 @@ jobs:
           echo "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88  $HOME/.tesota/tools/tla2tools.jar" | $sum -c -
       - run: bun install --frozen-lockfile --ignore-scripts
       - run: bun run vendor
-      - run: bun --no-env-file run check
-      - run: bun --no-env-file run formal:check
+      - run: bun --no-env-file run typecheck
+      - run: bun --no-env-file run test
+      - run: bun --no-env-file run lint
+  engine:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+        shard: [1, 2]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && 13 || 9 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: package.json
+          package-manager-cache: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      - run: dafny --version
+      # TLC for the model-checking tests, where Tesota looks for it (docs/get-started/install.md).
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "25"
+      - name: TLC
+        shell: bash
+        run: |
+          mkdir -p ~/.tesota/tools
+          curl -fsSL -o ~/.tesota/tools/tla2tools.jar https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar
+          # sha256sum on Linux and Git's bash on Windows; shasum on macOS, which has no sha256sum.
+          if command -v sha256sum >/dev/null; then sum="sha256sum"; else sum="shasum -a 256"; fi
+          echo "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88  $HOME/.tesota/tools/tla2tools.jar" | $sum -c -
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - run: bun run vendor
+      - run: bun --no-env-file run --cwd packages/core typecheck
+        if: matrix.shard == 1
+      # Separate runners give each serial shard its own home and snapshot store.
+      - run: bun --no-env-file run --cwd packages/core test --shard=${{ matrix.shard }}/2
+      - run: bun --no-env-file run --cwd packages/core budget
+        if: matrix.shard == 1
       - run: bun packages/core/src/main.ts --version
+        if: matrix.shard == 1
+  proofs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: package.json
+          package-manager-cache: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      - run: dafny --version
+      - run: bun install --frozen-lockfile --ignore-scripts
+      # The unchanged script owns the complete list, including the engine rules.
+      - run: bun --no-env-file run formal:check
   # Linux with musl, as Alpine has it (#472): the engine's sessions and their lock, and the command starting in its sh
   # without bash (#547). JavaScript
   # actions do not run in an Alpine container, so the checkout runs on the runner and the checks in Bun's Alpine image.
   musl:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Sessions and the command on Alpine
@@ -65,3 +125,17 @@ jobs:
             cd packages/core
             bun run test tests/session.test.ts tests/tools.test.ts
             bun src/main.ts --version'
+  gate:
+    name: CI gate
+    if: always()
+    # Every other job in this workflow belongs here: one left out would not block a merge.
+    needs: [root, engine, proofs, musl]
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Require every job to succeed
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS"
+          echo "$RESULTS" | jq -e 'all(.[]; .result == "success")'

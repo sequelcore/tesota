@@ -45,6 +45,33 @@ type Receipt = import("../../../src/receipt.ts").Receipt;
  */
 const open: EngineSession[] = [];
 
+test("persistent verification roles use the real settings reader without affecting completion (#709)", async () => {
+  const path = join(mkdtempSync(join(tmpdir(), "tesota-role-settings-")), "settings.json");
+  writeFileSync(path, JSON.stringify({ openCasesModel: "unknown/lister", claimcheckModel: "unknown/restater" }));
+  provideHost(shellHost(path));
+  try {
+    const session = gated(repository(), [
+      { tool: "write", args: { path: "src/rule.ts", content: "//@ ensures \\result === 0\nexport function first(): number { return 0; }\n" } }, "done",
+      { tool: "write", args: { path: "src/rule.ts", content: "//@ ensures \\result === 0\nexport function second(): number { return 0; }\n" } }, "done",
+    ], { flags: {} });
+    await session.prompt("Make the function return zero.");
+    expect(session.outcome()).toBe("completed");
+    expect(receiptOf(session)?.openCases).toEqual({ status: "not_listed", reason: "unknown/lister isn't a model Tesota knows (provider/id)" });
+    expect(receiptOf(session)?.claimcheck).toMatchObject({ status: "not_judged",
+      reason: "its restating model unknown/restater isn't a model Tesota knows (provider/id)" });
+    expect(renderReceipt(receiptOf(session)!)).toContain("unknown/lister");
+    expect(renderReceipt(receiptOf(session)!)).toContain("unknown/restater");
+    writeFileSync(path, JSON.stringify({ openCasesModel: "off", claimcheckModel: "unknown/changed" }));
+    await session.prompt("Rename the function, still returning zero.");
+    expect(session.outcome()).toBe("completed");
+    expect(receiptOf(session)?.openCases).toBeUndefined();
+    expect(receiptOf(session)?.claimcheck).toMatchObject({ status: "not_judged",
+      reason: "its restating model unknown/changed isn't a model Tesota knows (provider/id)" });
+  } finally {
+    provideHost(shellHost());
+  }
+});
+
 test("the native question's saved answer reaches the mandatory gate and its receipt", async () => {
   const cwd = repository();
   let released = 0;

@@ -138,15 +138,15 @@ it("judges nothing, and says why, without a model or a usable answer", async () 
   expect(await claimCheck({ model: undefined, modelRegistry: {} as never }, requests, items, signal))
     .toEqual({ status: "not_judged", reason: "no model is selected" });
   expect(await claimCheck(session({ stopReason: "error", errorMessage: "rate limited" }).ctx, requests, items, signal))
-    .toEqual({ status: "not_judged", reason: "the model request failed: rate limited" });
+    .toEqual({ status: "not_judged", reason: "provider/model the model request failed: rate limited" });
   expect(await claimCheck(session(new Error("offline")).ctx, requests, items, signal))
-    .toEqual({ status: "not_judged", reason: "the model request failed: offline" });
+    .toEqual({ status: "not_judged", reason: "provider/model the model request failed: offline" });
   expect(await claimCheck(session(informalized, call("record_comparisons", { comparisons: [{ function: 1, verdict: "fine" }] })).ctx,
-    requests, items, signal)).toEqual({ status: "not_judged", reason: "the model did not record its answer" });
+    requests, items, signal)).toEqual({ status: "not_judged", reason: "provider/model the model did not record its answer" });
   expect(await claimCheck(session({ content: [{ type: "text", text: "They look right." }] }).ctx, requests, items, signal))
-    .toEqual({ status: "not_judged", reason: "the model did not record its answer" });
+    .toEqual({ status: "not_judged", reason: "provider/model the model did not record its answer" });
   const stopped = new AbortController();
   stopped.abort();
   expect(await claimCheck(session({ stopReason: "aborted" }).ctx, requests, items, stopped.signal))
-    .toEqual({ status: "not_judged", reason: "was stopped" });
+    .toEqual({ status: "not_judged", reason: "provider/model was stopped" });
 });

@@ -7,6 +7,7 @@ import { entryReceipt, isReceipt, type Receipt, receiptStanding, standingWords, 
 import tesota from "../../../src/tesota.ts";
 import { fileCredentialStore } from "./credentials.ts";
 import { branchOf } from "./branch.ts";
+import { providerError } from "./provider-error.ts";
 import { anyHooks, type Hooks, joinHooks } from "./hooks.ts";
 import type { McpServers } from "./mcp.ts";
 import { type McpServerConfig, readMcpConfig } from "./mcp-config.ts";
@@ -14,7 +15,7 @@ import { unusedModels } from "./agents.ts";
 import { accountLabels, engineModels, runnableModel } from "./model-access.ts";
 import { startingModel } from "./resume-model-rule.ts";
 import { loadRules } from "./permissions.ts";
-import { askedSessions, createSession, type EngineSession, openSession, type OpenOptions, pendingQuestion, sessionsFolder } from "./session.ts";
+import { askedSessions, awaitingNotice, createSession, type EngineSession, openSession, type OpenOptions, pendingQuestion, sessionsFolder } from "./session.ts";
 import { lastFloorNotice, peekSessionFile, SessionFileError } from "./session-file.ts";
 import { SessionLockedError } from "./session-lock.ts";
 import { readSettings, type Settings } from "./settings.ts";
@@ -130,12 +131,14 @@ function ending(outcome: string | undefined, file: string): string {
   const receipt = branchOf(entries).map(entryReceipt).findLast((found) => found !== undefined);
   const standing = isReceipt(receipt) ? receiptStanding(receipt) : undefined;
   // A run that changed nothing claims no standing (#668); one that changed something unverified says why.
-  return `${outcome === "completed" ? "Completed" : `Ended ${outcome ?? "without a run"}`}`
+  const end = entries.findLast((entry) => entry.type === "run_end");
+  const reason = outcome === "error" && end?.type === "run_end" && end.reason !== undefined ? `${providerError(end.reason)}\n` : "";
+  return reason + `${outcome === "completed" ? "Completed" : `Ended ${outcome ?? "without a run"}`}`
     + `${standing === undefined ? "" : standing === "unchanged" ? ` (${standingWords[standing]})`
       : `, ${standingWords[standing]}${standing === "unverified" ? `: ${unverifiedWhy(receipt as Receipt)}` : ""}; tesota receipt writes it for a pull request`}.\n`
     + (lastFloorNotice(entries) ?? "")
     // A run that ended on its question says how to answer it (#651).
-    + (pendingQuestion(entries) === undefined ? "" : `Awaiting your answer: tesota -p --resume ${basename(file, ".jsonl")} "<answer>"\n`);
+    + (pendingQuestion(entries) === undefined ? "" : `${awaitingNotice(entries)}\nAwaiting your answer: tesota -p --resume ${basename(file, ".jsonl")} "<answer>"\n`);
 }
 
 /** What the operator's settings choose for a session: its thinking, how many subagents run at once, and their branch guard. */
@@ -194,7 +197,7 @@ export async function runPrint(args: readonly string[], cwd: string, write: Prin
   if (runnable === undefined) return 1;
   const { model, unchecked } = runnable;
   if (unchecked !== undefined) write.error(`${unchecked}\n`);
-  provideHost(shellHost());
+  provideHost(shellHost(settingsPath));
   const { hooks, mcp } = trustedStandards(cwd, settingsPath, write);
   const rules = loadRules(cwd);
   let servers: McpServers | undefined;
@@ -205,6 +208,9 @@ export async function runPrint(args: readonly string[], cwd: string, write: Prin
   if (session === undefined) return 1;
   const unused = unusedModels(session.types, `${model.provider}/${model.id}`);
   if (unused !== undefined) write.error(`${unused}\n`);
+  const unsubscribe = session.subscribe((event) => {
+    if (event.type === "retry" && event.delayMs > 0) write.error(`Retry ${event.attempt}/3 in ${Math.ceil(event.delayMs / 1000)}s… (Ctrl+C to cancel)\n`);
+  });
   let stopped = false;
   const stop = (): void => { stopped = true; void session.abort(); };
   process.once("SIGINT", stop);
@@ -216,6 +222,7 @@ export async function runPrint(args: readonly string[], cwd: string, write: Prin
     await session.reply(asked.request).catch((error: unknown) => { if (!stopped) throw error; });
     write.out(`${session.lastAssistantText() ?? ""}\n`);
   } finally {
+    unsubscribe();
     process.off("SIGINT", stop);
     process.off("SIGTERM", stop);
     // Each is let go of whatever the other does, so a session that fails to close never leaves its servers running.
