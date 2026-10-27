@@ -40,10 +40,16 @@ Node's zlib for the pinned ZIP executables, without external commands.
 | `bun run --cwd packages/core screenshots` | Draw the documentation's images again |
 
 Before finishing a change, run `bun run check`, `bun run formal:check` when
-a proved rule changed, and `git diff --check`. CI runs both checks on
-Ubuntu, Windows and macOS, and the engine's session and tool tests on musl
-Linux, in Alpine without bash. Report what ran: a passing check, a live
-observation and a person's acceptance are different claims.
+a proved rule changed, and `git diff --check`. CI splits `check` into parallel
+root (types, Vitest, lint) and engine jobs on Ubuntu, Windows and macOS.
+Engine tests run serially within two shards on separate runners; engine
+types, budgets and the CLI smoke check run with the first shard on each OS.
+The complete `formal:check` runs once on Ubuntu.
+The engine's session and tool tests also run on musl Linux, in Alpine
+without bash. `CI gate` runs even after a failure or skip and succeeds only
+when every root, engine, proof and musl job succeeded. Report what ran: a
+passing check, a live observation and a person's acceptance are different
+claims.
 
 `bun run check` never calls a live model. The tests that prove files run
 only where Dafny is installed; the verification tests script the proofs and
@@ -248,8 +254,10 @@ Work starts on a short branch from `dev` and returns through a pull
 request, through a merge queue that checks it merged with what's ahead of
 it. `dev` reaches `main` through a pull request with a merge commit, which
 must be up to date. A hotfix starts from `main` and is merged back into
-`dev` promptly. Both branches require the Ubuntu and Windows checks and
-resolved conversations, and forbid force pushes and deletion.
+`dev` promptly. Both branches require configured status checks and resolved
+conversations, and forbid force pushes and deletion. Renaming a workflow
+job does not update those requirements; the owner must coordinate any
+switch to `CI gate` in branch protection.
 
 ## Documentation
 
