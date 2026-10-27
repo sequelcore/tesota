@@ -247,8 +247,10 @@ Work starts on a short branch from `dev` and returns through a pull
 request, through a merge queue that checks it merged with what's ahead of
 it. `dev` reaches `main` through a pull request with a merge commit, which
 must be up to date. A hotfix starts from `main` and is merged back into
-`dev` promptly. Both branches require the Ubuntu and Windows checks and
-resolved conversations, and forbid force pushes and deletion.
+`dev` promptly. Both branches require configured status checks and resolved
+conversations, and forbid force pushes and deletion. Renaming a workflow
+job does not update those requirements; the owner must coordinate any
+switch to `CI gate` in branch protection.
 
 ## Documentation
 
