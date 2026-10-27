@@ -41,8 +41,10 @@ Node's zlib for the pinned ZIP executables, without external commands.
 
 Before finishing a change, run `bun run check`, `bun run formal:check` when
 a proved rule changed, and `git diff --check`. CI splits `check` into parallel
-root (types, Vitest, lint) and engine (types, Bun tests, budgets) jobs on
-Ubuntu, Windows and macOS. The complete `formal:check` runs once on Ubuntu.
+root (types, Vitest, lint) and engine jobs on Ubuntu, Windows and macOS.
+Engine tests run serially within two shards on separate runners; engine
+types, budgets and the CLI smoke check run with the first shard on each OS.
+The complete `formal:check` runs once on Ubuntu.
 The engine's session and tool tests also run on musl Linux, in Alpine
 without bash. `CI gate` runs even after a failure or skip and succeeds only
 when every root, engine, proof and musl job succeeded. Report what ran: a

@@ -51,6 +51,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-latest, macos-latest]
+        shard: [1, 2]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 12
     steps:
@@ -79,8 +80,14 @@ jobs:
           echo "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88  $HOME/.tesota/tools/tla2tools.jar" | $sum -c -
       - run: bun install --frozen-lockfile --ignore-scripts
       - run: bun run vendor
-      - run: bun --no-env-file run --cwd packages/core check
+      - run: bun --no-env-file run --cwd packages/core typecheck
+        if: matrix.shard == 1
+      # Separate runners give each serial shard its own home and snapshot store.
+      - run: bun --no-env-file run --cwd packages/core test --shard=${{ matrix.shard }}/2
+      - run: bun --no-env-file run --cwd packages/core budget
+        if: matrix.shard == 1
       - run: bun packages/core/src/main.ts --version
+        if: matrix.shard == 1
   proofs:
     runs-on: ubuntu-latest
     timeout-minutes: 7
