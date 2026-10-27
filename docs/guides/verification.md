@@ -98,11 +98,19 @@ and Maven write these reports already. Elsewhere:
 
 | Flag | |
 | --- | --- |
-| `--claimcheck-model <provider>/<id>` | A second model restates each new contract without seeing your request; the session's model compares the two. Without the flag, the session's model does both |
-| `--open-cases-model <provider>/<id>` | The model that lists the cases your request leaves open. GPT-6 Sol by default; `off` turns the list off |
+| `--claimcheck-model <provider>/<id>` | A second model restates each new contract without seeing your request; the session's model compares the two |
+| `--open-cases-model <provider>/<id>` | The model that lists the cases your request leaves open; `off` turns the list off |
 
-Both flags go to `tesota` or `tesota -p`. Neither result ever goes back to
-the agent or counts toward what needs you.
+Both roles use the session's model by default. To choose once for every run,
+set `openCasesModel` or `claimcheckModel` in your
+[`~/.tesota/settings.json`](../reference/configuration.md#settingsjson),
+using a `provider/id`. `openCasesModel` also accepts `off`.
+A flag overrides its setting for one run: flag, then setting, then the
+session's model. Both flags go to `tesota` or `tesota -p`.
+
+If a role's model is unknown, lacks a sign-in, or otherwise cannot answer,
+the receipt says why it was not listed or not judged; the run still completes.
+Neither result ever goes back to the agent or counts toward what needs you.
 
 ## Outside one repository
 

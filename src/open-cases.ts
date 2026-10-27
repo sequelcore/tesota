@@ -16,9 +16,6 @@ import { type JudgmentContext, judgmentPrompt, type ModelAccess, named, recorded
  * rule alone dropped such inputs, an empty name or a page size of zero.
  */
 
-/** The model that lists open cases unless the operator names another: GPT-6 Sol met every threshold, GPT-6 Luna did not. */
-export const OPEN_CASES_MODEL = "openai/gpt-6-sol";
-
 /** The list ends within this, so a stalled provider cannot hold the run open. */
 export const OPEN_CASES_TIME_LIMIT_MS: number = 2 * 60_000;
 
@@ -65,6 +62,7 @@ export function openCasesPrompt(requests: readonly string[]): string {
 
 /** The open cases of `requests`, listed by `model`, a `provider/id` Tesota knows, within `OPEN_CASES_TIME_LIMIT_MS`. */
 export async function openCases(ctx: ModelAccess, requests: readonly string[], model: string, signal: AbortSignal, judging?: JudgmentContext): Promise<OpenCases> {
+  if (model === "") return { status: "not_listed", reason: "no model is selected" };
   const lister = registered(ctx, model);
   if (lister === undefined) return { status: "not_listed", reason: `${model} isn't a model Tesota knows (provider/id)` };
   const prompt = judgmentPrompt(lister, openCasesSystemPrompt, "record_open_cases", listSchema, requests, openCasesPrompt, "open_cases", judging);

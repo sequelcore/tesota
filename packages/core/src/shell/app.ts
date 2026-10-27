@@ -129,7 +129,7 @@ export async function runApp(options: AppOptions): Promise<void> {
   };
   const folder = options.sessions ?? sessionsFolder(options.cwd);
   // Tesota's interface takes the shell's editor, key names, version and shell, never Pi's (#446).
-  provideHost(shellHost());
+  provideHost(shellHost(options.settingsPath));
   const theme = shellTheme("dark", getTerminalColorMode());
   const verifier: Verifier = (pi, request) => { tesota(pi, request); };
   let providers = 0;
