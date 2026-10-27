@@ -1,6 +1,9 @@
 import { expect, it } from "vitest";
 import { type Comparison, claimCheck, claimcheckResult, comparePrompt, informalizePrompt } from "../src/pi-claimcheck.js";
 import { contracts } from "../src/proof-guarantees.js";
+import { openCases } from "../src/open-cases.js";
+import type { RequestJudgment } from "../src/receipt.js";
+import { contextUsage } from "../src/context-usage.js";
 
 const source = [
   "//@ ensures denied ==> \\result === false",
@@ -28,11 +31,60 @@ function session(...replies: object[]): { ctx: Parameters<typeof claimCheck>[0];
     return reply instanceof Error ? Promise.reject(reply) : Promise.resolve({ stopReason: "toolUse", content: [], ...reply });
   };
   const find = (provider: string, id: string): object | undefined =>
-    provider === "other" && id === "restater" ? { provider, id } : undefined;
-  return { ctx: { model: { provider: "provider", id: "model" } as never, modelRegistry: { complete, find } as never }, asked, models };
+    provider === "other" && id === "restater" ? { provider, id, contextWindow: 128_000, maxTokens: 4096 } : undefined;
+  return { ctx: { model: { provider: "provider", id: "model", contextWindow: 128_000, maxTokens: 4096 } as never, modelRegistry: { complete, find } as never }, asked, models };
 }
 
 const call = (name: string, args: object): object => ({ content: [{ type: "toolCall", id: "1", name, arguments: args }] });
+it("budgets complete judge prompts, keeps newest whole requests, and records every omission (#627)", async () => {
+  const groups = Array.from({ length: 100 }, (_, index) => ({ run: index + 1, text: [`Requirement ${index + 1}: ${"x".repeat(20_000)}`] }));
+  const selections: RequestJudgment[] = [];
+  const judging = { requests: groups, record: (selection: RequestJudgment) => { selections.push(selection); } };
+  const { ctx: original, asked } = session(informalized, call("record_comparisons", { comparisons: [justified(1), justified(2)] }),
+    call("record_open_cases", { status: "listed", cases: [] }));
+  const model = { ...original.model!, contextWindow: 12_000, maxTokens: 256 };
+  const ctx = { ...original, model };
+  const complete = ctx.modelRegistry.complete;
+  ctx.modelRegistry.complete = (selected, context, options) => {
+    const usage = contextUsage(context.messages as never, context.systemPrompt ?? "", context.tools ?? [], selected.contextWindow)!;
+    expect(usage.tokens! + selected.maxTokens).toBeLessThanOrEqual(selected.contextWindow);
+    return complete(selected, context, options);
+  };
+  ctx.modelRegistry.find = () => ({ ...model, id: "lister", contextWindow: 7000 });
+  expect(await claimCheck(ctx, groups.flatMap(({ text }) => text), items, new AbortController().signal, undefined, judging))
+    .toMatchObject({ status: "judged" });
+  expect(await openCases(ctx, groups.flatMap(({ text }) => text), "provider/model", new AbortController().signal, judging))
+    .toMatchObject({ status: "listed" });
+  expect(asked).toHaveLength(3);
+  expect(asked[1]).toContain("Requirement 99:");
+  expect(asked[1]).toContain("Requirement 100:");
+  expect(asked[1]).not.toContain("Requirement 98:");
+  expect(asked[2]).toContain("Requirement 100:");
+  expect(asked[2]).not.toContain("Requirement 99:");
+  expect(selections.map(({ method, requests, omitted }) => [method, requests.map(({ run }) => run), omitted])).toEqual([
+    ["claimcheck", [99, 100], Array.from({ length: 98 }, (_, index) => index + 1)],
+    ["open_cases", [100], Array.from({ length: 99 }, (_, index) => index + 1)],
+  ]);
+});
+
+it("does not send an oversized newest request, fixed envelope, or an input with unknown capacity", async () => {
+  const { ctx: original, asked } = session();
+  const small = { ...original.model!, contextWindow: 1000, maxTokens: 128 };
+  const ctx = { ...original, model: small };
+  ctx.modelRegistry.find = () => small;
+  const selections: RequestJudgment[] = [];
+  const judging = { requests: [{ run: 7, text: ["x".repeat(20_000)] }], record: (selection: RequestJudgment) => { selections.push(selection); } };
+  expect(await openCases(ctx, [], "provider/model", new AbortController().signal, judging)).toMatchObject({ status: "not_listed" });
+  expect(selections).toEqual([{ method: "open_cases", folder: "", requests: [], omitted: [7] }]);
+  const tiny = { ...small, contextWindow: 128 };
+  ctx.modelRegistry.find = () => tiny;
+  expect(await openCases(ctx, ["hi"], "provider/model", new AbortController().signal)).toMatchObject({ status: "not_listed" });
+  ctx.modelRegistry.find = () => ({ ...small, contextWindow: 0 });
+  expect(await openCases(ctx, ["hi"], "provider/model", new AbortController().signal)).toMatchObject({ status: "not_listed" });
+  expect(await claimCheck({ ...ctx, model: tiny }, ["hi"], items, new AbortController().signal)).toMatchObject({ status: "not_judged" });
+  expect(asked).toEqual([]);
+});
+
 const informalized = call("record_informalizations", { informalizations: [
   { function: 1, preconditions: "none", postcondition: "denied gives false", strength: "strong" },
   { function: 2, preconditions: "n >= 0", postcondition: "result >= 0", strength: "weak" }] });

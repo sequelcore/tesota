@@ -10,7 +10,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { type Base, captureBase } from "./base.ts";
 import type { BranchEntry, EntryDraft, ExtensionFactory, PromptOptions, RunOutcome, Session, SessionOutcome, ToolDefinition } from "../../../src/contract.ts";
-import { contextUsage, estimateTokens } from "./context-usage.ts";
+import { contextUsage, estimateTokens } from "../../../src/context-usage.js";
 import { conversationMessage } from "./conversation.ts";
 import { createHost, type DrawingSurface, type PhaseResult } from "./extensions.ts";
 import type { Behavior, Origin, SessionWriter, SettlePhase } from "./session-file.ts";

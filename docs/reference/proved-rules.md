@@ -6,7 +6,7 @@ To prove one rule again from the repository root, run:
 lsc check --backend=dafny src/verification/gate-rule.ts
 ```
 
-These are the 33 rule files selected by `formal:check` in
+These are the 34 rule files selected by `formal:check` in
 [package.json](../../package.json). Each contains pure TypeScript decisions
 with LemmaScript contracts checked by Dafny. These proofs use
 [LemmaScript's model of TypeScript](../concepts/verification.md#what-a-proof-covers),
@@ -44,6 +44,7 @@ Run `bun run formal:check` to check the full list.
 | [`packages/core/src/reconcile-rule.ts`](../../packages/core/src/reconcile-rule.ts) | What recovery records for unfinished calls without replaying them | `lsc check --backend=dafny packages/core/src/reconcile-rule.ts` |
 | [`packages/core/src/settle-rule.ts`](../../packages/core/src/settle-rule.ts) | Whether a run continues, reaches verification or ends | `lsc check --backend=dafny packages/core/src/settle-rule.ts` |
 | [`packages/core/src/permission-rule.ts`](../../packages/core/src/permission-rule.ts) | Whether the permission floor, mode and matching rules allow a call | `lsc check --backend=dafny packages/core/src/permission-rule.ts` |
+| [`packages/core/src/subpath-rule.ts`](../../packages/core/src/subpath-rule.ts) | How guarded subpaths climb and how Windows dot/space segments normalize conservatively | `lsc check --backend=dafny packages/core/src/subpath-rule.ts` |
 | [`packages/core/src/compact-rule.ts`](../../packages/core/src/compact-rule.ts) | When to summarize conversation and where its verbatim tail starts | `lsc check --backend=dafny packages/core/src/compact-rule.ts` |
 | [`packages/core/src/catalog-rule.ts`](../../packages/core/src/catalog-rule.ts) | How much context instruction files and the skill catalog may use | `lsc check --backend=dafny packages/core/src/catalog-rule.ts` |
 | [`packages/core/src/invocation-rule.ts`](../../packages/core/src/invocation-rule.ts) | Whether you or the model may start a skill | `lsc check --backend=dafny packages/core/src/invocation-rule.ts` |
@@ -52,4 +53,6 @@ Run `bun run formal:check` to check the full list.
 | [`packages/core/src/handback-rule.ts`](../../packages/core/src/handback-rule.ts) | Whether a Claude Code query can continue with the recorded tool results | `lsc check --backend=dafny packages/core/src/handback-rule.ts` |
 | [`packages/core/src/account-rule.ts`](../../packages/core/src/account-rule.ts) | Which settings and agent types still name an account before removal | `lsc check --backend=dafny packages/core/src/account-rule.ts` |
 | [`packages/core/src/resume-model-rule.ts`](../../packages/core/src/resume-model-rule.ts) | Which model an explicit, resumed or default print request uses | `lsc check --backend=dafny packages/core/src/resume-model-rule.ts` |
+| [`src/verification/request-context-rule.ts`](../../src/verification/request-context-rule.ts) | Which earlier requests since the last verification are judged, and whether a complete judge prompt fits its model's context | `lsc check --backend=dafny src/verification/request-context-rule.ts` |
 | [`packages/core/src/usage-rule.ts`](../../packages/core/src/usage-rule.ts) | How account usage is rounded, drawn, colored and deduplicated | `lsc check --backend=dafny packages/core/src/usage-rule.ts` |
+| [`packages/core/src/doctor-rule.ts`](../../packages/core/src/doctor-rule.ts) | Whether a found tool passed its smoke test, and any-failure-over-core-unavailable exit precedence | `lsc check --backend=dafny packages/core/src/doctor-rule.ts` |

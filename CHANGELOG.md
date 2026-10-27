@@ -5,7 +5,33 @@ Each release of Tesota, newest first. The format follows
 the first stable release are prereleases. Numbers in parentheses are pull
 requests and issues in [sequelcore/tesota](https://github.com/sequelcore/tesota).
 
-## [0.1.0-alpha.4] - Unreleased
+## [0.1.0-alpha.5] - Unreleased
+
+### Added
+
+- `tesota doctor` reports which verification tools and model providers are
+  ready, read-only. Git, Dafny with LemmaScript, and Java with TLC are core;
+  Quint and each provider are optional, and at least one usable model
+  provider is required. Each row gives the path, the version, what is lost
+  without it and how to install it. `--json` gives the same report, and the
+  exit code is 2 only when something core is missing (#694, #687).
+
+### Changed
+
+- A follow-up after a request whose changes were never verified, such as
+  one stopped by an error or a limit, is judged against those earlier
+  requests too, whatever its wording. The receipt records which requests
+  each judgment received, and which, if any, did not fit the model's
+  context (#693, #627).
+
+### Fixed
+
+- The floor no longer reads a home subfolder built with `Join-Path`, such
+  as `Join-Path $env:USERPROFILE '.tesota\sessions\x'`, as the home folder
+  itself. Nested joins, and Windows names made only of dots and spaces,
+  still count as home (#692, #633).
+
+## [0.1.0-alpha.4] - 2026-10-26
 
 ### Added
 
@@ -85,6 +111,12 @@ requests and issues in [sequelcore/tesota](https://github.com/sequelcore/tesota)
 - Multi-line text pasted into a question keeps its line breaks as spaces
   (#624).
 - `/resume` reopens a session that worked in the folder's checkout (#625).
+- A request like "continue" is judged by open cases and ClaimCheck against
+  earlier requests whose changes were never verified, back to the last
+  successful verifier settlement with a non-stopped receipt. A tool-free
+  completed answer does not discard them. The receipt stores which requests
+  each judge received and names any left out for model context capacity
+  (#627).
 
 ## [0.1.0-alpha.3] - 2026-10-23
 
@@ -159,7 +191,8 @@ The first published prerelease.
   (#492).
 - One folder's snapshots are taken one at a time across processes (#477).
 
-[0.1.0-alpha.4]: https://github.com/sequelcore/tesota/compare/v0.1.0-alpha.3...dev
+[0.1.0-alpha.5]: https://github.com/sequelcore/tesota/compare/v0.1.0-alpha.4...dev
+[0.1.0-alpha.4]: https://github.com/sequelcore/tesota/releases/tag/v0.1.0-alpha.4
 [0.1.0-alpha.3]: https://github.com/sequelcore/tesota/releases/tag/v0.1.0-alpha.3
 [0.1.0-alpha.2]: https://github.com/sequelcore/tesota/releases/tag/v0.1.0-alpha.2
 [0.1.0-alpha.1]: https://github.com/sequelcore/tesota/releases/tag/v0.1.0-alpha.1

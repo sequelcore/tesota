@@ -96,6 +96,48 @@ curl -fsSL -o ~/.tesota/tools/tla2tools.jar https://github.com/tlaplus/tlaplus/r
 sha256sum ~/.tesota/tools/tla2tools.jar  # shasum -a 256 on macOS
 ```
 
+## Check your tools
+
+Run `tesota doctor` (or `tesota doctor --json`) before a session. It only
+reads local configuration and runs bounded version/help commands. It never
+installs, downloads, refreshes credentials or sends a model request. A local
+sign-in check does not establish that a provider will accept a request.
+Claude Code is version-only: its sign-in is explicitly not checked, because
+its auth-status command writes configuration files. This does not affect the
+exit code.
+[Commands](../reference/commands.md#doctor) documents statuses and exit codes.
+
+### Repair commands
+
+Doctor derives its repair commands from this table, embedded in the binary;
+these commands are suggestions for you to run, never actions it takes.
+The Linux package commands below are for Debian/Ubuntu; use your distribution's
+package manager elsewhere. Dafny's command needs the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0).
+For Java on macOS, follow Homebrew's printed instructions to put `java` on PATH.
+The TLC command downloads the jar described above; verify its checksum there.
+LemmaScript is bundled in a release; from source follow [Development](../development.md#set-up).
+Quint's TLC backend is not supported on Windows; use TLA+ instead, or run
+Tesota and Quint together on Linux (including WSL).
+
+<!-- doctor-repairs-start -->
+| Capability | Windows | macOS | Linux |
+| --- | --- | --- | --- |
+| dafny | `dotnet tool install --global dafny --version 4.11.0` | `dotnet tool install --global dafny --version 4.11.0` | `dotnet tool install --global dafny --version 4.11.0` |
+| lsc | `& ([scriptblock]::Create((irm https://raw.githubusercontent.com/sequelcore/tesota/main/install.ps1)))` | `sh -c "$(curl -fsSL https://raw.githubusercontent.com/sequelcore/tesota/main/install.sh)"` | `sh -c "$(curl -fsSL https://raw.githubusercontent.com/sequelcore/tesota/main/install.sh)"` |
+| java | `winget install EclipseAdoptium.Temurin.21.JRE` | `brew install openjdk@21` | `sudo apt-get install default-jre` |
+| tlc | `New-Item -ItemType Directory -Force ~/.tesota/tools; Invoke-WebRequest https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar -OutFile ~/.tesota/tools/tla2tools.jar` | `mkdir -p ~/.tesota/tools; curl -fsSL -o ~/.tesota/tools/tla2tools.jar https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar` | `mkdir -p ~/.tesota/tools; curl -fsSL -o ~/.tesota/tools/tla2tools.jar https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar` |
+| quint | `wsl npm install -g @informalsystems/quint` | `npm install -g @informalsystems/quint` | `npm install -g @informalsystems/quint` |
+| git | `winget install Git.Git` | `brew install git` | `sudo apt-get install git` |
+| claude-code | `& ([scriptblock]::Create((irm https://claude.ai/install.ps1)))` | `bash -c "$(curl -fsSL https://claude.ai/install.sh)"` | `bash -c "$(curl -fsSL https://claude.ai/install.sh)"` |
+| provider | `tesota` | `tesota` | `tesota` |
+<!-- doctor-repairs-end -->
+
+For provider repairs, open `tesota` and use `/login`. For Claude Code,
+install it if needed, then run `claude` and `/login`; named accounts use
+`tesota accounts login <provider>@<name>`. For LemmaScript, reinstall the
+binary with the listed command, or repair the source checkout's dependencies
+following Development. Restart your terminal after changing PATH.
+
 ## Sign in to a model
 
 Open Tesota in any folder and type `/login`:

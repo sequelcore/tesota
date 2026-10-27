@@ -5,6 +5,7 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
 import { parseJson } from "../../../src/json.ts";
 import { type Access, type Decision, decide, type Mode, type RuleVerdict, strongest, within, writable } from "./permission-rule.ts";
+import { climbsBack, normalizeWindowsSegment } from "./subpath-rule.ts";
 import type { FloorRefusal } from "../../../src/receipt.ts";
 
 /** Rules as an operator or a project writes them (#449): `tool(pattern)`, or a tool's name alone, by verdict. */
@@ -125,14 +126,50 @@ const inside = (path: string, folder: string): boolean => within(names(path), na
 
 /** Commands that destroy what no request asks to destroy: a disk, the root or home folder, the system's. A net, not a guarantee. */
 const destructive: readonly RegExp[] = [
-  /\brm\s+(-[a-zA-Z]*r[a-zA-Z]*\s+|-[a-zA-Z]*f[a-zA-Z]*\s+|--recursive\s+|--force\s+)+(\/|~|\$HOME|\/\*|\.\.?\/?)(\s|$)/u,
-  /\bremove-item\b[^\n]*-recurse\b[^\n]*\s(['"]?[a-z]:[\\/]?['"]?|~|\$home|\$env:userprofile|\$env:systemroot)(\s|$)/iu,
+  /\brm\s+(-[a-zA-Z]*r[a-zA-Z]*\s+|-[a-zA-Z]*f[a-zA-Z]*\s+|--recursive\s+|--force\s+)+(\/\*|\.\.?\/?)(?=\s|$|[;&|)])/u,
   /\bformat(\.com)?\s+[a-z]:/iu,
   /\bmkfs(\.\w+)?\b/u,
   /\bdd\b[^\n]*\bof=\/dev\/(sd|nvme|disk|hd)/u,
   /\b(rd|rmdir|del)\s+\/[sq][^\n]*\s[a-z]:[\\/]?(\s|$)/iu,
   /:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:/u,
 ];
+
+/** What `rm` deletes, to the end of its command, and `Remove-Item`, to the end of its line, when it recurses. */
+const rmWords = /\brm\s+(?:-[a-zA-Z]*r[a-zA-Z]*\s+|-[a-zA-Z]*f[a-zA-Z]*\s+|--recursive\s+|--force\s+)+([^\n;&|]*)/gu;
+const removeItemWords = /\bremove-item\b([^\n]*)/giu;
+
+/** Folders no destructive command may name, nor a subpath that climbs back to them: a drive or the root, home, the system's. */
+const guarded = String.raw`[a-z]:|[\\/]|~|\$(?:home|\{home\}|env:userprofile|env:systemroot)`;
+/**
+ * A word that starts with a guarded folder, and the subpath said after it, read through its quotes:
+ * `"$HOME"/..`, `"$HOME/.."` and `$HOME'/..'` are all `$HOME/..`.
+ */
+const guardedWord = new RegExp(
+  String.raw`(?<!\S)(?:"(?:${guarded})([^"\n]*)"|'(?:${guarded})([^'\n]*)'|(?:${guarded}))((?:"[^"\n]*"|'[^'\n]*'|[^\s;&|()'"])*)`,
+  "giu",
+);
+
+/**
+ * Only the flat, parent-first two-argument spelling: `(Join-Path $HOME 'sub')`,
+ * optionally with `-Path` and `-ChildPath`. Dynamic children and globs stay visible to the net.
+ * This is not parameter binding or evaluation of PowerShell expressions.
+ */
+const joinPath = /\(\s*join-path\s+(?:-path\s+)?("[^"\n()]*"|'[^'\n()]*'|[^\s()'";|&]+)\s+(?:-childpath\s+)?("[^"\n()]*"|'[^'\n()]*'|[^\s()'";|&]+)\s*\)/giu;
+
+/** Whether a recursive deletion names a guarded folder, or a subpath of one that climbs back to it or above it (#633). */
+function deletesGuarded(command: string): boolean {
+  const flat = command.replace(joinPath, (group: string, parent: string, child: string) =>
+    /[$@`*?[\]]/u.test(child) ? group : ` "${parent.replace(/["']/gu, "")}/${child.replace(/["']/gu, "")}" `);
+  // A remaining Join-Path may enclose a group we just flattened. Do not grant
+  // any exemption in that case, even for a guarded word with a written subpath:
+  // the unjoined arguments could climb out of it. This deliberately fails closed.
+  const unjoined = /\bjoin-path\b/iu.test(flat);
+  const targets = unjoined ? command : flat;
+  const words = [...[...targets.matchAll(rmWords)].map((found) => found[1]!),
+    ...[...targets.matchAll(removeItemWords)].map((found) => found[1]!).filter((said) => /-recurse\b/iu.test(said))];
+  return words.some((said) => [...said.matchAll(guardedWord)].some(([, doubled, single, rest]) =>
+    unjoined || climbsBack(((doubled ?? single ?? "") + rest!.replace(/["']/gu, "")).split(/[\\/]/u).map(normalizeWindowsSegment))));
+}
 
 /** Secrets no call may touch: Tesota's credentials and its MCP sign-ins (#459), SSH's keys, and `.env` files, by any of the names given. */
 function secretPath(...paths: readonly string[]): boolean {
@@ -159,7 +196,7 @@ function subjectOf(call: ToolCall): string {
 function floorReason(call: ToolCall, access: Access, cwd: string, scratch: string | undefined): string | undefined {
   const subject = subjectOf(call);
   if (shells.has(call.name)) {
-    if (destructive.some((pattern) => pattern.test(subject))) return "it would destroy a disk, the root or a home folder";
+    if (destructive.some((pattern) => pattern.test(subject)) || deletesGuarded(subject)) return "it would destroy a disk, the root or a home folder";
     if (namesSecret(subject)) return "it names a secret: an .env file, SSH's keys or Tesota's credentials";
     return undefined;
   }

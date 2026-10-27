@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, realpathSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
-import { type FloorRefusal, interruptedReceipt, type ReceiptChild, receiptEntry } from "../../../src/receipt.ts";
+import { entryReceipt, type FloorRefusal, interruptedReceipt, isReceipt, type ReceiptChild, receiptEntry } from "../../../src/receipt.ts";
 import { toolMayChangeFiles } from "../../../src/verification/gate-rule.ts";
 import manifest from "../package.json" with { type: "json" };
 import type { Base } from "./base.ts";
@@ -24,6 +24,7 @@ import {
   type SessionHeader, sessionWriter, type SessionWriter,
 } from "./session-file.ts";
 import { lockSession, SessionLockedError } from "./session-lock.ts";
+import { unverifiedFrom } from "../../../src/verification/request-context-rule.js";
 import { outputPrefix } from "./tools/shell.ts";
 import { keepTail, maxBytes } from "./truncate.ts";
 import { bindWorkspace, outsideChange, reopenWorkspace, type Workspace } from "./workspace.ts";
@@ -60,6 +61,13 @@ export interface LedgerRequest {
    * that run ended on its question (`requestStartType`), for it to restore.
    */
   readonly continues?: { readonly run: number; readonly start?: unknown };
+  /**
+   * The earlier requests whose changes were never verified, that this one
+   * follows (#627, `unverifiedFrom`), oldest
+   * first, without one a later of them, or this one, continues (#651), whose
+   * text and inputs it already holds.
+   */
+  readonly unverifiedRequests: readonly Pick<LedgerRequest, "run" | "text" | "inputs">[];
 }
 
 /** What makes a session a child of another (#525): its parent, where it works, the tree it counts in, its types and instructions. */
@@ -406,20 +414,43 @@ function conversation(entries: readonly SessionEntry[]): Pick<LoopState, "histor
  * The ledger: each request with its amendments, from the ledger entries and
  * the deliveries alone. A request that continues an earlier one (#651) holds
  * that one's amendments and clarifications first, since it is the same
- * request, then its own.
+ * request, then its own. Each holds the earlier requests it is judged with
+ * (#627): those since the last request with a non-stopped receipt.
  */
 function ledgerOf(entries: readonly SessionEntry[]): LedgerRequest[] {
   const ledger = ownLedgerOf(entries);
   const inputs = new Map<number, readonly RequestInput[]>();
-  return ledger.map((request) => {
+  // A completed answer without a receipt verified no changes. A stopped receipt is only an inventory.
+  const verified = verifiedRequests(entries);
+  const merged: LedgerRequest[] = [];
+  for (const request of ledger) {
     const all = [...request.continues === undefined ? [] : inputs.get(request.continues.run) ?? [], ...request.inputs];
     inputs.set(request.run, all);
-    return { ...request, inputs: all };
-  });
+    const earlier = merged.slice(unverifiedFrom(merged.map(({ run }) => verified.has(run))));
+    const continued = new Set([...earlier, request].flatMap(({ continues }) => continues === undefined ? [] : [continues.run]));
+    merged.push({ ...request, inputs: all, unverifiedRequests: earlier.filter(({ run }) => !continued.has(run))
+      .map(({ run, text, inputs: given }) => ({ run, text, inputs: given })) });
+  }
+  return merged;
+}
+
+/** A receipt is a verification boundary only once its verifier settled successfully; an inventory is not verification. */
+function verifiedRequests(entries: readonly SessionEntry[]): ReadonlySet<number> {
+  const receipts = new Map<number, boolean>();
+  const verified = new Set<number>();
+  for (const [index, entry] of entries.entries()) {
+    const receipt = entryReceipt(entry);
+    if ("run" in entry && isReceipt(receipt)) receipts.set(entry.run, receipt.stopped === undefined);
+    if (entry.type !== "run_end" || (entry.outcome !== "completed" && entry.outcome !== "incomplete")) continue;
+    const last = entries[index - 1];
+    if (last?.type === "settled" && last.run === entry.run && last.phase === "verifier"
+      && last.registered && !last.continued && last.errors.length === 0 && receipts.get(entry.run) === true) verified.add(entry.run);
+  }
+  return verified;
 }
 
 /** Each request with only the amendments and clarifications given in its own run. */
-function ownLedgerOf(entries: readonly SessionEntry[]): LedgerRequest[] {
+function ownLedgerOf(entries: readonly SessionEntry[]): Omit<LedgerRequest, "unverifiedRequests">[] {
   const withdrawn = new Set(entries.flatMap((entry) => entry.type === "withdrawn" ? [entry.amendment] : []));
   const delivered = new Set(entries.flatMap((entry) => entry.type === "delivered" ? [entry.amendment] : []));
   return entries.flatMap((entry) => entry.type !== "request" ? [] : [{

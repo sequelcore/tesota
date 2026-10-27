@@ -1,4 +1,4 @@
-import { createModels, fauxProvider } from "@earendil-works/pi-ai";
+import { type Context, createModels, fauxAssistantMessage, fauxProvider, type FauxResponseStep, fauxToolCall, type JsonObject } from "@earendil-works/pi-ai";
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -550,6 +550,133 @@ describe("the gate on @tesota/core", () => {
     const [request] = session.ledger();
     expect(receiptOf(session)).toMatchObject({ base: git(cwd, "rev-parse", "HEAD"), startedAt: request?.at });
     expect(request?.base.units).toEqual([{ folder: "", kind: "commit", commit: git(cwd, "rev-parse", "HEAD"), refs: [] }]);
+  });
+});
+
+describe("a request that follows an unverified one (#627)", () => {
+  /** A model reply that records `args` through the tool `name`, after keeping the prompt it was sent. */
+  const answers = (name: string, args: JsonObject, prompts: string[]): FauxResponseStep => (context: Context) => {
+    const sent = context.messages.findLast((message) => message.role === "user");
+    prompts.push(sent === undefined ? "" : typeof sent.content === "string" ? sent.content
+      : sent.content.map((part) => part.type === "text" ? part.text : "").join(""));
+    return fauxAssistantMessage([fauxToolCall(name, args)], { stopReason: "toolUse" });
+  };
+  const asked = "Make f return only results between 0 and 1.";
+  const contracted = "//@ ensures \\result >= 0 && \\result <= 1\nexport function f(): number { return 0; }\n";
+
+  test.each(["error", "completed"] as const)("\"continue\" after a request whose run ended %s: what open cases and ClaimCheck receive", async (first) => {
+    const lister: string[] = [];
+    const compared: string[] = [];
+    const faux = fauxProvider();
+    const model = faux.getModel();
+    const listed = { status: "listed", cases: [] };
+    faux.setResponses([
+      scriptedReply({ tool: "write", args: { path: "notes.md", content: "# Notes\n" } }),
+      ...first === "error" ? [scriptedReply({ error: "usage limit reached" })]
+        : [scriptedReply("done"), answers("record_open_cases", listed, [])],
+      scriptedReply(edit(contracted)), scriptedReply("done"),
+      answers("record_informalizations", { informalizations: [{ function: 1, preconditions: "none",
+        postcondition: "the result is between 0 and 1", strength: "strong" }] }, []),
+      answers("record_comparisons", { comparisons: [{ function: 1, verdict: "justified", explanation: "as asked" }] }, compared),
+      answers("record_open_cases", listed, lister),
+    ]);
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const session = gated(repository(), [], { models, model, flags: { "open-cases-model": `${model.provider}/${model.id}` } });
+    await session.prompt(asked);
+    expect(session.outcome()).toBe(first);
+    await session.prompt("continue");
+    expect(session.outcome()).toBe("completed");
+    expect(receiptOf(session)?.contracts).toMatchObject([{ name: "f", judgment: { verdict: "justified" } }]);
+    expect(compared).toHaveLength(1);
+    expect(lister).toHaveLength(1);
+    expect(receiptOf(session)?.requestJudgments).toEqual([
+      { method: "claimcheck", folder: "", requests: [...first === "error" ? [{ run: 1, text: [asked] }] : [], { run: 2, text: ["continue"] }], omitted: [] },
+      { method: "open_cases", folder: "", requests: [...first === "error" ? [{ run: 1, text: [asked] }] : [], { run: 2, text: ["continue"] }], omitted: [] },
+    ]);
+    // ClaimCheck compares the contracts with each request it was given, numbered; open cases lists them in the same order.
+    const requests = compared[0]?.slice(compared[0].indexOf("## The user's requests, verbatim"), compared[0].indexOf("## Contracts"));
+    if (first === "error") {
+      expect(requests).toContain(`1. ${asked}\n2. continue`);
+      expect(lister[0]).toContain(asked);
+      expect(lister[0]?.indexOf(asked)).toBeLessThan(lister[0]?.indexOf("continue") ?? -1);
+    } else {
+      // The earlier request settled verified: it is not judged again.
+      expect(requests).toContain("1. continue\n");
+      expect(requests).not.toContain(asked);
+      expect(lister[0]).not.toContain(asked);
+    }
+  });
+
+  test("a crash after a mid-run receipt and more work does not establish a verification boundary", async () => {
+    const session = gated(repository(), [edit(changed), "done"]);
+    await session.prompt("Original requirement");
+    open.splice(open.indexOf(session), 1);
+    await session.dispose();
+    const lines = readFileSync(session.file, "utf8").trimEnd().split("\n");
+    const entries = lines.slice(1).map((line) => JSON.parse(line));
+    // A pending steer made settlement resume generation. The process then died after another write,
+    // before another settle or run_end. Reuse the recorded tool turn as that later write's journal.
+    const writeTurn = entries.filter((entry) => ["assistant", "call_intent", "decision", "tool_result"].includes(entry.type));
+    const beforeEnd = entries.filter((entry) => entry.type !== "run_end");
+    const receiptAt = beforeEnd.findIndex((entry) => entryReceipt(entry) !== undefined);
+    beforeEnd.splice(receiptAt, 0, { type: "amendment", run: 1, id: 1, behavior: "steer", origin: "interactive", text: "More work", at: new Date().toISOString() });
+    writeFileSync(session.file, `${[lines[0], ...beforeEnd.map((entry) => JSON.stringify(entry)), ...writeTurn.map((entry) => JSON.stringify(entry))].join("\n")}\n`);
+    const resumed = openSession(session.file, scriptless());
+    open.push(resumed);
+    expect(resumed.outcome()).toBe("interrupted");
+    await resumed.prompt("continue");
+    expect(resumed.ledger()[1]?.unverifiedRequests.map(({ run }) => run)).toEqual([1]);
+  });
+
+  test("a local session without judged-request metadata still opens and renders", async () => {
+    const session = gated(repository(), [edit(changed), "done"]);
+    await session.prompt("change f");
+    open.splice(open.indexOf(session), 1);
+    await session.dispose();
+    const lines = readFileSync(session.file, "utf8").trimEnd().split("\n").map((line) => {
+      const entry = JSON.parse(line);
+      const receipt = entryReceipt(entry);
+      if (isReceipt(receipt)) Reflect.deleteProperty(receipt, "requestJudgments");
+      return JSON.stringify(entry);
+    });
+    writeFileSync(session.file, `${lines.join("\n")}\n`);
+    const resumed = openSession(session.file, scriptless());
+    open.push(resumed);
+    expect(() => renderReceipt(receiptOf(resumed)!)).not.toThrow();
+    expect(resumed.outcome()).toBe("completed");
+  });
+
+  test("a completed tool-free answer is not a verification boundary between an error and continue", async () => {
+    const session = gated(repository(), [edit(changed), { error: "quota exhausted" }, "acknowledged",
+      edit(`${changed}// continued\n`), "done"]);
+    await session.prompt("Implement the original requirement.");
+    expect(session.outcome()).toBe("error");
+    await session.prompt("Are you there?");
+    expect(session.outcome()).toBe("completed");
+    await session.prompt("continue");
+    expect(session.ledger()[2]?.unverifiedRequests.map(({ run, text }) => [run, text])).toEqual([
+      [1, "Implement the original requirement."], [2, "Are you there?"],
+    ]);
+  });
+
+  test("an answer that continues a question (#651) carries the request it continues, which is not judged twice", async () => {
+    const questions = [{ question: "Which option?", options: [{ label: "A", description: "Use A." }, { label: "B", description: "Use B." }] }];
+    const session = gated(repository(), [{ tool: "ask_user", args: { questions } }, { error: "usage limit reached" },
+      { error: "usage limit reached" }, "done"], { mode: "print" });
+    await session.prompt(asked);
+    expect(session.outcome()).toBe("incomplete");
+    await session.reply("Use A.");
+    expect(session.outcome()).toBe("error");
+    await session.prompt("stopped again");
+    await session.prompt("continue");
+    const [first, answered, again, last] = session.ledger();
+    expect(answered?.continues?.run).toBe(1);
+    expect(answered?.unverifiedRequests).toEqual([]);
+    expect(again?.unverifiedRequests.map(({ run }) => run)).toEqual([2]);
+    // Run 1's text is in run 2's, which continues it: run 1 is left out, and runs 2 and 3 come oldest first.
+    expect(last?.unverifiedRequests.map(({ run }) => run)).toEqual([2, 3]);
+    expect(last?.unverifiedRequests[0]?.text).toContain(first?.text ?? "missing");
   });
 });
 
