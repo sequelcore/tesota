@@ -4,6 +4,7 @@ import { terminalText } from "../../../src/terminal-text.ts";
 export function providerError(text: string): string {
   const redacted = text
     .replace(/(\b[a-z][a-z\d+.-]*:(?:\\?\/){2}[^\s"'<>?]+)\?[^\s"'<>]*/gi, "$1?[redacted]")
+    .replace(/([?&](?:key|sig|signature|code|token|access_token)=)[^\s&"'<>]+/gi, "$1[redacted]")
     .replace(/((?:proxy-)?authorization["']?\s*[:=]\s*["']?)(?:[A-Za-z]+\s+)?[^\s"',;}\\]+/gi, "$1[redacted]")
     .replace(/(Bearer\s+)[^\s"',;\\]+/gi, "$1[redacted]")
     .replace(/((?:api[_ -]?key|access[_ -]?token|refresh[_ -]?token|token|password|secret)["']?\s*[:=]\s*["']?)(?!Bearer\s)[^\s"',;}\\]+/gi, "$1[redacted]")

@@ -37,3 +37,17 @@ for (const url of [
   expect(result).not.toContain("XYZ");
   expect(result).toContain("provider rejected the request");
 });
+
+for (const [input, expected] of [
+  ["www.h.example/p?sig=FAKE_SIGNATURE", "www.h.example/p?sig=[redacted]"],
+  ["path /v1/models?key=FAKE_KEY 400", "path /v1/models?key=[redacted] 400"],
+] as const) test(`provider diagnostics redact scheme-less query secrets: ${input}`, () => {
+  expect(providerError(input)).toBe(expected);
+});
+
+for (const name of ["key", "sig", "signature", "code", "token", "access_token"]) test(`provider diagnostics redact scheme-independent &${name} values`, () => {
+  const result = providerError(`path /v1/models?model=fixture&${name}=FAKE_VALUE 400`);
+  expect(result).not.toContain("FAKE_VALUE");
+  expect(result).toContain(`&${name}=[redacted]`);
+  expect(result).toEndWith(" 400");
+});
