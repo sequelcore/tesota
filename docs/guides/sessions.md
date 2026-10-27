@@ -62,8 +62,13 @@ is only a suggestion: nothing is picked for you.
 
 The run waits for your answer and then carries on; asking doesn't end it
 or produce a receipt. The agent gets three tries at asking in one request.
-When it needs more, the run ends incomplete with the open decision
-rather than choosing for you.
+When it needs more, the run ends incomplete rather than choosing for you.
+The shell and print mode show the question it wanted to ask, and your
+next message answers it and continues the same request, so nothing done
+before is lost or redone. Each continuation gets three new tries, so a
+long guided task is not capped, only a model asking in a loop within one
+request. Three stays: it is enough for one stretch of work, and the
+reply is the point where you can steer.
 
 If the agent ends with a question in plain text, such as “Should I…?” or
 “¿Qué…?”, Tesota tells it once to ask through the question form

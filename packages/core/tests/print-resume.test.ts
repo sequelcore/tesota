@@ -75,6 +75,25 @@ const asking: ScriptStep[] = [
   { tool: "ask_user", args: { questions } },
 ];
 
+test("print mode reports a bounded, redacted provider error before its ending (#696)", async () => {
+  const print = printer([{ error: `429: Free usage limit reached; Authorization: Bearer synthetic-secret; api_key=synthetic-key ${"x".repeat(5000)}` }]);
+  const result = await print(["Do the request"], repository());
+  expect(result.code).toBe(1);
+  expect(result.error).toContain("429: Free usage limit reached");
+  expect(result.error).not.toContain("synthetic-secret");
+  expect(result.error).not.toContain("synthetic-key");
+  expect(result.error.indexOf("Free usage limit reached")).toBeLessThan(result.error.indexOf("Ended error"));
+  expect(result.error.length).toBeLessThan(3000);
+});
+
+test("print mode announces a provider retry before completing (#698)", async () => {
+  const print = printer([{ error: "503: temporarily unavailable" }, "Recovered."]);
+  const result = await print(["Answer"], repository());
+  expect(result.code).toBe(0);
+  expect(result.error).toContain("Retry 1/3 in 1s");
+  expect(result.error.indexOf("Retry 1/3")).toBeLessThan(result.error.indexOf("Completed"));
+});
+
 describe("resuming a print run that ended on a question", () => {
   for (const how of ["--resume", "-c"] as const) {
     test(`${how} answers it: the same session grows, the answer is a clarification, and the request continues from its base`, async () => {
@@ -87,6 +106,8 @@ describe("resuming a print run that ended on a question", () => {
       if (file === undefined) throw new Error("No session was written");
       const id = basename(file, ".jsonl");
       expect(first.error).toContain(`Awaiting your answer: tesota -p --resume ${id} "<answer>"`);
+      // The question reads as a question, with its choices, not as JSON (#713).
+      expect(first.error).toContain("The agent wanted to ask you something before going on:\n  Which file name should I use?\n    - a.txt: Name it a.txt.");
       const before = statSync(file).size;
 
       const second = await print(how === "-c" ? ["-c", "Use a.txt."] : ["--resume", id, "Use a.txt."], cwd);

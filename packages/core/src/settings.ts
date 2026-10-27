@@ -24,6 +24,9 @@ export interface Settings {
   readonly accounts?: readonly Account[];
   /** The model, as `provider/id`. */
   readonly model?: string;
+  /** Verification role models (#709); the session model when absent. Only open cases accepts `off`. */
+  readonly openCasesModel?: string;
+  readonly claimcheckModel?: string;
   readonly thinkingLevel?: ModelThinkingLevel;
   readonly tuiMode?: TuiMode;
   /** How freely the agent may act (#449): read only, ask, or full access; ask when not set. */
@@ -39,6 +42,8 @@ export interface Settings {
    */
   readonly subagentBranchGuard?: GuardSetting;
 }
+
+const modelName = (value: unknown): boolean => typeof value === "string" && /^[^/\s]+\/\S+$/u.test(value);
 
 const levels = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 const modes = new Set(["fullscreen", "inline"]);
@@ -66,7 +71,9 @@ const checks: { readonly [Name in keyof Settings]-?: (value: unknown) => boolean
       return true;
     });
   },
-  model: (value) => typeof value === "string" && /^[^/\s]+\/\S+$/u.test(value),
+  model: modelName,
+  openCasesModel: (value) => value === "off" || modelName(value),
+  claimcheckModel: modelName,
   thinkingLevel: (value) => levels.has(value as string),
   tuiMode: (value) => modes.has(value as string),
   permissionMode: (value) => permissionModes.has(value as string),

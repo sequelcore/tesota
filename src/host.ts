@@ -8,6 +8,8 @@ export interface HostParts {
   readonly keyText: (action: string) => string;
   /** Tesota's version, as a receipt records what ran. */
   readonly version: string;
+  /** Persistent model selections for the verifier's two roles, read from the engine's settings. */
+  readonly verificationModels: () => { readonly openCasesModel?: string; readonly claimcheckModel?: string };
   /** The POSIX shell the project's checks run in: its path and arguments, and whether it reads the command from its input instead. */
   readonly shellConfig: () => { shell: string; args: string[]; commandTransport?: "argv" | "stdin" };
   /** Runs asynchronous work under an OS lock, waiting up to `waitMs` for another writer in this process or another. */

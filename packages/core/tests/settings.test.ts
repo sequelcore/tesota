@@ -21,6 +21,20 @@ describe("the settings file", () => {
     }
   });
 
+  test("verification model settings persist and reject malformed selections (#709)", () => {
+    const path = fileIn();
+    for (const openCasesModel of ["openrouter/vendor/model", "off"]) {
+      writeFileSync(path, JSON.stringify({ openCasesModel, claimcheckModel: "anthropic/claude-sonnet-5-5" }));
+      expect(readSettings(path)).toEqual({ settings: { openCasesModel, claimcheckModel: "anthropic/claude-sonnet-5-5" }, invalid: [] });
+    }
+    for (const invalid of ["", "no-slash", "provider/", "provider/has space", 42, null]) {
+      writeFileSync(path, JSON.stringify({ openCasesModel: invalid, claimcheckModel: invalid }));
+      expect(readSettings(path)).toEqual({ settings: {}, invalid: ["openCasesModel", "claimcheckModel"] });
+    }
+    writeFileSync(path, JSON.stringify({ claimcheckModel: "off" }));
+    expect(readSettings(path)).toEqual({ settings: {}, invalid: ["claimcheckModel"] });
+  });
+
   test("no file means no settings", () => {
     expect(readSettings(fileIn())).toEqual({ settings: {}, invalid: [] });
   });
