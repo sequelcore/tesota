@@ -1,6 +1,6 @@
 {
   "name": "tesota",
-  "version": "0.1.0-alpha.5",
+  "version": "0.1.0-alpha.6",
   "private": true,
   "description": "A coding agent that ends every run with a receipt.",
   "license": "Apache-2.0",
