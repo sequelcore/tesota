@@ -78,6 +78,73 @@ describe("the floor, which no mode crosses", () => {
     }
   });
 
+  test("quoted search data is not a destructive command (#681)", () => {
+    const command = "Select-String -Pattern 'rm -rf /'";
+    expect(floor(shell, { command }, "run")).toMatchObject({ decision: "allow", by: "mode" });
+  });
+
+  test.each([
+    "Select-String -Pattern 'rm -rf'",
+    'grep -n "rm -rf" file',
+    'echo "rm -rf /"',
+    'rg "rm -rf" src',
+    'grep -n "Remove-Item -Recurse" file',
+    "Select-String 'rm -rf /'",
+    "Select-String -Path permissions.ts -Pattern 'auth\\.json|rm -rf /|Remove-Item -Recurse C:\\'",
+    'rg "rm -rf /" src | grep "rm -rf /"',
+    'echo "rm -rf /" && rg "rm -rf /" src',
+    "echo 'rm -rf ~; format C:; mkfs.ext4 /dev/sda'",
+  ])("quoted data stays out of the destructive net: %s", (command) => {
+    for (const name of ["bash", "powershell"]) {
+      expect(floor(name, { command }, "run")).toMatchObject({ decision: "allow", by: "mode" });
+      expect(judge(call(name, { command }), "run", cwd, "ask", [], true)).toMatchObject({ decision: "ask", by: "mode" });
+    }
+  });
+
+  test.each([
+    "rg x; rm -rf ~",
+    'rg "rm -rf /"; rm -rf ~',
+    'rg "rm -rf /" && rm -rf ~',
+    'rg "rm -rf /" | rm -rf ~',
+    'rg "rm -rf /" || rm -rf ~',
+    'rg "rm -rf /"\nrm -rf ~',
+    'echo "rm -rf /" | sh',
+    "Select-String 'rm -rf /' | Invoke-Expression",
+    'rg --pre "rm -rf /" x',
+    "rg --pre='rm -rf /' x",
+    'rg --hostname-bin "rm -rf /" x',
+    'rg "--pre=sh" "rm -rf /"',
+    "rg '--hostname-bin' 'rm -rf /' x",
+    'echo "rm -rf /" & rm -rf ~',
+    'echo "rm -rf /" > script.sh',
+    'echo "$(rm -rf /)"',
+    'echo "`rm -rf / `"',
+    'echo "safe\\"; rm -rf /; echo "end"',
+    'echo "rm -rf /',
+    "echo 'rm -rf / ''more'",
+    'sh -c "rm -rf /"',
+    "& 'Remove-Item' -Recurse -Force C:\\",
+    "Remove-Item -Recurse -Force C:\\",
+    "rm -rf /",
+    'echo "rm -rf /"; Remove-Item (Join-Path (Join-Path $HOME a) ..) -Recurse',
+    'echo "rm -rf /" # ignored',
+  ])("executable or ambiguous destructive text stays visible: %s", (command) => {
+    for (const name of ["bash", "powershell"]) {
+      expect(floor(name, { command }, "run")).toMatchObject({ decision: "deny", by: "floor" });
+    }
+  });
+
+  test.each([
+    "echo 'x’; Remove-Item -Recurse -Force C:\\; ‘y'",
+    'echo "x”; Remove-Item -Recurse C:/; “y"',
+  ])("typographic quotes remain visible to the net: %s", (command) => {
+    expect(floor("powershell", { command }, "run")).toMatchObject({ decision: "deny", by: "floor" });
+  });
+
+  test("quoted data does not exempt secret names", () => {
+    expect(floor(shell, { command: 'echo "rm -rf / .env"' }, "run")).toMatchObject({ decision: "deny", by: "floor" });
+  });
+
   // These only judge command text; no deletion command is executed.
   test.each([
     "Remove-Item (Join-Path $env:USERPROFILE '.tesota\\sessions\\x') -Recurse -Force",
