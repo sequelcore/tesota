@@ -194,6 +194,14 @@ export function startShell(options: ShellOptions): Shell {
   // A blank row between the header and the conversation's first entry.
   document.addChild(new Spacer(1));
   document.addChild(transcript);
+  // Derived from the shown session, not a transient event: history reloads and session switches keep it (#713).
+  document.addChild({
+    render: (width) => {
+      const awaiting = session.awaiting();
+      return awaiting === undefined ? [] : new Text(theme.fg("warning", terminalText(awaiting)), 1, 1).render(width);
+    },
+    invalidate: () => undefined,
+  });
   /** The gate's live block while it verifies (#591), after the conversation and apart from it, so a reload keeps it. */
   const block = new Container();
   document.addChild(block);
@@ -460,9 +468,7 @@ export function startShell(options: ShellOptions): Shell {
     } else {
       working(undefined);
       restorePending();
-      const awaiting = session.awaiting();
-      if (awaiting !== undefined) note(awaiting, "warning");
-      else if (event.outcome !== "completed") note(`The run ended ${event.outcome}.`, event.outcome === "aborted" ? "warning" : "error");
+      if (session.awaiting() === undefined && event.outcome !== "completed") note(`The run ended ${event.outcome}.`, event.outcome === "aborted" ? "warning" : "error");
       drawFooter();
     }
     tui.requestRender();
