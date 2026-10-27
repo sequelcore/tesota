@@ -73,6 +73,11 @@ package's.
 - **Engine home isolation.** Run engine tests with `bun run --cwd packages/core test`.
   Direct `bun test` runs from the root or engine folder refuse to start outside
   the isolated wrapper, before tests can read or write your home folder.
+  The same wrapper isolates the budgets. It removes inherited Claude/Anthropic
+  auth variables, redirects `CLAUDE_CONFIG_DIR` and Windows app-data folders,
+  and selects a native Claude fake through `CLAUDE_CODE_EXECUTABLE` and `PATH`.
+  The fake reports signed out; model requests and login fail without starting
+  real Claude Code. Provider tests use recorded SDK streams.
 - **Real processes.** Session tests kill a process mid-run, and mid-settle,
   to check recovery: that shows what survives a killed process, not a
   power cut.
