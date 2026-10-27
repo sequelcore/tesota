@@ -77,7 +77,7 @@ ripgrep. Install the others you need:
 
 | | Needed for | Without it |
 | --- | --- | --- |
-| [Git](https://git-scm.com) | Measuring each change from where the request started. On Windows, Git's bash also runs your project's check commands | Outside a repository, Tesota measures changes from its own snapshot of the folder |
+| [Git](https://git-scm.com) | Measuring each change from where the request started, in a repository or not: outside one, Tesota's own snapshot of the folder is made with Git. On Windows, Git's bash also runs your project's check commands | The agent still runs, but nothing it changes can be measured or verified, and the receipt says so. On Windows: `winget install Git.Git` |
 | [Dafny 4](https://dafny.org), as `dafny` on your `PATH` | Proving LemmaScript contracts | Nothing is proved, and the receipt lists the code as not proved |
 | Java 11 or newer, as `java` on your `PATH`, and TLC (below) | [Model-checking](../guides/model-checking.md) TLA+ and Quint models | Design models aren't checked, and the receipt says why |
 | [Quint](https://quint-lang.org), as `quint` on your `PATH` | Model-checking Quint models | Quint models aren't checked. On Windows Quint can't start the Apalache it needs, so they aren't checked there either way |

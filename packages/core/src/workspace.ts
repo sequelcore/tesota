@@ -32,11 +32,19 @@ export interface Workspace {
 /** The workspace a session's header records, to reopen it. */
 export type WorkspaceRecord = Pick<Workspace, "cwd" | "checkout" | "worktree" | "branch" | "base">;
 
-/** Git, run in `folder` with the operator's own repository, never Tesota's snapshots. */
+/**
+ * Git, run in `folder` with the operator's own repository, never Tesota's snapshots. Without Git installed
+ * it fails like any other Git failure, so the folder is treated as outside a repository: `Bun.spawnSync`
+ * throws for a missing program, which crashed the shell at startup.
+ */
 function gitIn(folder: string, args: readonly string[]): { readonly ok: boolean; readonly out: string; readonly err: string } {
   const { GIT_DIR: _dir, GIT_WORK_TREE: _tree, GIT_INDEX_FILE: _index, ...env } = process.env;
-  const result = Bun.spawnSync(["git", "-C", folder, ...args], { env, stdout: "pipe", stderr: "pipe" });
-  return { ok: result.exitCode === 0, out: result.stdout.toString().trim(), err: result.stderr.toString().trim() };
+  try {
+    const result = Bun.spawnSync(["git", "-C", folder, ...args], { env, stdout: "pipe", stderr: "pipe" });
+    return { ok: result.exitCode === 0, out: result.stdout.toString().trim(), err: result.stderr.toString().trim() };
+  } catch (error) {
+    return { ok: false, out: "", err: `Git could not run: ${error instanceof Error ? error.message : String(error)}` };
+  }
 }
 
 const hashOf = (text: string): string => createHash("sha256").update(text).digest("hex").slice(0, 12);
