@@ -141,6 +141,18 @@ describe("the shell", () => {
     expect(session.ledger().map(({ text }) => text)).toEqual(["first\nsecond"]);
   });
 
+  test("nested clipboard paste delimiters cannot recreate a paste boundary", async () => {
+    const { terminal, session } = shellOn(["done"], "fullscreen", [80, 24], {
+      readClipboard: async () => "first\x1b[201\x1b[201~~\nsecond",
+    });
+    terminal.type("\x16");
+    await terminal.until("second");
+    expect(session.ledger()).toEqual([]);
+    terminal.type(enter);
+    await settled(session);
+    expect(session.ledger().map(({ text }) => text)).toEqual(["first\nsecond"]);
+  });
+
   test("clipboard paste reaches a question's text answer without submitting it", async () => {
     const { terminal, shell, session } = shellOn([], "fullscreen", [80, 24], { readClipboard: async () => "first\nsecond" });
     const submitted: unknown[] = [];

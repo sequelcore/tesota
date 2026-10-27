@@ -558,7 +558,11 @@ export function startShell(options: ShellOptions): Shell {
       // A read must not leak into a different dialog, session or stopped terminal.
       if (!text || ending || handedOver || owner !== session || target !== tui.getFocusedComponent()) return;
       // Clipboard text is data, not a source of terminal paste boundaries.
-      const pasted = text.replaceAll("\x1b[200~", "").replaceAll("\x1b[201~", "");
+      let pasted = text;
+      // Removal can join surrounding characters into another delimiter.
+      while (pasted.includes("\x1b[200~") || pasted.includes("\x1b[201~")) {
+        pasted = pasted.replaceAll("\x1b[200~", "").replaceAll("\x1b[201~", "");
+      }
       target?.handleInput?.(`\x1b[200~${pasted}\x1b[201~`);
       tui.requestRender();
     } catch { /* An unavailable clipboard is a no-op; never report its contents. */ }
