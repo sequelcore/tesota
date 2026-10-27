@@ -415,6 +415,28 @@ describe("the agent tool", () => {
     expect(written.findIndex((entry) => entry.type === "job_end")).toBeLessThan(written.findIndex((entry) => entry.type === "run_end"));
   });
 
+  test("provider retries do not consume a child's turn budget", async () => {
+    const turns = childLimits.turns;
+    childLimits.turns = 1;
+    let attempts = 0;
+    const failed = (): AssistantMessage => {
+      attempts++;
+      return fauxAssistantMessage([], { stopReason: "error", errorMessage: "503: temporarily unavailable" });
+    };
+    try {
+      const parent = session({
+        delegate: [{ calls: [{ tool: "agent", args: { prompt: "retry then answer", description: "recovers", wait: true } }] }, "done"],
+        "retry then answer": [failed, failed, () => { attempts++; return fauxAssistantMessage("child recovered"); }],
+      });
+      await parent.prompt("delegate");
+      expect(attempts).toBe(3);
+      expect(parent.ledger()[0]?.children[0]?.outcome).toBe("completed");
+      const result = parent.history().find((message) => message.role === "toolResult");
+      expect(result?.role === "toolResult" && textOf(result.content)).toContain("child recovered");
+      expect(result?.role === "toolResult" && textOf(result.content)).not.toContain("its limit");
+    } finally { childLimits.turns = turns; }
+  });
+
   test("a child that passes its turn limit is stopped, saying so", async () => {
     const turns = childLimits.turns;
     childLimits.turns = 1;
