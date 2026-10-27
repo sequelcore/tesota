@@ -16,7 +16,8 @@ jobs:
       matrix:
         os: [windows-latest, ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
+    # Windows runners have varied by about 40% on identical runs; a limit only stops a hung job.
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && 15 || 10 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -53,7 +54,7 @@ jobs:
         os: [windows-latest, ubuntu-latest, macos-latest]
         shard: [1, 2]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 9
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && 13 || 9 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -90,7 +91,7 @@ jobs:
         if: matrix.shard == 1
   proofs:
     runs-on: ubuntu-latest
-    timeout-minutes: 7
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -110,7 +111,7 @@ jobs:
   # actions do not run in an Alpine container, so the checkout runs on the runner and the checks in Bun's Alpine image.
   musl:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Sessions and the command on Alpine
@@ -127,6 +128,7 @@ jobs:
   gate:
     name: CI gate
     if: always()
+    # Every other job in this workflow belongs here: one left out would not block a merge.
     needs: [root, engine, proofs, musl]
     runs-on: ubuntu-latest
     timeout-minutes: 1
