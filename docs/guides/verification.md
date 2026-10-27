@@ -76,9 +76,27 @@ folders below, and runs the commands it checks itself with:
 | Cargo | `cargo test` |
 | Go | `go test ./...` |
 
-A changed file is checked by the project that holds it. Each command has
-15 minutes. On Windows the commands run in Git's bash, since they're
-written for a POSIX shell.
+A changed file is checked by the nearest project with check commands that
+holds it. JavaScript workspace members keep their own commands, whether
+workspaces are declared in `package.json` (npm or Bun) or
+`pnpm-workspace.yaml`. The root still owns files outside the members. Each
+command has 15 minutes. On Windows the commands run in Git's bash, since
+they're written for a POSIX shell.
+
+Changed test files use the owning package's `test` script through its
+package manager, from that package's folder, never a direct `bun test` in
+place of `bun run test`. Supported plain Bun, Vitest and Jest scripts can
+run one file with reporting. A wrapper or composite script falls back to
+the owning project's whole checks. For workspace members, the receipt
+names the command and why per-file probing was unavailable, including when
+the workspace root is nested inside the checkout.
+
+A workspace member without a `test` script uses the nearest workspace root
+above it that has one. The receipt names that fallback. If neither the
+member nor a workspace root has a test script, the receipt says the test
+was not run; lint alone is not test exercise evidence. This fallback only
+changes test exercise: a member-only change still selects the member's
+check commands, not the root's aggregate check.
 
 ### Sharper evidence: test reports
 
@@ -98,11 +116,19 @@ and Maven write these reports already. Elsewhere:
 
 | Flag | |
 | --- | --- |
-| `--claimcheck-model <provider>/<id>` | A second model restates each new contract without seeing your request; the session's model compares the two. Without the flag, the session's model does both |
-| `--open-cases-model <provider>/<id>` | The model that lists the cases your request leaves open. GPT-6 Sol by default; `off` turns the list off |
+| `--claimcheck-model <provider>/<id>` | A second model restates each new contract without seeing your request; the session's model compares the two |
+| `--open-cases-model <provider>/<id>` | The model that lists the cases your request leaves open; `off` turns the list off |
 
-Both flags go to `tesota` or `tesota -p`. Neither result ever goes back to
-the agent or counts toward what needs you.
+Both roles use the session's model by default. To choose once for every run,
+set `openCasesModel` or `claimcheckModel` in your
+[`~/.tesota/settings.json`](../reference/configuration.md#settingsjson),
+using a `provider/id`. `openCasesModel` also accepts `off`.
+A flag overrides its setting for one run: flag, then setting, then the
+session's model. Both flags go to `tesota` or `tesota -p`.
+
+If a role's model is unknown, lacks a sign-in, or otherwise cannot answer,
+the receipt says why it was not listed or not judged; the run still completes.
+Neither result ever goes back to the agent or counts toward what needs you.
 
 ## Outside one repository
 

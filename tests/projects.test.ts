@@ -116,13 +116,27 @@ it("lets a subfolder's build keep its kind and checks when the root only states 
   expect(findProjects(await repository({ ".java-version": "21\n", "tools/README.md": "" }))[0]?.kinds).toEqual(["java"]);
 });
 
-it("keeps a root package's checks beside its subfolders' unless it declares workspaces", async () => {
+it("keeps a root package's checks beside its subfolders', including workspace members (#674)", async () => {
   const tooling = await repository({ "package.json": JSON.stringify({ scripts: { lint: "prettier" } }),
     "web/package.json": JSON.stringify({ scripts: { check: "tsc" } }), "api/go.mod": "module api\n" });
   expect(commands(tooling)).toEqual(["npm run lint", "cd api && go test ./...", "cd web && npm run check"]);
   const workspaces = await repository({ "package.json": JSON.stringify({ workspaces: ["web"], scripts: { check: "all" } }),
     "web/package.json": JSON.stringify({ scripts: { check: "tsc" } }) });
-  expect(commands(workspaces)).toEqual(["npm run check"]);
+  expect(commands(workspaces)).toEqual(["npm run check", "cd web && npm run check"]);
+  expect(owningProjects(suggestChecks(workspaces), ["web/a.test.ts"]).map(({ folder }) => folder)).toEqual(["web"]);
+  expect(owningProjects(suggestChecks(workspaces), ["tools/a.test.ts"]).map(({ folder }) => folder)).toEqual([""]);
+});
+
+it("gives Tesota's engine tests to packages/core and root files to the root (#638, #674)", () => {
+  const root = process.cwd();
+  const projects = suggestChecks(root);
+  expect(findProjects(root).find(({ folder }) => folder === "packages/core")?.kinds).toContain("node");
+  expect(owningProjects(projects, ["packages/core/tests/extension.test.ts", "packages/core/tests/gate.test.ts"]))
+    .toEqual([{ folder: "packages/core", commands: ["cd packages/core && npm run check"] }]);
+  expect(owningProjects(projects, ["tests/projects.test.ts"]).map(({ folder }) => folder)).toEqual([""]);
+  expect(packageTest(root, "packages/core")).toEqual({
+    command: "cd packages/core && npm run test --", script: "bun scripts/isolated.ts bun test --timeout 30000",
+  });
 });
 
 it("keeps a version-only root when descendants also only state versions", async () => {
