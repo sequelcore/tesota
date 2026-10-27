@@ -20,9 +20,10 @@ after resuming. A session with no reply yet keeps the current model.
 Resuming doesn't change your saved model preference for the next shell.
 
 If the session's model can no longer run, for example after signing out or
-removing its account, Tesota names it and doesn't resume the session. Your
-current session and model stay unchanged; sign in again to resume on the
-session's model.
+removing its account, Tesota names it, explains why it cannot run, and opens
+the session on the shell's current model with a warning. Use `/model` to
+choose another. If there is no current model either, Tesota doesn't resume
+the session; choose a model with `/model` first.
 
 Every session is saved as it runs, in `~/.tesota/sessions`. A session that
 was cut off, by a crash or a closed terminal, resumes where its file ends:

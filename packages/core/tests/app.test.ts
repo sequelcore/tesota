@@ -635,7 +635,8 @@ describe("tesota-core", () => {
       send(terminal, "/resume");
       await terminal.until("the earlier request");
       terminal.type(enter);
-      await terminal.untilGone("Resume");
+      const screen = await terminal.untilGone("Resume");
+      expect(screen).not.toContain("Continuing on");
       send(terminal, "continue");
       await terminal.until("continued answer");
       await terminal.untilGone("Verifying");
@@ -647,24 +648,40 @@ describe("tesota-core", () => {
     }
   });
 
-  test("/resume refuses an unavailable session model and keeps the current model and session (#679)", async () => {
+  test("/resume opens an unavailable-model session on the current model with a warning (#679)", async () => {
     const { terminal, sessions, running } = await app(["still here"],
       { earlier: "the earlier request", earlierModel: "removed@work/missing", model: "faux/faux-2" });
     try {
       send(terminal, "/resume");
       await terminal.until("the earlier request");
       terminal.type(enter);
-      const screen = await terminal.until("The current model is unchanged.");
+      const screen = await terminal.until("Continuing on faux/faux-2");
       expect(screen).toContain("removed@work/missing");
       expect(screen).toContain("cannot run now");
       send(terminal, "stay here");
       await terminal.until("still here");
       await terminal.untilGone("Verifying");
-      expect(peekSessionFile(join(sessions, "earlier.jsonl")).entries.filter((entry) => entry.type === "request")).toHaveLength(1);
-      const current = readdirSync(sessions).find((name) => name.endsWith(".jsonl") && name !== "earlier.jsonl");
-      if (current === undefined) throw new Error("The current session must stay open");
-      const last = peekSessionFile(join(sessions, current)).entries.findLast((entry) => entry.type === "assistant");
+      expect(peekSessionFile(join(sessions, "earlier.jsonl")).entries.filter((entry) => entry.type === "request")).toHaveLength(2);
+      expect(readdirSync(sessions).filter((name) => name.endsWith(".jsonl"))).toEqual(["earlier.jsonl"]);
+      const last = peekSessionFile(join(sessions, "earlier.jsonl")).entries.findLast((entry) => entry.type === "assistant");
       expect(last?.message.model).toBe("faux-2");
+    } finally {
+      send(terminal, "/quit");
+      await running;
+    }
+  });
+
+  test("/resume refuses an unavailable model only when there is no current model (#679)", async () => {
+    const { terminal, sessions, running } = await app([], { earlier: "the earlier request", earlierModel: "removed@work/missing" });
+    try {
+      send(terminal, "/resume");
+      await terminal.until("the earlier request");
+      terminal.type(enter);
+      const screen = await terminal.until("No current model to continue on");
+      expect(screen).toContain("removed@work/missing");
+      expect(screen).toContain("/model");
+      expect(readdirSync(sessions).filter((name) => name.endsWith(".jsonl"))).toHaveLength(2);
+      expect(peekSessionFile(join(sessions, "earlier.jsonl")).entries.filter((entry) => entry.type === "request")).toHaveLength(1);
     } finally {
       send(terminal, "/quit");
       await running;
