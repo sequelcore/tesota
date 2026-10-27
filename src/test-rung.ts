@@ -7,7 +7,7 @@ import { dirname, join, posix } from "node:path";
 import { promisify } from "node:util";
 import { type Evidence, contentHash } from "./evidence.js";
 import { gitEnvironment } from "./git.js";
-import { type ProjectChecks, findProjects, owningProjects, packageTest } from "./projects.js";
+import { type ProjectChecks, declaresWorkspaces, findProjects, owningProjects, packageTest } from "./projects.js";
 import { runProcess } from "./process.js";
 import { clearTestReports, introducedTests, readTestResults, type TestResults } from "./test-report.js";
 import { type CheckOutcome, checkOrigin } from "./verification/check-origin-rule.js";
@@ -291,6 +291,17 @@ function testProbe(project: string, folder: string, files: readonly string[]): P
   return { command: [test.command, flags, ...files.map(quoted)].join(" "), folder, report: name };
 }
 
+/** Name the fallback command, and why a workspace member cannot be probed with its own test script. */
+function wholeCheckReason(project: string, folder: string, commands: readonly string[]): string {
+  const by = `by the whole check, ${commands.map((command) => `\`${command}\``).join(", ")}`;
+  if (folder === "" || !declaresWorkspaces(project)) return by;
+  const test = packageTest(project, folder);
+  const fallback = test === undefined
+    ? existsSync(join(project, folder, "package.json")) ? `no test script in ${posix.join(folder, "package.json")}` : "no supported per-file runner"
+    : `test script \`${test.script}\` cannot be probed per file`;
+  return `${by} (${fallback})`;
+}
+
 /** The runner on some files alone, and the report it writes, relative to its folder. */
 interface Probe {
   readonly command: string;
@@ -382,7 +393,7 @@ async function againstBase(project: string, root: string, tests: readonly string
           without ??= await ops.run(control, () => baseRun(commands, project, folder, signal, env), ended);
         }
         const verdict = exercise(path, origin, withTest, without);
-        const by = `by the whole check, ${commands.map((command) => `\`${command}\``).join(", ")}`;
+        const by = wholeCheckReason(project, folder, commands);
         found.set(path, verdict.sensitivity === "fails_then_passes" ? credited(verdict, undefined, by, "it", await withChange(paths).ran)
           : { ...verdict, reason: `${verdict.reason}; ${by}` });
         continue;

@@ -76,9 +76,21 @@ folders below, and runs the commands it checks itself with:
 | Cargo | `cargo test` |
 | Go | `go test ./...` |
 
-A changed file is checked by the project that holds it. Each command has
-15 minutes. On Windows the commands run in Git's bash, since they're
-written for a POSIX shell.
+A changed file is checked by the nearest project with check commands that
+holds it. JavaScript workspace members keep their own commands, whether
+workspaces are declared in `package.json` (npm or Bun) or
+`pnpm-workspace.yaml`. The root still owns files outside the members. Each
+command has 15 minutes. On Windows the commands run in Git's bash, since
+they're written for a POSIX shell.
+
+Changed test files use the owning package's `test` script through its
+package manager, from that package's folder, never a direct `bun test` in
+place of `bun run test`. Supported plain Bun, Vitest and Jest scripts can
+run one file with reporting. A missing test script or a wrapper or composite
+script falls back to the owning project's whole checks. For workspace
+members, the receipt names the command and why per-file probing was
+unavailable. A member with no
+check commands falls back to the nearest ancestor that has them.
 
 ### Sharper evidence: test reports
 

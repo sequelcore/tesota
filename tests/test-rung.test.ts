@@ -73,6 +73,70 @@ it("judges a test on the base by the project's runner on that file alone, never 
   expect(existsSync(marker)).toBe(false);
 }, 60_000);
 
+it.each([
+  ["npm", { workspaces: ["packages/*"] }, {}],
+  ["Bun", { workspaces: { packages: ["packages/*"] } }, {}],
+  ["pnpm", {}, { "pnpm-workspace.yaml": "packages:\n  - 'packages/*'\n" }],
+])("exercises a %s workspace test with its member's runner, not the root's (#674)", async (_name, declaration, extra) => {
+  const { root } = noTests();
+  symlinkSync(join(process.cwd(), "node_modules"), join(root, "node_modules"), "junction");
+  writeFileSync(join(root, "package.json"), JSON.stringify({ ...declaration, type: "module", packageManager: "bun@1.4.2",
+    scripts: { test: "vitest run" } }));
+  writeFileSync(join(root, ".gitignore"), "node_modules/\n");
+  writeFileSync(join(root, "vitest.config.ts"), 'export default { test: { include: ["tests/**/*.test.ts"] } };\n');
+  mkdirSync(join(root, "tests"));
+  writeFileSync(join(root, "tests/math.test.ts"), 'import { expect, test } from "vitest";\ntest("root", () => expect(1).toBe(1));\n');
+  mkdirSync(join(root, "packages/web"), { recursive: true });
+  writeFileSync(join(root, "packages/web/package.json"), JSON.stringify({ packageManager: "bun@1.4.2", scripts: { test: "bun test" } }));
+  writeFileSync(join(root, "packages/web/math.ts"), "export const add = (a: number, b: number) => a - b;\n");
+  writeFileSync(join(root, "packages/web/math.test.ts"), addTest.replace("toBe(3)", "toBe(-1)"));
+  for (const [path, content] of Object.entries(extra)) writeFileSync(join(root, path), content);
+  const git = (...args: string[]): string => execFileSync("git", args, { cwd: root, encoding: "utf8" });
+  git("add", ".");
+  git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "--quiet", "-m", "workspace base");
+  const base = git("rev-parse", "HEAD").trim();
+  writeFileSync(join(root, "packages/web/math.ts"), "export const add = (a: number, b: number) => a + b;\n");
+  writeFileSync(join(root, "packages/web/math.test.ts"), addTest);
+  const [exercise] = await exerciseTests(root, base, ["packages/web/math.test.ts"],
+    ["packages/web/math.ts", "packages/web/math.test.ts"], suggestChecks(root), new AbortController().signal);
+  expect(exercise, exercise?.reason).toMatchObject({ provenance: "changed", sensitivity: "fails_then_passes" });
+  expect(exercise?.reason).toMatch(/by `cd packages\/web && bun run test .* 'math\.test\.ts'`$/u);
+}, 60_000);
+
+it.each([
+  ["without a test script", { check: "bun test" }, /no test script in packages\/web\/package\.json/u],
+  ["with a wrapped test script", { test: "bun test && echo wrapped" }, /test script `bun test && echo wrapped` cannot be probed per file/u],
+])("names the whole-check fallback for a member %s (#674)", async (_label, scripts, reason) => {
+  const { root } = noTests();
+  writeFileSync(join(root, "package.json"), JSON.stringify({ workspaces: ["packages/*"], scripts: { test: "vitest run" } }));
+  mkdirSync(join(root, "packages/web"), { recursive: true });
+  writeFileSync(join(root, "packages/web/package.json"), JSON.stringify({ packageManager: "bun@1.4.2", scripts }));
+  writeFileSync(join(root, "packages/web/control.test.ts"), 'import { expect, test } from "bun:test";\ntest("control", () => expect(1).toBe(1));\n');
+  writeFileSync(join(root, "packages/web/math.ts"), "export const add = (a: number, b: number) => a - b;\n");
+  const git = (...args: string[]): string => execFileSync("git", args, { cwd: root, encoding: "utf8" });
+  git("add", ".");
+  git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "--quiet", "-m", "member fallback");
+  const base = git("rev-parse", "HEAD").trim();
+  writeFileSync(join(root, "packages/web/math.ts"), "export const add = (a: number, b: number) => a + b;\n");
+  writeFileSync(join(root, "packages/web/math.test.ts"), addTest);
+  const [exercise] = await exerciseTests(root, base, ["packages/web/math.test.ts"],
+    ["packages/web/math.ts", "packages/web/math.test.ts"], suggestChecks(root), new AbortController().signal);
+  expect(exercise).toMatchObject({ sensitivity: "fails_then_passes" });
+  expect(exercise?.reason).toMatch(reason);
+  expect(exercise?.reason).toMatch(/by the whole check, `cd packages\/web && bun run (check|test)`/u);
+}, 60_000);
+
+it("names the real packages/core wrapper instead of probing its tests with root Vitest (#638)", async () => {
+  const root = process.cwd();
+  const base = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+  const path = "packages/core/tests/extension.test.ts";
+  // Stop before launching the engine's full check; this covers real discovery and fallback reporting.
+  const [exercise] = await exerciseTests(root, base, [path], [path], suggestChecks(root), AbortSignal.abort());
+  expect(exercise).toMatchObject({ sensitivity: "unknown" });
+  expect(exercise?.reason).toContain("by the whole check, `cd packages/core &&");
+  expect(exercise?.reason).toContain("test script `bun scripts/isolated.ts bun test --timeout 30000` cannot be probed per file");
+});
+
 it("does not credit a test added to a project with no tests when the test itself cannot run", async () => {
   const { root, base } = noTests();
   writeFileSync(join(root, "math.test.ts"), `${addTest}test("broken", () => {\n`);
