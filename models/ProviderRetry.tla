@@ -2,7 +2,7 @@
 (* tesota-model
    covers: packages/core/src/loop.ts streamed streamedOnce
    covers: packages/core/src/provider-retry-rule.ts retryProviderCall
-   confirmed: 2c8ab39dd7856f1e515e2fbbc8a54f73d4df3018
+   confirmed: 82f043318dcb0c576c992f314cd17da7788fb3f9
    invariant: Bounds, CancelStopsCalls, WaitRespected, ToolsAndRouteStay
    atomic: failure classification and scheduling; cancellation signal; post-wait guard and model-call start
    omits: HTTP and text classification, real clock precision, stream contents, usage, persistence and settlement; seconds represent the millisecond window, with representative waits and scheduler overshoot; starts after one tool result and the first failed model call

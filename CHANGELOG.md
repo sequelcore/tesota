@@ -26,6 +26,13 @@ requests and issues in [sequelcore/tesota](https://github.com/sequelcore/tesota)
 
 ### Fixed
 
+- Provider failures show a bounded, redacted reason before print mode's
+  `Ended error.`, and the shell reports thrown failures too (#696).
+- Transient model-call failures retry up to three times within two minutes,
+  respecting `Retry-After` where pi-ai exposes it, with a cancellable shell
+  countdown and a print mode line. Exhausted quotas, plans, spending limits
+  and credits, and authentication or terminal errors stop without retrying.
+  Retries never switch model or account or re-run a tool (#698).
 - The floor no longer reads a home subfolder built with `Join-Path`, such
   as `Join-Path $env:USERPROFILE '.tesota\sessions\x'`, as the home folder
   itself. Nested joins, and Windows names made only of dots and spaces,
@@ -94,13 +101,6 @@ requests and issues in [sequelcore/tesota](https://github.com/sequelcore/tesota)
 
 ### Fixed
 
-- Provider failures show a bounded, redacted reason before print mode's
-  `Ended error.`, and the shell reports thrown failures too (#696).
-- Transient model-call failures retry up to three times within two minutes,
-  respecting `Retry-After` where pi-ai exposes it, with a cancellable shell
-  countdown and a print mode line. Exhausted quotas, plans, spending limits and credits, and
-  authentication or terminal errors stop without retrying. Retries never
-  switch model or account or re-run a tool (#698).
 - Signing in with a browser works on Windows: the sign-in page opens on its
   own, its link is shown whole and `c` copies it, and Tesota says when the
   browser didn't open (#676).
