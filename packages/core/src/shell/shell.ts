@@ -1,5 +1,5 @@
 import {
-  type Component, Container, Editor, type Focusable, Input, Loader, matchesKey, ScrollView, type SelectItem, SelectList,
+  type Component, Container, Editor, type Focusable, getNativeClipboard, Input, Loader, matchesKey, ScrollView, type SelectItem, SelectList,
   type SlashCommand,
   Spacer, type Terminal, type TerminalColors, Text, TruncatedText, TuiAltScreen, type TuiAltScreenOptions, TuiMainScreen, VStack,
 } from "@earendil-works/pi-tui";
@@ -43,6 +43,8 @@ export interface ShellOptions {
   readonly commands?: readonly SlashCommand[];
   /** Copies selected text; the operator's clipboard when not given. Resolves true once it could be checked. */
   readonly copy?: (text: string) => Promise<boolean>;
+  /** Explicit paste's system clipboard boundary; unavailable or empty text is ignored. */
+  readonly readClipboard?: () => Promise<string | null | undefined>;
   /** What the session's extensions draw (#446): header, editor, footer, working indicator, messages and tools. */
   readonly surface?: Surface;
   /** What an extension's footer reads besides the session. */
@@ -171,6 +173,7 @@ export function startShell(options: ShellOptions): Shell {
     searchMatchStyle: (text) => theme.underline(theme.bg("searchMatchBg", theme.fg("searchMatchText", text))),
     searchCurrentMatchStyle: (text) => theme.bold(theme.inverse(theme.bg("searchMatchBg", theme.fg("searchMatchText", text)))),
     scrollToEndIndicator: () => theme.bg("selectedBg", theme.fg("text", " ↓ Jump to latest message ")),
+    onRightClickPaste: () => { void pasteClipboard(); },
     copyOnSelect: true,
     copySelection: async (text) => await copy(text) || "copied through the terminal",
   };
@@ -579,6 +582,28 @@ export function startShell(options: ShellOptions): Shell {
   /** When Ctrl+C last found the editor empty; a second press soon after ends the shell. */
   let interruptedAt = 0;
   const dashboardAvailable = (): boolean => covering === undefined || covering === visibleClarification?.mount?.question.body;
+  async function pasteClipboard(): Promise<void> {
+    const target = tui.getFocusedComponent();
+    const owner = session;
+    try {
+      const text = await (options.readClipboard === undefined ? getNativeClipboard()?.getText() : options.readClipboard());
+      // A read must not leak into a different dialog, session or stopped terminal.
+      if (!text || ending || handedOver || owner !== session || target !== tui.getFocusedComponent()) return;
+      // Clipboard text is data, not a source of terminal paste boundaries.
+      let pasted = text;
+      // Removal can join surrounding characters into another delimiter.
+      while (pasted.includes("\x1b[200~") || pasted.includes("\x1b[201~")) {
+        pasted = pasted.replaceAll("\x1b[200~", "").replaceAll("\x1b[201~", "");
+      }
+      target?.handleInput?.(`\x1b[200~${pasted}\x1b[201~`);
+      tui.requestRender();
+    } catch { /* An unavailable clipboard is a no-op; never report its contents. */ }
+  }
+  tui.addInputListener((data) => {
+    if (!matchesKey(data, "ctrl+v")) return undefined;
+    void pasteClipboard();
+    return { consume: true };
+  });
   tui.addInputListener((data) => {
     if (matchesKey(data, "ctrl+c")) {
       if (visibleClarification !== undefined) { void session.abort(); return { consume: true }; }

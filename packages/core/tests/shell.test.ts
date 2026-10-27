@@ -36,7 +36,7 @@ const folder = (prefix: string): string => mkdtempSync(join(tmpdir(), prefix));
 const enter = "\r";
 
 function shellOn(script: readonly ScriptStep[], mode: TuiMode = "fullscreen", size: [number, number] = [80, 24],
-  extra: { tokensPerSecond?: number; copy?: (text: string) => Promise<boolean>; commands?: readonly SlashCommand[]; surface?: Surface;
+  extra: { tokensPerSecond?: number; copy?: (text: string) => Promise<boolean>; readClipboard?: () => Promise<string | null | undefined>; commands?: readonly SlashCommand[]; surface?: Surface;
     questions?: SessionOptions["questions"]; cwd?: string; command?: (text: string) => Promise<boolean>; answersQueriesAfterMs?: number; agents?: () => void } = {}) {
   const faux = fauxProvider({ tokensPerSecond: extra.tokensPerSecond ?? 400 });
   faux.setResponses(script.map(scriptedReply));
@@ -67,6 +67,120 @@ const choices = [{ question: "Which path should the agent take?", options: [
 ], recommended: 0 }] satisfies readonly ClarificationQuestion[];
 
 describe("the shell", () => {
+  test("Ctrl+V reads clipboard text as a paste into the focused input (#718)", async () => {
+    let reads = 0;
+    const { terminal, shell, session } = shellOn([], "fullscreen", [80, 24], {
+      readClipboard: async () => { reads++; return "clipboard first\nclipboard second"; },
+    });
+    terminal.type("before ");
+    terminal.type("\x16");
+    expect(await terminal.until("clipboard second")).toContain("before clipboard first");
+    expect(reads).toBe(1);
+    expect(session.history()).toEqual([]);
+    const answer = shell.ask("API key", { secret: true });
+    terminal.type("\x16");
+    await terminal.until("••••");
+    expect(shown(await terminal.screen())).not.toContain("clipboard second");
+    terminal.type(enter);
+    expect(await answer).toBe("clipboard firstclipboard second");
+    expect(reads).toBe(2);
+    expect(session.history()).toEqual([]);
+  });
+  test.each(["fullscreen", "inline"] as const)("bracketed paste is not doubled and never reads the clipboard (%s)", async (mode) => {
+    let reads = 0;
+    const { terminal, shell } = shellOn([], mode, [80, 24], { readClipboard: async () => { reads++; return "wrong clipboard"; } });
+    const answer = shell.ask("Answer");
+    terminal.type("\x1b[200~once\x16\x1b[201~");
+    terminal.type(enter);
+    expect(await answer).toBe("once\x16");
+    expect(reads).toBe(0);
+  });
+
+  test.each(["", null, undefined, "unreadable"] as const)("an empty or unreadable clipboard does nothing (%s)", async (value) => {
+    const { terminal, shell } = shellOn([], "fullscreen", [80, 24], { readClipboard: async () => {
+      if (value === "unreadable") throw new Error("clipboard unavailable");
+      return value;
+    } });
+    const answer = shell.ask("Answer");
+    terminal.type("before");
+    terminal.type("\x16");
+    await terminal.screen();
+    terminal.type("after");
+    terminal.type(enter);
+    expect(await answer).toBe("beforeafter");
+  });
+
+  test.skipIf(process.platform !== "win32")("right-click press pastes once into the focused secret field (#718)", async () => {
+    const previous = process.env["TERM_PROGRAM"];
+    delete process.env["TERM_PROGRAM"];
+    try {
+      let reads = 0;
+      const { terminal, shell } = shellOn([], "fullscreen", [80, 24], { readClipboard: async () => { reads++; return "synthetic-key"; } });
+      const answer = shell.ask("API key", { secret: true });
+      terminal.type("\x1b[<2;5;5M");
+      terminal.type("\x1b[<2;5;5m");
+      await terminal.until("••••");
+      terminal.type(enter);
+      expect(await answer).toBe("synthetic-key");
+      expect(reads).toBe(1);
+    } finally {
+      if (previous === undefined) delete process.env["TERM_PROGRAM"];
+      else process.env["TERM_PROGRAM"] = previous;
+    }
+  });
+
+  test("clipboard paste delimiters cannot truncate the pasted text", async () => {
+    const { terminal, session } = shellOn(["done"], "fullscreen", [80, 24], {
+      readClipboard: async () => "first\x1b[201~\nsecond",
+    });
+    terminal.type("\x16");
+    await terminal.until("second");
+    expect(session.ledger()).toEqual([]);
+    terminal.type(enter);
+    await settled(session);
+    expect(session.ledger().map(({ text }) => text)).toEqual(["first\nsecond"]);
+  });
+
+  test("nested clipboard paste delimiters cannot recreate a paste boundary", async () => {
+    const { terminal, session } = shellOn(["done"], "fullscreen", [80, 24], {
+      readClipboard: async () => "first\x1b[201\x1b[201~~\nsecond",
+    });
+    terminal.type("\x16");
+    await terminal.until("second");
+    expect(session.ledger()).toEqual([]);
+    terminal.type(enter);
+    await settled(session);
+    expect(session.ledger().map(({ text }) => text)).toEqual(["first\nsecond"]);
+  });
+
+  test("clipboard paste reaches a question's text answer without submitting it", async () => {
+    const { terminal, shell, session } = shellOn([], "fullscreen", [80, 24], { readClipboard: async () => "first\nsecond" });
+    const submitted: unknown[] = [];
+    const release = shell.askUser(session, choices, (answers) => { submitted.push(answers); return undefined; }, () => undefined);
+    terminal.type("\t");
+    terminal.type("\x16");
+    await terminal.until("first second");
+    expect(submitted).toEqual([]);
+    terminal.type("\t");
+    terminal.type(enter);
+    expect(submitted).toEqual([[{ selected: [], text: "first second" }]]);
+    release();
+  });
+
+  test("a delayed clipboard read does not enter another session's editor", async () => {
+    let finish: (text: string) => void = () => undefined;
+    const first = shellOn([], "fullscreen", [80, 24], { readClipboard: () => new Promise((resolve) => { finish = resolve; }) });
+    const second = shellOn(["done"]);
+    first.terminal.type("\x16");
+    first.shell.show(second.session);
+    finish("wrong session");
+    await Promise.resolve();
+    first.terminal.type("safe");
+    first.terminal.type(enter);
+    await settled(second.session);
+    expect(second.session.ledger().map(({ text }) => text)).toEqual(["safe"]);
+  });
+
   test("a retry shows a live countdown and Esc cancels it (#698)", async () => {
     const { terminal, session } = shellOn([{ error: "503: temporarily unavailable" }, "must not be reached"]);
     terminal.type("Answer");
