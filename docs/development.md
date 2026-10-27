@@ -40,10 +40,14 @@ Node's zlib for the pinned ZIP executables, without external commands.
 | `bun run --cwd packages/core screenshots` | Draw the documentation's images again |
 
 Before finishing a change, run `bun run check`, `bun run formal:check` when
-a proved rule changed, and `git diff --check`. CI runs both checks on
-Ubuntu, Windows and macOS, and the engine's session and tool tests on musl
-Linux, in Alpine without bash. Report what ran: a passing check, a live
-observation and a person's acceptance are different claims.
+a proved rule changed, and `git diff --check`. CI splits `check` into parallel
+root (types, Vitest, lint) and engine (types, Bun tests, budgets) jobs on
+Ubuntu, Windows and macOS. The complete `formal:check` runs once on Ubuntu.
+The engine's session and tool tests also run on musl Linux, in Alpine
+without bash. `CI gate` runs even after a failure or skip and succeeds only
+when every root, engine, proof and musl job succeeded. Report what ran: a
+passing check, a live observation and a person's acceptance are different
+claims.
 
 `bun run check` never calls a live model. The tests that prove files run
 only where Dafny is installed; the verification tests script the proofs and
