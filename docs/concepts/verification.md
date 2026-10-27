@@ -274,9 +274,10 @@ agent's change or access to referenced files and URLs. It asks which
 inputs could reasonably have more than one expected result. Missing
 reference contents produce a reason instead of guessed requirements.
 
-The configured default is `openai/gpt-6-sol`; you can choose another with
-`--open-cases-model` or disable listing with `off`. This is a configured
-choice, not a demonstrated launch-performance claim. If the model is
+The default is the session's model; the `openCasesModel` setting chooses
+another for every run, and `--open-cases-model` overrides it for one run.
+Either accepts `off` to disable listing. This is a configured choice, not
+a demonstrated launch-performance claim. If the model is
 unavailable or exceeds two minutes, the receipt records why no list was
 produced. Its suggestions remain a model's opinion for you to review.
 

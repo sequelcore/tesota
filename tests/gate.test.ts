@@ -17,6 +17,9 @@ import { entryReceipt, receiptDecisions, receiptFindings, receiptStanding, recei
 import { gateVerdict, keepsWorking, toolMayChangeFiles } from "../src/verification/gate-rule.js";
 import type { ProofOutcome } from "../src/verification/proof-outcome-rule.js";
 import { emptyReceipt } from "./receipts.js";
+import { host, provideHost } from "../src/host.js";
+
+let verificationModels: ReturnType<ReturnType<typeof host>["verificationModels"]> = {};
 
 /** The proofs the gate runs, scripted per file: the gate's decisions, not LemmaScript, are under test here. */
 const scripted = new Map<string, { outcome: ProofOutcome; output: string }>();
@@ -152,8 +155,14 @@ it("asking a question alone cannot change project files, while unknown tools rem
   expect(toolMayChangeFiles("unknown_tool", false, false)).toBe(true);
   expect(toolMayChangeFiles("agent", false, true)).toBe(false);
 });
-beforeEach(() => { scripted.clear(); scriptedModels.clear(); modelCalls.clear(); mutantOutcome = "failed"; });
-afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
+beforeEach(() => {
+  scripted.clear(); scriptedModels.clear(); modelCalls.clear(); mutantOutcome = "failed";
+  verificationModels = {};
+  provideHost({ ...host(), verificationModels: () => verificationModels });
+});
+afterEach(() => {
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
 
 function git(root: string, ...args: string[]): void {
   expect(spawnSync("git", args, { cwd: root, encoding: "utf8" }).status).toBe(0);
@@ -1183,6 +1192,53 @@ it("measures the strength of the contracts the request changed once they prove, 
   expect((settled.details as Receipt).contracts.map(({ name, judgment }) => [name, judgment?.verdict])).toEqual([["f", "not_justified"]]);
 });
 
+it.each([
+  [undefined, undefined, "nonopenai/session"],
+  ["other/restater", undefined, "other/restater"],
+  ["other/restater", "flag/restater", "flag/restater"],
+] as const)("resolves ClaimCheck setting %s and flag %s to %s (#709)", async (setting, flag, expected) => {
+  verificationModels = setting === undefined ? {} : { claimcheckModel: setting };
+  const root = project();
+  const asked: string[] = [];
+  const run = gate(root, undefined, { model: { provider: "nonopenai", id: "session", contextWindow: 128_000, maxTokens: 4096 },
+    flags: { "claimcheck-model": flag }, modelRegistry: {
+      find: (provider: string, id: string) => ({ provider, id, contextWindow: 128_000, maxTokens: 4096 }),
+      complete: (model: { provider: string; id: string }, context: { tools: { name: string }[] }) => {
+        asked.push(`${model.provider}/${model.id}`);
+        const name = context.tools[0]?.name;
+        const arguments_ = name === "record_informalizations" ? { informalizations: [{ function: 1, preconditions: "none",
+          postcondition: "returns zero", strength: "strong", flags: [] }] }
+          : { comparisons: [{ function: 1, verdict: "justified", explanation: "Matches." }] };
+        return Promise.resolve({ stopReason: "toolUse", content: [{ type: "toolCall", id: "1", name, arguments: arguments_ }] });
+      },
+    } });
+  for (const comment of ["first", "second"]) {
+    await run.input();
+    await run.tool("write");
+    write(root, { "src/rule.ts": `//@ ensures \\result === 0\nexport function ${comment}(): number { return 0; }\n` });
+    const receipt = entry(await run.settle()).details as Receipt;
+    expect(receipt.claimcheck).toMatchObject({ status: "judged", restatedBy: expected, comparedBy: "nonopenai/session" });
+  }
+  expect(asked).toEqual([expected, "nonopenai/session", expected, "nonopenai/session"]);
+});
+
+it("completes and records an unsigned ClaimCheck model in the receipt (#709)", async () => {
+  const root = project();
+  const run = gate(root, undefined, { model: { provider: "nonopenai", id: "session", contextWindow: 128_000, maxTokens: 4096 },
+    flags: { "claimcheck-model": "other/unsigned" }, modelRegistry: {
+      find: (provider: string, id: string) => ({ provider, id, contextWindow: 128_000, maxTokens: 4096 }),
+      complete: () => Promise.reject(new Error("No sign-in for other")),
+    } });
+  await run.input();
+  await run.tool("write");
+  write(root, { "src/rule.ts": `//@ ensures true\n${contract}` });
+  const settled = await run.settle();
+  expect(settled?.continue).not.toBe(true);
+  expect((entry(settled).details as Receipt).claimcheck).toMatchObject({ status: "not_judged",
+    reason: "the model request failed: No sign-in for other" });
+  expect(entry(settled).content).toContain("the model request failed: No sign-in for other");
+});
+
 it("restates with the model the claimcheck-model flag names", async () => {
   const root = project();
   const run = gate(root, undefined, { model: { provider: "provider", id: "model", contextWindow: 128_000, maxTokens: 4096 }, flags: { "claimcheck-model": "other/missing" },
@@ -1193,7 +1249,25 @@ it("restates with the model the claimcheck-model flag names", async () => {
   expect(entry(await run.settle()).content).toContain("ClaimCheck its restating model other/missing isn't a model Tesota knows (provider/id)");
 });
 
-it("lists the cases the request leaves open with GPT-6 Sol unless the operator names another model", async () => {
+it.each(["unknown", "unsigned"])("completes with a receipt when the selected open-cases model is %s (#709 characterization)", async (failure) => {
+  const root = project();
+  const find = vi.fn((provider: string, id: string) => failure === "unknown" ? undefined
+    : { provider, id, contextWindow: 128_000, maxTokens: 4096 });
+  const complete = vi.fn(() => Promise.reject(new Error("No sign-in for openai")));
+  const run = gate(root, undefined, { modelRegistry: { find, complete }, flags: { "open-cases-model": "openai/gpt-6-sol" } });
+  await run.input();
+  await run.tool("write");
+  write(root, { "notes.md": "changed\n" });
+  const settled = await run.settle();
+  expect(settled?.continue).not.toBe(true);
+  expect(find).toHaveBeenCalledWith("openai", "gpt-6-sol");
+  const reason = failure === "unknown" ? "openai/gpt-6-sol isn't a model Tesota knows (provider/id)"
+    : "openai/gpt-6-sol the model request failed: No sign-in for openai";
+  expect((entry(settled).details as Receipt).openCases).toEqual({ status: "not_listed", reason });
+  expect(facts(entry(settled).content)).toContain(reason);
+});
+
+it("lists open cases with the non-OpenAI session model unless the operator names another (#709)", async () => {
   const asked: { model: string; text: string; system: string }[] = [];
   const complete = (model: { provider: string; id: string }, context: { systemPrompt: string; messages: { content: { text: string }[] }[] }):
     Promise<unknown> => {
@@ -1202,7 +1276,7 @@ it("lists the cases the request leaves open with GPT-6 Sol unless the operator n
       arguments: { status: "listed", cases: [{ input: "lateFee(-1)", outcomes: ["0", "-5"] }] } }] });
   };
   const find = (provider: string, id: string): object => ({ provider, id, contextWindow: 128_000, maxTokens: 4096 });
-  for (const [named, model] of [[undefined, "openai/gpt-6-sol"], ["other/lister", "other/lister"]] as const) {
+  for (const [named, model] of [[undefined, "provider/model"], ["other/lister", "other/lister"]] as const) {
     const root = project();
     const run = gate(root, undefined, { model: { provider: "provider", id: "model", contextWindow: 128_000, maxTokens: 4096 }, modelRegistry: { complete, find },
       flags: { "open-cases-model": named } });
@@ -1215,6 +1289,30 @@ it("lists the cases the request leaves open with GPT-6 Sol unless the operator n
     expect(asked.at(-1)).toMatchObject({ model, system: openCasesSystemPrompt });
     expect(asked.at(-1)?.text).toContain("A person gave a coding agent this request:\n\nlateFee charges 5 per day late, at most 50\n\n");
   }
+});
+
+it.each([
+  ["other/lister", undefined, "other/lister"],
+  ["other/lister", "flag/lister", "flag/lister"],
+  ["off", undefined, undefined],
+  ["other/lister", "off", undefined],
+  ["off", "flag/lister", "flag/lister"],
+] as const)("resolves open-cases setting %s and flag %s to %s on every run (#709)", async (setting, flag, expected) => {
+  verificationModels = setting === undefined ? {} : { openCasesModel: setting };
+  const root = project();
+  const complete = vi.fn(() => Promise.resolve({ stopReason: "toolUse", content: [{ type: "toolCall", id: "1",
+    name: "record_open_cases", arguments: { status: "listed", cases: [] } }] }));
+  const run = gate(root, undefined, { model: { provider: "nonopenai", id: "session", contextWindow: 128_000, maxTokens: 4096 },
+    modelRegistry: { complete, find: (provider: string, id: string) => ({ provider, id, contextWindow: 128_000, maxTokens: 4096 }) },
+    flags: { "open-cases-model": flag } });
+  for (const text of ["first", "second"]) {
+    await run.input();
+    await run.tool("write");
+    write(root, { "notes.md": text });
+    const receipt = entry(await run.settle()).details as Receipt;
+    expect(receipt.openCases).toEqual(expected === undefined ? undefined : { status: "listed", model: expected, cases: [] });
+  }
+  expect(complete).toHaveBeenCalledTimes(expected === undefined ? 0 : 2);
 });
 
 it("reports missing issue contents instead of inventing an open case for the #575 request (#582)", async () => {

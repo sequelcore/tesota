@@ -15,6 +15,8 @@ const gitBash = (process.env["PATH"] ?? "").split(delimiter).map((folder) => joi
  */
 provideHost({
   version: "0.1.0",
+  // The engine's gate tests exercise the real settings reader on Bun.
+  verificationModels: () => ({}),
   keyText: (action) => action === "app.tools.expand" ? "ctrl+o" : action,
   // These tests exercise verification in one writer; the engine's snapshot tests exercise its OS lock on Bun.
   withLockWhile: (_path, work) => work(),

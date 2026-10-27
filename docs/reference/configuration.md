@@ -42,6 +42,8 @@ No tool call may read or change `auth.json` or `mcp-auth.json`.
 | Setting | Values | Set by |
 | --- | --- | --- |
 | `model` | `<provider>/<id>`, including `<provider>@<account>/<id>` | `/model` |
+| `openCasesModel` | `<provider>/<id>` or `off`; the session's model by default. `--open-cases-model` overrides it for one run | You |
+| `claimcheckModel` | `<provider>/<id>` for ClaimCheck's restating pass; the session's model by default. `--claimcheck-model` overrides it for one run | You |
 | `accounts` | Array of named sign-ins; user settings only. See [Models](../guides/models.md) for fields and management | Account commands or you |
 | `thinkingLevel` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` | `/settings` |
 | `permissionMode` | `read`, `ask` (default), `full` | Shift+Tab |

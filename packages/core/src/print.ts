@@ -194,7 +194,7 @@ export async function runPrint(args: readonly string[], cwd: string, write: Prin
   if (runnable === undefined) return 1;
   const { model, unchecked } = runnable;
   if (unchecked !== undefined) write.error(`${unchecked}\n`);
-  provideHost(shellHost());
+  provideHost(shellHost(settingsPath));
   const { hooks, mcp } = trustedStandards(cwd, settingsPath, write);
   const rules = loadRules(cwd);
   let servers: McpServers | undefined;
