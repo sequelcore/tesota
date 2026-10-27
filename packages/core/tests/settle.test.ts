@@ -104,7 +104,7 @@ describe("the verifier", () => {
 describe("a run that does not complete is finalized once, with its reason", () => {
   test("a provider's returned error", async () => {
     const seen: SettleEvent[] = [];
-    const run = session([{ error: "rate limited" }], { verifier: recording(seen) });
+    const run = session(Array.from({ length: 4 }, () => ({ error: "rate limited" })), { verifier: recording(seen) });
     await run.prompt("go");
     expect(seen.map(({ outcome, reason }) => [outcome, reason])).toEqual([["error", "rate limited"]]);
     expect(run.outcome()).toBe("error");

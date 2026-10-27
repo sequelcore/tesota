@@ -2,6 +2,8 @@ import {
   type Api, type AssistantMessage, type JsonValue, type Message, type Model, type Models, type ModelThinkingLevel, type ToolCall, type ToolResultMessage,
   isContextOverflow, validateToolArguments,
 } from "@earendil-works/pi-ai";
+import { observeProviderError, providerFailure, providerFetch, providerRetryType, type RetryEvidence } from "./provider-retry.ts";
+import { retryProviderCall } from "./provider-retry-rule.ts";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -189,11 +191,13 @@ export type SessionEvent =
   /** The conversation is being compacted (#451), and then was, from about `tokensBefore` tokens to `tokensAfter`. */
   /** A line for the operator from outside the conversation: a hook's message or failure (#457). */
   | { readonly type: "note"; readonly text: string }
+  /** A model-call retry's cancellable wait; zero clears the countdown. */
+  | { readonly type: "retry"; readonly attempt: number; readonly delayMs: number }
   | { readonly type: "compacting" }
   | { readonly type: "compacted"; readonly tokensBefore: number; readonly tokensAfter: number }
   /** A job the run started (#525), from its call: running, then ended, with what the shell shows of it. */
   | { readonly type: "job"; readonly job: string; readonly callId: string; readonly state: "running" | "ended"; readonly details: JsonValue }
-  | { readonly type: "ended"; readonly outcome: SessionOutcome };
+  | { readonly type: "ended"; readonly outcome: SessionOutcome; readonly reason?: string };
 
 /** The `custom` entry that links a run to the one it continues (#651), recorded with its request. */
 export const continuesType = "tesota.continues";
@@ -718,19 +722,56 @@ export function createLoop(options: LoopOptions): LoopSession {
    * (`left`); a provider that throws ends the turns as an error, as one that
    * returns its error does.
    */
-  async function streamed(signal: AbortSignal, left: AbortSignal, offered: readonly EngineTool[]): Promise<AssistantMessage | Ended> {
+  async function streamedOnce(signal: AbortSignal, left: AbortSignal, offered: readonly EngineTool[], evidence: RetryEvidence): Promise<AssistantMessage | Ended> {
     try {
       const stream = options.models.streamSimple(options.model,
         { systemPrompt: promptFor(), messages: modelContext(history), tools: offered.map(declaration) },
         // Claude Code reads metadata.cwd for its query and transient transcript; never the shell's folder.
         // The session's id is the provider's prompt-cache key and session affinity, as Pi passed it (`prompt_cache_key` for OpenAI).
-        { signal, metadata: { cwd: options.cwd }, ...options.sessionId === undefined ? {} : { sessionId: options.sessionId },
+        { signal, maxRetries: 0,
+          // Google's SDK adapters explicitly reject a custom fetch; other adapters can expose failed HTTP headers here.
+          ...options.model.api === "google-generative-ai" || options.model.api === "google-vertex" ? {} : { fetch: providerFetch(evidence) },
+          onResponse: (response) => { observeProviderError(evidence, response); }, metadata: { cwd: options.cwd }, ...options.sessionId === undefined ? {} : { sessionId: options.sessionId },
           ...thinkingLevel === "off" ? {} : { reasoning: thinkingLevel } });
       for await (const event of stream) if ("partial" in event && !left.aborted) emit({ type: "reply", partial: event.partial });
       return await stream.result();
     } catch (error) {
-      return signal.aborted ? { outcome: "aborted", reason: stoppedReason }
-        : { outcome: "error", reason: error instanceof Error ? error.message : String(error) };
+      observeProviderError(evidence, error);
+      if (signal.aborted) return { outcome: "aborted", reason: stoppedReason };
+      return { role: "assistant", content: [], api: options.model.api, model: options.model.id, provider: options.model.provider,
+        stopReason: "error", errorMessage: error instanceof Error ? error.message : String(error), timestamp: Date.now(),
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
+    }
+  }
+
+  async function streamed(run: number, signal: AbortSignal, left: AbortSignal, offered: readonly EngineTool[]): Promise<AssistantMessage | Ended> {
+    let started: number | undefined;
+    let retries = 0;
+    for (;;) {
+      const evidence: RetryEvidence = { status: 0, delayMs: 0, types: [] };
+      const message = await streamedOnce(signal, left, offered, evidence);
+      if (!("role" in message) || message.stopReason !== "error" || signal.aborted || left.aborted
+        || isContextOverflow(message, options.model.contextWindow)) return message;
+      started ??= performance.now();
+      const failure = providerFailure(message, evidence);
+      const delay = Math.max(1000 * 2 ** retries, evidence.delayMs);
+      if (!retryProviderCall(failure.terminal, failure.transient, failure.status, retries,
+        Math.ceil(performance.now() - started), delay)) return message;
+      retries++;
+      writer.append({ type: "custom", run, customType: providerRetryType, data: { attempt: retries, delayMs: delay, message } });
+      countUsage(message);
+      writer.sync();
+      // Close the failed stream in the shell, but never feed it back to the model or execute its partial calls.
+      emit({ type: "message", message });
+      emit({ type: "note", text: `Retry ${retries}/3 in ${Math.ceil(delay / 1000)}s…` });
+      emit({ type: "retry", attempt: retries, delayMs: delay });
+      try { await Effect.runPromise(Effect.sleep(delay), { signal }); }
+      catch (error) {
+        if (!signal.aborted) throw error;
+        return { outcome: "aborted", reason: stoppedReason };
+      } finally { emit({ type: "retry", attempt: retries, delayMs: 0 }); }
+      if (signal.aborted || left.aborted) return { outcome: "aborted", reason: stoppedReason };
+      if (performance.now() - started >= 120_000) return { outcome: "error", reason: message.errorMessage ?? "the provider failed" };
     }
   }
 
@@ -739,6 +780,10 @@ export function createLoop(options: LoopOptions): LoopSession {
     writer.append({ type: "assistant", run, message });
     replyIndexes.set(run, (replyIndexes.get(run) ?? 0) + 1);
     add(message);
+    countUsage(message);
+  }
+
+  function countUsage(message: AssistantMessage): void {
     tokens.input += message.usage.input;
     tokens.output += message.usage.output;
     tokens.total += message.usage.totalTokens;
@@ -746,7 +791,7 @@ export function createLoop(options: LoopOptions): LoopSession {
 
   /** One reply, recorded; a stop interrupts it, and what the provider gives in time is still recorded (`step`). */
   const reply = (run: number, signal: AbortSignal, offered: readonly EngineTool[]): Effect.Effect<AssistantMessage | Ended> =>
-    step((left) => streamed(signal, left, offered), (given) => { if (Option.isSome(given) && "role" in given.value) replied(run, given.value); });
+    step((left) => streamed(run, signal, left, offered), (given) => { if (Option.isSome(given) && "role" in given.value) replied(run, given.value); });
 
   /** Moves the queued amendments of the given behaviors into the conversation, in the order they came. */
   function deliver(run: number, behaviors: readonly Behavior[]): boolean {
@@ -1284,7 +1329,7 @@ export function createLoop(options: LoopOptions): LoopSession {
         continue;
       }
       outcome = decided.outcome;
-      emit({ type: "ended", outcome: decided.outcome });
+      emit({ type: "ended", outcome: decided.outcome, ...ended.reason === undefined ? {} : { reason: ended.reason } });
       return;
     }
   }

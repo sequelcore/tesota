@@ -119,7 +119,8 @@ async function runChild(child: EngineSession, brief: string, report: ChildReport
   let replies = 0;
   const stop = (): void => { void child.abort(); };
   const unsubscribe = child.subscribe((event) => {
-    if (event.type !== "message" || event.message.role !== "assistant" || ++replies <= childLimits.turns) return;
+    if (event.type !== "message" || event.message.role !== "assistant" || event.message.stopReason === "error"
+      || ++replies <= childLimits.turns) return;
     limited ??= "turns";
     stop();
   });
