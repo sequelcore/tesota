@@ -1222,12 +1222,18 @@ it.each([
   expect(asked).toEqual([expected, "nonopenai/session", expected, "nonopenai/session"]);
 });
 
-it("completes and records an unsigned ClaimCheck model in the receipt (#709)", async () => {
+it.each([
+  ["restating", "other/unsigned", "other"],
+  ["comparing", "nonopenai/session", "nonopenai"],
+] as const)("completes and names the unsigned ClaimCheck %s model in the receipt (#709)", async (phase, expectedModel, provider) => {
   const root = project();
   const run = gate(root, undefined, { model: { provider: "nonopenai", id: "session", contextWindow: 128_000, maxTokens: 4096 },
     flags: { "claimcheck-model": "other/unsigned" }, modelRegistry: {
       find: (provider: string, id: string) => ({ provider, id, contextWindow: 128_000, maxTokens: 4096 }),
-      complete: () => Promise.reject(new Error("No sign-in for other")),
+      complete: (model: { provider: string }) => phase === "restating" || model.provider === "nonopenai"
+        ? Promise.reject(new Error(`No sign-in for ${provider}`))
+        : Promise.resolve({ stopReason: "toolUse", content: [{ type: "toolCall", id: "1", name: "record_informalizations",
+          arguments: { informalizations: [{ function: 1, preconditions: "none", postcondition: "true", strength: "trivial" }] } }] }),
     } });
   await run.input();
   await run.tool("write");
@@ -1235,8 +1241,8 @@ it("completes and records an unsigned ClaimCheck model in the receipt (#709)", a
   const settled = await run.settle();
   expect(settled?.continue).not.toBe(true);
   expect((entry(settled).details as Receipt).claimcheck).toMatchObject({ status: "not_judged",
-    reason: "the model request failed: No sign-in for other" });
-  expect(entry(settled).content).toContain("the model request failed: No sign-in for other");
+    reason: `${expectedModel} the model request failed: No sign-in for ${provider}` });
+  expect(entry(settled).content).toContain(`${expectedModel} the model request failed: No sign-in for ${provider}`);
 });
 
 it("restates with the model the claimcheck-model flag names", async () => {

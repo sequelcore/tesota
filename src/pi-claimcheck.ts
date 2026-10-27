@@ -197,12 +197,12 @@ export async function claimCheck(ctx: ModelAccess, requests: readonly string[], 
   const limited = AbortSignal.any([signal, AbortSignal.timeout(CLAIMCHECK_TIME_LIMIT_MS)]);
   const first = await recorded<{ informalizations: Informalization[] }>(ctx, restater, comparing, "record_informalizations",
     informalizationSchema, informalizePrompt(items), limited);
-  if (typeof first === "string") return { status: "not_judged", reason: first };
+  if (typeof first === "string") return { status: "not_judged", reason: `${named(restater)} ${first}` };
   const prompt = judgmentPrompt(model, comparing, "record_comparisons", comparisonSchema, requests,
     (texts) => comparePrompt(texts, items, first.informalizations), "claimcheck", judging);
   if (prompt === undefined) return { status: "not_judged", reason: "no whole request fits the complete prompt within model context capacity" };
   const second = await recorded<{ comparisons: Comparison[] }>(ctx, model, comparing, "record_comparisons", comparisonSchema,
     prompt, limited);
-  if (typeof second === "string") return { status: "not_judged", reason: second };
+  if (typeof second === "string") return { status: "not_judged", reason: `${named(model)} ${second}` };
   return claimcheckResult({ restatedBy: named(restater), comparedBy: named(model) }, items, second.comparisons);
 }
