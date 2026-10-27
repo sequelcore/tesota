@@ -7,7 +7,7 @@ import { dirname, join, posix } from "node:path";
 import { promisify } from "node:util";
 import { type Evidence, contentHash } from "./evidence.js";
 import { gitEnvironment } from "./git.js";
-import { type ProjectChecks, declaresWorkspaces, findProjects, owningProjects, packageTest } from "./projects.js";
+import { type ProjectChecks, findProjects, nearestWorkspaceRoot, owningProjects, packageTest, suggestChecks } from "./projects.js";
 import { runProcess } from "./process.js";
 import { clearTestReports, introducedTests, readTestResults, type TestResults } from "./test-report.js";
 import { type CheckOutcome, checkOrigin } from "./verification/check-origin-rule.js";
@@ -294,12 +294,34 @@ function testProbe(project: string, folder: string, files: readonly string[]): P
 /** Name the fallback command, and why a workspace member cannot be probed with its own test script. */
 function wholeCheckReason(project: string, folder: string, commands: readonly string[]): string {
   const by = `by the whole check, ${commands.map((command) => `\`${command}\``).join(", ")}`;
-  if (folder === "" || !declaresWorkspaces(project)) return by;
+  if (nearestWorkspaceRoot(project, folder) === undefined) return by;
   const test = packageTest(project, folder);
   const fallback = test === undefined
     ? existsSync(join(project, folder, "package.json")) ? `no test script in ${posix.join(folder, "package.json")}` : "no supported per-file runner"
     : `test script \`${test.script}\` cannot be probed per file`;
   return `${by} (${fallback})`;
+}
+
+/** Exercise a member without a test script through the nearest workspace ancestor that has one, never through lint alone. */
+function exerciseProject(project: string, projects: readonly ProjectChecks[], path: string): { owning?: ProjectChecks; reason: string } {
+  const owning = owningProjects(projects, [path])[0];
+  const packages = findProjects(project).filter(({ kinds }) => kinds.includes("node")).map(({ folder }) => ({ folder, commands: [] }));
+  const member = owningProjects(packages, [path])[0];
+  let workspace = member === undefined ? undefined : nearestWorkspaceRoot(project, member.folder);
+  if (workspace === undefined || member === undefined || packageTest(project, member.folder) !== undefined) {
+    return owning === undefined ? { reason: "no project's commands run it" } : { owning, reason: "" };
+  }
+  const missing = [posix.join(member.folder, "package.json")];
+  while (workspace !== undefined) {
+    const test = packageTest(project, workspace);
+    const ancestor = suggestChecks(project).find(({ folder }) => folder === workspace);
+    if (test !== undefined && ancestor !== undefined) {
+      return { owning: ancestor, reason: `no test script in ${missing.join(" or workspace root ")}; using workspace root ${posix.join(workspace, "package.json")}'s test script \`${test.script}\`` };
+    }
+    missing.push(posix.join(workspace, "package.json"));
+    workspace = nearestWorkspaceRoot(project, workspace);
+  }
+  return { reason: `test was not run: no test script in ${missing.join(" or workspace root ")}` };
 }
 
 /** The runner on some files alone, and the report it writes, relative to its folder. */
@@ -337,12 +359,14 @@ async function againstBase(project: string, root: string, tests: readonly string
   provenance: ReadonlyMap<string, TestExercise["provenance"]>, projects: readonly ProjectChecks[], signal: AbortSignal,
   ops: OperationSink, env?: Environment): Promise<TestExercise[]> {
   const found = new Map<string, TestExercise>();
+  const reasons = new Map<string, string>();
   const folders = new Map<string, { owning: ProjectChecks; paths: string[] }>();
   for (const path of tests) {
-    const owning = owningProjects(projects, [path])[0];
+    const { owning, reason } = exerciseProject(project, projects, path);
     if (owning === undefined) {
-      found.set(path, { path, provenance: provenance.get(path) ?? "added", sensitivity: "unknown", reason: "no project's commands run it" });
+      found.set(path, { path, provenance: provenance.get(path) ?? "added", sensitivity: "unknown", reason });
     } else {
+      if (reason !== "") reasons.set(path, reason);
       const folder = folders.get(owning.folder) ?? { owning, paths: [] };
       folder.paths.push(path);
       folders.set(owning.folder, folder);
@@ -415,7 +439,11 @@ async function againstBase(project: string, root: string, tests: readonly string
       found.set(path, credited(verdict, file, by, `\`${change.target}\``, await change.ran));
     }
   }
-  return tests.flatMap((path) => found.get(path) ?? []);
+  return tests.flatMap((path) => {
+    const exercise = found.get(path);
+    const reason = reasons.get(path);
+    return exercise === undefined ? [] : { ...exercise, reason: reason === undefined ? exercise.reason : `${exercise.reason}; ${reason}` };
+  });
 }
 
 /** Files that decide a JavaScript project's dependencies, which the base takes from the checkout. */

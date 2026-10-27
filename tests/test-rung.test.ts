@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { suggestChecks } from "../src/projects.js";
+import { owningProjects, suggestChecks } from "../src/projects.js";
 import { exerciseTests, runShell } from "../src/test-rung.js";
 
 const roots: string[] = [];
@@ -104,13 +104,45 @@ it.each([
 }, 60_000);
 
 it.each([
-  ["without a test script", { check: "bun test" }, /no test script in packages\/web\/package\.json/u],
-  ["with a wrapped test script", { test: "bun test && echo wrapped" }, /test script `bun test && echo wrapped` cannot be probed per file/u],
-])("names the whole-check fallback for a member %s (#674)", async (_label, scripts, reason) => {
+  ["", true, true], ["frontend", true, true], ["frontend", false, true], ["frontend", false, false],
+])("uses workspace root %s test fallback (root test: %s, member lint: %s)", async (workspace, hasTest, hasLint) => {
   const { root } = noTests();
-  writeFileSync(join(root, "package.json"), JSON.stringify({ workspaces: ["packages/*"], scripts: { test: "vitest run" } }));
+  symlinkSync(join(process.cwd(), "node_modules"), join(root, "node_modules"), "junction");
+  writeFileSync(join(root, ".gitignore"), "node_modules/\n");
+  const member = workspace === "" ? "packages/web" : `${workspace}/web`;
+  mkdirSync(join(root, member), { recursive: true });
+  writeFileSync(join(root, workspace, "package.json"), JSON.stringify({ type: "module", packageManager: "bun@1.4.2",
+    workspaces: [workspace === "" ? "packages/*" : "web"], scripts: hasTest ? { test: "vitest run" } : { lint: "eslint ." } }));
+  writeFileSync(join(root, member, "package.json"), JSON.stringify({ scripts: hasLint ? { lint: "eslint ." } : {} }));
+  writeFileSync(join(root, member, "math.ts"), "export const add = (a: number, b: number) => a - b;\n");
+  const git = (...args: string[]): string => execFileSync("git", args, { cwd: root, encoding: "utf8" });
+  git("add", ".");
+  git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "--quiet", "-m", "lint-only member");
+  const base = git("rev-parse", "HEAD").trim();
+  writeFileSync(join(root, member, "math.ts"), "export const add = (a: number, b: number) => a + b;\n");
+  const path = `${member}/math.test.ts`;
+  writeFileSync(join(root, path), addTest.replace('"bun:test"', '"vitest"'));
+  const changed = [`${member}/math.ts`, path];
+  // The gate passes only the changed files' owning checks, not every discovered project.
+  const selected = owningProjects(suggestChecks(root), changed);
+  const [exercise] = await exerciseTests(root, base, [path], changed, selected, new AbortController().signal);
+  if (hasTest) {
+    expect(exercise, exercise?.reason).toMatchObject({ sensitivity: "fails_then_passes" });
+    expect(exercise?.reason).toContain(`${workspace === "" ? "" : `cd ${workspace} && `}bun run test --run`);
+    expect(exercise?.reason).toContain(`no test script in ${member}/package.json`);
+    expect(exercise?.reason).not.toContain("run lint");
+  } else {
+    expect(exercise).toMatchObject({ sensitivity: "unknown" });
+    expect(exercise?.reason).toContain("test was not run");
+    expect(exercise?.reason).toContain(`no test script in ${member}/package.json or workspace root ${workspace}/package.json`);
+  }
+}, 60_000);
+
+it.each(["", "packages"])("names the wrapped member fallback under workspace root %s (#674)", async (workspace) => {
+  const { root } = noTests();
   mkdirSync(join(root, "packages/web"), { recursive: true });
-  writeFileSync(join(root, "packages/web/package.json"), JSON.stringify({ packageManager: "bun@1.4.2", scripts }));
+  writeFileSync(join(root, workspace, "package.json"), JSON.stringify({ workspaces: [workspace === "" ? "packages/*" : "web"], scripts: { test: "vitest run" } }));
+  writeFileSync(join(root, "packages/web/package.json"), JSON.stringify({ packageManager: "bun@1.4.2", scripts: { test: "bun test && echo wrapped" } }));
   writeFileSync(join(root, "packages/web/control.test.ts"), 'import { expect, test } from "bun:test";\ntest("control", () => expect(1).toBe(1));\n');
   writeFileSync(join(root, "packages/web/math.ts"), "export const add = (a: number, b: number) => a - b;\n");
   const git = (...args: string[]): string => execFileSync("git", args, { cwd: root, encoding: "utf8" });
@@ -122,7 +154,7 @@ it.each([
   const [exercise] = await exerciseTests(root, base, ["packages/web/math.test.ts"],
     ["packages/web/math.ts", "packages/web/math.test.ts"], suggestChecks(root), new AbortController().signal);
   expect(exercise).toMatchObject({ sensitivity: "fails_then_passes" });
-  expect(exercise?.reason).toMatch(reason);
+  expect(exercise?.reason).toContain("test script `bun test && echo wrapped` cannot be probed per file");
   expect(exercise?.reason).toMatch(/by the whole check, `cd packages\/web && bun run (check|test)`/u);
 }, 60_000);
 

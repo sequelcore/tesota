@@ -1,5 +1,5 @@
 import { type Dirent, accessSync, constants, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { delimiter, join } from "node:path";
+import { delimiter, join, posix } from "node:path";
 import { parseJson } from "./json.js";
 import { below, builtIn, checkScript, keepsProjectKind, owner, pinnedIn } from "./verification/project-rule.js";
 
@@ -54,6 +54,16 @@ export function declaresWorkspaces(directory: string): boolean {
     const manifest: unknown = parseJson(readFileSync(join(directory, "package.json"), "utf8"));
     return typeof manifest === "object" && manifest !== null && "workspaces" in manifest;
   } catch { return false; }
+}
+
+/** The nearest ancestor declaring workspaces, relative to the checkout; undefined when there is none. */
+export function nearestWorkspaceRoot(checkout: string, folder: string): string | undefined {
+  for (let ancestor = folder; ancestor !== "";) {
+    ancestor = posix.dirname(ancestor);
+    if (ancestor === ".") ancestor = "";
+    if (declaresWorkspaces(join(checkout, ancestor))) return ancestor;
+  }
+  return undefined;
 }
 
 /** The repository's projects, the root's first, then each level's in name order. */

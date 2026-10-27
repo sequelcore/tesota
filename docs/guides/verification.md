@@ -86,11 +86,17 @@ they're written for a POSIX shell.
 Changed test files use the owning package's `test` script through its
 package manager, from that package's folder, never a direct `bun test` in
 place of `bun run test`. Supported plain Bun, Vitest and Jest scripts can
-run one file with reporting. A missing test script or a wrapper or composite
-script falls back to the owning project's whole checks. For workspace
-members, the receipt names the command and why per-file probing was
-unavailable. A member with no
-check commands falls back to the nearest ancestor that has them.
+run one file with reporting. A wrapper or composite script falls back to
+the owning project's whole checks. For workspace members, the receipt
+names the command and why per-file probing was unavailable, including when
+the workspace root is nested inside the checkout.
+
+A workspace member without a `test` script uses the nearest workspace root
+above it that has one. The receipt names that fallback. If neither the
+member nor a workspace root has a test script, the receipt says the test
+was not run; lint alone is not test exercise evidence. This fallback only
+changes test exercise: a member-only change still selects the member's
+check commands, not the root's aggregate check.
 
 ### Sharper evidence: test reports
 
