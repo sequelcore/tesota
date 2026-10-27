@@ -12,6 +12,13 @@ On Windows, in PowerShell:
 irm https://raw.githubusercontent.com/sequelcore/tesota/main/install.ps1 | iex
 ```
 
+On Windows (including Windows 10), use **Windows Terminal**, rather than
+the classic Windows PowerShell console. In the classic console, Ctrl+V and
+right-click may not paste into Tesota's message box or API-key fields. Use
+the window menu (**Alt+Space → Edit → Paste**) instead, or install Windows
+Terminal with `winget install Microsoft.WindowsTerminal` (or from the
+Microsoft Store), open PowerShell inside it, and run Tesota there.
+
 Open a new terminal and check it:
 
 ```sh
@@ -77,7 +84,7 @@ ripgrep. Install the others you need:
 
 | | Needed for | Without it |
 | --- | --- | --- |
-| [Git](https://git-scm.com) | Measuring each change from where the request started. On Windows, Git's bash also runs your project's check commands | Outside a repository, Tesota measures changes from its own snapshot of the folder |
+| [Git](https://git-scm.com) | Measuring each change from where the request started, in a repository or not: outside one, Tesota's own snapshot of the folder is made with Git. On Windows, Git's bash also runs your project's check commands | The agent still runs, but nothing it changes can be measured or verified, and the receipt says so. On Windows: `winget install Git.Git` |
 | [Dafny 4](https://dafny.org), as `dafny` on your `PATH` | Proving LemmaScript contracts | Nothing is proved, and the receipt lists the code as not proved |
 | Java 11 or newer, as `java` on your `PATH`, and TLC (below) | [Model-checking](../guides/model-checking.md) TLA+ and Quint models | Design models aren't checked, and the receipt says why |
 | [Quint](https://quint-lang.org), as `quint` on your `PATH` | Model-checking Quint models | Quint models aren't checked. On Windows Quint can't start the Apalache it needs, so they aren't checked there either way |

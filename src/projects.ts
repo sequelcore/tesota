@@ -1,5 +1,5 @@
 import { type Dirent, accessSync, constants, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { delimiter, join } from "node:path";
+import { delimiter, join, posix } from "node:path";
 import { parseJson } from "./json.js";
 import { below, builtIn, checkScript, keepsProjectKind, owner, pinnedIn } from "./verification/project-rule.js";
 
@@ -8,9 +8,9 @@ import { below, builtIn, checkScript, keepsProjectKind, owner, pinnedIn } from "
  * bounded depth (#318), so a monorepo whose JavaScript app and Java backend
  * sit in subfolders gets each one's checks. A project inside another of the
  * same kind belongs to it, as Gradle's settings, Maven's modules and Cargo's
- * workspaces build the projects below them, except that a JavaScript
- * package claims the packages below it only when it declares workspaces:
- * a root `package.json` often holds only the repository's tooling. A folder
+ * workspaces build the projects below them. JavaScript packages keep their
+ * own checks even inside workspaces: each member can use a different test
+ * runner, while the root owns files outside the members. A folder
  * that only states a language's version, as a root `.java-version` beside a
  * Gradle build in `backend/`, claims nothing, and is a project of that
  * language only when no folder below it builds one.
@@ -47,13 +47,23 @@ function kindsIn(entries: readonly string[]): { present: string[]; pinned: strin
       .map((language) => language.tool)], pinned };
 }
 
-/** Whether a JavaScript package builds the packages below it: it declares workspaces, as npm, Yarn and Bun read them, or has pnpm's file. */
-function declaresWorkspaces(directory: string, entries: readonly string[]): boolean {
-  if (entries.includes("pnpm-workspace.yaml")) return true;
+/** Whether a package declares a workspace, using package.json (npm/Bun) or pnpm's workspace file. */
+export function declaresWorkspaces(directory: string): boolean {
+  if (existsSync(join(directory, "pnpm-workspace.yaml"))) return true;
   try {
     const manifest: unknown = parseJson(readFileSync(join(directory, "package.json"), "utf8"));
     return typeof manifest === "object" && manifest !== null && "workspaces" in manifest;
   } catch { return false; }
+}
+
+/** The nearest ancestor declaring workspaces, relative to the checkout; undefined when there is none. */
+export function nearestWorkspaceRoot(checkout: string, folder: string): string | undefined {
+  for (let ancestor = folder; ancestor !== "";) {
+    ancestor = posix.dirname(ancestor);
+    if (ancestor === ".") ancestor = "";
+    if (declaresWorkspaces(join(checkout, ancestor))) return ancestor;
+  }
+  return undefined;
 }
 
 /** The repository's projects, the root's first, then each level's in name order. */
@@ -70,7 +80,7 @@ export function findProjects(checkout: string): Project[] {
     if (present.length > 0) found.push({ folder: next.folder, entries, kinds, pinned });
     if (next.depth >= PROJECT_DEPTH) continue;
     const claimed = new Set([...next.claimed,
-      ...kinds.filter((kind) => !pinned.includes(kind) && (kind !== "node" || declaresWorkspaces(directory, entries)))]);
+      ...kinds.filter((kind) => !pinned.includes(kind) && kind !== "node")]);
     const folders = names.filter((entry) => entry.isDirectory() && !entry.name.startsWith(".") && !skipped.has(entry.name))
       .map((entry) => entry.name).sort();
     for (const name of folders) {

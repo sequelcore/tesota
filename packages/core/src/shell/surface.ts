@@ -5,6 +5,7 @@ import type { HostParts } from "../../../../src/host.ts";
 import manifest from "../../package.json" with { type: "json" };
 import { platformShell } from "../tools/shell.ts";
 import { withLockWhile } from "../session-lock.ts";
+import { readSettings } from "../settings.ts";
 import type { ShellTheme } from "../../../../src/theme.ts";
 
 export type { MessageRenderer, ToolDrawing } from "../../../../src/contract.ts";
@@ -137,10 +138,11 @@ function gitBash(): string | undefined {
  * own shell stays the platform's. Without Git's bash, the platform's shell
  * runs them.
  */
-export function shellHost(): HostParts {
+export function shellHost(settingsPath?: string): HostParts {
   return {
     keyText: (action) => keys[action] ?? action,
     version: manifest.version,
+    verificationModels: () => readSettings(settingsPath).settings,
     withLockWhile,
     shellConfig: () => {
       const bash = process.platform === "win32" ? gitBash() : undefined;

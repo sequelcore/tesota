@@ -15,7 +15,7 @@ import { unusedModels } from "./agents.ts";
 import { accountLabels, engineModels, runnableModel } from "./model-access.ts";
 import { startingModel } from "./resume-model-rule.ts";
 import { loadRules } from "./permissions.ts";
-import { askedSessions, createSession, type EngineSession, openSession, type OpenOptions, pendingQuestion, sessionsFolder } from "./session.ts";
+import { askedSessions, awaitingNotice, createSession, type EngineSession, openSession, type OpenOptions, pendingQuestion, sessionsFolder } from "./session.ts";
 import { lastFloorNotice, peekSessionFile, SessionFileError } from "./session-file.ts";
 import { SessionLockedError } from "./session-lock.ts";
 import { readSettings, type Settings } from "./settings.ts";
@@ -138,7 +138,7 @@ function ending(outcome: string | undefined, file: string): string {
       : `, ${standingWords[standing]}${standing === "unverified" ? `: ${unverifiedWhy(receipt as Receipt)}` : ""}; tesota receipt writes it for a pull request`}.\n`
     + (lastFloorNotice(entries) ?? "")
     // A run that ended on its question says how to answer it (#651).
-    + (pendingQuestion(entries) === undefined ? "" : `Awaiting your answer: tesota -p --resume ${basename(file, ".jsonl")} "<answer>"\n`);
+    + (pendingQuestion(entries) === undefined ? "" : `${awaitingNotice(entries)}\nAwaiting your answer: tesota -p --resume ${basename(file, ".jsonl")} "<answer>"\n`);
 }
 
 /** What the operator's settings choose for a session: its thinking, how many subagents run at once, and their branch guard. */
@@ -197,7 +197,7 @@ export async function runPrint(args: readonly string[], cwd: string, write: Prin
   if (runnable === undefined) return 1;
   const { model, unchecked } = runnable;
   if (unchecked !== undefined) write.error(`${unchecked}\n`);
-  provideHost(shellHost());
+  provideHost(shellHost(settingsPath));
   const { hooks, mcp } = trustedStandards(cwd, settingsPath, write);
   const rules = loadRules(cwd);
   let servers: McpServers | undefined;

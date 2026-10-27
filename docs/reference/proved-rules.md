@@ -20,6 +20,7 @@ Run `bun run formal:check` to check the full list.
 
 | File | What it decides | Re-prove |
 | --- | --- | --- |
+| [`src/verification/role-model-rule.ts`](../../src/verification/role-model-rule.ts) | Which verification model wins: nonempty flag, then setting, then session | `lsc check --backend=dafny src/verification/role-model-rule.ts` |
 | [`src/verification/mark-bloom-rule.ts`](../../src/verification/mark-bloom-rule.ts) | Whether the visual mark blooms for the receipt standing | `lsc check --backend=dafny src/verification/mark-bloom-rule.ts` |
 | [`src/verification/check-origin-rule.ts`](../../src/verification/check-origin-rule.ts) | Whether reports show a test failure introduced by the change | `lsc check --backend=dafny src/verification/check-origin-rule.ts` |
 | [`src/verification/comment-line-rule.ts`](../../src/verification/comment-line-rule.ts) | Whether a parsed line contains only a comment | `lsc check --backend=dafny src/verification/comment-line-rule.ts` |
@@ -43,7 +44,7 @@ Run `bun run formal:check` to check the full list.
 | [`packages/core/src/edit-rule.ts`](../../packages/core/src/edit-rule.ts) | Whether exact-text edits can apply together without overlap | `lsc check --backend=dafny packages/core/src/edit-rule.ts` |
 | [`packages/core/src/reconcile-rule.ts`](../../packages/core/src/reconcile-rule.ts) | What recovery records for unfinished calls without replaying them | `lsc check --backend=dafny packages/core/src/reconcile-rule.ts` |
 | [`packages/core/src/settle-rule.ts`](../../packages/core/src/settle-rule.ts) | Whether a run continues, reaches verification or ends | `lsc check --backend=dafny packages/core/src/settle-rule.ts` |
-| [`packages/core/src/permission-rule.ts`](../../packages/core/src/permission-rule.ts) | Whether the permission floor, mode and matching rules allow a call | `lsc check --backend=dafny packages/core/src/permission-rule.ts` |
+| [`packages/core/src/permission-rule.ts`](../../packages/core/src/permission-rule.ts) | Whether the permission floor, mode and matching rules allow a call; the closed set of normalized data-command names (not shell parsing) | `lsc check --backend=dafny packages/core/src/permission-rule.ts` |
 | [`packages/core/src/subpath-rule.ts`](../../packages/core/src/subpath-rule.ts) | How guarded subpaths climb and how Windows dot/space segments normalize conservatively | `lsc check --backend=dafny packages/core/src/subpath-rule.ts` |
 | [`packages/core/src/compact-rule.ts`](../../packages/core/src/compact-rule.ts) | When to summarize conversation and where its verbatim tail starts | `lsc check --backend=dafny packages/core/src/compact-rule.ts` |
 | [`packages/core/src/catalog-rule.ts`](../../packages/core/src/catalog-rule.ts) | How much context instruction files and the skill catalog may use | `lsc check --backend=dafny packages/core/src/catalog-rule.ts` |

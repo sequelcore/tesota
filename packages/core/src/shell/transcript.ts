@@ -137,7 +137,8 @@ class CallView extends Container {
     this.draw();
   }
   finish(result: ToolResultMessage): void {
-    this.result = result;
+    // The pending-question notice owns the operator's question. Keep model instructions out of the view (#713).
+    this.result = this.call.name === "ask_user" && result.details === "question-limit" ? { ...result, content: [] } : result;
     // A call that waited for its subagent carries its end; one in the background only started it.
     if (result.details !== undefined && this.call.name === "agent") this.child = result.details;
     this.durationMs = Date.now() - this.startedAt;

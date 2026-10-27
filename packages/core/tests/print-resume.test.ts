@@ -106,6 +106,8 @@ describe("resuming a print run that ended on a question", () => {
       if (file === undefined) throw new Error("No session was written");
       const id = basename(file, ".jsonl");
       expect(first.error).toContain(`Awaiting your answer: tesota -p --resume ${id} "<answer>"`);
+      // The question reads as a question, with its choices, not as JSON (#713).
+      expect(first.error).toContain("The agent wanted to ask you something before going on:\n  Which file name should I use?\n    - a.txt: Name it a.txt.");
       const before = statSync(file).size;
 
       const second = await print(how === "-c" ? ["-c", "Use a.txt."] : ["--resume", id, "Use a.txt."], cwd);
