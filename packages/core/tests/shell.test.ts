@@ -67,6 +67,29 @@ const choices: readonly ClarificationQuestion[] = [{ question: "Which path shoul
 ], recommended: 0 }];
 
 describe("the shell", () => {
+  test("a retry shows a live countdown and Esc cancels it (#698)", async () => {
+    const { terminal, session } = shellOn([{ error: "503: temporarily unavailable" }, "must not be reached"]);
+    terminal.type("Answer");
+    terminal.type(enter);
+    expect(await terminal.until("Esc to cancel")).toContain("Retry 1/3 in 1s");
+    const ended = settled(session);
+    terminal.type("\x1b");
+    await ended;
+    expect(session.outcome()).toBe("aborted");
+    expect(shown(await terminal.screen())).not.toContain("must not be reached");
+  });
+
+  test("a returned provider error is bounded and redacted in the shell (#696)", async () => {
+    const { terminal, session } = shellOn([{ error: `429: FreeUsageLimitError; api_key=synthetic-key ${"x".repeat(5000)}` }], "fullscreen", [100, 30]);
+    terminal.type("Answer");
+    terminal.type(enter);
+    await settled(session);
+    const screen = shown(await terminal.screen());
+    expect(screen).toContain("FreeUsageLimitError");
+    expect(screen).not.toContain("synthetic-key");
+    expect(screen).toContain("The run ended error.");
+  });
+
   test("slash suggestions stay on the mounted editor when a surface replaces it", async () => {
     const surface = createSurface(shellTheme("dark", "truecolor"));
     const { terminal } = shellOn([], "fullscreen", [80, 24], { surface,
