@@ -20,6 +20,11 @@ and says why; one with a gap ends `incomplete`. A run that changed
 nothing, such as a question, ends `Completed.` with no claim
 ([Standing](../receipt-v2.md#standing)).
 
+Provider failures write a bounded, redacted reason to standard error before
+`Ended error.` Transient failures write a retry line there; Ctrl+C cancels
+the wait. See [Provider errors and retries](models.md#provider-errors-and-retries)
+for the retry bounds and the errors that stop immediately.
+
 ## Options
 
 | | |

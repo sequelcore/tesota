@@ -5,6 +5,7 @@ import {
 } from "@earendil-works/pi-tui";
 import { type FooterData, type Mounted, QUESTION_STATUS, type WorkingDetail } from "../../../../src/contract.ts";
 import type { SessionEvent } from "../loop.ts";
+import { providerError } from "../provider-error.ts";
 import type { EngineSession } from "../session.ts";
 import type { TuiMode } from "../settings.ts";
 import { copyToClipboard } from "./clipboard.ts";
@@ -436,7 +437,21 @@ export function startShell(options: ShellOptions): Shell {
     unwatchDetail = () => { off(); clearInterval(tick); };
     show();
   };
+  let retryTick: ReturnType<typeof setInterval> | undefined;
+  const clearRetry = (): void => { clearInterval(retryTick); retryTick = undefined; };
+  const retrying = (attempt: number, delayMs: number): void => {
+    clearRetry();
+    if (delayMs === 0) { loader.setMessage("Working…"); return; }
+    const until = performance.now() + delayMs;
+    const show = (): void => {
+      loader.setMessage(`Retry ${attempt}/3 in ${Math.max(0, Math.ceil((until - performance.now()) / 1000))}s · Esc to cancel`);
+      tui.requestRender();
+    };
+    retryTick = setInterval(show, 200);
+    show();
+  };
   const working = (state: "working" | "settling" | undefined): void => {
+    clearRetry();
     status.clear();
     watchDetail(false);
     if (state === undefined) { loader.stop(); busy = false; } else {
@@ -452,28 +467,35 @@ export function startShell(options: ShellOptions): Shell {
     if (withdrawn.length > 0) editor.setText([...withdrawn.map(({ text }) => text), editor.getText()].filter((text) => text.trim() !== "").join("\n\n"));
     tui.requestRender();
   };
+  let replyError: string | undefined;
+  const endedRun = (event: Extract<SessionEvent, { type: "ended" }>): void => {
+    working(undefined);
+    restorePending();
+    if (event.outcome === "error" && event.reason !== undefined && event.reason !== replyError) note(providerError(event.reason), "error");
+    if (session.awaiting() === undefined && event.outcome !== "completed") note(`The run ended ${event.outcome}.`, event.outcome === "aborted" ? "warning" : "error");
+    drawFooter();
+  };
   const onEvent = (event: SessionEvent): void => {
     if (event.type === "message" || event.type === "reply" || event.type === "call") {
       activity = true;
       mountedHeader?.emptyState?.pause();
     }
     if (event.type === "pending") drawPending();
-    else if (event.type === "message") transcript.add(event.message);
+    else if (event.type === "message") {
+      transcript.add(event.message);
+      if (event.message.role === "assistant") replyError = event.message.errorMessage;
+    }
     else if (event.type === "reply") transcript.stream(event.partial);
     else if (event.type === "call") transcript.start(event.call);
     else if (event.type === "job") transcript.job(event.callId, event.details);
-    else if (event.type === "state") working(event.state);
+    else if (event.type === "state") { working(event.state); if (event.state === "working") replyError = undefined; }
     else if (event.type === "note") note(event.text, "warning");
+    else if (event.type === "retry") retrying(event.attempt, event.delayMs);
     else if (event.type === "compacting") loader.setMessage("Compacting…");
     else if (event.type === "compacted") {
       loader.setMessage("Working…");
       note(`Compacted the conversation: about ${event.tokensBefore.toLocaleString("en")} tokens to ${event.tokensAfter.toLocaleString("en")}.`);
-    } else {
-      working(undefined);
-      restorePending();
-      if (session.awaiting() === undefined && event.outcome !== "completed") note(`The run ended ${event.outcome}.`, event.outcome === "aborted" ? "warning" : "error");
-      drawFooter();
-    }
+    } else endedRun(event);
     tui.requestRender();
   };
   let unsubscribe = session.subscribe(onEvent);
@@ -536,6 +558,7 @@ export function startShell(options: ShellOptions): Shell {
     clarifications.clear();
     visibleClarification = undefined;
     unsubscribe();
+    clearRetry();
     unwatch();
     mountedHeader?.dispose?.();
     unfollow();

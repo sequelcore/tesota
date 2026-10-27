@@ -12,6 +12,7 @@ import { type AgentType, agentTypes } from "./agents.ts";
 import { branchOf } from "./branch.ts";
 import { agentHost, type AgentTree, defaultAgentLimit, maxDepth } from "./children.ts";
 import type { GuardSetting } from "./agent-rule.ts";
+import { providerRetryTokens, providerRetryType } from "./provider-retry.ts";
 import type { StartedSkill } from "./instructions.ts";
 import {
   compactedHead, type Continuation, continuesType, createLoop, type HistoryMessage, jobMessage, type LoopOptions, type LoopSession, type LoopState, skillMessage,
@@ -595,6 +596,10 @@ function stateOf(entries: readonly SessionEntry[]): LoopState {
       tokens.input += entry.input;
       tokens.output += entry.output;
       tokens.total += entry.total;
+    }
+    if (entry.type === "custom" && entry.customType === providerRetryType) {
+      const retry = providerRetryTokens(entry.data);
+      if (retry !== undefined) { tokens.input += retry.input; tokens.output += retry.output; tokens.total += retry.total; }
     }
     if (entry.type !== "assistant") continue;
     tokens.input += entry.message.usage.input;

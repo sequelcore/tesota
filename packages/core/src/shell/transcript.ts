@@ -44,6 +44,8 @@ function prefixedText(text: string, prefix: string): Component {
     truncateToWidth(`${MARGIN}${index === 0 ? prefix : "  "}${line}`, width)), () => { body.invalidate(); });
 }
 
+import { providerError } from "../provider-error.ts";
+
 /** The operator's full-width prompt band; quoted terminal controls never reach the terminal. */
 function userView(text: string, theme: ShellTheme): Component {
   return cached((width) => {
@@ -70,7 +72,7 @@ class ReplyView extends Container {
       }
     }
     if (message.stopReason === "error" && message.errorMessage !== undefined) {
-      this.addChild(new Text(this.theme.fg("error", message.errorMessage), 1, 0));
+      this.addChild(new Text(this.theme.fg("error", providerError(message.errorMessage)), 1, 0));
     }
   }
 }
