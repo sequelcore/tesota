@@ -120,6 +120,20 @@ test("the CLI reports missing tools as JSON without writing to a fresh home or p
   } finally { rmSync(home, { recursive: true, force: true }); }
 });
 
+test("a CLAUDE_CODE_EXECUTABLE that does not exist is named in the repair, not reported as a missing install (#680)", async () => {
+  const home = mkdtempSync(join(tmpdir(), "tesota-doctor-stale-claude-"));
+  try {
+    const stale = join(home, "gone", "claude");
+    const result = await runProcess(process.execPath, [main, "doctor", "--json"], home, new AbortController().signal, 25_000,
+      undefined, { env: { ...isolatedEnvironment(home), CLAUDE_CODE_EXECUTABLE: stale } });
+    expect(result.ended).toBe("exited");
+    const report = JSON.parse(result.stdout) as { capabilities: Diagnosis[] };
+    const claude = report.capabilities.find(({ id }) => id === "claude-code");
+    expect(claude?.status).toBe("unavailable");
+    expect(claude?.repair).toContain(`CLAUDE_CODE_EXECUTABLE is set to ${stale}, which does not exist`);
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
 test("the default and declared Claude accounts are version-only, without touching their files", async () => {
   const home = mkdtempSync(join(tmpdir(), "tesota-doctor-accounts-"));
   try {

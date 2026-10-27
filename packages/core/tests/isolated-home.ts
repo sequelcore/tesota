@@ -9,6 +9,8 @@ import { homedir, tmpdir } from "node:os";
  * `env`, which Bun starts with the environment this process began with.
  */
 const root = process.env["TESOTA_ISOLATED"];
-if (root === undefined || !homedir().startsWith(root) || !tmpdir().startsWith(root)) {
+// The Claude Code fake must be the runner's own, so no test reaches the real one (#680).
+const claude = process.env["CLAUDE_CODE_EXECUTABLE"];
+if (root === undefined || !homedir().startsWith(root) || !tmpdir().startsWith(root) || claude === undefined || !claude.startsWith(root)) {
   throw new Error("Run the engine's tests with `bun run test`, which gives them a home and temporary folder of their own (scripts/isolated.ts).");
 }

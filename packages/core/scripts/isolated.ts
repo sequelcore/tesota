@@ -18,11 +18,26 @@ if (command.length === 0) throw new Error("Usage: bun scripts/isolated.ts <comma
 // By its real name, as a session names its folder: Windows CI's temporary folder is spelled RUNNER~1, macOS's is a link.
 const root = realpathSync.native(mkdtempSync(join(tmpdir(), "tesota-core-isolated-")));
 const [home, temporary] = [root, join(root, "tmp")];
-mkdirSync(temporary);
 let code = 1;
 try {
-  code = Bun.spawnSync(command, { stdio: ["inherit", "inherit", "inherit"], env: { ...process.env, TESOTA_ISOLATED: root,
-    HOME: home, USERPROFILE: home, TMPDIR: temporary, TEMP: temporary, TMP: temporary } }).exitCode ?? 1;
+  mkdirSync(temporary);
+  const bin = join(root, "bin");
+  mkdirSync(bin);
+  const claude = join(bin, process.platform === "win32" ? "claude.exe" : "claude");
+  // A native fake works for execFile and the SDK on Windows too. PATH covers
+  // callers using `claude`; the override precedes the SDK's bundled executable.
+  const build = await Bun.build({ entrypoints: [join(import.meta.dir, "../tests/fixtures/claude-code/forbidden.ts")],
+    compile: { outfile: claude } });
+  if (!build.success) throw new Error(`Could not build the Claude test fake: ${build.logs.join("\n")}`);
+  // Windows may inherit `Path`. Do not emit both it and `PATH`: Bun can
+  // preserve the original entry rather than the one with our fake prepended.
+  const inherited = Object.fromEntries(Object.entries(process.env).filter(([name]) =>
+    !(process.platform === "win32" && /^path$/iu.test(name))
+    && !/^(?:ANTHROPIC_|CLAUDE_|USE_(?:LOCAL|STAGING)_OAUTH$)/iu.test(name)));
+  code = Bun.spawnSync(command, { stdio: ["inherit", "inherit", "inherit"], env: { ...inherited, TESOTA_ISOLATED: root,
+    CLAUDE_CONFIG_DIR: join(root, "claude"), CLAUDE_CODE_EXECUTABLE: claude,
+    PATH: `${bin}${process.platform === "win32" ? ";" : ":"}${process.env["PATH"] ?? ""}`,
+    HOME: home, USERPROFILE: home, APPDATA: home, LOCALAPPDATA: home, TMPDIR: temporary, TEMP: temporary, TMP: temporary } }).exitCode ?? 1;
 } finally {
   // Longer than a test's own cleanup: a binary a test built may still be held by Windows for a while (#593).
   rmSync(root, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 });

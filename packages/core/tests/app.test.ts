@@ -63,7 +63,7 @@ function scripted(replies: readonly ScriptStep[], twoModels: boolean): { models:
 }
 
 /** The app in a temporary folder, its settings and sessions there too, once it has drawn its first frame. */
-async function app(replies: readonly ScriptStep[] = [], { repository = false, earlier, earlierModel = "faux/faux-1", mcp, projectMcp, skills = {}, served, model, claudeCode, accounts, claude, usage = noUsage }:
+async function app(replies: readonly ScriptStep[] = [], { repository = false, earlier, earlierModel = "faux/faux-1", mcp, projectMcp, skills = {}, served, model, claudeCode, accounts, claude = { signIn: async () => undefined, status: async () => ({ loggedIn: false }) }, usage = noUsage }:
   { repository?: boolean;
     /** An earlier session of the folder that worked in its checkout, asked this and answered "earlier answer" (#595). */
     earlier?: string; earlierModel?: string; mcp?: object; projectMcp?: object; skills?: Record<string, string>;

@@ -362,7 +362,11 @@ describe("the claude-code provider", () => {
   });
 
   test("the Claude Code program installed with the SDK for this platform is found, to ask whether it is signed in", () => {
-    expect(claudeCodeExecutable()).toMatch(/claude-agent-sdk-[a-z0-9-]+[\\/]claude(\.exe)?$/u);
+    // Lookup only, in a child: never remove the suite's executable guard in this process.
+    const lookup = spawnSync(process.execPath, ["-e", `import { claudeCodeExecutable } from './src/providers/claude-code.ts'; console.log(claudeCodeExecutable());`],
+      { cwd: join(import.meta.dir, ".."), encoding: "utf8", env: { ...process.env, CLAUDE_CODE_EXECUTABLE: undefined } });
+    expect(lookup.status).toBe(0);
+    expect(lookup.stdout.trim()).toMatch(/claude-agent-sdk-[a-z0-9-]+[\\/]claude(\.exe)?$/u);
   });
 
   test("without the SDK's program, as in a compiled tesota, the operator's own claude on the PATH is run (#570)", () => {

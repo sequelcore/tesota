@@ -75,4 +75,5 @@ other keys under a lock, so two shells keep each other's changes.
 | Variable | |
 | --- | --- |
 | A provider's API key, such as `OPENAI_API_KEY` | Uses that provider without `/login` |
+| `CLAUDE_CODE_EXECUTABLE` | Explicit Claude Code executable path, before the SDK's bundled program or `claude` on `PATH`; used by the isolated test runner to select its fake |
 | `TESOTA_PROJECT_DIR` | Set for [hooks](../guides/hooks.md): the session's folder |
