@@ -16,6 +16,16 @@ In fullscreen, text you select is copied to the clipboard; where Tesota
 can't reach the clipboard, it asks the terminal to copy it. Inline, your
 terminal selects and copies as usual.
 
+## Pasting
+
+Ctrl+V pastes clipboard text into the focused input, including sign-in key
+fields and question answers. In Windows fullscreen mode, right-click also
+pastes. Mouse selection and scrolling remain available. An empty or
+unavailable clipboard leaves the input unchanged.
+
+When your terminal delivers a bracketed paste, Tesota uses that text without
+reading the clipboard again.
+
 ## The screen
 
 - **The header:** a small pixel ironwood beside Tesota's name and version,

@@ -58,17 +58,6 @@ export interface AppOptions {
   readonly usage?: UsageSources;
 }
 
-/** pi-tui receives shortcuts, not clipboard text, in classic Windows consoles (#712). */
-function noteWindowsConsole(shell: Shell): void {
-  // WT_SESSION positively identifies Windows Terminal; its absence is not proof of conhost.
-  if (process.platform === "win32" && process.env["WT_SESSION"] === undefined) {
-    shell.note("In the classic Windows console, Ctrl+V and right-click may not paste.\n"
-      + "This affects all Tesota inputs, including API keys.\n"
-      + "Use Alt+Space > Edit > Paste, or run Tesota in Windows Terminal.\n"
-      + "Install it with: winget install Microsoft.WindowsTerminal", "warning");
-  }
-}
-
 const levels: readonly ModelThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 const label = (model: Model<Api>): string => `${model.provider}/${model.id}`;
 
@@ -732,7 +721,6 @@ export async function runApp(options: AppOptions): Promise<void> {
     shell.note(`The saved model is not used: ${saved} Choose one with /model.`, "warning");
   } else if (saved?.unchecked !== undefined) shell.note(saved.unchecked, "warning");
   else if (model === undefined) shell.note("No provider is logged in: /login, or set a provider's API key, then /model.", "warning");
-  noteWindowsConsole(shell);
   noteUnusedModels(shell, attached.session, model);
   await shell.stopped;
   for (const each of lives) {

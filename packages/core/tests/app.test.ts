@@ -128,16 +128,15 @@ async function app(replies: readonly ScriptStep[] = [], { repository = false, ea
 
 const send = (terminal: VirtualTerminal, text: string): void => { terminal.type(text); terminal.type(enter); };
 
-test.skipIf(process.platform !== "win32")("Windows without a known Terminal session explains the classic console paste limitation (#712)", async () => {
+test.skipIf(process.platform !== "win32")("Windows without a known Terminal session does not show the obsolete paste warning (#718)", async () => {
   const previous = process.env["WT_SESSION"];
   delete process.env["WT_SESSION"];
   let opened: Awaited<ReturnType<typeof app>> | undefined;
   try {
     opened = await app();
-    const screen = await opened.terminal.until("winget install Microsoft.WindowsTerminal");
-    expect(screen).toContain("Ctrl+V and right-click may not paste");
-    expect(screen).toContain("including API keys");
-    expect(screen).toContain("Alt+Space > Edit > Paste");
+    const screen = (await opened.terminal.screen()).join("\n");
+    expect(screen).not.toContain("Ctrl+V and right-click may not paste");
+    expect(screen).not.toContain("Alt+Space > Edit > Paste");
   } finally {
     if (previous === undefined) delete process.env["WT_SESSION"];
     else process.env["WT_SESSION"] = previous;
