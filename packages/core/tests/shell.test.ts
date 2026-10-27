@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { TuiMode } from "../src/settings.ts";
-import { createSession, type EngineSession } from "../src/session.ts";
+import { createSession, type SessionOptions, type EngineSession } from "../src/session.ts";
 import { type Shell, startShell } from "../src/shell/shell.ts";
 import { provideHost } from "../../../src/host.ts";
 import { createSurface, shellHost, type Surface } from "../src/shell/surface.ts";
@@ -37,13 +37,13 @@ const enter = "\r";
 
 function shellOn(script: readonly ScriptStep[], mode: TuiMode = "fullscreen", size: [number, number] = [80, 24],
   extra: { tokensPerSecond?: number; copy?: (text: string) => Promise<boolean>; commands?: readonly SlashCommand[]; surface?: Surface;
-    cwd?: string; command?: (text: string) => Promise<boolean>; answersQueriesAfterMs?: number; agents?: () => void } = {}) {
+    questions?: SessionOptions["questions"]; cwd?: string; command?: (text: string) => Promise<boolean>; answersQueriesAfterMs?: number; agents?: () => void } = {}) {
   const faux = fauxProvider({ tokensPerSecond: extra.tokensPerSecond ?? 400 });
   faux.setResponses(script.map(scriptedReply));
   const models = createModels();
   models.setProvider(faux.provider);
   const { cwd = folder("tesota-core-shell-"), answersQueriesAfterMs, ...options } = extra;
-  const session = createSession({ cwd, folder: folder("tesota-core-sessions-"), models, model: faux.getModel(), verifier: accepts });
+  const session = createSession({ cwd, folder: folder("tesota-core-sessions-"), models, model: faux.getModel(), verifier: accepts, ...extra.questions === undefined ? {} : { questions: extra.questions } });
   const terminal = new VirtualTerminal(...size);
   terminal.answersQueriesAfterMs = answersQueriesAfterMs;
   const shell = startShell({ terminal, mode, fullRepaint: false, theme: shellTheme("dark", "truecolor"), session,
@@ -61,12 +61,51 @@ async function settled(session: EngineSession): Promise<void> {
 }
 
 const shown = (lines: readonly string[]): string => lines.join("\n");
-const choices: readonly ClarificationQuestion[] = [{ question: "Which path should the agent take?", options: [
+const choices = [{ question: "Which path should the agent take?", options: [
   { label: "conservative", description: "make the smallest change" },
   { label: "complete", description: "implement the full requested path" },
-], recommended: 0 }];
+], recommended: 0 }] satisfies readonly ClarificationQuestion[];
 
 describe("the shell", () => {
+  test("a capped question stays visible after Ctrl+O rebuilds the transcript (#713)", async () => {
+    const ask = { tool: "ask_user", args: { questions: choices } };
+    const { terminal, session, shell } = shellOn([ask, ask, ask, ask], "fullscreen", [120, 40], {
+      questions: (_questions, submit) => { submit([{ selected: [0] }]); return () => undefined; },
+    });
+    await session.prompt("Guide setup.");
+    await terminal.until("Reply with your answer to continue the work");
+    terminal.type("\x0f");
+    const screen = await terminal.until("Operator");
+    expect(screen).toContain("Reply with your answer to continue the work");
+    expect(screen).toContain("The agent wanted to ask you something before going on:");
+    expect(screen).toContain("Which path should the agent take?");
+    const other = shellOn([]);
+    shell.show(other.session);
+    await terminal.untilGone("Reply with your answer to continue the work");
+    shell.show(session);
+    const restored = await terminal.until("Reply with your answer to continue the work");
+    expect(restored).toContain("Which path should the agent take?");
+    expect(restored).not.toContain('{"questions":');
+    expect(restored).not.toContain("do not ask in plain text");
+  });
+
+  test("a capped ask_user never exposes raw JSON or model instructions, even expanded (#713)", async () => {
+    const ask = { tool: "ask_user", args: { questions: choices } };
+    const { terminal, session } = shellOn([ask, ask, ask, ask], "fullscreen", [120, 40], {
+      questions: (_questions, submit) => { submit([{ selected: [0] }]); return () => undefined; },
+    });
+    await session.prompt("Guide setup.");
+    const collapsed = await terminal.until("Reply with your answer to continue the work");
+    expect(collapsed).not.toContain('{"questions":');
+    expect(collapsed).not.toContain("Generation ends incomplete");
+    terminal.type("\x0f");
+    const expanded = await terminal.until("Operator selected:");
+    expect(expanded).not.toContain('{"questions":');
+    expect(expanded).not.toContain("do not ask in plain text");
+    expect(expanded).toContain("Which path should the agent take?");
+    expect(expanded).toContain("Reply with your answer to continue the work");
+  });
+
   test("slash suggestions stay on the mounted editor when a surface replaces it", async () => {
     const surface = createSurface(shellTheme("dark", "truecolor"));
     const { terminal } = shellOn([], "fullscreen", [80, 24], { surface,

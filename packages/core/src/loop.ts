@@ -911,8 +911,9 @@ export function createLoop(options: LoopOptions): LoopSession {
     if (question) {
       state.decision = JSON.stringify(call.arguments);
       if (!askAccepted(state.times)) {
-        state.unresolved = "This request already attempted to ask the operator three times. Unresolved decision: " + JSON.stringify(call.arguments);
-        return { isError: true, text: state.unresolved + " Generation ends incomplete; do not ask in plain text." };
+        // Named as every unresolved question is, so the operator's reply answers it and continues the request (#713).
+        state.unresolved = `Unresolved question: ${JSON.stringify(call.arguments)}. This request already asked the operator three times.`;
+        return { isError: true, details: "question-limit", text: state.unresolved + " The operator sees this question and a reply continues the work. Generation ends incomplete; do not ask in plain text." };
       }
       state.times++;
     }
