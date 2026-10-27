@@ -460,17 +460,20 @@ export function startShell(options: ShellOptions): Shell {
     } else {
       working(undefined);
       restorePending();
-      if (event.outcome !== "completed") note(`The run ended ${event.outcome}.`, event.outcome === "aborted" ? "warning" : "error");
+      const awaiting = session.awaiting();
+      if (awaiting !== undefined) note(awaiting, "warning");
+      else if (event.outcome !== "completed") note(`The run ended ${event.outcome}.`, event.outcome === "aborted" ? "warning" : "error");
       drawFooter();
     }
     tui.requestRender();
   };
   let unsubscribe = session.subscribe(onEvent);
 
-  const send = (text: string, behavior?: "steer" | "followUp"): void => {
+  // Typed text sent while idle answers a pending question and otherwise is a new request; a skill line is always a request.
+  const send = (text: string, behavior?: "steer" | "followUp", request = false): void => {
     activity = true;
     mountedHeader?.emptyState?.pause();
-    session.prompt(text, behavior === undefined ? {} : { streamingBehavior: behavior }).catch((error: unknown) => {
+    (behavior === undefined && !request ? session.reply(text) : session.prompt(text, behavior === undefined ? {} : { streamingBehavior: behavior })).catch((error: unknown) => {
       working(undefined);
       note(error instanceof Error ? error.message : String(error), "error");
     });
@@ -485,7 +488,7 @@ export function startShell(options: ShellOptions): Shell {
         if (known) return;
         // A skill is a request, the line typed, whose text only the model reads; during a run it waits as a follow-up (#540).
         if (!session.skills().some(({ name }) => `/${name}` === word)) note(`No command ${word}.`, "warning");
-        else send(trimmed, busy ? "followUp" : undefined);
+        else send(trimmed, busy ? "followUp" : undefined, true);
       });
       return;
     }
