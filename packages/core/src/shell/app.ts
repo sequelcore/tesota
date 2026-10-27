@@ -11,6 +11,7 @@ import tesota from "../../../../src/tesota.ts";
 import { type AccountHands, accountRows, addAccount, type ClaudeCode, claudeOf, removeAccount, signInAgain } from "../accounts.ts";
 import { fileCredentialStore } from "../credentials.ts";
 import { unusedModels } from "../agents.ts";
+import { startingModel } from "../resume-model-rule.ts";
 import { accountLabels, chosenModel, engineModels, loginOptions, runnableModel, runnableModels } from "../model-access.ts";
 import { claudeCodeProviderId, claudeCodeSignIn } from "../providers/claude-code.ts";
 import type { Mode } from "../permission-rule.ts";
@@ -286,6 +287,18 @@ export async function runApp(options: AppOptions): Promise<void> {
     if (gone === attached && replace) await attach(lives[0] ?? live((made) => createSession({ cwd: options.cwd, folder, ...sessionOptions(made) })));
     if (kept !== undefined) shell.note(kept, "warning");
   };
+  /** The resumed session's model, or the current model with a warning when the recorded one cannot run. */
+  const modelForResume = async (picked: string): Promise<Awaited<ReturnType<typeof runnableModel>> | undefined> => {
+    const last = peekSessionFile(picked).entries.findLast((entry) => entry.type === "assistant")?.message;
+    const lastModel = last === undefined ? "" : `${last.provider}/${last.model}`;
+    const chosen = startingModel("", lastModel, model === undefined ? "" : label(model));
+    if (lastModel === "") return model === undefined ? undefined : { model };
+    const next = await runnableModel(models, chosen);
+    if (typeof next !== "string") return next;
+    const reason = `The session last ran on ${lastModel}, which cannot run now: ${next}`;
+    return model === undefined ? `${reason} No current model to continue on; choose one with /model.`
+      : { model, unchecked: `${reason} Continuing on ${label(model)}. Use /model to choose another.` };
+  };
   /**
    * Opens the session in `picked` and shows it (#595). `holder`, the session
    * that holds its checkout, is closed first: kept resumable, or deleted if it
@@ -293,12 +306,23 @@ export async function runApp(options: AppOptions): Promise<void> {
    */
   const resumeHere = async (picked: string, holder?: Live): Promise<void> => {
     try {
+      const next = await modelForResume(picked);
+      if (typeof next === "string") {
+        shell.note(`Not resumed: ${next}`, "warning");
+        return;
+      }
       if (holder !== undefined && lives.includes(holder)) {
         const asked = firstRequest(holder.session.file) !== undefined;
         await close(holder, false);
         if (!asked) for (const file of [holder.session.file, holder.session.file.replace(/\.jsonl$/u, ".lock")]) rmSync(file, { force: true });
       }
-      await attach(live((made) => openSession(picked, sessionOptions(made))));
+      const resumed = live((made) => openSession(picked, { ...sessionOptions(made), ...next === undefined ? {} : { model: next.model } }));
+      const previous = model === undefined ? "" : label(model);
+      await attach(resumed);
+      model = next?.model;
+      shell.redraw();
+      if (next?.unchecked !== undefined) shell.note(next.unchecked, "warning");
+      if (next !== undefined && label(next.model) !== previous) shell.note(`Continuing on ${label(next.model)}. Use /model to choose another.`);
     } catch (error) {
       shell.note(error instanceof Error ? error.message : String(error), "warning");
       if (!lives.includes(attached)) await attach(lives[0] ?? live((made) => createSession({ cwd: options.cwd, folder, ...sessionOptions(made) })));

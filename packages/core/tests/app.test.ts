@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
 import { claudeCodeProvider } from "../src/providers/claude-code.ts";
 import { engineModels } from "../src/model-access.ts";
+import { peekSessionFile } from "../src/session-file.ts";
 import { type Account, readSettings, writeSettings } from "../src/settings.ts";
 import { type AppOptions, runApp } from "../src/shell/app.ts";
 import type { UsageSources } from "../src/usage.ts";
@@ -34,10 +35,10 @@ function seedSettings(path: string, model: string | undefined, accounts: readonl
 const noUsage: UsageSources = { claudeCode: () => Promise.reject(new Error("no usage in this test")), chatgpt: () => Promise.resolve(undefined) };
 
 /** A scripted model, and a provider that logs in by OAuth with a pasted code. */
-function scripted(replies: readonly ScriptStep[]): { models: MutableModels; credentials: InMemoryCredentialStore } {
+function scripted(replies: readonly ScriptStep[], twoModels: boolean): { models: MutableModels; credentials: InMemoryCredentialStore } {
   const credentials = new InMemoryCredentialStore();
   const models = createModels({ credentials });
-  const faux = fauxProvider();
+  const faux = fauxProvider(twoModels ? { models: [{ id: "faux-1" }, { id: "faux-2" }] } : {});
   faux.setResponses(replies.map(scriptedReply));
   models.setProvider(faux.provider);
   const oauth = fauxProvider();
@@ -62,10 +63,10 @@ function scripted(replies: readonly ScriptStep[]): { models: MutableModels; cred
 }
 
 /** The app in a temporary folder, its settings and sessions there too, once it has drawn its first frame. */
-async function app(replies: readonly ScriptStep[] = [], { repository = false, earlier, mcp, projectMcp, skills = {}, served, model, claudeCode, accounts, claude, usage = noUsage }:
+async function app(replies: readonly ScriptStep[] = [], { repository = false, earlier, earlierModel = "faux/faux-1", mcp, projectMcp, skills = {}, served, model, claudeCode, accounts, claude, usage = noUsage }:
   { repository?: boolean;
     /** An earlier session of the folder that worked in its checkout, asked this and answered "earlier answer" (#595). */
-    earlier?: string; mcp?: object; projectMcp?: object; skills?: Record<string, string>;
+    earlier?: string; earlierModel?: string; mcp?: object; projectMcp?: object; skills?: Record<string, string>;
     /** Signed in to OpenAI with ChatGPT, which serves these models (#566), or whose list cannot be fetched. */
     served?: readonly string[] | "offline"; model?: string; accounts?: readonly Account[];
     /** Claude through Claude Code (#546), signed in there or not. */
@@ -75,7 +76,7 @@ async function app(replies: readonly ScriptStep[] = [], { repository = false, ea
     /** Where the usage panel reads from, faked: it reads no real Claude Code or ChatGPT. */
     usage?: UsageSources } = {}) {
   const terminal = new VirtualTerminal(100, 30);
-  const { models, credentials } = scripted(replies);
+  const { models, credentials } = scripted(replies, model === "faux/faux-2");
   if (claudeCode !== undefined) {
     models.setProvider(claudeCodeProvider(anthropicProvider().getModels(), { signedIn: async () => claudeCode === "signed in" }));
   }
@@ -112,7 +113,8 @@ async function app(replies: readonly ScriptStep[] = [], { repository = false, ea
     const header = { type: "session", format: "tesota-session", version: 6, id: "earlier", cwd, createdAt: at, checkout: cwd };
     writeFileSync(join(sessions, "earlier.jsonl"), [header,
       { type: "request", run: 1, text: earlier, origin: "interactive", at, base: { units: [] } },
-      { type: "assistant", run: 1, message: fauxAssistantMessage("earlier answer") }].map((line) => JSON.stringify(line)).join("\n") + "\n");
+      ...earlierModel === "" ? [] : [{ type: "assistant", run: 1, message: { ...fauxAssistantMessage("earlier answer"),
+        provider: earlierModel.split("/")[0], model: earlierModel.slice(earlierModel.indexOf("/") + 1) } }]].map((line) => JSON.stringify(line)).join("\n") + "\n");
   }
   const openedPages: string[] = [];
   let graphOpened = (_path: string): void => undefined;
@@ -594,6 +596,97 @@ describe("tesota-core", () => {
       await running;
     }
   }, 30_000);
+
+  test("/resume continues on the session's model rather than the shell's (#679)", async () => {
+    const { terminal, sessions, running, settingsPath } = await app(["continued answer", "changed model answer"],
+      { earlier: "the earlier request", model: "faux/faux-2" });
+    try {
+      send(terminal, "/resume");
+      await terminal.until("the earlier request");
+      terminal.type(enter);
+      await terminal.until("earlier answer");
+      send(terminal, "continue");
+      await terminal.until("continued answer");
+      await terminal.untilGone("Verifying");
+      const last = peekSessionFile(join(sessions, "earlier.jsonl")).entries.findLast((entry) => entry.type === "assistant");
+      expect(last?.message.provider).toBe("faux");
+      expect(last?.message.model).toBe("faux-1");
+      expect(readSettings(settingsPath).settings.model).toBe("faux/faux-2");
+      send(terminal, "/model");
+      await terminal.until("Model");
+      terminal.type("\x1b[B");
+      terminal.type(enter);
+      await terminal.until("Model: faux/faux-2");
+      send(terminal, "continue on the chosen model");
+      await terminal.until("changed model answer");
+      await terminal.untilGone("Verifying");
+      const changed = peekSessionFile(join(sessions, "earlier.jsonl")).entries.findLast((entry) => entry.type === "assistant");
+      expect(changed?.message.model).toBe("faux-2");
+    } finally {
+      send(terminal, "/quit");
+      await running;
+    }
+  });
+
+  test.each(["faux/faux-2", ""])("/resume keeps the current model for last model %s (#679)", async (earlierModel) => {
+    const { terminal, sessions, running } = await app(["continued answer"],
+      { earlier: "the earlier request", earlierModel, model: "faux/faux-2" });
+    try {
+      send(terminal, "/resume");
+      await terminal.until("the earlier request");
+      terminal.type(enter);
+      const screen = await terminal.untilGone("Resume");
+      expect(screen).not.toContain("Continuing on");
+      send(terminal, "continue");
+      await terminal.until("continued answer");
+      await terminal.untilGone("Verifying");
+      const last = peekSessionFile(join(sessions, "earlier.jsonl")).entries.findLast((entry) => entry.type === "assistant");
+      expect(last?.message.model).toBe("faux-2");
+    } finally {
+      send(terminal, "/quit");
+      await running;
+    }
+  });
+
+  test("/resume opens an unavailable-model session on the current model with a warning (#679)", async () => {
+    const { terminal, sessions, running } = await app(["still here"],
+      { earlier: "the earlier request", earlierModel: "removed@work/missing", model: "faux/faux-2" });
+    try {
+      send(terminal, "/resume");
+      await terminal.until("the earlier request");
+      terminal.type(enter);
+      const screen = await terminal.until("Continuing on faux/faux-2");
+      expect(screen).toContain("removed@work/missing");
+      expect(screen).toContain("cannot run now");
+      send(terminal, "stay here");
+      await terminal.until("still here");
+      await terminal.untilGone("Verifying");
+      expect(peekSessionFile(join(sessions, "earlier.jsonl")).entries.filter((entry) => entry.type === "request")).toHaveLength(2);
+      expect(readdirSync(sessions).filter((name) => name.endsWith(".jsonl"))).toEqual(["earlier.jsonl"]);
+      const last = peekSessionFile(join(sessions, "earlier.jsonl")).entries.findLast((entry) => entry.type === "assistant");
+      expect(last?.message.model).toBe("faux-2");
+    } finally {
+      send(terminal, "/quit");
+      await running;
+    }
+  });
+
+  test("/resume refuses an unavailable model only when there is no current model (#679)", async () => {
+    const { terminal, sessions, running } = await app([], { earlier: "the earlier request", earlierModel: "removed@work/missing" });
+    try {
+      send(terminal, "/resume");
+      await terminal.until("the earlier request");
+      terminal.type(enter);
+      const screen = await terminal.until("No current model to continue on");
+      expect(screen).toContain("removed@work/missing");
+      expect(screen).toContain("/model");
+      expect(readdirSync(sessions).filter((name) => name.endsWith(".jsonl"))).toHaveLength(2);
+      expect(peekSessionFile(join(sessions, "earlier.jsonl")).entries.filter((entry) => entry.type === "request")).toHaveLength(1);
+    } finally {
+      send(terminal, "/quit");
+      await running;
+    }
+  });
 
   test("/resume of an earlier session of the folder's checkout takes the checkout from the shell's unused session (#595)", async () => {
     const { terminal, sessions, running } = await app([], { earlier: "the earlier request" });
