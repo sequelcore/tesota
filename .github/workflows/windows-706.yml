@@ -1,0 +1,68 @@
+name: Windows scheduling experiment
+on: pull_request
+permissions:
+  contents: read
+jobs:
+  measure:
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [bun-serial, bun-2, bun-4, forks, threads]
+        sample: [1, 2]
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: package.json
+          package-manager-cache: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      - run: dafny --version
+      # TLC for the model-checking tests, where Tesota looks for it (docs/get-started/install.md).
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "25"
+      - name: TLC
+        shell: bash
+        run: |
+          mkdir -p ~/.tesota/tools
+          curl -fsSL -o ~/.tesota/tools/tla2tools.jar https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar
+          # sha256sum on Linux and Git's bash on Windows; shasum on macOS, which has no sha256sum.
+          if command -v sha256sum >/dev/null; then sum="sha256sum"; else sum="shasum -a 256"; fi
+          echo "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88  $HOME/.tesota/tools/tla2tools.jar" | $sum -c -
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - run: bun run vendor
+      - name: Environment
+        shell: bash
+        run: |
+          bun --revision
+          node -p 'JSON.stringify({version:process.version,execPath:process.execPath,cpus:require("os").availableParallelism(),memory:require("os").totalmem()})'
+          mkdir -p "$RUNNER_TEMP/results"
+      - name: Measure full suite
+        shell: bash
+        env:
+          VARIANT: ${{ matrix.variant }}
+          RESULTS: ${{ runner.temp }}/results
+        run: |
+          start=$(date +%s)
+          set +e
+          case "$VARIANT" in
+            bun-serial) bun --no-env-file run --cwd packages/core test --reporter=junit --reporter-outfile="$RESULTS/bun.xml" ;;
+            bun-2) bun --no-env-file run --cwd packages/core test --parallel=2 --reporter=junit --reporter-outfile="$RESULTS/bun.xml" ;;
+            bun-4) bun --no-env-file run --cwd packages/core test --parallel=4 --reporter=junit --reporter-outfile="$RESULTS/bun.xml" ;;
+            forks|threads) bun --no-env-file run test --pool="$VARIANT" --maxWorkers=4 --reporter=default --reporter=json --reporter=github-actions --outputFile="$RESULTS/vitest.json" ;;
+          esac
+          code=$?
+          echo "variant=$VARIANT seconds=$(($(date +%s)-start)) exit=$code" | tee "$RESULTS/measurement.txt"
+          exit "$code"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: windows-${{ matrix.variant }}-${{ matrix.sample }}
+          path: ${{ runner.temp }}/results
+          retention-days: 14
