@@ -12,6 +12,13 @@ On Windows, in PowerShell:
 irm https://raw.githubusercontent.com/sequelcore/tesota/main/install.ps1 | iex
 ```
 
+On Windows (including Windows 10), use **Windows Terminal**, rather than
+the classic Windows PowerShell console. In the classic console, Ctrl+V and
+right-click may not paste into Tesota's message box or API-key fields. Use
+the window menu (**Alt+Space → Edit → Paste**) instead, or install Windows
+Terminal with `winget install Microsoft.WindowsTerminal` (or from the
+Microsoft Store), open PowerShell inside it, and run Tesota there.
+
 Open a new terminal and check it:
 
 ```sh

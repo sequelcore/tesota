@@ -128,6 +128,23 @@ async function app(replies: readonly ScriptStep[] = [], { repository = false, ea
 
 const send = (terminal: VirtualTerminal, text: string): void => { terminal.type(text); terminal.type(enter); };
 
+test.skipIf(process.platform !== "win32")("Windows without a known Terminal session explains the classic console paste limitation (#712)", async () => {
+  const previous = process.env["WT_SESSION"];
+  delete process.env["WT_SESSION"];
+  let opened: Awaited<ReturnType<typeof app>> | undefined;
+  try {
+    opened = await app();
+    const screen = await opened.terminal.until("winget install Microsoft.WindowsTerminal");
+    expect(screen).toContain("Ctrl+V and right-click may not paste");
+    expect(screen).toContain("including API keys");
+    expect(screen).toContain("Alt+Space > Edit > Paste");
+  } finally {
+    if (previous === undefined) delete process.env["WT_SESSION"];
+    else process.env["WT_SESSION"] = previous;
+    if (opened !== undefined) { opened.terminal.type("\x03"); opened.terminal.type("\x03"); await opened.running; }
+  }
+});
+
 test("a subagent shows under its call and in the dashboard (#525)", async () => {
   const { terminal, running } = await app([{ tool: "agent", args: { prompt: "say hi", description: "greet the operator", wait: true } },
     "hi from the child", "parent done"]);
