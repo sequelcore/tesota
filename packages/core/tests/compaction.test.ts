@@ -53,7 +53,8 @@ test("the model receives the fixed contract and a single text transcript with bo
     expect(system.toolsAdded ?? []).toEqual([]);
     // #623: the clip is the transcript's own, so the summary must not call it a cut at the source.
     expect(system.content).toContain("[clipped for this summary: ...]");
-    expect(system.content).toContain("Never report such a result as cut off at its source");
+    expect(system.content).toContain("do not report it as cut off at its source, and do not report it as complete");
+    expect(system.content).toContain("say in Open items to read that source again");
     expect(user.content).toBe([
       "system: Earlier instructions",
       "user: Keep the wording",
