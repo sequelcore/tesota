@@ -5,6 +5,34 @@ Each release of Tesota, newest first. The format follows
 the first stable release are prereleases. Numbers in parentheses are pull
 requests and issues in [sequelcore/tesota](https://github.com/sequelcore/tesota).
 
+## [0.1.0-alpha.7] - 2026-10-28
+
+### Changed
+
+- The README, command help and welcome screen describe Tesota's three
+  questions: whether the code passes its checks, whether those checks are
+  strong enough, and whether the contracts match the request. The last is
+  a model's opinion, kept apart from check evidence. The README's new demo
+  shows passing checks for a contract with the wrong boundary (#732, #733).
+
+### Fixed
+
+- ClaimCheck's plain-language reading of each contract is kept in the
+  receipt, including when the later comparison fails. When a verdict falls
+  short of the request, the receipt card shows the model's reason. These
+  opinions do not change verification standing or send work back to the
+  agent. Receipt v2 adds the optional `contracts[].restatement` field (#734,
+  #730).
+- A failing project command is checked against the request's starting
+  commit. When test reports show that every failing test failed there too,
+  the failure is reported as pre-existing rather than sent back to the
+  agent. New failures and failures whose origin cannot be established still
+  go back, with the reason. Receipt v2 adds optional `tests[].origin`
+  information (#729, #726).
+- Tool output shortened for a compaction summary is explicitly marked as
+  clipped. The summarizer is told to distinguish that clip from a cut in
+  the original output and to reread sources it needs (#725, #623).
+
 ## [0.1.0-alpha.6] - 2026-10-27
 
 ### Changed
@@ -237,6 +265,7 @@ The first published prerelease.
   (#492).
 - One folder's snapshots are taken one at a time across processes (#477).
 
+[0.1.0-alpha.7]: https://github.com/sequelcore/tesota/releases/tag/v0.1.0-alpha.7
 [0.1.0-alpha.6]: https://github.com/sequelcore/tesota/releases/tag/v0.1.0-alpha.6
 [0.1.0-alpha.5]: https://github.com/sequelcore/tesota/releases/tag/v0.1.0-alpha.5
 [0.1.0-alpha.4]: https://github.com/sequelcore/tesota/releases/tag/v0.1.0-alpha.4
