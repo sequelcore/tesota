@@ -432,6 +432,7 @@ state.
 | `lines` | string[] | The contract's `//@` lines as written, trimmed |
 | `mutation` | Mutation | What proof-based mutation found |
 | `judgment` | object, optional | ClaimCheck's `verdict` and `explanation`, present when ClaimCheck judged. The model's assessment of the contract, kept separate from proof evidence |
+| `restatement` | object, optional | ClaimCheck's plain-words reading of the contract, `preconditions` and `postcondition`, by a model that didn't see the request. Present when the restating pass answered, even if no `judgment` followed. A model's opinion, not proof evidence |
 
 `judgment.verdict` is one of:
 

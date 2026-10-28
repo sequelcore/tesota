@@ -284,6 +284,22 @@ describe("receipts beyond the four", () => {
     expect(judged.opinions.map(({ glyph }) => glyph)).toEqual(["◇", "◇"]);
   });
 
+  it("shows ClaimCheck's reason and plain-words restatement beside its verdict, and the restatement without one (#730)", () => {
+    const restatement = { preconditions: "None.", postcondition: "From 100 up subtract 10; below 100 keep the amount." };
+    const contract = { path: "src/total.ts", name: "total", lines: [], mutation: { rejected: 1, survived: [], equivalent: 0, inconclusive: 0 },
+      restatement, judgment: { verdict: "not_justified", explanation: "The request leaves 100 unchanged; the contract takes 10 off." } } as const;
+    const judged: Receipt = { ...emptyReceipt, contracts: [contract], claimcheck: { status: "judged", restatedBy: "m", comparedBy: "m" } };
+    expect(receiptSummary(judged).opinions.map(({ title, note }) => [title, note])).toEqual([[
+      "ClaimCheck: does not match the request · total · src/total.ts", "The request leaves 100 unchanged; the contract takes 10 off."]]);
+    expect(renderReceipt(judged)).toContain("                total in src/total.ts does not express what was asked: " +
+      "The request leaves 100 unchanged; the contract takes 10 off.\n" +
+      "                  restated without the request: assumes None; guarantees From 100 up subtract 10; below 100 keep the amount.");
+    const { judgment: _judgment, ...unjudged } = contract;
+    const failed: Receipt = { ...emptyReceipt, contracts: [unjudged], claimcheck: { status: "not_judged", reason: "m was stopped" } };
+    expect(renderReceipt(failed)).toContain("                total in src/total.ts, restated without the request: " +
+      "assumes None; guarantees From 100 up subtract 10; below 100 keep the amount.");
+  });
+
   it("names a test that noticed the change only by what was observed", () => {
     const summary = receiptSummary({ ...emptyReceipt, exercises: [
       { path: "tests/a.test.ts", provenance: "added", sensitivity: "fails_then_passes", reason: "fails on the base, passes with the change" },

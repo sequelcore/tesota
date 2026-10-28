@@ -158,10 +158,12 @@ it("mutates and has a model judge only the changed contracts, and labels the ver
     new AbortController().signal);
   expect(strength).toEqual({ claimcheck: { status: "judged", restatedBy: "provider/model", comparedBy: "provider/model" }, contracts: [{ path: "src/rules.ts", name: "total",
     lines: ["//@ requires amount >= 0", "//@ ensures \\result === amount"], mutation: { rejected: 3, survived: [], inconclusive: 0, equivalent: 0 },
-    judgment: { verdict: "partially_justified", explanation: "It excludes negative amounts." } }] });
+    judgment: { verdict: "partially_justified", explanation: "It excludes negative amounts." },
+    restatement: { preconditions: "amount >= 0", postcondition: "returns amount" } }] });
   expect(renderReceipt({ ...emptyReceipt, ...strength }))
     .toContain("  model judged  by ClaimCheck on provider/model, one model for both requests, a model's judgment against the request, not a proof:\n" +
-      "                total in src/rules.ts covers only part of what was asked: It excludes negative amounts.");
+      "                total in src/rules.ts covers only part of what was asked: It excludes negative amounts.\n" +
+      "                  restated without the request: assumes amount >= 0; guarantees returns amount");
   expect(await contractStrength(ctx, [], [{ path: "src/rules.ts", source: base, baseSource: base }], new AbortController().signal))
     .toEqual({ contracts: [] });
   expect(complete).toHaveBeenCalledTimes(2);

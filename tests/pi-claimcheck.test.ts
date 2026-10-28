@@ -101,18 +101,21 @@ it("restates contracts without ever showing the request, then compares them with
   expect(second).toContain("- Postcondition: (missing)");
 });
 
+const restatements = [{ preconditions: "none", postcondition: "denied gives false" }, { preconditions: "n >= 0", postcondition: "result >= 0" }];
+
 it("keeps the judgments in the contracts' order, and judges nothing when a contract was not compared", () => {
   const vacuous: Comparison = { function: 2, verdict: "vacuous", explanation: "Always true for doubles of non-negatives." };
-  expect(claimcheckResult(models, items, [vacuous, justified(1)])).toEqual({ status: "judged", ...models, judgments: [
+  expect(claimcheckResult(models, items, restatements, [vacuous, justified(1)])).toEqual({ status: "judged", ...models, restatements, judgments: [
     { verdict: "justified", explanation: "Matches." }, { verdict: "vacuous", explanation: "Always true for doubles of non-negatives." }] });
-  expect(claimcheckResult(models, items, [justified(1)])).toEqual({ status: "not_judged", reason: "no comparison for double" });
+  expect(claimcheckResult(models, items, restatements, [justified(1)]))
+    .toEqual({ status: "not_judged", reason: "no comparison for double", restatements });
 });
 
 it("asks the session's model in two requests, the first without the request, and names the model that judged", async () => {
   const { ctx, asked } = session(informalized, call("record_comparisons", { comparisons: [justified(1),
     { function: 2, verdict: "partially_justified", explanation: "Says nothing of doubling." }] }));
   expect(await claimCheck(ctx, requests, items, new AbortController().signal)).toEqual({ status: "judged",
-    restatedBy: "provider/model", comparedBy: "provider/model",
+    restatedBy: "provider/model", comparedBy: "provider/model", restatements,
     judgments: [{ verdict: "justified", explanation: "Matches." }, { verdict: "partially_justified", explanation: "Says nothing of doubling." }] });
   expect(asked).toHaveLength(2);
   expect(asked[0]).not.toContain(requests[0]);
@@ -141,8 +144,9 @@ it("judges nothing, and says why, without a model or a usable answer", async () 
     .toEqual({ status: "not_judged", reason: "provider/model the model request failed: rate limited" });
   expect(await claimCheck(session(new Error("offline")).ctx, requests, items, signal))
     .toEqual({ status: "not_judged", reason: "provider/model the model request failed: offline" });
+  // A restatement made before the comparison failed is kept (#730).
   expect(await claimCheck(session(informalized, call("record_comparisons", { comparisons: [{ function: 1, verdict: "fine" }] })).ctx,
-    requests, items, signal)).toEqual({ status: "not_judged", reason: "provider/model the model did not record its answer" });
+    requests, items, signal)).toEqual({ status: "not_judged", reason: "provider/model the model did not record its answer", restatements });
   expect(await claimCheck(session({ content: [{ type: "text", text: "They look right." }] }).ctx, requests, items, signal))
     .toEqual({ status: "not_judged", reason: "provider/model the model did not record its answer" });
   const stopped = new AbortController();
