@@ -48,8 +48,13 @@ What was decided and why.
 What is done and what is in progress. Distinguish check evidence from human acceptance.
 ## Open items
 Unresolved questions and next steps, exact.
+A tool result ending in [clipped for this summary: ...] was shortened in this transcript. The marker alone does not show whether the tool or the source also cut it: do not report a cut at the source from the marker alone, and do not report the result as complete. If the retained text itself says the tool shortened it, say so.
+When a next step needs the full text of such a result, say in Open items to read that source again.
 When given a previous summary, update it with the new messages, keeping everything still true.
 Merge the new information into that summary rather than rewriting it from scratch.`;
+
+/** How much of one tool result the summary model sees; the rest is marked as omitted, never silently dropped (#623). */
+const resultLimit = 2000;
 
 /** Renders history as text so the summary model cannot respond to earlier tool calls. */
 function transcript(history: readonly HistoryMessage[]): string {
@@ -61,7 +66,9 @@ function transcript(history: readonly HistoryMessage[]): string {
       return `toolCall ${part.name} (${part.id}): ${JSON.stringify(part.arguments)}`;
     }).join("\n");
     if (message.role === "toolResult") {
-      return `toolResult ${message.toolName} (${message.toolCallId}${message.isError ? ", error" : ""}): ${content.slice(0, 2000)}`;
+      const clipped = content.length > resultLimit
+        ? ` [clipped for this summary: ${resultLimit} of ${content.length} characters shown]` : "";
+      return `toolResult ${message.toolName} (${message.toolCallId}${message.isError ? ", error" : ""}): ${content.slice(0, resultLimit)}${clipped}`;
     }
     return `${message.role}: ${content}`;
   }).join("\n\n");
