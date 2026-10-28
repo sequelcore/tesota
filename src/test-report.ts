@@ -297,3 +297,14 @@ export function introducedTests(candidate: TestResults | undefined, base: TestRe
     return testOrigin(status, baseTestStatus(base?.tests.get(name) ?? "none", covered)) === "introduced";
   }).map(([name]) => name).sort();
 }
+
+/**
+ * Whether the reports show the failure on the base too (#726): some test
+ * fails with the changes, and each one that does fails on the base
+ * (`testOrigin`). Without reports on both sides nothing shows it.
+ */
+export function failuresSeenOnBase(candidate: TestResults | undefined, base: TestResults | undefined): boolean {
+  if (candidate === undefined || base === undefined) return false;
+  const failing = [...candidate.tests].filter(([, status]) => status === "failed");
+  return failing.length > 0 && failing.every(([name]) => testOrigin("failed", baseTestStatus(base.tests.get(name) ?? "none", false)) === "preexisting");
+}

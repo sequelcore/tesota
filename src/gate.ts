@@ -21,10 +21,10 @@ import { entryReceipt, type FloorRefusal, inUnit, isReceipt, type ModelResult, n
   type UnitEvidence } from "./receipt.js";
 import { attributionResolved, captureFingerprint, compareFingerprints, type Fingerprint, historyFacts, pathBlobs, refTips, type UnmeasuredPath } from "./request-fingerprint.js";
 import { takeSnapshot } from "./snapshot.js";
-import type { CommandRun } from "./test-rung.js";
+import type { Against, CommandRun } from "./test-rung.js";
 import type { FileChange } from "./verification-changes.js";
 import type { Readiness } from "./verification/footer-rule.js";
-import { gateVerdict, keepsWorking, toolMayChangeFiles } from "./verification/gate-rule.js";
+import { commandVerdict, gateVerdict, keepsWorking, toolMayChangeFiles } from "./verification/gate-rule.js";
 import { annotations, proofSources, proveFile } from "./verification/lemmascript-verifier.js";
 import { checksModel } from "./verification/model-rule.js";
 import { type Unit, workspaceUnits } from "./workspace.js";
@@ -183,17 +183,18 @@ function testFailure({ command, failingTests }: CommandRun): string {
 /**
  * The test rung (#342), once no proof goes back: the commands of the projects
  * that own the changed files (`suggestChecks`, `owningProjects`) run on the
- * change. A command that fails goes back to the agent until its failure
- * repeats one already sent back (`testFailure`, `gateVerdict`). When every
+ * change. A command that fails runs on the base too (`runCommands`), and a
+ * failure the base already had stays from the agent (#726, `commandVerdict`);
+ * any other goes back until it repeats one already sent back (`testFailure`). When every
  * command passes, each changed or added test runs over the request's base,
  * which shows whether it exercises the change.
  */
 async function testRung(root: string, base: string | null, changed: readonly string[],
   sentBack: ReadonlyMap<string, readonly string[]>, signal: AbortSignal, ops: OperationSink,
-  env: Readonly<Record<string, string>> | undefined, attributable: boolean): Promise<Pick<Receipt, "tests" | "exercises">> {
+  env: Readonly<Record<string, string>> | undefined, attributable: boolean, against: Against): Promise<Pick<Receipt, "tests" | "exercises">> {
   const projects = owningProjects(suggestChecks(root), changed);
-  const tests = (await checks().runCommands(root, projects, changed, signal, ops, env)).map((run) =>
-    ({ ...run, verdict: gateVerdict(run.evidence.outcome, testFailure(run), sentBack.get(run.command) ?? []) }));
+  const tests = (await checks().runCommands(root, projects, changed, signal, ops, env, against)).map((run) => ({ ...run,
+    verdict: commandVerdict(run.evidence.outcome, testFailure(run), sentBack.get(run.command) ?? [], run.origin?.cause === "preexisting") }));
   const passed = tests.every(({ evidence }) => evidence.outcome === "passed");
   // A snapshot or a fixture counts as a test for weakened evidence, but is not one a runner can run alone (#615).
   const runnable = changed.filter((path) => checks().isTestPath(path) && checks().isSourcePath(path));
@@ -202,11 +203,25 @@ async function testRung(root: string, base: string | null, changed: readonly str
   return { tests, exercises };
 }
 
-/** What goes back to the agent for a failing command: the tests its reports name, then the end of its output. */
-function failingReport({ command, failingTests, evidence }: CommandRun): string {
+/**
+ * What goes back to the agent for a failing command: the tests its reports
+ * name, why Tesota can't tell whether the changes cause it when it can't,
+ * then the end of its output.
+ */
+function failingReport({ command, failingTests, evidence, origin }: CommandRun): string {
   const names = failingTests === undefined || failingTests.length === 0 ? ""
     : `These tests fail:\n${failingTests.map((name) => `  ${name}`).join("\n")}\n\n`;
-  return `Tesota: \`${command}\` fails with your changes.\n\n${names}${evidence.output.trimEnd()}`;
+  const unknown = origin?.cause === "unknown" ? `Tesota can't tell whether your changes cause it: ${origin.reason}.\n\n` : "";
+  return `Tesota: \`${command}\` fails with your changes.\n\n${unknown}${names}${evidence.output.trimEnd()}`;
+}
+
+/** What a unit's failing commands are compared with: its base, or why a run there would not show the request's start. */
+function comparedWith(unit: ChangedUnit, attributable: boolean): Against {
+  if (unit.base === null) return { unfaithful: "there is no base to run it on" };
+  if (unit.snapshot !== undefined) return { unfaithful: "the folder is no Git repository, so its start can't be checked out to run it on" };
+  if (!attributable) return { unfaithful: "other work moved the repository during the request, so the base may not be its start" };
+  if (unit.inherited.length > 0) return { unfaithful: `the request started with changes the base doesn't hold: ${unit.inherited.join(", ")}` };
+  return { base: unit.base };
 }
 
 /** The files that proved, as changed and at the request's base, whose contracts and covered lines the receipt measures. */
@@ -652,8 +667,8 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
       sent.set(run.command, [...sent.get(run.command) ?? [], testFailure(run)]);
       commandsSentBack.set(folder, sent);
     }
-    const shown = failing.map(({ folder, run: { command, evidence, failingTests } }): CommandRun =>
-      ({ command: inFolder(folder, command), evidence, ...failingTests === undefined ? {} : { failingTests } }));
+    const shown = failing.map(({ folder, run: { command, evidence, failingTests, origin } }): CommandRun =>
+      ({ command: inFolder(folder, command), evidence, ...failingTests === undefined ? {} : { failingTests }, ...origin === undefined ? {} : { origin } }));
     return sendBack(shown.map(failingReport).join("\n\n"), { round: "tests", commands: shown });
   };
   /** The strength of each repository's contracts that proved, and what its proofs covered. */
@@ -760,10 +775,10 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     progress.publish({ step: "testing", startedAt: performance.now(), tally: tally(allProofs) });
     const rungs = new Map<string, Pick<Receipt, "tests" | "exercises">>();
     for (const unit of changed) {
+      const attributable = attributionResolved(unit.base, unit.startState, unit.endState, unit.snapshot === undefined);
       rungs.set(unit.folder, yield* step((signal) =>
         testRung(unit.root, unit.base, unit.changed, commandsSentBack.get(unit.folder) ?? new Map(), signal,
-          progress.operations.forUnit(unit.folder), ctx.env,
-          attributionResolved(unit.base, unit.startState, unit.endState, unit.snapshot === undefined))));
+          progress.operations.forUnit(unit.folder), ctx.env, attributable, comparedWith(unit, attributable))));
     }
     const allTests = [...rungs.values()].flatMap(({ tests }) => tests);
     const failing = [...rungs].flatMap(([folder, { tests }]) =>

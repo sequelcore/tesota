@@ -103,7 +103,10 @@ check commands, not the root's aggregate check.
 When your test command writes a JUnit XML report anywhere under the
 project, Tesota reads which tests failed, not only whether the command
 did. It can then tell that a new test catches your change even when other
-tests already fail, and sends back only the failures that matter. Gradle
+tests already fail. When a command fails, Tesota runs it on the commit the
+request started from too: a failure whose tests all failed there already
+stays from the agent and is recorded as failing before the change. Without
+reports, Tesota can't tell, so the failure goes back with that reason. Gradle
 and Maven write these reports already. Elsewhere:
 
 - **Bun:** `bun test --reporter=junit --reporter-outfile=./junit.xml`, or
