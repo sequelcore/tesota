@@ -51,7 +51,8 @@ Tesota makes that gap visible; it doesn't close it.
 curl -fsSL https://raw.githubusercontent.com/sequelcore/tesota/main/install.sh | sh
 ```
 
-On Windows, in PowerShell:
+On Windows, in PowerShell (not Command Prompt; on Windows 10, open it in
+[Windows Terminal](https://aka.ms/terminal)):
 
 ```powershell
 irm https://raw.githubusercontent.com/sequelcore/tesota/main/install.ps1 | iex
