@@ -60,7 +60,7 @@ The run ends with Tesota's receipt:
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="../assets/tesota-turn-light.svg">
-  <img alt="A verified run: the request, the agent's file writes and its answer, then Tesota's receipt saying nothing needs you, the contract is proved, the tests pass and the new test notices the change." src="../assets/tesota-turn-dark.svg">
+  <img alt="A verified run whose change misses the request: the request for 10 off orders over 100, the agent's file writes and its answer, then Tesota's receipt with the contract proved, the tests passing and the new test noticing the change, and apart, a model's opinion that the contract does not match the request." src="../assets/tesota-turn-dark.svg">
 </picture>
 
 A verified run with a proof and a test reads like this:
@@ -87,7 +87,11 @@ Check evidence, not your acceptance.
   - `Contracts`: each small change Tesota made to the code broke the
     proof, so the contract is strong enough to catch it.
 - Then any review flags and limits, grouped by reason, and the models'
-  opinions on their own, never counted.
+  opinions on their own, never counted. In the image above, every check
+  passes but a model finds the contract doesn't match the request: it takes
+  10 off at exactly 100, and the request said over 100. Checks that agree
+  with each other can still miss what you asked; that opinion tells you
+  where to look.
 - Press Ctrl+O for the details: every path, output and assumption; again
   to fold them.
 

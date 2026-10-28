@@ -167,10 +167,11 @@ async function shell(cwd: string, script: readonly ScriptStep[], appearance: App
     if (tool === "record_open_cases") return fauxAssistantMessage(fauxToolCall(tool, { status: "listed", cases: [] }));
     if (tool === "record_informalizations") return fauxAssistantMessage(fauxToolCall(tool, { informalizations: [{
       function: 1, preconditions: "None.",
-      postcondition: "Above 100 subtract 10; otherwise keep the amount.", strength: "strong",
+      postcondition: "From 100 up subtract 10; below 100 keep the amount.", strength: "strong",
     }] }));
     if (tool === "record_comparisons") return fauxAssistantMessage(fauxToolCall(tool, { comparisons: [{
-      function: 1, verdict: "justified", explanation: "The contract states the requested discount and its boundary.",
+      function: 1, verdict: "not_justified",
+      explanation: "The request takes 10 off orders over 100, so an order of exactly 100 keeps its amount; the contract takes 10 off at 100.",
     }] }));
     const next = replies.shift();
     if (next === undefined || typeof next === "function") throw new Error("Unexpected screenshot model request");
@@ -221,12 +222,14 @@ async function welcome(appearance: Appearance): Promise<void> {
 }
 
 const totalBefore = "export function total(amount: number): number {\n  return amount;\n}\n";
-const totalAfter = "//@ ensures amount > 100 ==> \\result === amount - 10\n" +
-  "//@ ensures amount <= 100 ==> \\result === amount\n" +
-  "export function total(amount: number): number {\n  return amount > 100 ? amount - 10 : amount;\n}\n";
+// The agent's change misses the request's boundary: "over 100" leaves 100 alone, but the code, its contract and the
+// test it wrote all take 10 off at 100. Every check passes; only the request review can notice (#731's spec gap).
+const totalAfter = "//@ ensures amount >= 100 ==> \\result === amount - 10\n" +
+  "//@ ensures amount < 100 ==> \\result === amount\n" +
+  "export function total(amount: number): number {\n  return amount >= 100 ? amount - 10 : amount;\n}\n";
 const totalTest = "import { test, expect } from \"bun:test\";\nimport { total } from \"../src/total.ts\";\n\n" +
-  "test(\"orders over 100 get 10 off\", () => {\n  expect(total(120)).toBe(110);\n  expect(total(101)).toBe(91);\n" +
-  "  expect(total(100)).toBe(100);\n  expect(total(0)).toBe(0);\n});\n";
+  "test(\"orders of 100 or more get 10 off\", () => {\n  expect(total(120)).toBe(110);\n  expect(total(100)).toBe(90);\n" +
+  "  expect(total(99)).toBe(99);\n  expect(total(0)).toBe(0);\n});\n";
 
 /** A small TypeScript project with a test command: the shell starts ready to run its tests. */
 const shop: Readonly<Record<string, string>> = {
@@ -235,12 +238,15 @@ const shop: Readonly<Record<string, string>> = {
   "test/total-base.test.ts": "import { test } from \"bun:test\";\ntest(\"loads\", async () => { await import(\"../src/total.ts\"); });\n",
 };
 
-/** A verified turn: the request, the agent's change and answer, and Tesota's receipt, its tests run on the change and on the base. */
+/**
+ * A verified turn whose change misses the request: the request, the agent's change and answer, and Tesota's receipt,
+ * its proof and tests passing on the change and its test exercising it, beside the request review's mismatch.
+ */
 async function turn(appearance: Appearance): Promise<void> {
   const cwd = project(shop);
   const app = await shell(cwd, [{ tool: "write", args: { path: "src/total.ts", content: totalAfter } },
     { tool: "write", args: { path: "test/total.test.ts", content: totalTest } },
-    "Orders over 100 now get 10 off; the contract and test cover both sides of 100."], appearance, turnRows);
+    "Orders of 100 or more now get 10 off; the contract and test cover the boundary."], appearance, turnRows);
   app.terminal.type("For nonnegative amounts, take 10 off orders over 100; keep the rest unchanged. Add a contract and test.");
   app.terminal.type(enter);
   await app.terminal.until("✓ Proved", 240_000);
@@ -250,8 +256,9 @@ async function turn(appearance: Appearance): Promise<void> {
   const receipt = session === undefined ? undefined : peekSessionFile(join(app.sessions, session)).entries.map(entryReceipt).findLast(isReceipt);
   if (receipt === undefined || receiptStanding(receipt) !== "verified" || !screen.includes("✓ Proved") || !screen.includes("✓ Tested")
     || !screen.includes("failed on the base and passed with the change")
-    || receipt.openCases?.status !== "listed" || receipt.openCases.cases.length !== 0) {
-    throw new Error(`The screenshot run did not verify with an exercised test and no open cases:\n${screen}`);
+    || receipt.openCases?.status !== "listed" || receipt.openCases.cases.length !== 0
+    || !receipt.contracts.some(({ judgment }) => judgment?.verdict === "not_justified") || !screen.includes("does not match")) {
+    throw new Error(`The screenshot run did not verify with an exercised test, no open cases and a shown mismatch:\n${screen}`);
   }
   // Independently check the generated proof with the installed CLI, not a scripted proof result.
   const lsc = join(root, "node_modules", ".bin", process.platform === "win32" ? "lsc.exe" : "lsc");
@@ -262,7 +269,7 @@ async function turn(appearance: Appearance): Promise<void> {
   console.log(`${appearance}: ${proof.stdout.trim()}`);
   await new Promise((resolve) => setTimeout(resolve, 500));
   await write(app.terminal, "tesota-turn", appearance, turnRows,
-    "A verified turn in Tesota: a blooming pixel ironwood in the header, the request, two file writes and the answer, then the receipt card with the passing tests and the new test exercising the change.");
+    "A verified turn in Tesota whose change misses the request: the request for 10 off orders over 100, two file writes and the answer, then the receipt card with the proof and tests passing and the new test exercising the change, and apart, a model's opinion that the contract does not match the request at 100.");
   await quit(app);
 }
 
