@@ -94,7 +94,10 @@ below.
 - **Proofs:** TypeScript functions with LemmaScript contracts, proved with
   Dafny. A contract that still proves after the code is changed is too weak,
   and goes back to the agent, unless Dafny proves the changed code returns
-  the same result for every input the contract admits.
+  the same result for every input the contract admits. A proof is only as
+  good as its contract, so Tesota checks both. It cannot check that the
+  contract says what you asked; a model's comparison with your request is
+  only a review aid.
 - **Tests:** your project's own commands, run against the change, with a
   check that a new test catches it.
 - **Design models:** TLA+ and Quint models of the design, checked with TLC
