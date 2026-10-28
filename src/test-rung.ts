@@ -9,8 +9,8 @@ import { type Evidence, contentHash } from "./evidence.js";
 import { gitEnvironment } from "./git.js";
 import { type ProjectChecks, findProjects, nearestWorkspaceRoot, owningProjects, packageTest, suggestChecks } from "./projects.js";
 import { runProcess } from "./process.js";
-import { clearTestReports, introducedTests, readTestResults, type TestResults } from "./test-report.js";
-import { type CheckOutcome, checkOrigin } from "./verification/check-origin-rule.js";
+import { clearTestReports, failuresSeenOnBase, introducedTests, readTestResults, type TestResults } from "./test-report.js";
+import { type CheckOrigin, type CheckOutcome, checkOrigin } from "./verification/check-origin-rule.js";
 import { host } from "./host.js";
 import { noOperations, type OperationResult, type OperationSink, type OperationSpec } from "./operations.js";
 
@@ -73,7 +73,18 @@ export interface CommandRun {
   readonly evidence: Evidence;
   /** The failing tests' names, sorted, from the JUnit reports the run wrote; undefined when it wrote none. */
   readonly failingTests?: readonly string[] | undefined;
+  /** For a command that failed or timed out on the change, whether it does on the base too (#726). */
+  readonly origin?: CommandOrigin;
 }
+
+/** Whether the change, the base already, or neither run can tell, is why a command fails (`checkOrigin`), and what showed it. */
+export interface CommandOrigin {
+  readonly cause: CheckOrigin;
+  readonly reason: string;
+}
+
+/** The base a command's failure is compared with: its commit, or why a run there would not show the request's start. */
+export type Against = { readonly base: string } | { readonly unfaithful: string };
 
 const limits = "Shows only that the project's commands passed on these files; it says nothing about what the tests " +
   "leave unchecked.";
@@ -89,12 +100,30 @@ function bytes(root: string, path: string): Buffer | undefined {
 /**
  * Run the commands of the projects that own the changed files at `root`, one
  * evidence each, bound to the changed files' content as it was when the
- * commands started.
+ * commands started. Given a base to compare `against`, each command that
+ * failed or timed out runs there too, and carries why it fails (`originsOnBase`).
  */
 export async function runCommands(root: string, projects: readonly ProjectChecks[], changed: readonly string[],
-  signal: AbortSignal, ops: OperationSink = noOperations, env?: Environment): Promise<CommandRun[]> {
+  signal: AbortSignal, ops: OperationSink = noOperations, env?: Environment, against?: Against): Promise<CommandRun[]> {
+  const ran = await commandRuns(root, projects, changed, signal, ops, env);
+  const failing = ran.filter(({ outcome }) => outcome === "failed" || outcome === "timed_out");
+  if (against === undefined || failing.length === 0) return ran.map(({ run }) => run);
+  const origins = new Map((await originsOnBase(root, against, failing, changed, signal, ops, env)).map((origin, k) => [failing[k], origin]));
+  return ran.map((each) => { const origin = origins.get(each); return origin === undefined ? each.run : { ...each.run, origin }; });
+}
+
+/** A command's run on the change, with the owning folder and the reports it wrote. */
+interface Ran {
+  readonly folder: string;
+  readonly run: CommandRun;
+  readonly outcome: CommandOutcome;
+  readonly results: TestResults | undefined;
+}
+
+async function commandRuns(root: string, projects: readonly ProjectChecks[], changed: readonly string[],
+  signal: AbortSignal, ops: OperationSink, env: Environment | undefined): Promise<Ran[]> {
   const hash = contentHash(changed.map((path) => ({ path, content: read(root, path) })));
-  const runs: CommandRun[] = [];
+  const runs: Ran[] = [];
   const spec = (command: string): OperationSpec => ({ method: "command", unit: "", target: command });
   const planned = projects.flatMap(({ commands }) => commands).map((command) => ops.plan(spec(command)));
   let next = 0;
@@ -108,11 +137,64 @@ export async function runCommands(root: string, projects: readonly ProjectChecks
       const results = readTestResults(root, reportsWritten(root, folder, started));
       const failingTests = results === undefined ? undefined
         : [...results.tests].filter(([, status]) => status === "failed").map(([name]) => name).sort();
-      runs.push({ command, failingTests, evidence: { verifier: "command", claim: `\`${command}\` passes with these changes.`,
-        limits, outcome, output, durationMs: Date.now() - started, files: changed, contentHash: hash } });
+      runs.push({ folder, outcome, results, run: { command, failingTests, evidence: { verifier: "command",
+        claim: `\`${command}\` passes with these changes.`, limits, outcome, output, durationMs: Date.now() - started, files: changed,
+        contentHash: hash } } });
     }
   }
   return runs;
+}
+
+/**
+ * Each failing command run once more in a worktree of the base, and why it
+ * fails (`commandOrigin`). Nothing is credited to the base where a run there
+ * would not show the request's start: none, a start the base doesn't hold, or
+ * a change to what decides the dependencies the base borrows from the checkout.
+ */
+async function originsOnBase(root: string, against: Against, failing: readonly Ran[], changed: readonly string[],
+  signal: AbortSignal, ops: OperationSink, env: Environment | undefined): Promise<CommandOrigin[]> {
+  const unknown = (reason: string): CommandOrigin[] => failing.map(() => ({ cause: "unknown", reason }));
+  if ("unfaithful" in against) return unknown(against.unfaithful);
+  const touched = changed.filter((path) => dependencyFiles.has(posix.basename(path)));
+  if (touched.length > 0) {
+    return unknown(`the change touches ${touched.join(", ")}, and the base runs with the checkout's dependencies, so a run there may not be faithful`);
+  }
+  try {
+    return await atBase(root, against.base, async (project) => {
+      const found: CommandOrigin[] = [];
+      for (const { folder, run, outcome, results } of failing) {
+        const base = await ops.run({ method: "base_command", unit: "", target: run.command },
+          () => baseRun([run.command], project, folder, signal, env), (ended) => ended.outcome);
+        found.push(commandOrigin(outcome, results, base));
+      }
+      return found;
+    });
+  } catch (error) {
+    const why = error instanceof Error ? error.message.trim().split("\n").at(-1) ?? "" : String(error);
+    return unknown(`the base could not be checked out: ${why}`);
+  }
+}
+
+/**
+ * Why a command that failed or timed out on the change does (`checkOrigin`):
+ * the change, when the base passes or some test fails only with it; the base
+ * already, only when the reports show each failing test failing there too;
+ * otherwise unknown, with what kept it so.
+ */
+function commandOrigin(outcome: CommandOutcome, results: TestResults | undefined, base: BaseRun): CommandOrigin {
+  const introduced = introducedTests(results, base.results);
+  const cause = checkOrigin(outcome, base.outcome, introduced.length, true, failuresSeenOnBase(results, base.results));
+  if (cause === "introduced") {
+    return { cause, reason: base.outcome === "passed" ? "it passes on the base" : `these tests fail only with the change: ${introduced.join("; ")}` };
+  }
+  if (cause === "preexisting") {
+    const failing = [...results?.tests ?? []].filter(([, status]) => status === "failed").map(([name]) => name).sort();
+    return { cause, reason: `these tests fail on the base too: ${failing.join("; ")}` };
+  }
+  if (base.outcome !== outcome) return { cause, reason: `on the base it ${base.outcome.replaceAll("_", " ")}` };
+  const too = `it ${outcome === "failed" ? "fails" : "runs past its limit"} on the base too`;
+  return { cause, reason: results === undefined || base.results === undefined ? `${too}, and no test report says which tests fail`
+    : `${too}, and the base's test report doesn't show each of its failing tests failing there` };
 }
 
 /**
@@ -215,7 +297,7 @@ function exercise(path: string, provenance: TestExercise["provenance"], withTest
   const ended = withTest.outcome.replace("_", " ");
   if (without === undefined) return { path, provenance, sensitivity: "unknown", reason: `on the base it ${ended}` };
   const introduced = introducedTests(withTest.results, without.results).length;
-  if (checkOrigin(withTest.outcome, without.outcome, introduced, true) === "introduced") {
+  if (checkOrigin(withTest.outcome, without.outcome, introduced, true, failuresSeenOnBase(withTest.results, without.results)) === "introduced") {
     return { path, provenance, sensitivity: "fails_then_passes", reason: "fails on the base, passes with the change" };
   }
   if (without.outcome === "passed") return { path, provenance, sensitivity: "unknown", reason: `on the base it ${ended}` };

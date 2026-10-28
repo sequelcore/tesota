@@ -40,6 +40,19 @@ method gateVerdict(outcome: ProofOutcome, failure: string, sent: seq<string>) re
   return GateVerdict.send_back;
 }
 
+method commandVerdict(outcome: ProofOutcome, failure: string, sent: seq<string>, preexisting: bool) returns (res: GateVerdict)
+  ensures (res.proved? <==> outcome.passed?)
+  ensures (res.send_back? <==> ((!((preexisting && outcome.failed?)) && (outcome.failed? || outcome.vacuous?)) && !(exists k: nat :: ((k < |sent|) && (sent[k] == failure)))))
+  ensures (res.no_progress? <==> ((!((preexisting && outcome.failed?)) && (outcome.failed? || outcome.vacuous?)) && exists k: nat :: ((k < |sent|) && (sent[k] == failure))))
+  ensures (res.operator? <==> ((((preexisting && outcome.failed?) || outcome.not_started?) || outcome.timed_out?) || outcome.cancelled?))
+{
+  if (preexisting && outcome.failed?) {
+    return GateVerdict.operator;
+  }
+  var i_t0 := gateVerdict(outcome, failure, sent);
+  return i_t0;
+}
+
 method keepsWorking(verdicts: seq<GateVerdict>) returns (res: bool)
   ensures (res <==> exists k: nat :: ((k < |verdicts|) && verdicts[k].send_back?))
 {

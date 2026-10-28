@@ -334,15 +334,20 @@ function line(path: string, verdict: GateVerdict, evidence: Evidence, assumed: n
 const again = (end: ReturnType<typeof checkEnd>): string =>
   end === "failed" ? ", repeating a failure already sent back" : ", still could not be checked after being sent back";
 
-function testLine({ command, verdict, evidence, failingTests }: Receipt["tests"][number]): string {
+function testLine({ command, verdict, evidence, failingTests, origin }: Receipt["tests"][number]): string {
   if (evidence.invalidated === "content_changed") return `  stale         ${command}: ${staleEvidenceWords}`;
   if (verdict === "proved") return `  passed        ${command}`;
+  if (origin?.cause === "preexisting") return `  failed before ${command}: ${origin.reason}`;
   if (verdict === "operator") return `  NOT passed    ${command}: it ${why(evidence)}`;
-  if (verdict === "send_back") return `  NOT passed    ${command}: it fails; generation ended before repair${failingTests === undefined ? "" : `: ${failingTests.join("; ")}`}`;
-  if (failingTests === undefined || failingTests.length === 0) {
-    return `  NOT passed    ${command}: it still fails after its failure went back`;
+  // Why Tesota couldn't tell whether the change causes the failure, when it couldn't (#726).
+  const unknown = origin?.cause === "unknown" ? `; ${origin.reason}` : "";
+  if (verdict === "send_back") {
+    return `  NOT passed    ${command}: it fails; generation ended before repair${failingTests === undefined ? "" : `: ${failingTests.join("; ")}`}${unknown}`;
   }
-  return `  NOT passed    ${command}: these tests fail, as they did when they went back: ${failingTests.join("; ")}`;
+  if (failingTests === undefined || failingTests.length === 0) {
+    return `  NOT passed    ${command}: it still fails after its failure went back${unknown}`;
+  }
+  return `  NOT passed    ${command}: these tests fail, as they did when they went back: ${failingTests.join("; ")}${unknown}`;
 }
 
 /** What was observed of a test against the base, never more: one that notices the change may still expect the wrong thing. */
@@ -633,14 +638,19 @@ export const modelEnd = ({ evidence, run, faults }: Pick<ModelResult, "evidence"
   checkEnd("model", evidence.invalidated !== undefined, evidence.outcome, run, faults.some(({ verdict }) => verdict === "passes"));
 
 /** A command's run as a finding: passed, still failing after it went back, or a gap because it did not run or is stale. */
-export function commandFinding({ command, verdict, evidence, failingTests }: Pick<Receipt["tests"][number],
-  "command" | "verdict" | "evidence" | "failingTests">): Finding {
+export function commandFinding({ command, verdict, evidence, failingTests, origin }: Pick<Receipt["tests"][number],
+  "command" | "verdict" | "evidence" | "failingTests" | "origin">): Finding {
   const more = [`Ran in ${seconds(evidence.durationMs)} · sha256 ${evidence.contentHash.slice(0, 12)}`];
   if (evidence.invalidated === "content_changed") {
     return { standing: "gap", check: "tests", label: "Tests stale", subject: command, detail: staleEvidenceWords, more };
   }
   const end = evidenceEnd("command", evidence);
   if (end === "passed" && verdict === "proved") return { standing: "holds", check: "tests", label: "Tests pass", subject: command, detail: "", more };
+  // A failure the base already had shows nothing about the change, for or against it (#726).
+  if (origin?.cause === "preexisting") {
+    return { standing: "gap", check: "tests", label: "Tests failed before the change", subject: command, detail: origin.reason, more };
+  }
+  if (origin?.cause === "unknown") more.push(`Cause unknown: ${origin.reason}`);
   if (end !== "failed") {
     return { standing: "gap", check: "tests", label: "Tests did not run", subject: command, detail: `it ${why(evidence)}`, more };
   }

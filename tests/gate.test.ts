@@ -1781,6 +1781,49 @@ it("says a test report would tell, when the base fails with and without a new te
     "added in this request");
 }, 60_000);
 
+/** A tested project whose base already fails its `legacy` test, and a gate on it after the agent wrote `files`. */
+async function changeOverFailingBase(test: string, files: Record<string, string>): Promise<{ run: ReturnType<typeof gate>; settled: Settled | undefined }> {
+  const root = testedProject(test);
+  write(root, { "test/legacy.test.mjs": priceTest(-1, 0, "legacy") });
+  commit(root, "a failing test");
+  const run = gate(root);
+  await run.input();
+  await run.tool("write");
+  write(root, files);
+  return { run, settled: await run.settle() };
+}
+
+const junit = "node --test --test-reporter=junit --test-reporter-destination=report.xml";
+
+it("keeps a failure the base already had from the agent, when the test reports show the same tests failing there", async () => {
+  const { settled } = await changeOverFailingBase(junit, { "test/two.test.mjs": priceTest(2, 2, "two") });
+  expect(settled?.continue).toBeUndefined();
+  expect(facts(entry(settled).content)).toContain("  failed before bun run test: these tests fail on the base too: test > legacy");
+  const [run] = (entry(settled).details as Receipt).tests;
+  expect(run).toMatchObject({ verdict: "operator", origin: { cause: "preexisting" } });
+}, 60_000);
+
+it("sends back a failure the change adds to a base that fails anyway", async () => {
+  const { settled } = await changeOverFailingBase(junit, { "test/two.test.mjs": priceTest(-2, 0, "two") });
+  expect(settled?.continue).toBe(true);
+  expect(entry(settled).content).toContain("These tests fail:\n  test > legacy\n  test > two\n");
+  expect(entry(settled).details).toMatchObject({ round: "tests",
+    commands: [{ origin: { cause: "introduced", reason: "these tests fail only with the change: test > two" } }] });
+}, 60_000);
+
+it("never counts a failure as the base's when no test report shows which tests fail, and says why", async () => {
+  const { run, settled } = await changeOverFailingBase("node --test", { "test/two.test.mjs": priceTest(2, 2, "two") });
+  expect(settled?.continue).toBe(true);
+  expect(entry(settled).content).toContain("Tesota can't tell whether your changes cause it: " +
+    "it fails on the base too, and no test report says which tests fail.");
+  run.agentStart();
+  const stuck = await run.settle();
+  expect(stuck?.continue).toBeUndefined();
+  expect(facts(entry(stuck).content)).toContain("  NOT passed    bun run test: it still fails after its failure went back; " +
+    "it fails on the base too, and no test report says which tests fail");
+  expect((entry(stuck).details as Receipt).tests[0]?.origin?.cause).toBe("unknown");
+}, 60_000);
+
 it("gives no verdict on the base when the change touches what decides the dependencies", async () => {
   const root = testedProject();
   const run = gate(root);

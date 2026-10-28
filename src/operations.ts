@@ -7,7 +7,7 @@ import type { WorkingDetail } from "./contract.js";
  * Nothing is inferred from timings or output. Operations describe what ran;
  * they never decide a verdict or a send-back.
  */
-export type OperationMethod = "proof" | "command" | "exercise" | "base_control" | "mutation" | "claimcheck" | "model_main"
+export type OperationMethod = "proof" | "command" | "base_command" | "exercise" | "base_control" | "mutation" | "claimcheck" | "model_main"
   | "model_fault" | "model_replay" | "open_cases" | "receipt";
 
 /**
@@ -70,7 +70,7 @@ export const noOperations: OperationSink = {
 };
 
 const labels: Readonly<Record<OperationMethod, string>> = {
-  proof: "Proving", command: "Running project check", exercise: "Checking test sensitivity",
+  proof: "Proving", command: "Running project check", base_command: "Running the failing check on the base", exercise: "Checking test sensitivity",
   base_control: "Checking the base without the test", mutation: "Measuring contract strength", claimcheck: "Asking ClaimCheck",
   model_main: "Checking model", model_fault: "Checking planted fault", model_replay: "Replaying model against the code",
   open_cases: "Listing open cases", receipt: "Assembling receipt",
@@ -78,7 +78,7 @@ const labels: Readonly<Record<OperationMethod, string>> = {
 
 /** What each method ran, named for a row of the ledger once it ended: its glyph is that run's own result, never a verdict. */
 const ran: Readonly<Record<OperationMethod, string>> = {
-  proof: "Proof", command: "Project check", exercise: "Base run with the test", base_control: "Base run without the test",
+  proof: "Proof", command: "Project check", base_command: "Project check on the base", exercise: "Base run with the test", base_control: "Base run without the test",
   mutation: "Contract strength", claimcheck: "ClaimCheck", model_main: "Model", model_fault: "Model with planted fault",
   model_replay: "Model replay", open_cases: "Open cases", receipt: "Receipt",
 };
@@ -100,6 +100,7 @@ const endings: Readonly<Partial<Record<OperationResult, string>>> = {
  */
 const observed: Readonly<Partial<Record<OperationMethod, Partial<Record<OperationResult, readonly [string, string]>>>>> = {
   model_fault: { passed: ["✗", " · passed: fault not caught"], failed: ["○", " · model failed"] },
+  base_command: { passed: ["○", " · passed on the base"], failed: ["○", " · failed on the base"] },
   exercise: { passed: ["○", " · passed on the base"], failed: ["○", " · failed on the base"] },
   base_control: { passed: ["○", " · passed on the base"], failed: ["○", " · failed on the base"] },
 };
