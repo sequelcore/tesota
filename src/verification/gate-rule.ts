@@ -41,6 +41,20 @@ export function gateVerdict(outcome: ProofOutcome, failure: string, sent: readon
 }
 
 /**
+ * What the gate does with one of the project's commands (#726): a failure
+ * the base already had (`checkOrigin`) is the operator's, never sent back to
+ * the agent; any other is judged as a proof is (`gateVerdict`).
+ */
+//@ ensures \result === "proved" <==> outcome === "passed"
+//@ ensures \result === "send_back" <==> !(preexisting && outcome === "failed") && (outcome === "failed" || outcome === "vacuous") && !exists(k: nat, k < sent.length && sent[k] === failure)
+//@ ensures \result === "no_progress" <==> !(preexisting && outcome === "failed") && (outcome === "failed" || outcome === "vacuous") && exists(k: nat, k < sent.length && sent[k] === failure)
+//@ ensures \result === "operator" <==> (preexisting && outcome === "failed") || outcome === "not_started" || outcome === "timed_out" || outcome === "cancelled"
+export function commandVerdict(outcome: ProofOutcome, failure: string, sent: readonly string[], preexisting: boolean): GateVerdict {
+  if (preexisting && outcome === "failed") return "operator";
+  return gateVerdict(outcome, failure, sent);
+}
+
+/**
  * Whether the run continues: while some file goes back to the agent
  * (`gateVerdict`). Every other file waits for that continuation, so a run
  * settles only when no file has a failure the agent has not yet answered.

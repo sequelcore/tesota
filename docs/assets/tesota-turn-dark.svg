@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="872" height="752" viewBox="0 0 872 752" role="img" aria-label="A verified turn in Tesota: a blooming pixel ironwood in the header, the request, two file writes and the answer, then the receipt card with the passing tests and the new test exercising the change.">
-<title>A verified turn in Tesota: a blooming pixel ironwood in the header, the request, two file writes and the answer, then the receipt card with the passing tests and the new test exercising the change.</title>
+<svg xmlns="http://www.w3.org/2000/svg" width="872" height="752" viewBox="0 0 872 752" role="img" aria-label="A verified turn in Tesota whose change misses the request: the request for 10 off orders over 100, two file writes and the answer, then the receipt card with the proof and tests passing and the new test exercising the change, and apart, a model's opinion that the contract covers only part of the request: it takes 10 off at 100 too.">
+<title>A verified turn in Tesota whose change misses the request: the request for 10 off orders over 100, two file writes and the answer, then the receipt card with the proof and tests passing and the new test exercising the change, and apart, a model's opinion that the contract covers only part of the request: it takes 10 off at 100 too.</title>
 <rect width="872" height="752" rx="10" fill="#202020"/>
 <rect x="91.6" y="16" width="8.4" height="18" fill="#9ab08f"/>
 <rect x="49.6" y="34" width="8.4" height="18" fill="#c7b58a"/>
@@ -45,9 +45,23 @@
 <rect x="545.2" y="412" width="310.8" height="18" fill="#312b38"/>
 <rect x="16.0" y="430" width="840.0" height="18" fill="#312b38"/>
 <rect x="16.0" y="448" width="8.4" height="18" fill="#312b38"/>
-<rect x="24.4" y="448" width="453.6" height="18" fill="#312b38"/>
-<rect x="478.0" y="448" width="378.0" height="18" fill="#312b38"/>
-<rect x="16.0" y="466" width="840.0" height="18" fill="#312b38"/>
+<rect x="24.4" y="448" width="352.8" height="18" fill="#312b38"/>
+<rect x="377.2" y="448" width="478.8" height="18" fill="#312b38"/>
+<rect x="16.0" y="466" width="8.4" height="18" fill="#312b38"/>
+<rect x="24.4" y="466" width="8.4" height="18" fill="#312b38"/>
+<rect x="32.8" y="466" width="823.2" height="18" fill="#312b38"/>
+<rect x="16.0" y="484" width="8.4" height="18" fill="#312b38"/>
+<rect x="24.4" y="484" width="831.6" height="18" fill="#312b38"/>
+<rect x="16.0" y="502" width="25.2" height="18" fill="#312b38"/>
+<rect x="41.2" y="502" width="814.8" height="18" fill="#312b38"/>
+<rect x="16.0" y="520" width="25.2" height="18" fill="#312b38"/>
+<rect x="41.2" y="520" width="84.0" height="18" fill="#312b38"/>
+<rect x="125.2" y="520" width="730.8" height="18" fill="#312b38"/>
+<rect x="16.0" y="538" width="840.0" height="18" fill="#312b38"/>
+<rect x="16.0" y="556" width="8.4" height="18" fill="#312b38"/>
+<rect x="24.4" y="556" width="453.6" height="18" fill="#312b38"/>
+<rect x="478.0" y="556" width="378.0" height="18" fill="#312b38"/>
+<rect x="16.0" y="574" width="840.0" height="18" fill="#312b38"/>
 <rect x="16.0" y="646" width="840.0" height="18" fill="#2f2a35"/>
 <rect x="16.0" y="664" width="16.8" height="18" fill="#2f2a35"/>
 <rect x="32.8" y="664" width="8.4" height="18" fill="#f2eee6"/>
@@ -60,7 +74,7 @@
 <text x="91.6" y="29" fill="#c6a8d2" textLength="8.4" lengthAdjust="spacingAndGlyphs">▀</text>
 <text x="100.0" y="29" fill="#9ab08f" textLength="8.4" lengthAdjust="spacingAndGlyphs">▄</text>
 <text x="125.2" y="29" fill="#f2eee6" font-weight="bold" textLength="50.4" lengthAdjust="spacingAndGlyphs">Tesota</text>
-<text x="184.0" y="29" fill="#b9b7aa" textLength="117.6" lengthAdjust="spacingAndGlyphs">v0.1.0-alpha.4</text>
+<text x="184.0" y="29" fill="#b9b7aa" textLength="117.6" lengthAdjust="spacingAndGlyphs">v0.1.0-alpha.7</text>
 <text x="24.4" y="47" fill="#9ab08f" textLength="8.4" lengthAdjust="spacingAndGlyphs">▀</text>
 <text x="32.8" y="47" fill="#74846b" textLength="16.8" lengthAdjust="spacingAndGlyphs">▀█</text>
 <text x="49.6" y="47" fill="#74846b" textLength="8.4" lengthAdjust="spacingAndGlyphs">▀</text>
@@ -71,16 +85,15 @@
 <text x="217.6" y="47" fill="#b9b7aa" textLength="8.4" lengthAdjust="spacingAndGlyphs">·</text>
 <text x="234.4" y="47" fill="#b9b7aa" textLength="50.4" lengthAdjust="spacingAndGlyphs">~\shop</text>
 <text x="41.2" y="65" fill="#c7b58a" textLength="25.2" lengthAdjust="spacingAndGlyphs">▄█▄</text>
-<text x="125.2" y="65" fill="#b9b7aa" textLength="8.4" lengthAdjust="spacingAndGlyphs">A</text>
-<text x="142.0" y="65" fill="#b9b7aa" textLength="50.4" lengthAdjust="spacingAndGlyphs">coding</text>
-<text x="200.8" y="65" fill="#b9b7aa" textLength="42.0" lengthAdjust="spacingAndGlyphs">agent</text>
-<text x="251.2" y="65" fill="#b9b7aa" textLength="33.6" lengthAdjust="spacingAndGlyphs">that</text>
-<text x="293.2" y="65" fill="#b9b7aa" textLength="33.6" lengthAdjust="spacingAndGlyphs">ends</text>
-<text x="335.2" y="65" fill="#b9b7aa" textLength="42.0" lengthAdjust="spacingAndGlyphs">every</text>
-<text x="385.6" y="65" fill="#b9b7aa" textLength="25.2" lengthAdjust="spacingAndGlyphs">run</text>
-<text x="419.2" y="65" fill="#b9b7aa" textLength="33.6" lengthAdjust="spacingAndGlyphs">with</text>
-<text x="461.2" y="65" fill="#b9b7aa" textLength="8.4" lengthAdjust="spacingAndGlyphs">a</text>
-<text x="478.0" y="65" fill="#b9b7aa" textLength="67.2" lengthAdjust="spacingAndGlyphs">receipt.</text>
+<text x="125.2" y="65" fill="#b9b7aa" textLength="50.4" lengthAdjust="spacingAndGlyphs">Checks</text>
+<text x="184.0" y="65" fill="#b9b7aa" textLength="25.2" lengthAdjust="spacingAndGlyphs">the</text>
+<text x="217.6" y="65" fill="#b9b7aa" textLength="42.0" lengthAdjust="spacingAndGlyphs">code.</text>
+<text x="268.0" y="65" fill="#b9b7aa" textLength="84.0" lengthAdjust="spacingAndGlyphs">Challenges</text>
+<text x="360.4" y="65" fill="#b9b7aa" textLength="25.2" lengthAdjust="spacingAndGlyphs">the</text>
+<text x="394.0" y="65" fill="#b9b7aa" textLength="42.0" lengthAdjust="spacingAndGlyphs">spec.</text>
+<text x="444.4" y="65" fill="#b9b7aa" textLength="42.0" lengthAdjust="spacingAndGlyphs">Flags</text>
+<text x="494.8" y="65" fill="#b9b7aa" textLength="25.2" lengthAdjust="spacingAndGlyphs">the</text>
+<text x="528.4" y="65" fill="#b9b7aa" textLength="33.6" lengthAdjust="spacingAndGlyphs">gap.</text>
 <text x="24.4" y="101" fill="#8f8d84" font-weight="bold" textLength="8.4" lengthAdjust="spacingAndGlyphs">›</text>
 <text x="41.2" y="101" fill="#f2eee6" textLength="25.2" lengthAdjust="spacingAndGlyphs">For</text>
 <text x="74.8" y="101" fill="#f2eee6" textLength="92.4" lengthAdjust="spacingAndGlyphs">nonnegative</text>
@@ -107,21 +120,21 @@
 <text x="41.2" y="191" fill="#f2eee6" font-weight="bold" textLength="42.0" lengthAdjust="spacingAndGlyphs">write</text>
 <text x="91.6" y="191" fill="#b9b7aa" textLength="151.2" lengthAdjust="spacingAndGlyphs">test/total.test.ts</text>
 <text x="24.4" y="227" fill="#f2eee6" textLength="50.4" lengthAdjust="spacingAndGlyphs">Orders</text>
-<text x="83.2" y="227" fill="#f2eee6" textLength="33.6" lengthAdjust="spacingAndGlyphs">over</text>
-<text x="125.2" y="227" fill="#f2eee6" textLength="25.2" lengthAdjust="spacingAndGlyphs">100</text>
-<text x="158.8" y="227" fill="#f2eee6" textLength="25.2" lengthAdjust="spacingAndGlyphs">now</text>
-<text x="192.4" y="227" fill="#f2eee6" textLength="25.2" lengthAdjust="spacingAndGlyphs">get</text>
-<text x="226.0" y="227" fill="#f2eee6" textLength="16.8" lengthAdjust="spacingAndGlyphs">10</text>
-<text x="251.2" y="227" fill="#f2eee6" textLength="33.6" lengthAdjust="spacingAndGlyphs">off;</text>
-<text x="293.2" y="227" fill="#f2eee6" textLength="25.2" lengthAdjust="spacingAndGlyphs">the</text>
-<text x="326.8" y="227" fill="#f2eee6" textLength="67.2" lengthAdjust="spacingAndGlyphs">contract</text>
-<text x="402.4" y="227" fill="#f2eee6" textLength="25.2" lengthAdjust="spacingAndGlyphs">and</text>
-<text x="436.0" y="227" fill="#f2eee6" textLength="33.6" lengthAdjust="spacingAndGlyphs">test</text>
-<text x="478.0" y="227" fill="#f2eee6" textLength="42.0" lengthAdjust="spacingAndGlyphs">cover</text>
-<text x="528.4" y="227" fill="#f2eee6" textLength="33.6" lengthAdjust="spacingAndGlyphs">both</text>
-<text x="570.4" y="227" fill="#f2eee6" textLength="42.0" lengthAdjust="spacingAndGlyphs">sides</text>
-<text x="620.8" y="227" fill="#f2eee6" textLength="16.8" lengthAdjust="spacingAndGlyphs">of</text>
-<text x="646.0" y="227" fill="#f2eee6" textLength="33.6" lengthAdjust="spacingAndGlyphs">100.</text>
+<text x="83.2" y="227" fill="#f2eee6" textLength="16.8" lengthAdjust="spacingAndGlyphs">of</text>
+<text x="108.4" y="227" fill="#f2eee6" textLength="25.2" lengthAdjust="spacingAndGlyphs">100</text>
+<text x="142.0" y="227" fill="#f2eee6" textLength="16.8" lengthAdjust="spacingAndGlyphs">or</text>
+<text x="167.2" y="227" fill="#f2eee6" textLength="33.6" lengthAdjust="spacingAndGlyphs">more</text>
+<text x="209.2" y="227" fill="#f2eee6" textLength="25.2" lengthAdjust="spacingAndGlyphs">now</text>
+<text x="242.8" y="227" fill="#f2eee6" textLength="25.2" lengthAdjust="spacingAndGlyphs">get</text>
+<text x="276.4" y="227" fill="#f2eee6" textLength="16.8" lengthAdjust="spacingAndGlyphs">10</text>
+<text x="301.6" y="227" fill="#f2eee6" textLength="33.6" lengthAdjust="spacingAndGlyphs">off;</text>
+<text x="343.6" y="227" fill="#f2eee6" textLength="25.2" lengthAdjust="spacingAndGlyphs">the</text>
+<text x="377.2" y="227" fill="#f2eee6" textLength="67.2" lengthAdjust="spacingAndGlyphs">contract</text>
+<text x="452.8" y="227" fill="#f2eee6" textLength="25.2" lengthAdjust="spacingAndGlyphs">and</text>
+<text x="486.4" y="227" fill="#f2eee6" textLength="33.6" lengthAdjust="spacingAndGlyphs">test</text>
+<text x="528.4" y="227" fill="#f2eee6" textLength="42.0" lengthAdjust="spacingAndGlyphs">cover</text>
+<text x="578.8" y="227" fill="#f2eee6" textLength="25.2" lengthAdjust="spacingAndGlyphs">the</text>
+<text x="612.4" y="227" fill="#f2eee6" textLength="75.6" lengthAdjust="spacingAndGlyphs">boundary.</text>
 <text x="24.4" y="281" fill="#c6a8d2" font-weight="bold" textLength="50.4" lengthAdjust="spacingAndGlyphs">Tesota</text>
 <text x="83.2" y="281" fill="#c6a8d2" font-weight="bold" textLength="58.8" lengthAdjust="spacingAndGlyphs">receipt</text>
 <text x="24.4" y="299" fill="#9ab08f" font-weight="bold" textLength="16.8" lengthAdjust="spacingAndGlyphs">No</text>
@@ -176,14 +189,64 @@
 <text x="419.2" y="425" fill="#b9b7aa" textLength="42.0" lengthAdjust="spacingAndGlyphs">broke</text>
 <text x="469.6" y="425" fill="#b9b7aa" textLength="25.2" lengthAdjust="spacingAndGlyphs">its</text>
 <text x="503.2" y="425" fill="#b9b7aa" textLength="42.0" lengthAdjust="spacingAndGlyphs">proof</text>
-<text x="24.4" y="461" fill="#8f8d84" textLength="8.4" lengthAdjust="spacingAndGlyphs">▸</text>
-<text x="41.2" y="461" fill="#8f8d84" textLength="58.8" lengthAdjust="spacingAndGlyphs">Details</text>
-<text x="108.4" y="461" fill="#8f8d84" textLength="8.4" lengthAdjust="spacingAndGlyphs">·</text>
-<text x="125.2" y="461" fill="#8f8d84" textLength="50.4" lengthAdjust="spacingAndGlyphs">paths,</text>
-<text x="184.0" y="461" fill="#8f8d84" textLength="58.8" lengthAdjust="spacingAndGlyphs">output,</text>
-<text x="251.2" y="461" fill="#8f8d84" textLength="100.8" lengthAdjust="spacingAndGlyphs">assumptions,</text>
-<text x="360.4" y="461" fill="#8f8d84" textLength="42.0" lengthAdjust="spacingAndGlyphs">model</text>
-<text x="410.8" y="461" fill="#8f8d84" textLength="67.2" lengthAdjust="spacingAndGlyphs">opinions</text>
+<text x="24.4" y="461" fill="#8f8d84" font-weight="bold" textLength="42.0" lengthAdjust="spacingAndGlyphs">Model</text>
+<text x="74.8" y="461" fill="#8f8d84" font-weight="bold" textLength="67.2" lengthAdjust="spacingAndGlyphs">opinions</text>
+<text x="150.4" y="461" fill="#8f8d84" font-weight="bold" textLength="8.4" lengthAdjust="spacingAndGlyphs">·</text>
+<text x="167.2" y="461" fill="#8f8d84" font-weight="bold" textLength="25.2" lengthAdjust="spacingAndGlyphs">not</text>
+<text x="200.8" y="461" fill="#8f8d84" font-weight="bold" textLength="75.6" lengthAdjust="spacingAndGlyphs">evidence,</text>
+<text x="284.8" y="461" fill="#8f8d84" font-weight="bold" textLength="25.2" lengthAdjust="spacingAndGlyphs">not</text>
+<text x="318.4" y="461" fill="#8f8d84" font-weight="bold" textLength="58.8" lengthAdjust="spacingAndGlyphs">counted</text>
+<text x="24.4" y="479" fill="#c6a8d2" textLength="8.4" lengthAdjust="spacingAndGlyphs">◇</text>
+<text x="41.2" y="479" fill="#f2eee6" textLength="92.4" lengthAdjust="spacingAndGlyphs">ClaimCheck:</text>
+<text x="142.0" y="479" fill="#f2eee6" textLength="50.4" lengthAdjust="spacingAndGlyphs">covers</text>
+<text x="200.8" y="479" fill="#f2eee6" textLength="33.6" lengthAdjust="spacingAndGlyphs">only</text>
+<text x="242.8" y="479" fill="#f2eee6" textLength="33.6" lengthAdjust="spacingAndGlyphs">part</text>
+<text x="284.8" y="479" fill="#f2eee6" textLength="16.8" lengthAdjust="spacingAndGlyphs">of</text>
+<text x="310.0" y="479" fill="#f2eee6" textLength="25.2" lengthAdjust="spacingAndGlyphs">the</text>
+<text x="343.6" y="479" fill="#f2eee6" textLength="58.8" lengthAdjust="spacingAndGlyphs">request</text>
+<text x="410.8" y="479" fill="#f2eee6" textLength="8.4" lengthAdjust="spacingAndGlyphs">·</text>
+<text x="427.6" y="479" fill="#f2eee6" textLength="42.0" lengthAdjust="spacingAndGlyphs">total</text>
+<text x="478.0" y="479" fill="#f2eee6" textLength="8.4" lengthAdjust="spacingAndGlyphs">·</text>
+<text x="494.8" y="479" fill="#f2eee6" textLength="100.8" lengthAdjust="spacingAndGlyphs">src/total.ts</text>
+<text x="41.2" y="497" fill="#b9b7aa" textLength="25.2" lengthAdjust="spacingAndGlyphs">The</text>
+<text x="74.8" y="497" fill="#b9b7aa" textLength="67.2" lengthAdjust="spacingAndGlyphs">contract</text>
+<text x="150.4" y="497" fill="#b9b7aa" textLength="67.2" lengthAdjust="spacingAndGlyphs">captures</text>
+<text x="226.0" y="497" fill="#b9b7aa" textLength="25.2" lengthAdjust="spacingAndGlyphs">the</text>
+<text x="259.6" y="497" fill="#b9b7aa" textLength="92.4" lengthAdjust="spacingAndGlyphs">subtraction</text>
+<text x="360.4" y="497" fill="#b9b7aa" textLength="25.2" lengthAdjust="spacingAndGlyphs">and</text>
+<text x="394.0" y="497" fill="#b9b7aa" textLength="75.6" lengthAdjust="spacingAndGlyphs">unchanged</text>
+<text x="478.0" y="497" fill="#b9b7aa" textLength="50.4" lengthAdjust="spacingAndGlyphs">cases,</text>
+<text x="536.8" y="497" fill="#b9b7aa" textLength="25.2" lengthAdjust="spacingAndGlyphs">but</text>
+<text x="570.4" y="497" fill="#b9b7aa" textLength="58.8" lengthAdjust="spacingAndGlyphs">applies</text>
+<text x="637.6" y="497" fill="#b9b7aa" textLength="25.2" lengthAdjust="spacingAndGlyphs">the</text>
+<text x="671.2" y="497" fill="#b9b7aa" textLength="58.8" lengthAdjust="spacingAndGlyphs">10-unit</text>
+<text x="738.4" y="497" fill="#b9b7aa" textLength="75.6" lengthAdjust="spacingAndGlyphs">reduction</text>
+<text x="822.4" y="497" fill="#b9b7aa" textLength="16.8" lengthAdjust="spacingAndGlyphs">at</text>
+<text x="41.2" y="515" fill="#b9b7aa" textLength="50.4" lengthAdjust="spacingAndGlyphs">amount</text>
+<text x="100.0" y="515" fill="#b9b7aa" textLength="8.4" lengthAdjust="spacingAndGlyphs">=</text>
+<text x="116.8" y="515" fill="#b9b7aa" textLength="25.2" lengthAdjust="spacingAndGlyphs">100</text>
+<text x="150.4" y="515" fill="#b9b7aa" textLength="16.8" lengthAdjust="spacingAndGlyphs">as</text>
+<text x="175.6" y="515" fill="#b9b7aa" textLength="42.0" lengthAdjust="spacingAndGlyphs">well.</text>
+<text x="226.0" y="515" fill="#b9b7aa" textLength="25.2" lengthAdjust="spacingAndGlyphs">The</text>
+<text x="259.6" y="515" fill="#b9b7aa" textLength="58.8" lengthAdjust="spacingAndGlyphs">request</text>
+<text x="326.8" y="515" fill="#b9b7aa" textLength="33.6" lengthAdjust="spacingAndGlyphs">says</text>
+<text x="368.8" y="515" fill="#b9b7aa" textLength="50.4" lengthAdjust="spacingAndGlyphs">orders</text>
+<text x="427.6" y="515" fill="#b9b7aa" textLength="33.6" lengthAdjust="spacingAndGlyphs">over</text>
+<text x="469.6" y="515" fill="#b9b7aa" textLength="33.6" lengthAdjust="spacingAndGlyphs">100,</text>
+<text x="511.6" y="515" fill="#b9b7aa" textLength="16.8" lengthAdjust="spacingAndGlyphs">so</text>
+<text x="536.8" y="515" fill="#b9b7aa" textLength="33.6" lengthAdjust="spacingAndGlyphs">this</text>
+<text x="578.8" y="515" fill="#b9b7aa" textLength="67.2" lengthAdjust="spacingAndGlyphs">boundary</text>
+<text x="654.4" y="515" fill="#b9b7aa" textLength="50.4" lengthAdjust="spacingAndGlyphs">should</text>
+<text x="713.2" y="515" fill="#b9b7aa" textLength="50.4" lengthAdjust="spacingAndGlyphs">remain</text>
+<text x="41.2" y="533" fill="#b9b7aa" textLength="84.0" lengthAdjust="spacingAndGlyphs">unchanged.</text>
+<text x="24.4" y="569" fill="#8f8d84" textLength="8.4" lengthAdjust="spacingAndGlyphs">▸</text>
+<text x="41.2" y="569" fill="#8f8d84" textLength="58.8" lengthAdjust="spacingAndGlyphs">Details</text>
+<text x="108.4" y="569" fill="#8f8d84" textLength="8.4" lengthAdjust="spacingAndGlyphs">·</text>
+<text x="125.2" y="569" fill="#8f8d84" textLength="50.4" lengthAdjust="spacingAndGlyphs">paths,</text>
+<text x="184.0" y="569" fill="#8f8d84" textLength="58.8" lengthAdjust="spacingAndGlyphs">output,</text>
+<text x="251.2" y="569" fill="#8f8d84" textLength="100.8" lengthAdjust="spacingAndGlyphs">assumptions,</text>
+<text x="360.4" y="569" fill="#8f8d84" textLength="42.0" lengthAdjust="spacingAndGlyphs">model</text>
+<text x="410.8" y="569" fill="#8f8d84" textLength="67.2" lengthAdjust="spacingAndGlyphs">opinions</text>
 <text x="16.0" y="677" fill="#f2eee6" textLength="8.4" lengthAdjust="spacingAndGlyphs">›</text>
 <text x="49.6" y="677" fill="#b9b7aa" textLength="8.4" lengthAdjust="spacingAndGlyphs">/</text>
 <text x="66.4" y="677" fill="#b9b7aa" textLength="25.2" lengthAdjust="spacingAndGlyphs">for</text>

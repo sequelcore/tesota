@@ -46,15 +46,20 @@ export interface Comparison {
   readonly explanation: string;
 }
 
+/** What a contract says in plain words, by a model that never saw the request: pass 1's reading, an opinion (#730). */
+export type Restatement = Pick<Informalization, "preconditions" | "postcondition">;
+
 /**
  * A model's judgment of the contracts against the request, with the models
- * that restated and compared them as `provider/id`; `judgments` follows the
- * order of the contracts judged.
+ * that restated and compared them as `provider/id`; `judgments` and
+ * `restatements` follow the order of the contracts. A restatement made
+ * before the comparison failed is kept; one pass 1 left out is undefined.
  */
 export type ClaimCheck =
   | { readonly status: "judged"; readonly restatedBy: string; readonly comparedBy: string;
+    readonly restatements: readonly (Restatement | undefined)[];
     readonly judgments: readonly Pick<Comparison, "verdict" | "explanation">[] }
-  | { readonly status: "not_judged"; readonly reason: string };
+  | { readonly status: "not_judged"; readonly reason: string; readonly restatements?: readonly (Restatement | undefined)[] };
 
 function contractList(items: readonly Contract[]): string {
   return items.map((item, index) => `### Function ${index + 1}: ${item.name} (${item.path})\n\n\`\`\`typescript\n${item.text}\n\`\`\``).join("\n\n");
@@ -92,13 +97,21 @@ export function comparePrompt(requests: readonly string[], items: readonly Contr
     "always a mismatch.\n\nCall record_comparisons with one entry per function.";
 }
 
-/** The judgments in the contracts' order; not judged when a contract was left without a comparison. */
+/** Pass 1's restatements in the contracts' order. */
+function restatementsOf(items: readonly Contract[], informalizations: readonly Informalization[]): (Restatement | undefined)[] {
+  return items.map((_item, index) => {
+    const found = informalizations.find((entry) => entry.function === index + 1);
+    return found === undefined ? undefined : { preconditions: found.preconditions, postcondition: found.postcondition };
+  });
+}
+
+/** The judgments and restatements in the contracts' order; not judged when a contract was left without a comparison. */
 export function claimcheckResult(models: Pick<Extract<ClaimCheck, { status: "judged" }>, "restatedBy" | "comparedBy">,
-  items: readonly Contract[], comparisons: readonly Comparison[]): ClaimCheck {
+  items: readonly Contract[], restatements: readonly (Restatement | undefined)[], comparisons: readonly Comparison[]): ClaimCheck {
   const judgments = items.map((_item, index) => comparisons.find((comparison) => comparison.function === index + 1));
   const missing = items.filter((_item, index) => judgments[index] === undefined);
-  if (missing.length > 0) return { status: "not_judged", reason: `no comparison for ${missing.map((item) => item.name).join(", ")}` };
-  return { status: "judged", ...models,
+  if (missing.length > 0) return { status: "not_judged", reason: `no comparison for ${missing.map((item) => item.name).join(", ")}`, restatements };
+  return { status: "judged", ...models, restatements,
     judgments: judgments.flatMap((judgment) => judgment === undefined ? [] : [{ verdict: judgment.verdict, explanation: judgment.explanation }]) };
 }
 
@@ -198,11 +211,14 @@ export async function claimCheck(ctx: ModelAccess, requests: readonly string[], 
   const first = await recorded<{ informalizations: Informalization[] }>(ctx, restater, comparing, "record_informalizations",
     informalizationSchema, informalizePrompt(items), limited);
   if (typeof first === "string") return { status: "not_judged", reason: `${named(restater)} ${first}` };
+  const restatements = restatementsOf(items, first.informalizations);
   const prompt = judgmentPrompt(model, comparing, "record_comparisons", comparisonSchema, requests,
     (texts) => comparePrompt(texts, items, first.informalizations), "claimcheck", judging);
-  if (prompt === undefined) return { status: "not_judged", reason: "no whole request fits the complete prompt within model context capacity" };
+  if (prompt === undefined) {
+    return { status: "not_judged", reason: "no whole request fits the complete prompt within model context capacity", restatements };
+  }
   const second = await recorded<{ comparisons: Comparison[] }>(ctx, model, comparing, "record_comparisons", comparisonSchema,
     prompt, limited);
-  if (typeof second === "string") return { status: "not_judged", reason: `${named(model)} ${second}` };
-  return claimcheckResult({ restatedBy: named(restater), comparedBy: named(model) }, items, second.comparisons);
+  if (typeof second === "string") return { status: "not_judged", reason: `${named(model)} ${second}`, restatements };
+  return claimcheckResult({ restatedBy: named(restater), comparedBy: named(model) }, items, restatements, second.comparisons);
 }

@@ -9,7 +9,7 @@ for (const flag of ["--help", "-h"]) {
     const result = spawnSync(process.execPath, [main, flag], { encoding: "utf8" });
     expect(result.status).toBe(0);
     expect(result.stderr).toBe("");
-    expect(result.stdout).toContain("A coding agent that ends every run with a receipt.");
+    expect(result.stdout).toContain("A coding agent that checks its code, challenges its specs, and flags where they may miss your request.");
     for (const command of ["tesota -p", "--resume", "--model", "tesota receipt", "--owner", "tesota accounts", "tesota graph", "--version"]) {
       expect(result.stdout).toContain(command);
     }

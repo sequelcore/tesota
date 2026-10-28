@@ -126,6 +126,17 @@ as no progress. Tesota compares proof output, failing test names when
 available, surviving mutations, or design model counterexamples as
 appropriate. A command without test reports gets one repair attempt.
 
+A project command that fails runs once more on the request's base, in a
+Git worktree of the commit the request started from. The failure stays
+from the agent only when the base fails the same way and the test reports
+from both runs show each failing test failing there too: the receipt
+records it as failing before the change. Any other failure goes back. When
+the base passes, or some test fails only with the change, the change
+caused it. When Tesota can't tell, because the project writes no test
+reports, the base can't be run, or the request didn't start from it, the
+failure still goes back, with the reason Tesota can't tell; it is never
+counted as one the base already had.
+
 A check that cannot start, exceeds its time limit or is cancelled does
 not go back for automatic repair. The receipt leaves that limit for you.
 The engine allows up to 32 automatic continuations per run, shared by

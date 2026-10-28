@@ -1,7 +1,7 @@
 import type { ExtensionContext } from "./contract.js";
 import type { ts as TypeScript } from "ts-morph";
 import { noOperations, type OperationSink } from "./operations.js";
-import { type ClaimCheck, type Comparison, claimCheck, type JudgmentContext } from "./pi-claimcheck.js";
+import { type ClaimCheck, type Comparison, claimCheck, type JudgmentContext, type Restatement } from "./pi-claimcheck.js";
 import { type MutationResult, mutateContract } from "./proof-mutation.js";
 import { typescript } from "./typescript-source.js";
 import { unreadSpecification } from "./verification/lemmascript-verifier.js";
@@ -165,10 +165,13 @@ export interface ContractStrength {
   readonly mutation: MutationResult;
   /** ClaimCheck's verdict on it, when ClaimCheck judged the contracts: a model's judgment, never a proof. */
   readonly judgment?: Pick<Comparison, "verdict" | "explanation">;
+  /** ClaimCheck's plain-words reading of it, made without the request, kept even when no verdict followed: an opinion (#730). */
+  readonly restatement?: Restatement;
 }
 
 /** Which models ClaimCheck asked, or why it judged nothing. */
-export type ClaimCheckRun = Omit<Extract<ClaimCheck, { status: "judged" }>, "judgments"> | Extract<ClaimCheck, { status: "not_judged" }>;
+export type ClaimCheckRun = Omit<Extract<ClaimCheck, { status: "judged" }>, "judgments" | "restatements">
+  | Omit<Extract<ClaimCheck, { status: "not_judged" }>, "restatements">;
 
 /**
  * Mutation and ClaimCheck for each contract a proved file's content added or
@@ -195,10 +198,14 @@ export async function contractStrength(ctx: Pick<ExtensionContext, "model" | "mo
     target: items.map(({ contract }) => `${contract.path}#${contract.name}`).join(", ") },
   () => claimCheck(ctx, requests, items.map(({ contract }) => contract), signal, restateWith, judging), () => "done")]);
   return {
-    contracts: items.map(({ contract }, index) => ({ path: contract.path, name: contract.name, lines: contractLines(contract),
-      mutation: mutations[index] ?? { rejected: 0, survived: [], inconclusive: 0, equivalent: 0 },
-      ...judged.status === "judged" && judged.judgments[index] !== undefined ? { judgment: judged.judgments[index] } : {} })),
+    contracts: items.map(({ contract }, index) => {
+      const restatement = judged.restatements?.[index];
+      return { path: contract.path, name: contract.name, lines: contractLines(contract),
+        mutation: mutations[index] ?? { rejected: 0, survived: [], inconclusive: 0, equivalent: 0 },
+        ...judged.status === "judged" && judged.judgments[index] !== undefined ? { judgment: judged.judgments[index] } : {},
+        ...restatement === undefined ? {} : { restatement } };
+    }),
     claimcheck: judged.status === "judged"
-      ? { status: "judged", restatedBy: judged.restatedBy, comparedBy: judged.comparedBy } : judged,
+      ? { status: "judged", restatedBy: judged.restatedBy, comparedBy: judged.comparedBy } : { status: "not_judged", reason: judged.reason },
   };
 }

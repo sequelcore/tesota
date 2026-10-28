@@ -342,7 +342,15 @@ outside Git have empty `inherited` and `unmeasured` lists.
 | `command` | string | The command, as a POSIX shell runs it from the project folder, such as `cd web && bun run check` |
 | `evidence` | Evidence | The command's evidence |
 | `failingTests` | string[], optional | The failing tests' names, sorted, from the JUnit XML reports the command wrote. Absent when it wrote none |
+| `origin` | CommandOrigin, optional | Why it fails, from a run on the base. Present when it failed or ran past its limit and verification compared it with the base |
 | `verdict` | GateVerdict | Verification's last verdict on the command |
+
+### CommandOrigin
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `cause` | `"introduced"`, `"preexisting"` or `"unknown"` | `introduced`: the base passes, or some test fails only with the change. `preexisting`: the base fails the same way and its test reports show each failing test failing there too; the failure didn't go back to the agent. `unknown`: neither could be shown, such as without test reports, a base that can't be run, or a request that didn't start from it |
+| `reason` | string | What showed the cause, or why it couldn't be shown |
 
 ### GateVerdict
 
@@ -354,7 +362,7 @@ request a repair, record a repeated failure or leave a limit for you.
 | `proved` | The proof, command or design model passed |
 | `send_back` | It failed or was vacuous and needs repair. Normally it goes back to the agent before the run ends. With `unresolvedQuestion`, generation has ended: the receipt records the failure without sending it back |
 | `no_progress` | It failed or was vacuous, repeating a failure verification already sent back during the request |
-| `operator` | It could not run, ran past its limit, was stopped, or its evidence was invalidated when checked content changed before final verification; the operator's to resolve |
+| `operator` | It could not run, ran past its limit, was stopped, its evidence was invalidated when checked content changed before final verification, or, for a command, it failed as the base already did (`origin.cause` `preexisting`); the operator's to resolve |
 
 ### Evidence
 
@@ -424,6 +432,7 @@ state.
 | `lines` | string[] | The contract's `//@` lines as written, trimmed |
 | `mutation` | Mutation | What proof-based mutation found |
 | `judgment` | object, optional | ClaimCheck's `verdict` and `explanation`, present when ClaimCheck judged. The model's assessment of the contract, kept separate from proof evidence |
+| `restatement` | object, optional | ClaimCheck's plain-words reading of the contract, `preconditions` and `postcondition`, by a model that didn't see the request. Present when the restating pass answered, even if no `judgment` followed. A model's opinion, not proof evidence |
 
 `judgment.verdict` is one of:
 

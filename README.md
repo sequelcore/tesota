@@ -1,6 +1,6 @@
 # Tesota
 
-**A coding agent that ends every run with a receipt.**
+**A coding agent that checks its code, challenges its specs, and flags where they may miss your request.**
 
 [![CI](https://github.com/sequelcore/tesota/actions/workflows/ci.yml/badge.svg)](https://github.com/sequelcore/tesota/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/sequelcore/tesota?include_prereleases&sort=semver)](https://github.com/sequelcore/tesota/releases)
@@ -8,8 +8,28 @@
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/tesota-turn-light.svg">
-  <img alt="A verified run in Tesota: the request, the agent's file changes and its answer, then the receipt, which shows a contract proved with Dafny and a test that passes and catches the change." src="docs/assets/tesota-turn-dark.svg">
+  <img alt="A run in Tesota whose change misses the request: the request asks for 10 off orders over 100, the agent's change takes 10 off at 100 too, and the receipt shows the proof and tests passing and the new test catching the change, then, apart as a model's opinion, that the contract covers only part of the request because it takes 10 off at 100 too." src="docs/assets/tesota-turn-dark.svg">
 </picture>
+
+## Three questions
+
+When the agent finishes, Tesota answers three questions about the change,
+and keeps the answers apart in its receipt:
+
+1. **Does the code pass its checks?** Your project's tests run on the
+   change, contracts are proved with Dafny, and a new test must fail on the
+   starting code to count as catching the change. This is evidence.
+2. **Are the checks strong enough to mean something?** Tesota changes the
+   code on purpose: a contract that still proves is too weak, and goes back
+   to the agent. A deleted test or a loosened contract is flagged. This is
+   evidence too.
+3. **Do the checks say what you asked?** No tool can prove that. A model
+   restates the changed contracts in plain words, compares them with your
+   request, and lists inputs your request leaves open. This is a model's
+   opinion: labeled as one, and never counted as verified.
+
+A proof can hold for a strict contract that describes the wrong boundary.
+Tesota makes that gap visible; it doesn't close it.
 
 ## What you get
 
@@ -66,7 +86,22 @@ Check evidence, not your acceptance.
 ○ Models      none recorded
 ✓ Exercised   1 test file failed on the base and passed with the change
 ✓ Contracts   1 contract: every decided change broke its proof
+
+Model opinions · not evidence, not counted
+◇ ClaimCheck: covers only part of the request · total · src/total.ts
+  The contract captures the subtraction and unchanged cases, but applies the
+  10-unit reduction at amount = 100 as well. The request says orders over
+  100, so this boundary should remain unchanged.
 ```
+
+Every check passed, and the change is still wrong. The request said
+*over* 100, but the agent's code, its contract and the test it wrote all
+take 10 off at exactly 100. The checks agree with each other, so only the
+request review notices: a model restated the contract without seeing your
+request, then found the boundary at 100. That opinion doesn't count as
+verified and doesn't block the run; it shows you where to look. In this
+run the agent is scripted, and the model's opinion is the one GPT-6 Luna
+gave this contract in a live run; the tests and the proof ran for real.
 
 A receipt records:
 
@@ -95,7 +130,10 @@ below.
 - **Proofs:** TypeScript functions with LemmaScript contracts, proved with
   Dafny. A contract that still proves after the code is changed is too weak,
   and goes back to the agent, unless Dafny proves the changed code returns
-  the same result for every input the contract admits.
+  the same result for every input the contract admits. A proof is only as
+  good as its contract, so Tesota checks both. It cannot check that the
+  contract says what you asked; a model's comparison with your request is
+  only a review aid.
 - **Tests:** your project's own commands, run against the change, with a
   check that a new test catches it.
 - **Design models:** TLA+ and Quint models of the design, checked with TLC
