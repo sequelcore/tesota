@@ -10,7 +10,9 @@ import { host } from "./host.js";
 export const WELCOME_SCENE_MS = 800;
 export const WELCOME_FRAME_MS = 50;
 export const WELCOME_STATIC_OPACITY = 0.30;
-export const WELCOME_TAGLINE = "A coding agent that ends every run with a receipt.";
+/** What Tesota is, in one sentence, for `--help`; the welcome screen shows it short enough for its row. */
+export const TAGLINE = "A coding agent that checks its code, challenges its specs, and flags where they may miss your request.";
+export const WELCOME_TAGLINE = "Checks the code. Challenges the spec. Flags the gap.";
 const fallbackBackground: Readonly<Record<"dark" | "light", Rgb>> = { dark: [32, 32, 32], light: [237, 237, 229] };
 
 function rgb(color: Color | undefined): Rgb {

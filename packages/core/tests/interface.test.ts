@@ -85,7 +85,7 @@ describe("Tesota's interface on the engine", () => {
     // The fixed half-block grid is present on the first frame.
     await terminal.until("▀".repeat(49));
     const screen = await terminal.screen();
-    expect(screen.join("\n")).toContain("A coding agent that ends every run with a receipt.");
+    expect(screen.join("\n")).toContain("Checks the code. Challenges the spec. Flags the gap.");
     expect(screen.filter((line) => /[▀▄█]/u.test(line))).toHaveLength(12);
     expect(screen.slice(0, 3).every((line) => /[▀▄█]/u.test(line))).toBe(true);
     expect(screen.filter((line) => line.startsWith("› "))).toHaveLength(1);

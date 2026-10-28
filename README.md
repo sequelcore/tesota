@@ -1,6 +1,6 @@
 # Tesota
 
-**A coding agent that ends every run with a receipt.**
+**A coding agent that checks its code, challenges its specs, and flags where they may miss your request.**
 
 [![CI](https://github.com/sequelcore/tesota/actions/workflows/ci.yml/badge.svg)](https://github.com/sequelcore/tesota/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/sequelcore/tesota?include_prereleases&sort=semver)](https://github.com/sequelcore/tesota/releases)
@@ -10,6 +10,26 @@
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/tesota-turn-light.svg">
   <img alt="A verified run in Tesota: the request, the agent's file changes and its answer, then the receipt, which shows a contract proved with Dafny and a test that passes and catches the change." src="docs/assets/tesota-turn-dark.svg">
 </picture>
+
+## Three questions
+
+When the agent finishes, Tesota answers three questions about the change,
+and keeps the answers apart in its receipt:
+
+1. **Does the code pass its checks?** Your project's tests run on the
+   change, contracts are proved with Dafny, and a new test must fail on the
+   starting code to count as catching the change. This is evidence.
+2. **Are the checks strong enough to mean something?** Tesota changes the
+   code on purpose: a contract that still proves is too weak, and goes back
+   to the agent. A deleted test or a loosened contract is flagged. This is
+   evidence too.
+3. **Do the checks say what you asked?** No tool can prove that. A model
+   restates the changed contracts in plain words, compares them with your
+   request, and lists inputs your request leaves open. This is a model's
+   opinion: labeled as one, and never counted as verified.
+
+A proof can hold for a strict contract that describes the wrong boundary.
+Tesota makes that gap visible; it doesn't close it.
 
 ## What you get
 

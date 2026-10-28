@@ -12,7 +12,7 @@ import { createSurface, shellHost, type Surface } from "../src/shell/surface.ts"
 import type { ClarificationQuestion } from "../../../src/clarification.ts";
 import { shellTheme } from "../../../src/theme.ts";
 import { BarEditor } from "../../../src/editor.ts";
-import { mountWelcomeHeader, WelcomeHeader } from "../../../src/welcome-header.ts";
+import { mountWelcomeHeader, WELCOME_TAGLINE, WelcomeHeader } from "../../../src/welcome-header.ts";
 import { readSessionFile } from "../src/session-file.ts";
 import { ModelViewer } from "../src/shell/model-viewer.ts";
 import { loadModelView } from "../../../src/model-view-process.ts";
@@ -1202,9 +1202,9 @@ for (const mode of ["fullscreen", "inline"] as const) test(`empty stage stays ou
   }), tui));
   surface.ui.setEditorComponent((tui, look) => new BarEditor(tui, look, () => theme));
   const { terminal, session, shell } = shellOn(["A reply."], mode, [100, 40], { surface });
-  const opening = await terminal.until("A coding agent");
+  const opening = await terminal.until(WELCOME_TAGLINE);
   expect(opening.split("\n").slice(0, 3).map((row) => row.slice(13))).toEqual([
-    expect.stringMatching(/^Tesota v/u), "scripted model · /work/shop", "A coding agent that ends every run with a receipt.",
+    expect.stringMatching(/^Tesota v/u), "scripted model · /work/shop", WELCOME_TAGLINE,
   ]);
   await new Promise((resolve) => setTimeout(resolve, 60));
   expect(shown(await terminal.screen())).toMatch(/▀{49}/u);
@@ -1246,7 +1246,7 @@ for (const mode of ["fullscreen", "inline"] as const) test(`quitting an untouche
     terminalRows: () => tui.terminal.rows, stageShare: 1 / 2, requestRender: () => tui.requestRender(),
   }), tui));
   const { terminal, shell } = shellOn([], mode, [100, 40], { surface });
-  await terminal.until("A coding agent");
+  await terminal.until(WELCOME_TAGLINE);
   await new Promise((resolve) => setTimeout(resolve, 100));
   expect(shown(await terminal.screen())).toMatch(/▀{49}/u);
   shell.stop();
@@ -1282,7 +1282,7 @@ test("inline handoff clears the live tree before another program writes", async 
     terminal.write("other program\r\n".repeat(50));
     expect(shown(await terminal.scrollback())).not.toMatch(/▀{49}/u);
   });
-  await terminal.until("A coding agent");
+  await terminal.until(WELCOME_TAGLINE);
   shell.stop();
   expect(shown(await terminal.scrollback())).not.toMatch(/▀{49}/u);
 });
