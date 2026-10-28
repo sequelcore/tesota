@@ -6,11 +6,16 @@ On macOS or Linux:
 curl -fsSL https://raw.githubusercontent.com/sequelcore/tesota/main/install.sh | sh
 ```
 
-On Windows, in PowerShell:
+On Windows, in PowerShell (not Command Prompt), paste this one line:
 
 ```powershell
 irm https://raw.githubusercontent.com/sequelcore/tesota/main/install.ps1 | iex
 ```
+
+PowerShell's prompt starts with `PS`. Command Prompt (`cmd`) doesn't know
+`irm`. From Command Prompt, run
+`powershell -c "irm https://raw.githubusercontent.com/sequelcore/tesota/main/install.ps1 | iex"`
+instead.
 
 On Windows (including Windows 10), **Windows Terminal** is recommended.
 Install it with `winget install Microsoft.WindowsTerminal` (or from the
@@ -82,7 +87,7 @@ ripgrep. Install the others you need:
 
 | | Needed for | Without it |
 | --- | --- | --- |
-| [Git](https://git-scm.com) | Measuring each change from where the request started, in a repository or not: outside one, Tesota's own snapshot of the folder is made with Git. On Windows, Git's bash also runs your project's check commands | The agent still runs, but nothing it changes can be measured or verified, and the receipt says so. On Windows: `winget install Git.Git` |
+| [Git](https://git-scm.com), **needed for verification** | Measuring each change from where the request started, in a repository or not: outside one, Tesota's own snapshot of the folder is made with Git. On Windows, Git's bash also runs your project's check commands | The agent still runs, but nothing it changes can be measured or verified, and the receipt says so. On Windows: `winget install Git.Git` |
 | [Dafny 4](https://dafny.org), as `dafny` on your `PATH` | Proving LemmaScript contracts | Nothing is proved, and the receipt lists the code as not proved |
 | Java 11 or newer, as `java` on your `PATH`, and TLC (below) | [Model-checking](../guides/model-checking.md) TLA+ and Quint models | Design models aren't checked, and the receipt says why |
 | [Quint](https://quint-lang.org), as `quint` on your `PATH` | Model-checking Quint models | Quint models aren't checked. On Windows Quint can't start the Apalache it needs, so they aren't checked there either way |
@@ -153,7 +158,15 @@ tesota
 
 `/login` lists the providers you can sign in to: some with your account,
 others with an API key. An API key in the environment, such as
-`OPENAI_API_KEY`, works without `/login`. Then `/model` picks the model.
+`OPENAI_API_KEY` or `OPENROUTER_API_KEY`, works without `/login`. That is
+also the way around a terminal that won't paste into Tesota. In PowerShell,
+where pasting works:
+
+```powershell
+[Environment]::SetEnvironmentVariable("OPENROUTER_API_KEY", "<your key>", "User")
+```
+
+Then open a new terminal. Then `/model` picks the model.
 For Claude on a Claude plan, Tesota uses your own Claude Code; see
 [Models](../guides/models.md#claude-through-claude-code).
 
