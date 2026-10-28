@@ -8,7 +8,7 @@
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/tesota-turn-light.svg">
-  <img alt="A verified run in Tesota: the request, the agent's file changes and its answer, then the receipt, which shows a contract proved with Dafny and a test that passes and catches the change." src="docs/assets/tesota-turn-dark.svg">
+  <img alt="A run in Tesota whose change misses the request: the request asks for 10 off orders over 100, the agent's change takes 10 off at 100 too, and the receipt shows the proof and tests passing and the new test catching the change, then, apart as a model's opinion, that the contract does not match the request." src="docs/assets/tesota-turn-dark.svg">
 </picture>
 
 ## Three questions
@@ -85,7 +85,18 @@ Check evidence, not your acceptance.
 ○ Models      none recorded
 ✓ Exercised   1 test file failed on the base and passed with the change
 ✓ Contracts   1 contract: every decided change broke its proof
+
+Model opinions · not evidence, not counted
+◇ ClaimCheck: does not match the request · total · src/total.ts
 ```
+
+Every check passed, and the change is still wrong. The request said
+*over* 100, but the agent's code, its contract and the test it wrote all
+take 10 off at exactly 100. The checks agree with each other, so only the
+request review notices: a model restated the contract and found it doesn't
+match. That opinion doesn't count as verified and doesn't block the run;
+it shows you where to look. In this run the agent and the model's opinions
+are scripted; the tests and the proof ran for real.
 
 A receipt records:
 
