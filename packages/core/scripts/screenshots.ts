@@ -169,9 +169,12 @@ async function shell(cwd: string, script: readonly ScriptStep[], appearance: App
       function: 1, preconditions: "None.",
       postcondition: "From 100 up subtract 10; below 100 keep the amount.", strength: "strong",
     }] }));
+    // The verdict and reason gpt-6-luna gave this contract and request in a live ClaimCheck run on 2026-10-28, word for word;
+    // live runs of it and gpt-6.1-sol flagged the boundary 6 times in 6, mostly as a partial match.
     if (tool === "record_comparisons") return fauxAssistantMessage(fauxToolCall(tool, { comparisons: [{
-      function: 1, verdict: "not_justified",
-      explanation: "The request takes 10 off orders over 100, so an order of exactly 100 keeps its amount; the contract takes 10 off at 100.",
+      function: 1, verdict: "partially_justified",
+      explanation: "The contract captures the subtraction and unchanged cases, but applies the 10-unit reduction at amount = 100 as well. " +
+        "The request says orders over 100, so this boundary should remain unchanged.",
     }] }));
     const next = replies.shift();
     if (next === undefined || typeof next === "function") throw new Error("Unexpected screenshot model request");
@@ -257,7 +260,7 @@ async function turn(appearance: Appearance): Promise<void> {
   if (receipt === undefined || receiptStanding(receipt) !== "verified" || !screen.includes("✓ Proved") || !screen.includes("✓ Tested")
     || !screen.includes("failed on the base and passed with the change")
     || receipt.openCases?.status !== "listed" || receipt.openCases.cases.length !== 0
-    || !receipt.contracts.some(({ judgment }) => judgment?.verdict === "not_justified") || !screen.includes("does not match")) {
+    || !receipt.contracts.some(({ judgment }) => judgment?.verdict === "partially_justified") || !screen.includes("amount = 100")) {
     throw new Error(`The screenshot run did not verify with an exercised test, no open cases and a shown mismatch:\n${screen}`);
   }
   // Independently check the generated proof with the installed CLI, not a scripted proof result.
@@ -269,7 +272,7 @@ async function turn(appearance: Appearance): Promise<void> {
   console.log(`${appearance}: ${proof.stdout.trim()}`);
   await new Promise((resolve) => setTimeout(resolve, 500));
   await write(app.terminal, "tesota-turn", appearance, turnRows,
-    "A verified turn in Tesota whose change misses the request: the request for 10 off orders over 100, two file writes and the answer, then the receipt card with the proof and tests passing and the new test exercising the change, and apart, a model's opinion that the contract does not match the request at 100.");
+    "A verified turn in Tesota whose change misses the request: the request for 10 off orders over 100, two file writes and the answer, then the receipt card with the proof and tests passing and the new test exercising the change, and apart, a model's opinion that the contract covers only part of the request: it takes 10 off at 100 too.");
   await quit(app);
 }
 

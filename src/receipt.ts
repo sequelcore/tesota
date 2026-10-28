@@ -3,6 +3,7 @@ import { clarificationText, type Clarification } from "./clarification.js";
 import type { OpenCases } from "./open-cases.js";
 import { inFolder } from "./projects.js";
 import type { UncoveredLines } from "./proof-coverage.js";
+import type { Restatement } from "./pi-claimcheck.js";
 import type { ClaimCheckRun, ContractStrength } from "./proof-guarantees.js";
 import type { Counterexample, ModelCheck, ModelLink } from "./model-check.js";
 import type { GraphCapture } from "./model-graph.js";
@@ -402,17 +403,24 @@ const verdictText: Readonly<Record<NonNullable<ContractStrength["judgment"]>["ve
   not_justified: "does not express what was asked", vacuous: "proves nothing beyond its assumptions",
 };
 
-/** ClaimCheck's view of the contracts, always labelled a model's judgment. */
+/** ClaimCheck's plain-words reading of a contract (#730), its precondition without a model's closing full stop. */
+const restated = ({ preconditions, postcondition }: Restatement): string =>
+  `assumes ${preconditions.trim().replace(/\.$/u, "")}; guarantees ${postcondition.trim()}`;
+
+/** ClaimCheck's view of the contracts, always labelled a model's judgment, each with its restatement when one was made. */
 function claimcheckLines(run: ClaimCheckRun | undefined, contracts: readonly ContractStrength[]): string[] {
   if (run === undefined) return [];
   if (run.status === "not_judged") {
-    return [`  not judged    whether the contracts express the request: ClaimCheck ${run.reason}`];
+    return [`  not judged    whether the contracts express the request: ClaimCheck ${run.reason}`,
+      ...contracts.flatMap(({ path, name, restatement }) => restatement === undefined ? []
+        : [`                ${name} in ${path}, restated without the request: ${restated(restatement)}`])];
   }
   const models = run.restatedBy === run.comparedBy
     ? `${run.comparedBy}, one model for both requests,` : `${run.restatedBy} restating and ${run.comparedBy} comparing,`;
   return [`  model judged  by ClaimCheck on ${models} a model's judgment against the request, not a proof:`,
-    ...contracts.flatMap(({ path, name, judgment }) => judgment === undefined ? [] : [`                ${name} in ${path} ` +
-      `${verdictText[judgment.verdict]}${judgment.verdict === "justified" ? "" : `: ${judgment.explanation}`}`])];
+    ...contracts.flatMap(({ path, name, judgment, restatement }) => judgment === undefined ? [] : [`                ${name} in ${path} ` +
+      `${verdictText[judgment.verdict]}${judgment.verdict === "justified" ? "" : `: ${judgment.explanation}`}`,
+    ...restatement === undefined ? [] : [`                  restated without the request: ${restated(restatement)}`]])];
 }
 
 /**
@@ -806,11 +814,14 @@ function opinionFindings(run: ClaimCheckRun | undefined, contracts: readonly Con
   }
   const by = run.restatedBy === run.comparedBy ? `${run.comparedBy} restated and compared`
     : `${run.restatedBy} restated, ${run.comparedBy} compared`;
-  return contracts.flatMap(({ path, name, judgment }): Finding[] => judgment === undefined ? [] : [{ standing: "opinion",
+  // A contract short of the request shows the model's reason under its verdict, so the card says why (#730).
+  return contracts.flatMap(({ path, name, judgment, restatement }): Finding[] => judgment === undefined ? [] : [{ standing: "opinion",
     check: "request", label: judgment.verdict === "justified" ? "Model: matches" : "Model: partial match",
     subject: `${name} · ${path}`, detail: judgmentWords[judgment.verdict],
-    more: [judgment.explanation, `A model's opinion, not a proof: ${by}.`],
-    group: { title: `ClaimCheck: ${judgmentWords[judgment.verdict]}`, note: "", item: `${name} · ${path}` } }]);
+    more: [judgment.explanation, ...restatement === undefined ? [] : [`Restated without the request: ${restated(restatement)}.`],
+      `A model's opinion, not a proof: ${by}.`],
+    group: { title: `ClaimCheck: ${judgmentWords[judgment.verdict]}`, note: judgment.verdict === "justified" ? "" : judgment.explanation,
+      item: `${name} · ${path}` } }]);
 }
 
 /** The results someone could expect from an open case, as one phrase: models end each with a full stop. */

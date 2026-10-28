@@ -216,6 +216,7 @@ it("leads with what needs the operator, grouped by reason, and keeps the model's
     "",
     "Model opinions · not evidence, not counted",
     "◇ ClaimCheck: covers only part of the request · inRange · src/range.ts",
+    "  It does not say a value inside the range is returned unchanged.",
     "",
     "▸ Details · paths, output, assumptions, model opinions",
   ]);

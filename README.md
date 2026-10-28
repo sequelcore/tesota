@@ -8,7 +8,7 @@
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/tesota-turn-light.svg">
-  <img alt="A run in Tesota whose change misses the request: the request asks for 10 off orders over 100, the agent's change takes 10 off at 100 too, and the receipt shows the proof and tests passing and the new test catching the change, then, apart as a model's opinion, that the contract does not match the request." src="docs/assets/tesota-turn-dark.svg">
+  <img alt="A run in Tesota whose change misses the request: the request asks for 10 off orders over 100, the agent's change takes 10 off at 100 too, and the receipt shows the proof and tests passing and the new test catching the change, then, apart as a model's opinion, that the contract covers only part of the request because it takes 10 off at 100 too." src="docs/assets/tesota-turn-dark.svg">
 </picture>
 
 ## Three questions
@@ -87,16 +87,20 @@ Check evidence, not your acceptance.
 ✓ Contracts   1 contract: every decided change broke its proof
 
 Model opinions · not evidence, not counted
-◇ ClaimCheck: does not match the request · total · src/total.ts
+◇ ClaimCheck: covers only part of the request · total · src/total.ts
+  The contract captures the subtraction and unchanged cases, but applies the
+  10-unit reduction at amount = 100 as well. The request says orders over
+  100, so this boundary should remain unchanged.
 ```
 
 Every check passed, and the change is still wrong. The request said
 *over* 100, but the agent's code, its contract and the test it wrote all
 take 10 off at exactly 100. The checks agree with each other, so only the
-request review notices: a model restated the contract and found it doesn't
-match. That opinion doesn't count as verified and doesn't block the run;
-it shows you where to look. In this run the agent and the model's opinions
-are scripted; the tests and the proof ran for real.
+request review notices: a model restated the contract without seeing your
+request, then found the boundary at 100. That opinion doesn't count as
+verified and doesn't block the run; it shows you where to look. In this
+run the agent is scripted, and the model's opinion is the one GPT-6 Luna
+gave this contract in a live run; the tests and the proof ran for real.
 
 A receipt records:
 
