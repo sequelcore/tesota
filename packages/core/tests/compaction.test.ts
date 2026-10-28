@@ -39,7 +39,7 @@ function scripted(responses: FauxResponseStep[], overrides: Partial<SummaryReque
   return { faux, request };
 }
 
-test("the model receives the fixed contract and a single text transcript with bounded tool results", async () => {
+test("the model receives the fixed contract and a single text transcript with bounded tool results, each clip marked", async () => {
   const signal = new AbortController().signal;
   const { faux, request } = scripted([(context, options) => {
     expect(options?.signal).toBe(signal);
@@ -51,12 +51,16 @@ test("the model receives the fixed contract and a single text transcript with bo
       "## Goal", "## Requirements", "## Decisions", "## Progress", "## Open items",
     ]);
     expect(system.toolsAdded ?? []).toEqual([]);
+    // #623: the clip is the transcript's own, so the summary must not call it a cut at the source.
+    expect(system.content).toContain("[clipped for this summary: ...]");
+    expect(system.content).toContain("Never report such a result as cut off at its source");
     expect(user.content).toBe([
       "system: Earlier instructions",
       "user: Keep the wording",
       'assistant: Working on it\ntoolCall read (call-1): {"path":"input.txt"}',
-      "toolResult read (call-1): " + "a".repeat(2000),
-      "toolResult read (call-2, error): " + "b".repeat(2000),
+      "toolResult read (call-1): " + "a".repeat(2000) + " [clipped for this summary: 2000 of 2006 characters shown]",
+      "toolResult read (call-2, error): " + "b".repeat(2000) + " [clipped for this summary: 2000 of 2007 characters shown]",
+      "toolResult read (call-3): " + "c".repeat(2000),
       "user: Verifier feedback",
       "",
       "Write a summary of the transcript above following the summary contract.",
@@ -69,6 +73,7 @@ test("the model receives the fixed contract and a single text transcript with bo
     fauxAssistantMessage([{ type: "text", text: "Working on it" }, fauxToolCall("read", { path: "input.txt" }, { id: "call-1" })]),
     { role: "toolResult", toolName: "read", toolCallId: "call-1", content: [{ type: "text", text: "a".repeat(2000) + "omit a" }], isError: false, timestamp: 0 },
     { role: "toolResult", toolName: "read", toolCallId: "call-2", content: [{ type: "text", text: "b".repeat(2000) }, { type: "text", text: "omit b" }], isError: true, timestamp: 0 },
+    { role: "toolResult", toolName: "read", toolCallId: "call-3", content: [{ type: "text", text: "c".repeat(2000) }], isError: false, timestamp: 0 },
     { role: "custom", customType: "feedback", content: "Verifier feedback", display: false, timestamp: 0 },
   ] });
   expect(await summarize(request)).toMatchObject({ summary: "compact summary" });
