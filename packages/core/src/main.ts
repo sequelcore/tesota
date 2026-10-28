@@ -69,8 +69,8 @@ function exitWith(work: Promise<number | void>): void {
 
 if (command === "--version") console.log(manifest.version);
 else if (command === "--help" || command === "-h") {
-  exitWith(import("../../../src/welcome-header.ts").then(({ WELCOME_TAGLINE }) => {
-    console.log(`${WELCOME_TAGLINE}\n\n${commands}\n\n${documentation}`);
+  exitWith(import("../../../src/welcome-header.ts").then(({ TAGLINE }) => {
+    console.log(`${TAGLINE}\n\n${commands}\n\n${documentation}`);
   }));
 }
 else if (command === undefined) exitWith(import("./shell/app.ts").then(({ runApp }) => runApp({ cwd: process.cwd(), flags })));

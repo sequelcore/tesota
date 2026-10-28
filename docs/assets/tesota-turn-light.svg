@@ -60,7 +60,7 @@
 <text x="91.6" y="29" fill="#6d4b78" textLength="8.4" lengthAdjust="spacingAndGlyphs">▀</text>
 <text x="100.0" y="29" fill="#4f624a" textLength="8.4" lengthAdjust="spacingAndGlyphs">▄</text>
 <text x="125.2" y="29" fill="#24211f" font-weight="bold" textLength="50.4" lengthAdjust="spacingAndGlyphs">Tesota</text>
-<text x="184.0" y="29" fill="#5f6258" textLength="117.6" lengthAdjust="spacingAndGlyphs">v0.1.0-alpha.4</text>
+<text x="184.0" y="29" fill="#5f6258" textLength="117.6" lengthAdjust="spacingAndGlyphs">v0.1.0-alpha.6</text>
 <text x="24.4" y="47" fill="#4f624a" textLength="8.4" lengthAdjust="spacingAndGlyphs">▀</text>
 <text x="32.8" y="47" fill="#3b4a38" textLength="16.8" lengthAdjust="spacingAndGlyphs">▀█</text>
 <text x="49.6" y="47" fill="#3b4a38" textLength="8.4" lengthAdjust="spacingAndGlyphs">▀</text>
@@ -71,16 +71,15 @@
 <text x="217.6" y="47" fill="#5f6258" textLength="8.4" lengthAdjust="spacingAndGlyphs">·</text>
 <text x="234.4" y="47" fill="#5f6258" textLength="50.4" lengthAdjust="spacingAndGlyphs">~\shop</text>
 <text x="41.2" y="65" fill="#676142" textLength="25.2" lengthAdjust="spacingAndGlyphs">▄█▄</text>
-<text x="125.2" y="65" fill="#5f6258" textLength="8.4" lengthAdjust="spacingAndGlyphs">A</text>
-<text x="142.0" y="65" fill="#5f6258" textLength="50.4" lengthAdjust="spacingAndGlyphs">coding</text>
-<text x="200.8" y="65" fill="#5f6258" textLength="42.0" lengthAdjust="spacingAndGlyphs">agent</text>
-<text x="251.2" y="65" fill="#5f6258" textLength="33.6" lengthAdjust="spacingAndGlyphs">that</text>
-<text x="293.2" y="65" fill="#5f6258" textLength="33.6" lengthAdjust="spacingAndGlyphs">ends</text>
-<text x="335.2" y="65" fill="#5f6258" textLength="42.0" lengthAdjust="spacingAndGlyphs">every</text>
-<text x="385.6" y="65" fill="#5f6258" textLength="25.2" lengthAdjust="spacingAndGlyphs">run</text>
-<text x="419.2" y="65" fill="#5f6258" textLength="33.6" lengthAdjust="spacingAndGlyphs">with</text>
-<text x="461.2" y="65" fill="#5f6258" textLength="8.4" lengthAdjust="spacingAndGlyphs">a</text>
-<text x="478.0" y="65" fill="#5f6258" textLength="67.2" lengthAdjust="spacingAndGlyphs">receipt.</text>
+<text x="125.2" y="65" fill="#5f6258" textLength="50.4" lengthAdjust="spacingAndGlyphs">Checks</text>
+<text x="184.0" y="65" fill="#5f6258" textLength="25.2" lengthAdjust="spacingAndGlyphs">the</text>
+<text x="217.6" y="65" fill="#5f6258" textLength="42.0" lengthAdjust="spacingAndGlyphs">code.</text>
+<text x="268.0" y="65" fill="#5f6258" textLength="84.0" lengthAdjust="spacingAndGlyphs">Challenges</text>
+<text x="360.4" y="65" fill="#5f6258" textLength="25.2" lengthAdjust="spacingAndGlyphs">the</text>
+<text x="394.0" y="65" fill="#5f6258" textLength="42.0" lengthAdjust="spacingAndGlyphs">spec.</text>
+<text x="444.4" y="65" fill="#5f6258" textLength="42.0" lengthAdjust="spacingAndGlyphs">Flags</text>
+<text x="494.8" y="65" fill="#5f6258" textLength="25.2" lengthAdjust="spacingAndGlyphs">the</text>
+<text x="528.4" y="65" fill="#5f6258" textLength="33.6" lengthAdjust="spacingAndGlyphs">gap.</text>
 <text x="24.4" y="101" fill="#5f6258" font-weight="bold" textLength="8.4" lengthAdjust="spacingAndGlyphs">›</text>
 <text x="41.2" y="101" fill="#24211f" textLength="25.2" lengthAdjust="spacingAndGlyphs">For</text>
 <text x="74.8" y="101" fill="#24211f" textLength="92.4" lengthAdjust="spacingAndGlyphs">nonnegative</text>
@@ -142,12 +141,12 @@
 <text x="175.6" y="353" fill="#5f6258" textLength="25.2" lengthAdjust="spacingAndGlyphs">run</text>
 <text x="209.2" y="353" fill="#5f6258" textLength="33.6" lengthAdjust="spacingAndGlyphs">test</text>
 <text x="251.2" y="353" fill="#5f6258" textLength="8.4" lengthAdjust="spacingAndGlyphs">·</text>
-<text x="268.0" y="353" fill="#5f6258" textLength="33.6" lengthAdjust="spacingAndGlyphs">0:01</text>
+<text x="268.0" y="353" fill="#5f6258" textLength="33.6" lengthAdjust="spacingAndGlyphs">0:00</text>
 <text x="24.4" y="371" fill="#4f624a" textLength="8.4" lengthAdjust="spacingAndGlyphs">✓</text>
 <text x="41.2" y="371" fill="#24211f" textLength="50.4" lengthAdjust="spacingAndGlyphs">Proved</text>
 <text x="142.0" y="371" fill="#5f6258" textLength="100.8" lengthAdjust="spacingAndGlyphs">src/total.ts</text>
 <text x="251.2" y="371" fill="#5f6258" textLength="8.4" lengthAdjust="spacingAndGlyphs">·</text>
-<text x="268.0" y="371" fill="#5f6258" textLength="33.6" lengthAdjust="spacingAndGlyphs">0:04</text>
+<text x="268.0" y="371" fill="#5f6258" textLength="33.6" lengthAdjust="spacingAndGlyphs">0:01</text>
 <text x="24.4" y="389" fill="#5f6258" textLength="8.4" lengthAdjust="spacingAndGlyphs">○</text>
 <text x="41.2" y="389" fill="#24211f" textLength="50.4" lengthAdjust="spacingAndGlyphs">Models</text>
 <text x="142.0" y="389" fill="#5f6258" textLength="33.6" lengthAdjust="spacingAndGlyphs">none</text>

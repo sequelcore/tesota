@@ -32,6 +32,10 @@ that writes the code is an LLM.
 | weakening flag | A diff-based warning that a change may reduce what proofs or tests establish |
 | open case | An input for which a model suggests your request leaves more than one reasonable result |
 | ClaimCheck | The model-based comparison between a contract's restatement and your request |
+| code evidence | What checks establish about the changed code: proofs, project tests, exercise, design models, and the changed lines none covers. Never that every requirement was checked |
+| specification evidence | What mechanical checks establish about the checks themselves: contract strength, vacuous proofs and weakening flags. Never that the specification captures your request |
+| request review | A model's opinion of whether changed contracts match your request: ClaimCheck and open cases. Never verification evidence, and never a gate or a repair |
+| contract strength | Whether the generated mutations of a function break its contract's proof, apart from those proved equivalent. Never that the contract is complete |
 
 A read-only run or a run with no observed change may end without a receipt.
 See [How verification works](../concepts/verification.md) for the process

@@ -1,7 +1,9 @@
 # Roadmap
 
-Tesota is a coding agent that ends every run with a receipt: what was
-proved, tested and model-checked, and what it couldn't verify. This page
+Tesota is a coding agent that checks its code, challenges its specs, and
+flags where they may miss your request. Every run ends with a receipt:
+what was proved, tested and model-checked, what it couldn't verify, and,
+kept apart, a model's opinion of whether the checks match the request. This page
 lists the principles it's built on, what it won't do, and the areas being
 worked on. The plan lives in [GitHub issues](https://github.com/sequelcore/tesota/issues);
 this page sets direction, without dates.
