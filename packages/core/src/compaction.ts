@@ -48,7 +48,7 @@ What was decided and why.
 What is done and what is in progress. Distinguish check evidence from human acceptance.
 ## Open items
 Unresolved questions and next steps, exact.
-A tool result ending in [clipped for this summary: ...] was shortened in this transcript. The marker does not show whether the tool or the source also cut it, so do not report it as cut off at its source, and do not report it as complete.
+A tool result ending in [clipped for this summary: ...] was shortened in this transcript. The marker alone does not show whether the tool or the source also cut it: do not report a cut at the source from the marker alone, and do not report the result as complete. If the retained text itself says the tool shortened it, say so.
 When a next step needs the full text of such a result, say in Open items to read that source again.
 When given a previous summary, update it with the new messages, keeping everything still true.
 Merge the new information into that summary rather than rewriting it from scratch.`;
