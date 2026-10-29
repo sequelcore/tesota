@@ -22,7 +22,7 @@ nothing, such as a question, ends `Completed.` with no claim
 
 Provider failures write a bounded, redacted reason to standard error before
 `Ended error.` Transient failures write a retry line there; Ctrl+C cancels
-the wait. See [Provider errors and retries](models.md#provider-errors-and-retries)
+the wait. See [Provider errors and retries](models.md#when-a-provider-fails)
 for the retry bounds and the errors that stop immediately.
 
 ## Options
@@ -32,8 +32,8 @@ for the retry bounds and the errors that stop immediately.
 | `-c`, `--continue` | Continues this folder's most recently changed session ([Continuing a session](#continuing-a-session)) |
 | `-r <session>`, `--resume <session>` | Continues the session with that id, as `tesota receipt` and `/resume` show it |
 | `--model <provider>/<id>` | The model for this run; with `-c` or `--resume`, the one the session last ran on, otherwise your chosen one ([Continuing a session](#continuing-a-session)) |
-| `--claimcheck-model <provider>/<id>` | See [Verification](verification.md#the-models-opinions) |
-| `--open-cases-model <provider>/<id>`, or `off` | See [Verification](verification.md#the-models-opinions) |
+| `--claimcheck-model <provider>/<id>` | See [Verification](verification.md#choose-the-opinion-models) |
+| `--open-cases-model <provider>/<id>`, or `off` | See [Verification](verification.md#choose-the-opinion-models) |
 
 ## Exit codes
 

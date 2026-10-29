@@ -34,78 +34,43 @@ tesota doctor
 tesota doctor --json
 ```
 
-Lists Dafny, LemmaScript, Java, TLC, Quint, Git, Claude Code (including named
-accounts), and chat providers with a local sign-in or API key. Providers
-without chat models are not listed. Every row includes
-its status, executable path (null for an in-process provider), version when
-known, smoke-test result, what you lose without it in receipt terms, and a
-repair command from [Install](../get-started/install.md#repair-commands).
-`tesota doctor --help` gives the command's syntax and exit codes.
+Lists Dafny with LemmaScript, Java with TLC, Quint, Git, Claude Code (each
+account) and every chat provider with a local sign-in or key: its status,
+path, version, probe result, what the receipt loses without it, and a
+repair command from [Installation](installation.md#repair-commands). Git,
+Dafny, Java with TLC and a model provider are **core**; Quint and each
+single provider are **optional**. JSON has the same report:
+`capabilities` (`id`, `requirement`, `status`, `path`, `version`, `smoke`,
+`consequence`, `repair`, and `entryPoint` for LemmaScript and TLC) and
+`exitCode`.
 
-Every row is labelled **core** or **optional** in human output and has a
-`requirement` field (`"core"` or `"optional"`) in JSON. Git, Dafny with
-LemmaScript (`lsc`), Java with TLC, and **model provider** are core. Quint
-and every individual provider row (including default and named Claude Code
-accounts) are optional. Unavailable optional rows remain visible but do not
-affect the exit code. Any failed row, including an optional tool or provider,
-still triggers exit 1.
+- **available:** the version, help or sign-in probe passed.
+- **unavailable:** not found, no provider available, or Quint on Windows,
+  where Apalache can't start.
+- **failed:** found, but the probe failed, timed out, or found an
+  unsupported version (Dafny must be 4, Java at least 11).
 
-The core **model provider** row is available when at least one individual
-provider row is available, and unavailable when none is. Its repair line
-points to `/login` and the [Models guide](../guides/models.md). An
-OpenRouter-only installation does not need Claude Code. This summary uses
-the local row results, not a model request; Claude Code rows still mean only
-that the executable's version probe passed, with sign-in unchecked.
+Each probe has five seconds and runs in turn. Doctor never installs
+anything, runs tests, proofs or model checks, or sends a model request.
+Claude Code gets a version probe only, its sign-in unchecked, because its
+auth-status command writes files. Providers use pi-ai's local `checkAuth`.
+No email, token or credential is printed.
 
-- **available:** the local version/help or sign-in probe passed.
-- **unavailable:** the executable, LemmaScript entry point or TLC jar was not
-  found, no provider row is available for the core model provider summary,
-  or a working Quint cannot use its TLC backend on Windows because
-  Apalache cannot start there. The Quint row retains its successful version
-  probe and explains the platform limit.
-- **failed:** found but its probe failed, timed out, or returned an unsupported
-  version (Dafny must be 4, Java at least 11).
-
-Each process or local auth probe has a five-second limit; process timeouts
-stop and await its process tree using the same runner as verification. Probes
-run sequentially. The smoke result records how the probe ended, its exit code,
-and up to 512 characters of output. TLC's `-help` returns 1 on success; doctor
-also requires its version banner. Claude Code uses a version-only probe:
-the default and each declared account are listed, with **sign-in not checked**.
-That unchecked sign-in is not a failure and does not affect the exit code.
-Doctor never calls Claude's auth-status command (it writes `.claude.json`),
-nor reads Claude Code's config or credential files. Other providers use
-pi-ai's local `checkAuth`, not a model request or OAuth refresh. No email,
-token or credential is printed. Local presence does not establish that a
-remote provider will accept a request.
-
-Doctor never runs project tests, proof generation or a model check: those can
-write files or download dependencies. It probes installed commands with
-version/help flags and reads configuration; it never installs or repairs
-anything. Quint's version probe does not test Apalache on macOS/Linux.
-
-Human and JSON output contain the same report. JSON has `capabilities` (rows
-with `id`, `requirement`, `status`, `path`, `version`, `smoke`, `consequence`, `repair`) and
-`exitCode`. LemmaScript and TLC also have an `entryPoint` (the script/internal
-command and jar, respectively). Unknown versions and absent/not-applicable
-paths are null.
-
-| Exit | Meaning (human and JSON) |
+| Exit | Meaning |
 | --- | --- |
-| 0 | No failures or unavailable core capabilities; optional capabilities/providers may be unavailable |
-| 1 | At least one failed, including optional tools, even if others are unavailable; also an unexpected command error |
-| 2 | At least one core capability unavailable (including model provider when no provider row is available), none failed |
-| 3 | Invalid doctor arguments |
+| 0 | Nothing failed and every core capability is available |
+| 1 | Something failed, optional included, or the command errored |
+| 2 | A core capability is unavailable, and nothing failed |
+| 3 | Invalid arguments |
 
-A nonzero doctor result does not prevent you from using Tesota with the
-capabilities that are available.
+A nonzero result doesn't stop you using what is available.
 
 ## Slash commands
 
 | Command | |
 | --- | --- |
 | `/login` | Sign in to a model provider, or add an account |
-| `/usage` | The usage panel on its Usage tab: how much each account has left in each limit window ([Usage](../guides/models.md#usage-of-your-accounts)) |
+| `/usage` | The usage panel on its Usage tab: how much each account has left in each limit window ([Usage](../guides/models.md#usage)) |
 | `/accounts` | The same panel on its Accounts tab: your accounts and their sign-ins; sign one in again, remove one, or press `a` to add one |
 | `/logout` | Forget a provider's sign-in |
 | `/model` | Choose the model |
@@ -137,13 +102,10 @@ A focused question form or dialog owns its keys instead.
 
 ## Pending messages
 
-Pending messages stay above the input until the agent receives them. Each row
-shows its kind and delivery point: a steer before the next model reply, a
-follow-up when the run would end. The edit key removes all still-pending
-messages from the queue and puts them before any unsent text, separated by
-blank lines. Edit and send again, or clear the input to withdraw them.
-Stopping the run also restores pending messages; already delivered messages
-stay in the conversation.
+Steers and follow-ups wait above the input, each labeled with when it
+arrives: before the next model reply, or when the run would end. The edit
+key puts them all back into the input, before any unsent text; edit and
+send again, or clear it to withdraw them. Stopping does the same.
 
 ## Fullscreen
 

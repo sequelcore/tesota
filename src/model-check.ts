@@ -25,7 +25,7 @@ const timeoutMs = 5 * 60_000;
 /** The heap each TLC run may take, as accepted on 2026-10-21. */
 const maxHeap = "-Xmx2g";
 
-/** Where Tesota finds TLC: `tla2tools.jar` in its tools folder (docs/get-started/install.md). */
+/** Where Tesota finds TLC: `tla2tools.jar` in its tools folder (docs/reference/installation.md). */
 export function tlaToolsJar(): string {
   return join(tesotaHome(), "tools", "tla2tools.jar");
 }
