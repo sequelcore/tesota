@@ -58,16 +58,11 @@ theme files are what ships, and this page needs updating.
 **Creative North Star: "The Notary's Ledger"**
 
 Every run ends in a record you can trust. The screen is a ledger: quiet,
-exact, kept in neutral ink, and marked only where something departs from
-normal, the way a notary marks the one line that needs attention. Nothing
-on it is decoration. Color, motion and weight each mean something, and
-mean the same thing everywhere.
-
-Tesota is a tool that asks people to trust its receipt, so it looks calm
-rather than playful. It borrows its restraint from Linear and T3 Code:
-neutral grays, one accent used rarely, hierarchy through weight and space
-instead of color, and few borders. Its soul is in a few chosen places: the
-wordmark, the working orb, and the plain, honest words of the receipt.
+exact, in neutral ink, marked only where something departs from normal,
+the way a notary marks the one line that needs attention. Color, motion
+and weight each mean one thing, everywhere. The restraint comes from Linear
+and T3 Code; the soul lives in the wordmark, the orb and the receipt's
+plain words.
 
 **Key Characteristics:**
 
@@ -146,28 +141,21 @@ move the rest to muted or dim. Reach for color only when it means something.
 
 ## Layout
 
-The screen has two routes. On the **home** route, while a session is empty,
-the welcome block (the `tesota` wordmark, its version and folder, and one
-greeting) sits centered with the input directly under it, and the footer
-stays at the bottom. On the **session** route, from the first message on,
-the conversation fills the screen and the input sits above the footer.
-Neither the welcome nor any live decoration enters scrollback.
+Two routes. **Home**, while a session is empty: the welcome block centered
+with the input right under it, the footer at the bottom. **Session**, from
+the first message: the conversation fills the screen, the input above the
+footer. Nothing live enters scrollback. There is no header row.
 
-There is no header row; the model and folder live in the footer. The footer
-is one row: on the left the evidence, read as a sentence with `·` between
-its parts; on the right the folder, the model, the context's use and the
-statuses, as separate pieces of data three spaces apart. The proved rule in
-`src/verification/footer-rule.ts` decides what a narrow terminal drops.
-
-Blocks keep a one-column margin. A blank row separates a turn's request,
-its tool calls, its answer and its receipt.
+The footer is one row: the evidence on the left, read as a sentence with
+`·`; the folder, model, context and statuses on the right, as data three
+spaces apart. `src/verification/footer-rule.ts` decides what a narrow
+terminal drops. Blocks keep a one-column margin, and a blank row separates
+a turn's request, tool calls, answer and receipt.
 
 ## Elevation & Depth
 
-Flat by default. Depth comes from tone, not from fills or shadows: ink
-leads, muted and dim recede. The only filled surface is the input band, so
-the eye always finds where to type. The receipt has no panel; a one-column
-rule at its left edge holds it together.
+Flat. Depth comes from tone: ink leads, muted and dim recede. The input is
+the only fill, so the eye always finds where to type.
 
 ### Named Rules
 
@@ -192,22 +180,17 @@ takes a heavier bar (`▌`) in Signal, or in Heed when it asks for approval.
 
 The signature component: the record each run ends with.
 
-- **Structure:** the title `Tesota receipt` in bold Signal; the counts; the
-  acceptance line in dim ("Evidence, not approval: accepting the change is
-  yours."); one row per method; what needs review and the limits, grouped
-  by reason; the models' opinions apart; then Details.
-- **Counts:** only the parts that depart from normal take color (a failure
-  in Fail, flags and limits in Heed); each "no …" part is muted. An opinion
-  worth reading is named at the end in Signal (`1 opinion to read`) and is
-  never counted as a flag or a limit.
-- **Methods:** a passing method's `✓` is muted; a method that recorded
-  nothing (`○`) is dim, still listed so what wasn't checked is said.
-- **Opinions:** behind the dotted rule. Each leads with what the model
-  said, in bold (`Covers only part of the request`), then who said it and
-  about what in dim (`ClaimCheck · total · src/total.ts`), then its reason
-  in muted.
+- **Structure:** the title in bold Signal, the counts, the acceptance line
+  in dim, one row per method, review flags and limits by reason, the
+  opinions apart, then Details.
+- **Counts:** only departing parts take color (Fail, Heed); "no …" parts are
+  muted; `1 opinion to read` closes in Signal and is never counted.
+- **Methods:** a pass's `✓` is muted; a method that recorded nothing (`○`)
+  stays listed, in dim.
+- **Opinions:** behind the dotted rule: the verdict in bold, who said it
+  and about what in dim, the reason in muted.
 - **While verifying:** the same rule holds the live ledger, `Verifying` in
-  Signal and the title in dim.
+  Signal.
 
 ### Working orb
 

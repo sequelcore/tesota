@@ -11,6 +11,8 @@ import { runApp } from "../src/shell/app.ts";
 import type { ScriptStep } from "../tests/engine.ts";
 import { scriptedReply } from "../tests/scripted.ts";
 import { VirtualTerminal } from "../tests/virtual-terminal.ts";
+import { shellTheme } from "../../../src/theme.ts";
+import { WORDMARK } from "../../../src/welcome-header.ts";
 
 /**
  * The documentation's images (#468): Tesota's shell as it draws itself,
@@ -281,9 +283,29 @@ async function turn(appearance: Appearance): Promise<void> {
   await quit(app);
 }
 
+/**
+ * The README's banner: the shell's own wordmark, its half blocks drawn as square pixels in the theme's ink on a
+ * transparent background, so it sits on the page in either appearance.
+ */
+function wordmark(appearance: Appearance): void {
+  const pixel = 8;
+  const ink = shellTheme(appearance, "truecolor").colors["text"];
+  const fill = ink !== undefined && "r" in ink ? `rgb(${ink.r},${ink.g},${ink.b})` : "currentColor";
+  const columns = Math.max(...WORDMARK.map((row) => [...row].length));
+  const squares = WORDMARK.flatMap((row, y) => [...row].flatMap((glyph, x) => [
+    ...glyph === "▀" || glyph === "█" ? [[x, y * 2]] : [], ...glyph === "▄" || glyph === "█" ? [[x, y * 2 + 1]] : []]));
+  const title = "tesota";
+  writeFileSync(join(assets, `tesota-wordmark-${appearance}.svg`), [
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${columns * pixel}" height="${WORDMARK.length * 2 * pixel}" viewBox="0 0 ${columns * pixel} ${WORDMARK.length * 2 * pixel}" role="img" aria-label="${title}">`,
+    `<title>${title}</title>`,
+    ...squares.map(([x, y]) => `<rect x="${x! * pixel}" y="${y! * pixel}" width="${pixel}" height="${pixel}" fill="${fill}"/>`),
+    "</svg>", ""].join("\n"));
+}
+
 setCapabilityOverrides({ trueColor: true });
 mkdirSync(assets, { recursive: true });
 for (const appearance of ["dark", "light"] as const) {
+  wordmark(appearance);
   await welcome(appearance);
   await turn(appearance);
 }

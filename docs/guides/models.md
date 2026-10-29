@@ -5,131 +5,71 @@
 /model
 ```
 
-`/login` signs you in to a provider, and `/model` picks the model the
-session runs on. Tesota reaches models through
-[pi-ai](https://github.com/earendil-works/pi)'s providers, such as OpenAI,
-Google, OpenRouter, Mistral, xAI, Amazon Bedrock and Azure.
+`/login` signs you in to a provider and `/model` picks the model. Tesota
+reaches models through [pi-ai](https://github.com/earendil-works/pi):
+OpenAI, Google, OpenRouter, Mistral, xAI, Amazon Bedrock, Azure and more.
 
 ## Sign in
 
-Pick a provider in `/login`. Some sign in with your account in the
-browser; others take an API key, which you paste without it showing. When
-a provider offers both, Tesota asks which. A browser sign-in opens your
-browser and prints the link as well, in case it doesn't; `c` copies it. Sign-ins are kept
-in `~/.tesota/auth.json`, readable only by you, and no tool call may touch
-that file.
-
-An API key in the environment, such as `OPENAI_API_KEY` or
-`OPENROUTER_API_KEY`, works without `/login`. `/logout` forgets a
-provider's sign-in.
+Pick a provider in `/login`: some sign in through your browser (`c` copies
+the link), others take an API key you paste unseen. Sign-ins live in
+`~/.tesota/auth.json`, readable only by you and by no tool call. A key in
+the environment, such as `OPENAI_API_KEY`, works without `/login`.
+`/logout` forgets one.
 
 ### Claude through Claude Code
 
-- On a Claude plan, Tesota runs Claude through your own Claude Code.
-- It never reads Claude Code's credentials.
-- A named account sets only `CLAUDE_CONFIG_DIR`, to the account's folder.
+On a Claude plan, Tesota runs Claude through your own Claude Code and never
+reads its credentials. [Install Claude Code](https://code.claude.com/docs/en/setup),
+run `claude` and `/login`; `/model` then lists `claude-code/<id>`, such as
+`claude-code/claude-sonnet-5-5`. Claude Code only answers: Tesota's tools,
+permissions, hooks and verification do the rest, and your Claude Code
+settings, skills and MCP servers don't load. Usage draws on your plan.
 
-A release binary runs the `claude` on your `PATH`, so
-[install Claude Code](https://code.claude.com/docs/en/setup) first; run
-from source, Tesota runs the Claude Code the Claude Agent SDK installs,
-and the one on your `PATH` only when that's missing. Sign in there: run
-`claude`, then `/login`. `/model` then lists Anthropic's
-models as `claude-code/<id>`, such as `claude-code/claude-sonnet-5-5`.
-Claude Code only answers: Tesota's own tools, permissions, hooks and
-verification do the rest, and your Claude Code settings, skills and MCP
-servers don't load. Usage draws on your plan's limits.
+**Known issue:** headless Claude Code sessions, such as Tesota's, are
+reported to use more of the 5-hour window, about 1.8 times in the first
+controlled comparison ([anthropics/claude-code#97074](https://github.com/anthropics/claude-code/issues/97074)).
+Tesota doesn't disguise its sessions. For long runs, plan for that or use
+another provider.
 
-**Known issue:** users report that headless Claude Code sessions, such as
-Tesota's, use more of the 5-hour window than interactive Claude Code. The
-original controlled comparison measured about 1.8 times as much for the
-same work, and later measurements vary. Whether the weekly limit is affected
-is unverified. Anthropic tracks it as
-[anthropics/claude-code#97074](https://github.com/anthropics/claude-code/issues/97074),
-open as of 2026-10-26. Tesota doesn't disguise its sessions as interactive
-ones to avoid it. For long runs, plan for the 5-hour window running out
-sooner, or use another provider.
-
-An Anthropic API key is a separate route, through the `anthropic`
-provider, with no Claude Code: set `ANTHROPIC_API_KEY`, or enter the key
-in `/login`. It takes an API key only, not a Claude plan's sign-in. Heavy
-or shared use belongs there.
+An Anthropic API key is a separate route, the `anthropic` provider:
+`ANTHROPIC_API_KEY` or `/login`.
 
 ## Choose a model
 
-`/model` lists the models of every provider you can use. Your choice is
-saved, and each new session starts with it. `tesota -p "…" --model
-openai/gpt-6-sol` picks one for a single run. Until you choose one, the
-shell's status says so, and `-p` stops and says how.
+`/model` lists every model you can use and saves your choice for new
+sessions; `tesota -p "…" --model openai/gpt-6-sol` picks one for a run.
+Signed in with ChatGPT, it lists only the models your plan serves.
+`/settings` → Thinking sets how hard a reasoning model thinks, from `off`
+to `max`. Verification's opinion models are in
+[Verification](verification.md#choose-the-opinion-models).
 
-Signed in with ChatGPT, OpenAI serves only some of its models to your
-plan. `/model` lists only those, and a choice outside them is refused
-before any request, naming the ones you can use.
+## When a provider fails
 
-For a model that reasons, `/settings` → Thinking sets how hard it
-thinks: `off`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`. The
-footer shows it beside the model when it isn't off.
-
-Verification can ask a model for its opinion too;
-[Verification](verification.md#the-models-opinions) covers which.
-
-## Provider errors and retries
-
-Tesota retries clearly transient rate limits, overload, server errors (5xx)
-and transport failures. It retries only the model call, never a tool call,
-and keeps the same model and account. There are at most three retries after
-the initial call, within two minutes of the first failure. Backoff starts at
-one second and doubles. Where pi-ai exposes it, a provider's `Retry-After`
-can lengthen the wait; if it would reach or exceed the remaining window,
-the run stops instead.
-
-The installed pi-ai adapters for Google Generative AI and Google Vertex
-AI discard failed-response headers and reject a per-call fetch observer.
-Tesota cannot honor a `Retry-After` those adapters do not expose: it uses
-its own backoff, with the same three-retry and two-minute bounds. No
-provider or dependency is patched to work around this limitation.
-
-The shell shows a countdown; Esc stops it. Print mode writes a retry line
-to standard error; Ctrl+C cancels it. Quota or plan exhaustion, spending
-limits, exhausted credits, authentication failures and other terminal
-errors end the run without retrying. Tesota does not resume automatically
-when a plan resets. The session keeps the request for your next message.
-
-The provider's reason is shown in the shell and, before `Ended error.`, on
-print mode's standard error. Displayed diagnostics are limited to 2,000
-characters, with credential-shaped values redacted and terminal controls
-removed. Retry classification uses pi-ai's transient-error classifier plus
-HTTP status, provider type and retry headers where the adapter supplies
-them. Adapters that discard metadata limit what Tesota can recognize.
+Tesota retries rate limits, overload, 5xx and transport errors, at most
+three times within two minutes, doubling from one second, honoring
+`Retry-After` where pi-ai exposes it (Google's adapters don't). It retries
+only the model call, on the same model and account. The shell counts down
+(Esc stops it); print mode writes to standard error. Quotas, spending
+limits, credits and sign-in failures end the run, with the provider's
+reason, redacted; the request waits for your next message.
 
 ## Several accounts of one provider
-
-Add each account with its provider and a name of yours:
 
 ```sh
 tesota accounts add claude-code personal
 tesota accounts add openai-codex work
 ```
 
-In the shell, `/login` → Add an account does the same. Names contain
-letters, digits, `_` or `-`, and are unique within a provider.
-
-- **Claude:** Tesota makes the account's folder,
-  `~/.tesota/accounts/claude-code/<name>`, and starts your Claude Code's
-  sign-in there. It records the account once Claude Code says it's signed
-  in.
-- **ChatGPT:** Tesota signs the account in to its own slot,
-  `openai-codex@<name>`, then records it.
-
-The account is then a provider like any other. Name it wherever you name a
-model: `/model`, `--model`, the saved `model`, an agent type's `model`, or
-the `agent` tool's `model`.
+Or `/login` → Add an account. A Claude account gets its own Claude Code
+folder, `~/.tesota/accounts/claude-code/<name>`; a ChatGPT one its own
+`openai-codex@<name>` sign-in. Then name it wherever you name a model:
 
 ```sh
 tesota -p "Review the change" --model claude-code@personal/claude-opus-5-5
 ```
 
-`tesota accounts` lists each account with the account it's signed in to,
-and flags `same account as …` when two are one:
+`tesota accounts` lists each one, and flags two that are the same account:
 
 ```text
 claude-code (default)  owner@example.com
@@ -138,51 +78,22 @@ openai-codex (default)  not signed in
 openai-codex@work  <ChatGPT account ID>
 ```
 
-| To | Command line | Shell |
-| --- | --- | --- |
-| Sign one in again | `tesota accounts login claude-code@personal` | `/accounts`, choose it, Enter, Sign in again |
-| Remove one | `tesota accounts remove openai-codex@work` | `/accounts`, choose it, Enter, Remove |
+`tesota accounts login <provider>@<name>` signs one in again;
+`tesota accounts remove …` removes it, unless a setting still names it.
+Tesota never switches accounts at a limit: the run ends and you choose.
 
-Removing an account that your `model` setting or an agent type still names
-is refused, naming which. Removing a Claude account deletes the folder
-Tesota made for it; a folder you declared yourself stays.
+### Usage
 
-Tesota doesn't switch accounts when one reaches its limit: the run ends
-with the provider's message, and you choose another.
-
-### Usage of your accounts
-
-`/usage` opens the usage panel on its Usage tab, and `/accounts` on its
-Accounts tab. Tab or ←/→ switch tabs, and Esc closes it; the session keeps
-running beneath.
-
-- **Usage:** for each account, a meter per limit window, such as the 5-hour
-  and the weekly one, with the share left and when it resets (`resets in
-  3h 12m`). It turns to the warning color at a quarter left.
-- **Accounts:** each account, whether it's signed in, and its email when
-  the provider gives one. Enter offers Sign in again or Remove, and
-  `a` adds an account. A provider's default sign-in is listed, marked
-  `default`, but isn't managed here.
-
-`this session` marks the account the session draws on. `r` reads the
-limits again. Only two providers report them:
-
-| Provider | Where the reading comes from |
-| --- | --- |
-| `claude-code` | Claude Code's own usage report, which may change between its releases |
-| `openai-codex` | Codex's usage endpoint, with the account's own sign-in |
-
-The newer OpenAI sign-in, `openai` with ChatGPT, doesn't report its
-limits; the Codex sign-in, OpenAI Codex (legacy) in `/login`, does.
-When you use the first and have no Codex sign-in, the Usage tab says so. The last readings are
-kept in `~/.tesota/usage.json`, with no token, credential, email or
-account ID.
+`/usage` and `/accounts` open the usage panel. Usage shows a meter per
+limit window with what's left and when it resets; Accounts signs them in
+again, removes or adds (`a`). `r` reads the limits again. Only
+`claude-code` and `openai-codex` (OpenAI Codex (legacy) in `/login`) report
+them; readings are kept in `~/.tesota/usage.json`, without credentials.
 
 ### Declaring accounts by hand
 
-The accounts are the `accounts` list in your `~/.tesota/settings.json`,
-which you can write yourself, for example to use a Claude Code folder you
-already have:
+Accounts are the `accounts` list in `~/.tesota/settings.json`, for example
+to reuse a Claude Code folder you have:
 
 ```json
 {
@@ -194,10 +105,8 @@ already have:
 }
 ```
 
-Use an absolute folder. Restart Tesota after editing the list, then sign
-the account in with `tesota accounts login <provider>@<name>`.
+Use an absolute folder, restart Tesota, then sign it in.
 
 ## Related
 
-- [Configuration](../reference/configuration.md)
-- [Commands and keys](../reference/commands.md)
+[Configuration](../reference/configuration.md) · [Commands and keys](../reference/commands.md)

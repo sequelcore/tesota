@@ -9,7 +9,7 @@ lsc check --backend=dafny src/verification/gate-rule.ts
 These are the rule files selected by `formal:check` in
 [package.json](../../package.json). Each contains pure TypeScript decisions
 with LemmaScript contracts checked by Dafny. These proofs use
-[LemmaScript's model of TypeScript](../concepts/verification.md#what-a-proof-covers),
+[LemmaScript's model of TypeScript](checks.md#proofs),
 whose numeric and other semantics can differ from JavaScript at runtime.
 A proof covers those contracts;
 it does not establish that callers supply the right facts or that the

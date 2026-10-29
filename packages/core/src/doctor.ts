@@ -9,7 +9,7 @@ import { fileCredentialStore } from "./credentials.ts";
 import { engineModels } from "./model-access.ts";
 import { readSettings } from "./settings.ts";
 import { claudeCodeExecutable } from "./providers/claude-code.ts";
-import install from "../../../docs/get-started/install.md" with { type: "text" };
+import install from "../../../docs/reference/installation.md" with { type: "text" };
 
 /** A read-only, local version/help command, never a project check or a model request. */
 export interface Probe {
@@ -50,13 +50,13 @@ export async function probe(spec: Probe, timeoutMs = 5_000): Promise<Diagnosis> 
   consequence: spec.consequence, repair: spec.repair };
 }
 
-/** Repair commands are owned by install.md, not a second platform-specific list. */
+/** Repair commands are owned by docs/reference/installation.md, not a second platform-specific list. */
 export function repairCommand(id: string, platform: NodeJS.Platform = process.platform): string {
   const table = install.split("<!-- doctor-repairs-start -->")[1]?.split("<!-- doctor-repairs-end -->")[0] ?? "";
   const row = table.split("\n").find((line) => line.startsWith(`| ${id} |`));
   const column = platform === "win32" ? 2 : platform === "darwin" ? 3 : 4;
   const command = row?.split("|")[column]?.trim().replace(/^`|`$/gu, "");
-  if (!command) throw new Error(`No ${platform} repair command for ${id} in install.md`);
+  if (!command) throw new Error(`No ${platform} repair command for ${id} in docs/reference/installation.md`);
   return command;
 }
 

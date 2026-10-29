@@ -18,7 +18,7 @@ are optional; Tesota creates state files as needed.
 | `agents/` | Your [agent types](../guides/subagents.md#agent-types), beside `~/.agents/agents` |
 | `auth.json` | Model sign-ins |
 | `mcp-auth.json` | MCP servers' sign-ins |
-| `usage.json` | The usage panel's last readings of each account's limits, with their time and a one-way fingerprint of whom they were read for; no token, credential, email or account ID ([Usage of your accounts](../guides/models.md#usage-of-your-accounts)) |
+| `usage.json` | The usage panel's last readings of each account's limits, with their time and a one-way fingerprint of whom they were read for; no token, credential, email or account ID ([Usage of your accounts](../guides/models.md#usage)) |
 | `trust.json` | Approvals tied to project roots and hashes of hooks or MCP configuration; changed configuration needs trust again |
 | `sessions/` | Every session, one JSON Lines file each, by project |
 | `worktrees/` | The Git worktrees of [sessions](../guides/sessions.md) that run beside another |
