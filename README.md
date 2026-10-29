@@ -5,19 +5,42 @@
   </picture>
 </h1>
 
+<!-- DRAFT: the owner writes the tagline. The idea it carries: the agent's
+work doesn't reach you until its checks pass, and what nothing checked is
+said. The current one stays until then. -->
 **A coding agent that checks its code, challenges its specs, and flags where they may miss your request.**
 
 [![CI](https://github.com/sequelcore/tesota/actions/workflows/ci.yml/badge.svg)](https://github.com/sequelcore/tesota/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/sequelcore/tesota?include_prereleases&sort=semver)](https://github.com/sequelcore/tesota/releases)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
+<!-- DRAFT: why, in facts; the owner rewrites the wording. -->
+A coding agent says it's done, and the tests it wrote pass. That proves
+less than it seems: a test can pass without noticing the change, a
+contract can allow the wrong code, and nothing compares the work with what
+you asked.
+
+Tesota doesn't take the agent's word. When the agent finishes, Tesota runs
+the checks, and a check that fails goes back to the agent with what failed.
+The work reaches you when the checks pass, or when nothing more can be
+checked, with a receipt that says which.
+
+```mermaid
+flowchart LR
+  request["Your request"] --> agent["The agent changes the code"]
+  agent --> checks["Tesota checks the change"]
+  checks -- "a check failed" --> agent
+  checks -- "passed, or can't check more" --> receipt["Receipt: what passed, and what nothing checked"]
+  opinion["A model's review of your request, kept apart"] -.-> receipt
+```
+
+<!-- DRAFT: replace with a frame of a real case from the launch video, a run
+where a check fails, goes back and the fix passes. The scripted image stays
+until then. -->
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/tesota-turn-light.svg">
   <img alt="A run in Tesota whose change misses the request: the request asks for 10 off orders over 100, the agent's change takes 10 off at 100 too, and the receipt shows the proof and tests passing and the new test catching the change, then, apart as a model's opinion, that the contract covers only part of the request because it takes 10 off at 100 too." src="docs/assets/tesota-turn-dark.svg">
 </picture>
-
-Every run ends with a receipt: what was proved, what was tested, and what
-nothing checked. You see the evidence instead of taking the agent's word.
 
 ## Install
 
@@ -35,34 +58,6 @@ Then, in your project, run `tesota` and type `/login`. You need Git, and
 [Dafny 4](https://dafny.org) to prove contracts. Tesota is in alpha;
 [Install](docs/get-started/install.md) has the details.
 
-## The receipt
-
-```text
-Tesota receipt
-No review flags · no verification limits · 1 opinion to read
-Evidence, not approval: accepting the change is yours.
-
-✓ Tested      npm run test · 0:00
-✓ Proved      src/total.ts · 0:02
-○ Models      none recorded
-✓ Exercised   1 test file failed on the base and passed with the change
-✓ Contracts   1 contract: every decided change broke its proof
-
-Model opinions · not evidence, not counted
-◇ ClaimCheck: covers only part of the request · total · src/total.ts
-  The contract captures the subtraction and unchanged cases, but applies the
-  10-unit reduction at amount = 100 as well. The request says orders over
-  100, so this boundary should remain unchanged.
-```
-
-Every check passed, and the change is still wrong: the request said *over*
-100. Only the request review notices, and it is a model's opinion, kept
-apart and never counted as verified. In this run the agent is scripted;
-the tests, the proof and the model's words are real.
-
-`tesota receipt` prints the receipt as Markdown for a pull request, and
-`--json` for CI. See [Receipts](docs/guides/receipts.md).
-
 ## What it checks
 
 - **Tests:** your project's own commands, on the change, and whether a new
@@ -72,9 +67,12 @@ the tests, the proof and the model's words are real.
 - **Design models:** TLA+ and Quint, checked with TLC when the change
   touches the code they cover.
 
-A failing check goes back to the agent. A deleted test, an added `.skip` or
-a loosened contract is flagged. [How verification works](docs/concepts/verification.md)
-explains the rest.
+A deleted test, an added `.skip` or a loosened contract is flagged for you.
+The receipt keeps a model's review of your request apart from the
+evidence, and never counts it as verified; `tesota receipt` prints it as
+Markdown for a pull request, and `--json` for CI.
+[How verification works](docs/concepts/verification.md) and
+[Receipts](docs/guides/receipts.md) explain the rest.
 
 Use the model you already pay for: any [pi-ai](https://github.com/earendil-works/pi)
 provider, a Claude plan through your own Claude Code, or a ChatGPT plan.
