@@ -39,7 +39,8 @@ function card(receipt: Receipt, width: number, expanded: boolean, theme: Theme =
   return rows;
 }
 
-const plain = (rows: readonly string[]): string => rows.map((row) => stripTerminalSequences(row).trimEnd()).join("\n");
+/** The card as text, without the rule at its left edge, so a sentence wrapped over two rows still reads as one. */
+const plain = (rows: readonly string[]): string => rows.map((row) => stripTerminalSequences(row).replace(/^ [│┆] ?/u, "").trimEnd()).join("\n");
 const flat = (text: string): string => text.replace(/\s+/gu, " ");
 
 /** A Markdown escape: a backslash before a character Markdown would otherwise read. */
@@ -66,7 +67,7 @@ describe("the real receipt of #584, as the issue shows it", () => {
     expect(renderReceipt(receipt).split("\n").slice(0, 18)).toEqual([
       "Tesota receipt",
       "2 review flags · 7 verification limits",
-      "Check evidence, not your acceptance.",
+      "Evidence, not approval: accepting the change is yours.",
       "",
       "✓ Tested   bun run check · 5:58",
       "○ Proved   none recorded",
@@ -87,7 +88,7 @@ describe("the real receipt of #584, as the issue shows it", () => {
 
   it("collapsed in the transcript, ends with what Ctrl+O shows and the request's context", () => {
     const rows = plain(card(receipt, 120, false)).split("\n").map((row) => row.trim()).filter((row) => row !== "");
-    expect(rows.slice(0, 3)).toEqual(["Tesota receipt", "2 review flags · 7 verification limits", "Check evidence, not your acceptance."]);
+    expect(rows.slice(0, 3)).toEqual(["Tesota receipt", "2 review flags · 7 verification limits", "Evidence, not approval: accepting the change is yours."]);
     expect(rows.slice(-2)).toEqual(["▸ Details · paths, output, assumptions, model opinions", "▸ Context · 1 answer · 1 subagent"]);
     expect(rows.join("\n")).not.toContain("tests/working-orb.test.ts");
   });
@@ -150,7 +151,8 @@ describe.each(fixtures)("the real receipt of #%i", (issue, receipt) => {
     const summary = receiptSummary(receipt);
     const { openCases: _cases, children: _children, clarifications: _answers, ...evidence } = receipt;
     const withoutOpinions = receiptSummary(evidence);
-    expect(summary.counts).toEqual(withoutOpinions.counts);
+    // An opinion is named beside the counts, never counted in them.
+    expect(summary.counts.replace(/ · \d+ opinions? to read$/u, "")).toEqual(withoutOpinions.counts);
     expect(summary.methods).toEqual(withoutOpinions.methods);
     expect([...summary.flags, ...summary.limits]).toEqual([...withoutOpinions.flags, ...withoutOpinions.limits]);
   });
@@ -279,7 +281,7 @@ describe("receipts beyond the four", () => {
     const judged = receiptSummary({ ...evidence, claimcheck: { status: "judged", restatedBy: "m", comparedBy: "m" },
       openCases: { status: "listed", model: "m", cases: [{ input: "inRange(-1)", outcomes: ["0", "-1"] }] } });
     const bare = receiptSummary(evidence);
-    expect(judged.counts).toBe(bare.counts);
+    expect(judged.counts).toBe(`${bare.counts} · 2 opinions to read`);
     expect([...judged.flags, ...judged.limits]).toEqual([...bare.flags, ...bare.limits]);
     expect(judged.opinions.map(({ glyph }) => glyph)).toEqual(["◇", "◇"]);
   });

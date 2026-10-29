@@ -286,6 +286,7 @@ The docs are for people and agents alike.
 | Exact commands, keys and files | [Reference](README.md#reference) |
 | The receipt's format | [Receipt v2](receipt-v2.md); keep its path, which receipts name |
 | Direction and non-goals | [Roadmap](../ROADMAP.md) |
+| How the terminal looks, and why | [DESIGN.md](../DESIGN.md) |
 | What each release changed | [Changelog](../CHANGELOG.md) |
 | Building and testing Tesota | This page |
 | Instructions for agents working on Tesota | [AGENTS.md](../AGENTS.md) |

@@ -5,7 +5,6 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { WELCOME_SCENE_MS } from "../../../src/welcome-header.ts";
 import { entryReceipt, isReceipt, receiptStanding } from "../../../src/receipt.ts";
 import { peekSessionFile } from "../src/session-file.ts";
 import { runApp } from "../src/shell/app.ts";
@@ -188,7 +187,7 @@ async function shell(cwd: string, script: readonly ScriptStep[], appearance: App
   const sessions = mkdtempSync(join(tmpdir(), "tesota-screenshot-sessions-"));
   const running = runApp({ cwd, terminal, models, credentials, settingsPath,
     flags: { "open-cases-model": "scripted/your-model" }, sessions });
-  await terminal.until("Tesota v");
+  await terminal.until("for commands");
   if (appearance === "light") {
     // The terminal's answers to the shell's questions about its colors: a light background.
     const asked = (terminal.written.match(/\]11;\?/gu) ?? []).length;
@@ -214,14 +213,20 @@ const write = async (terminal: VirtualTerminal, name: string, appearance: Appear
 const welcomeRows = 30;
 const turnRows = 40;
 
-/** The shell as it opens: compact header, faint centered palo fierro, input band and footer. */
+/** The shell as it opens: the wordmark, its version and folder, a greeting, the input under them and the footer. */
 async function welcome(appearance: Appearance): Promise<void> {
-  const app = await shell(project(shop), [], appearance, welcomeRows);
-  // The sub-second rustle ends at the exact static grid, still at 30% opacity.
-  await new Promise((resolve) => setTimeout(resolve, WELCOME_SCENE_MS + 1000));
-  await write(app.terminal, "tesota-welcome", appearance, welcomeRows,
-    "Tesota's shell as it opens: a pixel ironwood beside the name, model, folder and purpose, a 30%-opacity ironwood and armless seedling in the empty space, then the input band and footer.");
-  await quit(app);
+  // The same greeting on every run, so the images change only when the screen does.
+  const random = Math.random;
+  Math.random = () => 0;
+  try {
+    const app = await shell(project(shop), [], appearance, welcomeRows);
+    await app.terminal.until("What should we work on?");
+    await write(app.terminal, "tesota-welcome", appearance, welcomeRows,
+      "Tesota's shell as it opens: the tesota wordmark centered, its version and folder under it, the question \"What should we work on?\", the input band right below, and the footer at the bottom.");
+    await quit(app);
+  } finally {
+    Math.random = random;
+  }
 }
 
 const totalBefore = "export function total(amount: number): number {\n  return amount;\n}\n";

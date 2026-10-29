@@ -68,7 +68,7 @@ A verified run with a proof and a test reads like this:
 ```text
 Tesota receipt
 No review flags · no verification limits
-Check evidence, not your acceptance.
+Evidence, not approval: accepting the change is yours.
 
 ✓ Tested      npm test · 0:04
 ✓ Proved      src/discount.ts · 0:03
@@ -78,7 +78,9 @@ Check evidence, not your acceptance.
 ```
 
 - The first row counts what needs you. Here nothing does; when something
-  is left unverified, it reads `1 verification limit`, in amber.
+  is left unverified, it reads `1 verification limit`, in amber. When a
+  model's opinion is worth reading, it ends with `1 opinion to read`; an
+  opinion is never counted as a flag or a limit.
 - Then one row per method:
   - `Tested` and `Proved`, with the command or file and its time;
   - `Models`, for [design models](../guides/model-checking.md), none here;

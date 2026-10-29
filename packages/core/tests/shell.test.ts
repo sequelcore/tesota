@@ -12,7 +12,7 @@ import { createSurface, shellHost, type Surface } from "../src/shell/surface.ts"
 import type { ClarificationQuestion } from "../../../src/clarification.ts";
 import { shellTheme } from "../../../src/theme.ts";
 import { BarEditor } from "../../../src/editor.ts";
-import { mountWelcomeHeader, WELCOME_TAGLINE, WelcomeHeader } from "../../../src/welcome-header.ts";
+import { mountWelcomeHeader, WelcomeHeader, WORDMARK } from "../../../src/welcome-header.ts";
 import { readSessionFile } from "../src/session-file.ts";
 import { ModelViewer } from "../src/shell/model-viewer.ts";
 import { loadModelView } from "../../../src/model-view-process.ts";
@@ -332,7 +332,7 @@ describe("the shell", () => {
       screen.findIndex((line) => line.includes("Hello from the engine.")));
   });
 
-  test("an operator message has a dim prompt, aligned continuation and a full-width band", async () => {
+  test("an operator message has a muted prompt, aligned continuation and no band", async () => {
     const { terminal, session } = shellOn(["answered"]);
     terminal.type("\x1b[200~first line\nsecond line\x1b[201~");
     terminal.type(enter);
@@ -341,11 +341,11 @@ describe("the shell", () => {
     const row = screen.findIndex((line) => line.includes("first line"));
     expect(screen.slice(row, row + 2).map((line) => line.trimEnd())).toEqual([" › first line", "   second line"]);
     const buffer = await terminal.drawn();
-    expect(buffer.getLine(buffer.viewportY + row)?.getCell(1)?.getFgColor()).toBe(0x8f8d84);
-    expect(buffer.getLine(buffer.viewportY + row)?.getCell(3)?.getFgColor()).toBe(0xf2eee6);
+    expect(buffer.getLine(buffer.viewportY + row)?.getCell(1)?.getFgColor()).toBe(0xa1a1a8);
+    expect(buffer.getLine(buffer.viewportY + row)?.getCell(3)?.getFgColor()).toBe(0xededed);
     for (let line = row; line < row + 2; line++) {
       for (let column = 0; column < terminal.columns; column++) {
-        expect(buffer.getLine(buffer.viewportY + line)?.getCell(column)?.getBgColor()).toBe(0x2f2a35);
+        expect(buffer.getLine(buffer.viewportY + line)?.getCell(column)?.isBgDefault()).toBe(true);
       }
     }
   });
@@ -361,7 +361,7 @@ describe("the shell", () => {
     expect(screen[row + 1]).toBe("");
     expect(shown(screen)).not.toContain("Wrote");
     const buffer = await terminal.drawn();
-    expect(buffer.getLine(buffer.viewportY + row)?.getCell(1)?.getFgColor()).toBe(0xb9b7aa);
+    expect(buffer.getLine(buffer.viewportY + row)?.getCell(1)?.getFgColor()).toBe(0xa1a1a8);
     expect(buffer.getLine(buffer.viewportY + row)?.getCell(3)?.isBold()).toBeGreaterThan(0);
     for (let column = 0; column < terminal.columns; column++) {
       expect(buffer.getLine(buffer.viewportY + row)?.getCell(column)?.isBgDefault()).toBe(true);
@@ -752,7 +752,7 @@ describe("the shell", () => {
         // The frame owns columns 0–1; the selection fills every column of the list itself.
         const end = terminal.columns - (marker.includes("[ ]") ? 1 : 0);
         for (let column = 2; column < end; column++) {
-          expect(selected.getCell(column)!.getBgColor()).toBe(0x4b3d53);
+          expect(selected.getCell(column)!.getBgColor()).toBe(0x27272b);
         }
         expect(selected.getCell(0)!.isBgDefault()).toBe(true);
       }
@@ -1190,70 +1190,59 @@ test("late and replaced model overlays cannot escape shell shutdown", async () =
 });
 
 
-for (const mode of ["fullscreen", "inline"] as const) test(`empty stage stays outside the conversation and vanishes on first activity (${mode})`, async () => {
+/** A shell whose header is Tesota's welcome screen, opening with its first greeting. */
+function welcomeShell(script: readonly ScriptStep[], mode: TuiMode) {
   provideHost(shellHost());
   const theme = shellTheme("dark", "truecolor");
   const surface = createSurface(theme);
-  let now = 0;
-  const ticks: (() => void)[] = [];
-  surface.ui.setHeader((tui, look) => mountWelcomeHeader(new WelcomeHeader("/work/shop", look, {
-    terminalRows: () => tui.terminal.rows, stageShare: 1 / 2, requestRender: () => tui.requestRender(), now: () => now,
-    model: () => "scripted model", setTimer: (callback) => { ticks.push(callback); return () => undefined; },
-  }), tui));
+  surface.ui.setHeader((_tui, look) => mountWelcomeHeader(new WelcomeHeader("/work/shop", look, { pick: () => 0 })));
   surface.ui.setEditorComponent((tui, look) => new BarEditor(tui, look, () => theme));
-  const { terminal, session, shell } = shellOn(["A reply."], mode, [100, 40], { surface });
-  const opening = await terminal.until(WELCOME_TAGLINE);
-  expect(opening.split("\n").slice(0, 3).map((row) => row.slice(13))).toEqual([
-    expect.stringMatching(/^Tesota v/u), "scripted model · /work/shop", WELCOME_TAGLINE,
-  ]);
-  await new Promise((resolve) => setTimeout(resolve, 60));
-  expect(shown(await terminal.screen())).toMatch(/▀{49}/u);
-  for (let step = 0; step < 9; step++) {
-    now += 100;
-    ticks.shift()?.();
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    await terminal.screen();
-  }
-  const faded = await terminal.screen();
-  const artRow = faded.findIndex((line) => /▀{49}/u.test(line));
-  const artColumn = faded[artRow]!.search(/▀{49}/u);
-  const cell = (await terminal.drawn()).getLine(artRow)?.getCell(artColumn);
-  const color = cell?.getFgColor() ?? 0;
-  expect(Math.max(color >> 16 & 255, color >> 8 & 255, color & 255)).toBeLessThan(110);
+  return shellOn(script, mode, [100, 40], { surface });
+}
+const greeting = "What should we work on?";
+const wordmark = WORDMARK[1]!.trim();
+
+for (const mode of ["fullscreen", "inline"] as const) test(`the empty screen centers the welcome with the input under it, until the first message (${mode})`, async () => {
+  const { terminal, session, shell } = welcomeShell(["A reply."], mode);
+  await terminal.until(greeting);
+  const opening = await terminal.screen();
+  const mark = opening.findIndex((line) => line.includes(wordmark));
+  const asked = opening.findIndex((line) => line.includes(greeting));
+  const input = opening.findIndex((line, row) => row > asked && line.includes("›"));
+  expect(mark).toBeGreaterThan(0);
+  expect(opening[mark + 3]).toMatch(/· \/work\/shop$/u);
+  // The input sits right under the greeting, past the dock's one blank row.
+  expect(input - asked).toBeLessThanOrEqual(3);
+  // The block and the input, as one, are centered: as many blank rows above as between the input and the footer.
+  const above = opening.slice(0, mark - 1).filter((line) => line.trim() === "").length;
+  const below = opening.slice(input + 2, -1).filter((line) => line.trim() === "").length;
+  expect(Math.abs(above - below)).toBeLessThanOrEqual(2);
+  expect(opening.at(-1)?.trim()).not.toBe("");
   terminal.type("typing a draft");
-  expect(await terminal.until("typing a draft")).toMatch(/▀{49}/u);
-  if (mode === "fullscreen") {
-    terminal.type(`\x1b[<0;${artColumn + 1};${artRow + 1}M`);
-    terminal.type(`\x1b[<0;${artColumn + 1};${artRow + 1}m`);
-    await new Promise((resolve) => setTimeout(resolve, 30));
-    const replay = (await terminal.drawn()).getLine(artRow)?.getCell(artColumn)?.getFgColor() ?? 0;
-    expect(replay).toBe(color);
-    now += 150; ticks.shift()?.();
-    expect(shown(await terminal.screen())).not.toBe(shown(faded));
-  }
+  expect(await terminal.until("typing a draft")).toContain(greeting);
   terminal.type(enter);
   await settled(session);
-  expect(shown(await terminal.screen())).not.toMatch(/▀{49}/u);
-  expect(shown(await terminal.screen())).toContain("A reply.");
+  const answered = await terminal.screen();
+  expect(shown(answered)).not.toContain(greeting);
+  expect(shown(answered)).toContain("A reply.");
+  // Fullscreen, the input is back at the bottom, over the footer; inline, it follows the conversation as it prints.
+  const bottom = answered.findLastIndex((line) => line.includes("›"));
+  if (mode === "fullscreen") expect(bottom).toBeGreaterThanOrEqual(answered.length - 5);
+  else expect(answered.slice(bottom + 1).filter((line) => line.trim() !== "")).toHaveLength(1);
   shell.stop();
-  expect(shown(await terminal.scrollback())).not.toMatch(/▀{49}/u);
+  expect(shown(await terminal.scrollback())).not.toContain(greeting);
+  expect(shown(await terminal.scrollback())).not.toContain(wordmark);
 });
 
-for (const mode of ["fullscreen", "inline"] as const) test(`quitting an untouched session leaves no tree in scrollback (${mode})`, async () => {
-  provideHost(shellHost());
-  const surface = createSurface(shellTheme("dark", "truecolor"));
-  surface.ui.setHeader((tui, look) => mountWelcomeHeader(new WelcomeHeader("/work/shop", look, {
-    terminalRows: () => tui.terminal.rows, stageShare: 1 / 2, requestRender: () => tui.requestRender(),
-  }), tui));
-  const { terminal, shell } = shellOn([], mode, [100, 40], { surface });
-  await terminal.until(WELCOME_TAGLINE);
-  await new Promise((resolve) => setTimeout(resolve, 100));
-  expect(shown(await terminal.screen())).toMatch(/▀{49}/u);
+for (const mode of ["fullscreen", "inline"] as const) test(`quitting an untouched session leaves no welcome in scrollback (${mode})`, async () => {
+  const { terminal, shell } = welcomeShell([], mode);
+  await terminal.until(greeting);
   shell.stop();
-  expect(shown(await terminal.scrollback())).not.toMatch(/▀{49}/u);
+  expect(shown(await terminal.scrollback())).not.toContain(greeting);
+  expect(shown(await terminal.scrollback())).not.toContain(wordmark);
 });
 
-test("a late light-background reply repaints existing user bands", async () => {
+test("a late light-background reply repaints the operator's message", async () => {
   const look = shellTheme("dark", "truecolor");
   const surface = createSurface(look);
   const { terminal, session } = shellOn(["Reply."], "fullscreen", [100, 40], { surface });
@@ -1261,69 +1250,25 @@ test("a late light-background reply repaints existing user bands", async () => {
   terminal.type(enter);
   await settled(session);
   const row = (await terminal.screen()).findIndex((line) => line.includes("› hello"));
-  expect((await terminal.drawn()).getLine(row)?.getCell(3)?.getBgColor()).toBe(0x2f2a35);
+  const column = (await terminal.screen())[row]!.indexOf("hello");
+  expect((await terminal.drawn()).getLine(row)?.getCell(column)?.getFgColor()).toBe(0xededed);
   terminal.type("\x1b]11;rgb:eded/eded/e5e5\x1b\\");
   terminal.type("\x1b[?62;c");
   await new Promise((resolve) => setTimeout(resolve, 50));
-  const cell = (await terminal.drawn()).getLine(row)?.getCell(3);
-  expect(cell?.getBgColor()).toBe(0xe4d9e9);
-  expect(cell?.getFgColor()).toBe(0x24211f);
+  const cell = (await terminal.drawn()).getLine(row)?.getCell(column);
+  expect(cell?.getFgColor()).toBe(0x18181b);
+  // No band: the message sits on the terminal's own background.
+  expect(cell?.isBgDefault()).toBe(true);
 });
 
-test("inline handoff clears the live tree before another program writes", async () => {
-  provideHost(shellHost());
-  const surface = createSurface(shellTheme("dark", "truecolor"));
-  surface.ui.setHeader((tui, look) => mountWelcomeHeader(new WelcomeHeader("/work/shop", look, {
-    terminalRows: () => tui.terminal.rows, stageShare: 1 / 2, requestRender: () => tui.requestRender(),
-  }), tui));
-  const { terminal, shell } = shellOn([], "inline", [100, 40], { surface });
-  await terminal.until("▀".repeat(49));
+test("inline handoff clears the welcome before another program writes", async () => {
+  const { terminal, shell } = welcomeShell([], "inline");
+  await terminal.until(greeting);
   await shell.handOver(async () => {
     terminal.write("other program\r\n".repeat(50));
-    expect(shown(await terminal.scrollback())).not.toMatch(/▀{49}/u);
+    expect(shown(await terminal.scrollback())).not.toContain(greeting);
   });
-  await terminal.until(WELCOME_TAGLINE);
+  await terminal.until(greeting);
   shell.stop();
-  expect(shown(await terminal.scrollback())).not.toMatch(/▀{49}/u);
-});
-
-test("a resumed conversation never draws the empty stage", async () => {
-  provideHost(shellHost());
-  const { session, shell } = shellOn(["Existing reply."]);
-  await session.prompt("Existing request.");
-  const surface = createSurface(shellTheme("dark", "truecolor"));
-  surface.ui.setHeader((tui, look) => mountWelcomeHeader(new WelcomeHeader("/work/shop", look, {
-    terminalRows: () => 40, stageShare: 1 / 2, requestRender: () => tui.requestRender(),
-  }), tui));
-  const terminal = new VirtualTerminal(100, 40);
-  const resumed = startShell({ terminal, session, surface, mode: "fullscreen", fullRepaint: false,
-    theme: surface.theme, status: () => "resumed" });
-  open.push({ session, shell: resumed });
-  expect(await terminal.until("Existing reply.")).not.toMatch(/▀{49}/u);
-  shell.stop();
-});
-
-test("a real header click rustles the live mark, including after first activity", async () => {
-  provideHost(shellHost());
-  const surface = createSurface(shellTheme("dark", "truecolor"));
-  let now = 0;
-  let redraw: () => void = () => undefined;
-  const ticks: (() => void)[] = [];
-  surface.ui.setHeader((tui, look) => { redraw = () => tui.renderNow(); return mountWelcomeHeader(new WelcomeHeader("/work/shop", look, {
-    terminalRows: () => 40, stageShare: 0.5, requestRender: () => tui.renderNow(), now: () => now,
-    setTimer: (callback) => { ticks.push(callback); return () => undefined; },
-  }), tui); });
-  const { terminal, session } = shellOn(["A reply."], "fullscreen", [100, 40], { surface });
-  await terminal.until("Tesota v");
-  now = 800; ticks.shift()?.();
-  const resting = (await terminal.screen()).slice(0, 4);
-  for (const active of [false, true]) {
-    if (active) { terminal.type("go"); terminal.type(enter); await settled(session); }
-    terminal.type("\x1b[<0;6;2M"); terminal.type("\x1b[<0;6;2m");
-    redraw(); await terminal.screen();
-    now += 200; ticks.shift()?.();
-    expect((await terminal.screen()).slice(0, 4)).not.toEqual(resting);
-    now += 800; ticks.shift()?.();
-    expect((await terminal.screen()).slice(0, 4)).toEqual(resting);
-  }
+  expect(shown(await terminal.scrollback())).not.toContain(greeting);
 });

@@ -8,13 +8,13 @@ import { hasTlc, modelTool } from "./model-tool.js";
 import { suggestChecks } from "./projects.js";
 import { annotated, hasContracts, proveTool } from "./prove-tool.js";
 import { readiness } from "./verification/footer-rule.js";
-import { receiptStanding } from "./receipt.js";
-import { mountWelcomeHeader, ORB_FRAME_MS, orbFrames, WelcomeHeader } from "./welcome-header.js";
+import { mountWelcomeHeader, WelcomeHeader } from "./welcome-header.js";
+import { workingOrb } from "./working-orb.js";
 
 /**
- * Tesota, as Pi and the engine's shell load it (#446): it mounts the compact header and empty-stage palo fierro
- * (`WelcomeHeader`) and a turning orb in Pi's working indicator
- * (`orbFrames`), draws the input as a full-width prompt band (`BarEditor`) over
+ * Tesota, as Pi and the engine's shell load it (#446): it mounts the welcome screen
+ * (`WelcomeHeader`) and the working orb, its motion by phase (`workingOrb`),
+ * draws the input as a full-width prompt band (`BarEditor`) over
  * a footer that shows the gate's evidence (`EvidenceFooter`), offers `prove`
  * where there are contracts or once the agent writes one, and `check_model`
  * where TLC is installed, holds a run open
@@ -33,15 +33,9 @@ export default function tesota(pi: ExtensionAPI, recorded?: () => RecordedReques
     progress.resume(ctx.sessionManager.getBranch());
     // In the terminal the footer shows the session runs with Tesota; other clients have only this status.
     if (ctx.mode !== "tui") ctx.ui.setStatus("tesota", "Tesota");
-    // Unless quietStartup hides it, Pi lists what it loaded beneath the header, so the tree leaves it room.
-    const listed = (pi.getSettings().quietStartup ?? false) === false;
-    ctx.ui.setHeader((tui, theme) => mountWelcomeHeader(new WelcomeHeader(ctx.cwd, theme,
-      { requestRender: () => tui.requestRender(), terminalRows: () => tui.terminal.rows,
-        stageShare: listed ? 1 / 3 : 1 / 2, model: () => ctx.model?.id ?? "no model",
-        standing: () => progress.status.step === "settled" ? receiptStanding(progress.status.receipt) : "none",
-        working: () => progress.status.step !== "ready" && progress.status.step !== "settled" }), tui));
-    // One turning orb for all work phases; the loader changes only its label.
-    if (ctx.mode === "tui") ctx.ui.setWorkingIndicator({ frames: orbFrames(ctx.ui.theme), intervalMs: ORB_FRAME_MS });
+    ctx.ui.setHeader((_tui, theme) => mountWelcomeHeader(new WelcomeHeader(ctx.cwd, theme)));
+    // The orb moves by phase: working, verifying, compacting, retrying.
+    if (ctx.mode === "tui") ctx.ui.setWorkingIndicator(workingOrb);
     ctx.ui.setEditorComponent((tui, theme) => new BarEditor(tui, theme, () => ctx.ui.theme));
     ctx.ui.setFooter((tui, theme, data) => new EvidenceFooter(theme, data, progress, { cwd: ctx.cwd,
       model: () => ctx.model === undefined ? "no model"

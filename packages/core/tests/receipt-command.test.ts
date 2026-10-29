@@ -142,7 +142,7 @@ it("writes the last receipt for a pull request as Markdown and as an in-toto Sta
   expect(markdown.status).toBe(0);
   expect(markdown.stdout).toContain(`Commit \`${commit.slice(0, 12)}\`, changes from \`${base.slice(0, 12)}\`; Tesota 0.1.0, ` +
     `model \`provider/model\`; session \`${incomplete}\``);
-  expect(markdown.stdout).toContain("```text\nTesota receipt\nNo review flags · 1 verification limit\nCheck evidence, not your acceptance.\n");
+  expect(markdown.stdout).toContain("```text\nTesota receipt\nNo review flags · 1 verification limit\nEvidence, not approval: accepting the change is yours.\n");
   expect(markdown.stdout).toContain("\nDetails\n  proved        src/rule.ts\n");
   expect(markdown.stdout).toContain("  not verified  src/rule.ts lines 4-6: outside the contracts that proved");
   expect(markdown.stdout).not.toContain("Not this commit's content");

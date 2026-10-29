@@ -7,7 +7,7 @@ import { Transcript } from "../src/shell/transcript.ts";
 const theme = shellTheme("dark", "truecolor");
 const plain = (transcript: Transcript, width: number): string[] => transcript.render(width).map((line) => stripTerminalSequences(line).trimEnd());
 
-test("operator messages wrap under the prompt inside a full-width band without padding rows", () => {
+test("operator messages wrap under the prompt with no band and no padding rows: only the input is filled", () => {
   const transcript = new Transcript(theme);
   transcript.add({ role: "user", content: "abcdefghijklm\nnext", timestamp: 0 });
   expect(plain(transcript, 10)).toEqual([" › abcdefg", "   hijklm", "   next"]);
@@ -15,20 +15,19 @@ test("operator messages wrap under the prompt inside a full-width band without p
   for (const width of [1, 2, 6, 10, 80]) {
     const rows = transcript.render(width);
     expect(rows.every((row) => visibleWidth(row) <= width)).toBe(true);
-    expect(rows.every((row) => visibleWidth(row) === width)).toBe(true);
-    expect(rows.join("\n")).toContain(theme.getBgAnsi("userMessageBg"));
+    expect(rows.join("\n")).not.toContain(theme.getBgAnsi("userMessageBg"));
   }
 });
 
-test("operator bands keep readable text and prompt colors when the theme changes", () => {
+test("operator messages keep readable text and prompt colors when the theme changes", () => {
   const look = shellTheme("dark", "truecolor");
   const transcript = new Transcript(look);
   transcript.add({ role: "user", content: "hello", timestamp: 0 });
-  expect(transcript.render(40)[0]).toContain("\x1b[48;2;47;42;53m");
+  expect(transcript.render(40)[0]).toContain("\x1b[38;2;237;237;237mhello");
   look.use("light");
   transcript.invalidate();
   const row = transcript.render(40)[0]!;
-  expect(row).toContain("\x1b[48;2;228;217;233m");
+  expect(row).not.toContain("\x1b[48;2;");
   expect(row).toContain(look.fg("muted", "› "));
   expect(row).toContain(look.fg("userMessageText", "hello"));
 });

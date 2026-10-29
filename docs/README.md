@@ -53,4 +53,5 @@ couldn't verify in a receipt.
 
 - [Roadmap](../ROADMAP.md)
 - [Development](development.md): building, testing and proving Tesota.
+- [Design](../DESIGN.md): how the terminal looks, and why.
 - [Contributing](../CONTRIBUTING.md) and [Security](../SECURITY.md)

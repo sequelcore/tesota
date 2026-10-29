@@ -78,8 +78,8 @@ The run in the image above ends with this one:
 
 ```text
 Tesota receipt
-No review flags · no verification limits
-Check evidence, not your acceptance.
+No review flags · no verification limits · 1 opinion to read
+Evidence, not approval: accepting the change is yours.
 
 ✓ Tested      npm run test · 0:00
 ✓ Proved      src/total.ts · 0:02
@@ -147,7 +147,7 @@ explains the rest.
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/tesota-welcome-light.svg">
-  <img alt="Tesota's shell as it opens: the ironwood mark beside the name, model, folder and tagline; a faded ironwood and its saguaro seedling centered above the input band and footer." src="docs/assets/tesota-welcome-dark.svg">
+  <img alt="Tesota's shell as it opens: the tesota wordmark centered, its version and folder under it, the question What should we work on?, the input band right below, and the footer at the bottom." src="docs/assets/tesota-welcome-dark.svg">
 </picture>
 
 ## Documentation

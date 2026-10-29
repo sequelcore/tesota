@@ -30,19 +30,18 @@ reading the clipboard again.
 
 ## The screen
 
-- **The header:** a small pixel ironwood beside Tesota's name and version,
-  the model and folder, and its purpose. The tree blossoms when the latest
-  receipt is verified; a new request clears it. The receipt's text says
-  the same in words.
-- **The empty stage:** a larger, faded ironwood and a saguaro seedling,
-  centered between the header and the input. It stays while you type and
-  goes when you send a message; it never enters scrollback. The crown
-  rustles once when Tesota opens, and again, dropping a leaf, when you
-  click either tree. Without extended colors both trees are plain
-  silhouettes that don't move.
-- **The input:** a full-width band with a `›` prompt, like your messages in
-  the conversation. Without background-color support, both use plain rows
-  and the prompt. Enter sends; while the agent works, Enter
+- **The welcome:** while the session is empty, Tesota's wordmark, its
+  version and folder, and a question to start with, such as "What should
+  we work on?", with the input right under them, the two centered. It
+  stays while you type; when you send a message the conversation takes its
+  place and the input goes to the bottom. It never enters scrollback.
+- **The conversation:** your messages behind a `›` prompt, the agent's
+  replies and tool calls, and each request's receipt behind a thin rule at
+  its left edge. The models' opinions in the receipt sit behind a dotted
+  rule, apart from the evidence.
+- **The input:** a full-width band with a `›` prompt, the only filled
+  surface on the screen. Without background-color support it's a plain
+  row with the prompt. Enter sends; while the agent works, Enter
   steers the run and Alt+Enter queues a follow-up. Pending messages show
   above it, labeled with when they will be delivered. Alt+Up (Alt+Q on
   Windows) returns them to the input to edit or withdraw; stopping the run
@@ -65,7 +64,9 @@ show.
 Tesota draws in `tesota-dark` or `tesota-light`, following your terminal's
 background, and switches when it changes.
 
-The themes are drawn for a `#202020` canvas (light: `#edede5`). Tesota's
+The themes are neutral grays with one accent, an indigo, kept for what you
+act on and what a model thinks; green, amber and red say only how a check
+ended. They're drawn for a `#0f0f10` canvas (light: `#fafafa`). Tesota's
 terminal color schemes, in [`terminal-schemes`](../../terminal-schemes),
 set that canvas and a matching ANSI palette. They're optional:
 

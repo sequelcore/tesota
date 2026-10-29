@@ -30,7 +30,7 @@ export interface Surface {
   header: Parameters<ShellUI["setHeader"]>[0];
   footer: Parameters<ShellUI["setFooter"]>[0];
   editor: Parameters<ShellUI["setEditorComponent"]>[0];
-  indicator: { frames?: string[]; intervalMs?: number } | undefined;
+  indicator: Parameters<ShellUI["setWorkingIndicator"]>[0];
   /** What the label says while the gate verifies (#590). */
   detail: WorkingDetail | undefined;
   readonly statuses: Map<string, string>;
@@ -48,7 +48,7 @@ export function createSurface(theme: ShellTheme): Surface {
       setHeader: (factory) => { surface.header = factory; changed(); },
       setFooter: (factory) => { surface.footer = factory; changed(); },
       setEditorComponent: (factory) => { surface.editor = factory; changed(); },
-      setWorkingIndicator: (options) => { surface.indicator = options; changed(); },
+      setWorkingIndicator: (factory) => { surface.indicator = factory; changed(); },
       setWorkingDetail: (detail) => { surface.detail = detail; changed(); },
       setStatus: (key, text) => {
         if (text === undefined) surface.statuses.delete(key);

@@ -5,7 +5,8 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { orbFrames } from "../../../src/welcome-header.ts";
+import { GREETINGS, WORDMARK } from "../../../src/welcome-header.ts";
+import { workingOrb } from "../../../src/working-orb.ts";
 import { runApp } from "../src/shell/app.ts";
 import { shellTheme } from "../../../src/theme.ts";
 import type { ScriptStep } from "./engine.ts";
@@ -14,7 +15,7 @@ import { VirtualTerminal } from "./virtual-terminal.ts";
 
 /**
  * Tesota's own interface in the engine's shell (#446), as the operator sees
- * it: the pixel-mark header, the input band, the evidence
+ * it: the welcome screen, the input band, the evidence
  * footer, the working orb, the receipt card, and the
  * theme for the terminal's background. Pi is not loaded for any of it.
  */
@@ -39,7 +40,7 @@ async function app(script: readonly ScriptStep[], tokensPerSecond = 400) {
   writeFileSync(settingsPath, JSON.stringify({ permissionMode: "full" }));
   const running = runApp({ cwd, terminal, models, credentials, settingsPath,
     sessions: folder("tesota-core-interface-sessions-") });
-  await terminal.until("Tesota v");
+  await terminal.until("for commands");
   terminal.type("/model");
   terminal.type(enter);
   await terminal.until("Model");
@@ -80,14 +81,15 @@ describe("Tesota's interface on the engine", () => {
     }
   });
 
-  test("the empty stage draws the palo fierro, and the input band and evidence footer sit below", async () => {
+  test("the empty screen shows the wordmark, its version and a greeting, the input under them and the evidence footer below", async () => {
     const { terminal, running, branch } = await app([]);
-    // The fixed half-block grid is present on the first frame.
-    await terminal.until("▀".repeat(49));
     const screen = await terminal.screen();
-    expect(screen.join("\n")).toContain("Checks the code. Challenges the spec. Flags the gap.");
-    expect(screen.filter((line) => /[▀▄█]/u.test(line))).toHaveLength(12);
-    expect(screen.slice(0, 3).every((line) => /[▀▄█]/u.test(line))).toBe(true);
+    // No header row: the wordmark's four rows are the only block letters, centered, with the version and a greeting under them.
+    expect(screen.filter((line) => /[▀▄█]/u.test(line))).toHaveLength(WORDMARK.length);
+    expect(screen[0]?.trim()).toBe("");
+    const mark = screen.findIndex((line) => line.includes(WORDMARK[1]!.trim()));
+    expect(screen[mark + 3]).toMatch(/^\s+v\S+ · /u);
+    expect(GREETINGS).toContain(screen[mark + 5]?.trim() ?? "");
     expect(screen.filter((line) => line.startsWith("› "))).toHaveLength(1);
     expect(screen.join("\n")).not.toContain("▌");
     // The footer is one row: the evidence, and the permission mode (#449), a status it never drops; this temporary folder's long
@@ -98,13 +100,17 @@ describe("Tesota's interface on the engine", () => {
     await quit(terminal, running);
   });
 
-  test("while the agent works the orb turns in place beside its label", async () => {
+  test("while the agent works the orb turns beside its label, two rows of half blocks in the theme's colors", async () => {
     const { terminal, running } = await app(["an answer that streams slowly enough to watch the orb turn"], 8);
     terminal.type("go");
     terminal.type(enter);
-    const frames = orbFrames(shellTheme("dark", "truecolor")).map((frame) => stripTerminalSequences(frame).trim());
-    const working = (await terminal.until("Working")).split("\n").find((line) => line.includes("Working")) ?? "";
-    expect(frames.some((frame) => frame !== "" && working.includes(frame))).toBe(true);
+    const screen = (await terminal.until("Working")).split("\n");
+    const row = screen.findIndex((line) => line.includes("Working"));
+    expect(screen[row]).toMatch(/^ ▀{4} Working…/u);
+    expect(screen[row + 1]).toMatch(/^ ▀{4}/u);
+    // Drawn from the orb the theme gives: its first working frame's pixels, top and bottom, are truecolor.
+    const frame = workingOrb(shellTheme("dark", "truecolor")).phases.working.frames[0]!;
+    expect(frame.map((line) => stripTerminalSequences(line))).toEqual(["▀▀▀▀", "▀▀▀▀"]);
     await terminal.untilGone("Working", 20_000);
     await quit(terminal, running);
   }, 30_000);
@@ -135,9 +141,9 @@ describe("Tesota's interface on the engine", () => {
     terminal.type("x");
     await new Promise((resolve) => setTimeout(resolve, 100));
     // The input band follows the same light theme, background and text, rather than the removed bar.
-    expect(terminal.written.slice(0, before)).toContain("48;2;47;42;53");
-    expect(terminal.written.slice(before)).toContain("48;2;228;217;233");
-    expect(terminal.written.slice(before)).toContain("38;2;36;33;31");
+    expect(terminal.written.slice(0, before)).toContain("48;2;24;24;26");
+    expect(terminal.written.slice(before)).toContain("48;2;240;240;242");
+    expect(terminal.written.slice(before)).toContain("38;2;24;24;27");
     await quit(terminal, running);
   });
 });

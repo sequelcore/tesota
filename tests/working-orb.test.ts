@@ -1,70 +1,77 @@
-import { Loader, ProcessTerminal, TuiMainScreen, stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
-import { expect, it, vi } from "vitest";
+import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
+import { expect, it } from "vitest";
+import type { WorkPhase } from "../src/contract.js";
 import { shellTheme } from "../src/theme.js";
-import { ORB_FRAME_MS, orbFrame, orbFrames } from "../src/welcome-header.js";
+import { ORB_FRAME_MS, workingOrb } from "../src/working-orb.js";
 
-it("turns in a fixed 3×1 footprint in an exact 2.4 second loop, never holding a mask past 240 ms", () => {
-  const theme = shellTheme("dark", "truecolor");
-  const frames = orbFrames(theme);
-  expect(frames).toHaveLength(30);
+const phases: readonly WorkPhase[] = ["working", "verifying", "compacting", "retrying"];
+/** Every truecolor foreground and background in a frame, as `r;g;b`. */
+// eslint-disable-next-line no-control-regex -- inspect terminal color SGRs
+const inks = (rows: readonly string[]): string[] => [...rows.join("").matchAll(/\x1b\[[34]8;2;(\d+;\d+;\d+)m/gu)].map(([, rgb]) => rgb!);
+
+it("draws each phase as a round orb, four columns by two rows of half blocks, looping in whole frames", () => {
+  const orb = workingOrb(shellTheme("dark", "truecolor"));
   expect(ORB_FRAME_MS).toBe(80);
-  const masks = frames.map(stripTerminalSequences);
-  for (let i = 0; i < frames.length; i++) {
-    expect(visibleWidth(frames[i] ?? "")).toBe(3);
-    expect(frames[i]).not.toMatch(/[\n⣿]/u);
-    expect(orbFrame(theme, i + 30)).toBe(frames[i]);
-    expect(orbFrame(theme, i - 30)).toBe(frames[i]);
-    expect([1, 2, 3].some(step => masks[(i + step) % 30] !== masks[i])).toBe(true);
+  const loops = { working: 2400, verifying: 1600, compacting: 2000, retrying: 3200 };
+  for (const phase of phases) {
+    const { frames, intervalMs } = orb.phases[phase];
+    expect(intervalMs).toBe(ORB_FRAME_MS);
+    expect(frames).toHaveLength(loops[phase] / ORB_FRAME_MS);
+    for (const rows of frames) {
+      expect(rows).toHaveLength(2);
+      for (const row of rows) {
+        expect(visibleWidth(row)).toBe(4);
+        expect(stripTerminalSequences(row)).toBe("▀▀▀▀");
+      }
+    }
   }
 });
 
-for (const appearance of ["dark", "light"] as const) {
-  it(`uses stronger near-side ink in ${appearance} and follows theme roles and color mode`, () => {
-    const theme = shellTheme(appearance, "truecolor");
-    // The central rib faces us at zero and faces away half a turn later.
-    const centerInk = (index: number): number => {
-      // eslint-disable-next-line no-control-regex -- inspect terminal foreground SGRs
-      const colors = [...orbFrame(theme, index).matchAll(/\x1b\[38;2;(\d+);(\d+);(\d+)m/gu)];
-      return (colors[1]?.slice(1).map(Number) ?? []).reduce((a, b) => a + b, 0);
-    };
-    expect(appearance === "dark" ? centerInk(0) > centerInk(15) : centerInk(0) < centerInk(15)).toBe(true);
-    const frames = orbFrames(theme);
-    expect(orbFrames(theme)).toBe(frames);
-    const changed = { ...theme, colors: { ...theme.colors,
-      warning: { kind: "rgb", r: 220, g: 0, b: 0 } as const,
-      muted: { kind: "rgb", r: 220, g: 0, b: 0 } as const,
-      text: { kind: "rgb", r: 220, g: 0, b: 0 } as const,
-      accent: { kind: "rgb", r: 220, g: 0, b: 0 } as const } };
-    expect(orbFrames(changed)).not.toEqual(frames);
-    expect(orbFrames(changed).map(stripTerminalSequences)).toEqual(frames.map(stripTerminalSequences));
-    for (const role of ["warning", "muted", "text", "accent", "pageBg"] as const) {
-      expect(orbFrames({ ...theme, colors: { ...theme.colors, [role]: changed.colors.warning } })).not.toEqual(frames);
-    }
-    const indexed = orbFrames(shellTheme(appearance, "256color")).join("");
-    expect(indexed).toContain("\x1b[38;5;");
-    expect(indexed).not.toContain("\x1b[38;2;");
-    theme.use(appearance === "dark" ? "light" : "dark");
-    expect(orbFrames(theme)).not.toEqual(frames);
-  });
-}
+it("moves differently in each phase, so the orb says what the run is doing", () => {
+  const orb = workingOrb(shellTheme("dark", "truecolor"));
+  const loops = phases.map((phase) => orb.phases[phase].frames.map((rows) => inks(rows).join(" ")).join("|"));
+  expect(new Set(loops).size).toBe(phases.length);
+  // Each one moves: no phase holds one frame for its whole loop.
+  for (const phase of phases) expect(new Set(orb.phases[phase].frames.map((rows) => rows.join(""))).size).toBeGreaterThan(4);
+});
 
-it("keeps the pose and label column when the shell loader changes work phase", () => {
-  vi.useFakeTimers();
-  const terminal = new ProcessTerminal();
-  vi.spyOn(terminal, "write").mockImplementation(() => undefined);
-  const tui = new TuiMainScreen(terminal);
-  vi.spyOn(tui, "requestRender").mockImplementation(() => undefined);
-  const loader = new Loader(tui, text => text, text => text, "Working…");
+it.each(["dark", "light"] as const)("is neutral ink while the model works, and the accent only while Tesota verifies (%s)", (appearance) => {
+  const theme = shellTheme(appearance, "truecolor");
+  const orb = workingOrb(theme);
+  const accent = theme.colors["accent"]!;
+  const hue = (rgb: string): number => { const [r, g, b] = rgb.split(";").map(Number) as [number, number, number]; return b - (r + g) / 2; };
+  const bluest = (phase: WorkPhase): number => Math.max(...orb.phases[phase].frames.flatMap((rows) => inks(rows).map(hue)));
+  expect("r" in accent && accent.b - (accent.r + accent.g) / 2).toBeGreaterThan(40);
+  expect(bluest("verifying")).toBeGreaterThan(40);
+  for (const phase of ["working", "compacting", "retrying"] as const) expect(bluest(phase)).toBeLessThan(12);
+});
+
+it("blends its edge into the theme's canvas, and follows the theme, its color mode and its appearance", () => {
+  const theme = shellTheme("dark", "truecolor");
+  const orb = workingOrb(theme);
+  expect(workingOrb(theme)).toBe(orb);
+  // A corner pixel lies mostly outside the sphere, so it stays near the canvas; a pixel inside it does not.
+  const canvas = theme.colors["pageBg"]!;
+  const away = (rgb: string): number => "r" in canvas
+    ? rgb.split(";").map(Number).reduce((sum, value, k) => sum + Math.abs(value - [canvas.r, canvas.g, canvas.b][k]!), 0) : 0;
+  const first = inks(orb.phases.working.frames[0]!);
+  // Cell by cell, a top pixel then its bottom one: the top-left corner first, the pixel under the next cell's top fourth.
+  expect(away(first[0]!)).toBeLessThan(away(first[3]!));
+  expect(away(first[0]!)).toBeLessThan(150);
+  const indexed = workingOrb(shellTheme("dark", "256color")).phases.working.frames.flat().join("");
+  expect(indexed).toContain("\x1b[38;5;");
+  expect(indexed).not.toContain("\x1b[38;2;");
+  theme.use("light");
+  expect(workingOrb(theme)).not.toEqual(orb);
+});
+
+it("stands still as a plain silhouette where the terminal shows no extended colors", () => {
+  const before = process.env["NO_COLOR"];
+  process.env["NO_COLOR"] = "1";
   try {
-    loader.setIndicator({ frames: orbFrames(shellTheme("dark", "truecolor")), intervalMs: ORB_FRAME_MS });
-    vi.advanceTimersByTime(ORB_FRAME_MS * 7);
-    const line = () => stripTerminalSequences(loader.render(80).join("\n"));
-    const pose = line().slice(0, line().indexOf("Working…"));
-    for (const label of ["Verifying…", "Compacting…", "Working…"]) {
-      loader.setMessage(label);
-      expect(line().slice(0, line().indexOf(label))).toBe(pose);
-    }
-    vi.advanceTimersByTime(240);
-    expect(line().slice(0, line().indexOf("Working…"))).not.toBe(pose);
-  } finally { loader.stop(); vi.useRealTimers(); vi.restoreAllMocks(); }
+    const orb = workingOrb(shellTheme("dark", "truecolor"));
+    for (const phase of phases) expect(orb.phases[phase].frames).toEqual([["▗██▖", "▝██▘"]]);
+  } finally {
+    if (before === undefined) delete process.env["NO_COLOR"]; else process.env["NO_COLOR"] = before;
+  }
 });
