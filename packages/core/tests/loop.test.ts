@@ -1,3 +1,4 @@
+import type { JsonObject } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -67,6 +68,15 @@ for (const engine of engines) {
       const { session } = await start([{ tool: "no_such_tool", args: {} }, { tool: "read", args: {} }, "done"]);
       await session.prompt("go");
       expect(results(session).map((result) => result.isError)).toEqual([true, true]);
+      expect(session.lastAssistantText()).toBe("done");
+    });
+
+    test("arguments that aren't an object fail the call with a reason the model can read, and the loop goes on (#664)", async () => {
+      const odd = [null, "path", 3, ["path"]] as unknown as JsonObject[];
+      const { session } = await start([{ calls: ["write", engine.shell].flatMap((tool) => odd.map((args) => ({ tool, args }))) }, "done"]);
+      await session.prompt("go");
+      expect(results(session).map((result) => result.isError)).toEqual(Array(8).fill(true));
+      expect(results(session).every((result) => (result.text ?? "") !== "")).toBe(true);
       expect(session.lastAssistantText()).toBe("done");
     });
 

@@ -20,6 +20,12 @@ test("an edit shows what it replaces, and a write the file's start", () => {
     .toMatchObject({ title: "Write notes.md?", body: "# Notes\nmore" });
 });
 
+test("a call whose arguments aren't an object still asks, by the tool's name (#664)", () => {
+  for (const name of ["powershell", "edit", "write", "github_create_issue"]) {
+    for (const args of [null, "a.txt", 3, ["a.txt"]]) expect(confirmation({ name, arguments: args }, reason).title).toBeString();
+  }
+});
+
 test("another tool is named with its arguments", () => {
   expect(confirmation({ name: "github_create_issue", arguments: { title: "Bug" } }, reason))
     .toMatchObject({ title: "Use github_create_issue?", body: "{\"title\":\"Bug\"}" });

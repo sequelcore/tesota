@@ -116,6 +116,16 @@ test("an edit whose arguments the model malformed still draws, so a session that
   }
 });
 
+test("a call whose arguments aren't an object still draws by its name (#664)", () => {
+  for (const name of ["read", "edit", "write", "bash", "grep"]) {
+    for (const args of [null, "a.txt", 3, ["a.txt"]]) {
+      const transcript = new Transcript(theme);
+      transcript.start({ type: "toolCall", id: name, name, arguments: args as unknown as ToolCall["arguments"] });
+      expect(plain(transcript, 80).join("\n")).toContain(name);
+    }
+  }
+});
+
 test("a search shows its pattern and where it looks", () => {
   const transcript = new Transcript(theme);
   transcript.start({ type: "toolCall", id: "grep", name: "grep", arguments: { pattern: "quesillo", path: "notes" } });
