@@ -94,7 +94,7 @@ describe("the agent tool", () => {
     mkdirSync(join(cwd, ".agents", "agents"), { recursive: true });
     writeFileSync(join(cwd, ".agents", "agents", "worker.md"), "---\nname: worker\ndescription: works\nmodel: openai-codex@work/gpt-6.1-sol\n---\nWork.\n");
     const credentials = new InMemoryCredentialStore();
-    const models = engineModels(credentials, [{ name: "work", provider: "openai-codex" }, { name: "personal", provider: "openai-codex" }]);
+    const models = await engineModels(credentials, [{ name: "work", provider: "openai-codex" }, { name: "personal", provider: "openai-codex" }]);
     const called: (string | undefined)[] = [];
     for (const name of ["work", "personal"]) {
       const id = `openai-codex@${name}`;

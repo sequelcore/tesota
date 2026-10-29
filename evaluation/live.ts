@@ -210,7 +210,7 @@ interface Judged { readonly source: string; readonly request: string; readonly i
 async function replay(): Promise<void> {
   const second = option("second") ?? "openai/gpt-5.5";
   const repeats = Number(option("repeats") ?? "3");
-  const registry = engineRegistry();
+  const registry = await engineRegistry();
   const slash = model.indexOf("/");
   const judge = registry.find(model.slice(0, slash), model.slice(slash + 1));
   if (judge === undefined) throw new Error(`${model} is not among the engine's models.`);

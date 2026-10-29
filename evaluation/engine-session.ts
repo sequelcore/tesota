@@ -65,8 +65,8 @@ export async function session(run: SessionRun): Promise<SessionResult> {
 }
 
 /** Model access the way verifiers get it, for a measurement that calls a model directly. */
-export function engineRegistry(): ModelRegistry {
-  const models = engineModels();
+export async function engineRegistry(): Promise<ModelRegistry> {
+  const models = await engineModels();
   return { find: (provider, id) => models.getModel(provider, id), complete: (model, context, options) => models.complete(model, context, options) };
 }
 
@@ -119,7 +119,7 @@ function skillsOf(folder: string): Skill[] {
 /** One engine session, in this process, from `engine`'s options file: it writes the model's last answer and exits 0 when it completed. */
 async function engineProcess(file: string): Promise<number> {
   const options = JSON.parse(readFileSync(file, "utf8")) as EngineOptions;
-  const models = engineModels();
+  const models = await engineModels();
   const [provider = "", ...id] = options.model.split("/");
   const model = models.getModel(provider, id.join("/"));
   if (model === undefined) throw new Error(`No model ${options.model} on the engine: sign in with tesota, then /login.`);

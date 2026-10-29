@@ -413,7 +413,7 @@ describe("the claude-code provider", () => {
 
   test("the models are pi-ai's Anthropic catalog, offered only once Claude Code is signed in", async () => {
     let signedIn = false;
-    const models = engineModels(new InMemoryCredentialStore());
+    const models = await engineModels(new InMemoryCredentialStore());
     models.setProvider(claudeCodeProvider(models.getModels("anthropic"), { signedIn: async () => signedIn }));
     expect((await runnableModels(models)).filter(({ provider }) => provider === "claude-code")).toEqual([]);
     signedIn = true;
@@ -429,7 +429,7 @@ describe("a session on claude-code", () => {
   test("print --model and the saved model run the explicitly chosen Claude account", async () => {
     const configDir = mkdtempSync(join(tmpdir(), "claude-print-account-"));
     const accounts = [{ name: "b", provider: "claude-code", folder: configDir }] as const;
-    const models = engineModels(new InMemoryCredentialStore(), accounts);
+    const models = await engineModels(new InMemoryCredentialStore(), accounts);
     expect(models.getModel("claude-code@b", "claude-haiku-4-5")?.provider).toBe("claude-code@b");
     const { start, runs } = replaying(answerReply, answerReply);
     models.setProvider(claudeCodeProvider(anthropic, { id: "claude-code@b", configDir, query: start, signedIn: async () => true }));

@@ -117,7 +117,7 @@ export async function doctorReport(): Promise<{ capabilities: Diagnosis[]; exitC
   }
   const credentials = fileCredentialStore();
   const stored = new Set((await credentials.list()).map(({ providerId }) => providerId));
-  const models = engineModels(credentials, accounts);
+  const models = await engineModels(credentials, accounts);
   for (const provider of models.getProviders().filter(({ id }) => !id.startsWith("claude-code") && models.getModels(id).length > 0)) {
     try {
       // checkAuth reads local auth only: unlike getAuth, it never refreshes OAuth credentials.

@@ -39,9 +39,9 @@ function fakeClaude(emails: Record<string, string> = {}) {
 }
 
 /** The engine's models, with ChatGPT's sign-in scripted: each login stores a token for `accountId`. */
-function hands(overrides: Partial<AccountHands> = {}, accountId = "chatgpt-account-1") {
+async function hands(overrides: Partial<AccountHands> = {}, accountId = "chatgpt-account-1") {
   const credentials = new InMemoryCredentialStore();
-  const models = engineModels(credentials, []);
+  const models = await engineModels(credentials, []);
   const codex = models.getProvider("openai-codex");
   if (codex?.auth.oauth === undefined) throw new Error("no Codex provider");
   let logins = 0;
@@ -59,7 +59,7 @@ function hands(overrides: Partial<AccountHands> = {}, accountId = "chatgpt-accou
 
 describe("adding an account in one step", () => {
   test("a Claude account gets its own folder, Claude Code's sign-in there, and its record, keeping every other setting", async () => {
-    const { hands: given, settingsPath, fake } = hands();
+    const { hands: given, settingsPath, fake } = await hands();
     writeSettings({ model: "openai/gpt-6.1-sol", permissionMode: "full", accounts: [{ name: "work", provider: "openai-codex" }] }, settingsPath);
     const said = await addAccount(given, "claude-code", "b");
     const made = claudeAccountFolder(settingsPath, "b");
@@ -71,7 +71,7 @@ describe("adding an account in one step", () => {
     expect(settings).toEqual({ model: "openai/gpt-6.1-sol", permissionMode: "full",
       accounts: [{ name: "work", provider: "openai-codex" }, { name: "b", provider: "claude-code", folder: made }] });
     // With no hand edit, the next Tesota offers it as a provider for --model, on that folder.
-    const next = engineModels(new InMemoryCredentialStore(), settings.accounts);
+    const next = await engineModels(new InMemoryCredentialStore(), settings.accounts);
     const id = next.getModels("claude-code@b")[0]?.id;
     expect(id).toBeDefined();
     expect(chosenModel(next, { model: `claude-code@b/${id}` })?.provider).toBe("claude-code@b");
@@ -79,7 +79,7 @@ describe("adding an account in one step", () => {
 
   test("a Claude account whose sign-in did not finish is not recorded", async () => {
     const fake = fakeClaude();
-    const { hands: given, settingsPath } = hands({ claude: fake.claude });
+    const { hands: given, settingsPath } = await hands({ claude: fake.claude });
     await expect(addAccount(given, "claude-code", "b")).rejects.toThrow("not signed in");
     expect(fake.signIns).toHaveLength(1);
     expect(readSettings(settingsPath).settings.accounts).toBeUndefined();
@@ -88,7 +88,7 @@ describe("adding an account in one step", () => {
   });
 
   test("a Claude account is added only in a folder Tesota makes, never in one already there", async () => {
-    const { hands: given, settingsPath, fake } = hands();
+    const { hands: given, settingsPath, fake } = await hands();
     const there = claudeAccountFolder(settingsPath, "b");
     mkdirSync(there, { recursive: true });
     writeFileSync(join(there, "yours.json"), "{}");
@@ -98,7 +98,7 @@ describe("adding an account in one step", () => {
   });
 
   test("an invalid accounts setting is never written over: adding and removing are refused until it is fixed", async () => {
-    const { hands: given, settingsPath, fake } = hands();
+    const { hands: given, settingsPath, fake } = await hands();
     const written = [{ name: "a", provider: "claude-code", folder: "relative/a" }, { name: "b", provider: "openai-codex" }];
     writeFileSync(settingsPath, JSON.stringify({ accounts: written }));
     await expect(addAccount(given, "openai-codex", "c")).rejects.toThrow("accounts setting is invalid");
@@ -108,13 +108,13 @@ describe("adding an account in one step", () => {
   });
 
   test("a name that differs from another only in case is the same account, since folders may not tell them apart", async () => {
-    const { hands: given } = hands();
+    const { hands: given } = await hands();
     await addAccount(given, "claude-code", "work");
     await expect(addAccount(given, "claude-code", "Work")).rejects.toThrow("already");
   });
 
   test("a ChatGPT account signs in to its own slot, then is recorded, and runs at once in this Tesota", async () => {
-    const { hands: given, settingsPath, credentials, models } = hands();
+    const { hands: given, settingsPath, credentials, models } = await hands();
     writeSettings({ model: "claude-code/claude-opus-5-5" }, settingsPath);
     const said = await addAccount(given, "openai-codex", "work");
     expect(said).toContain("openai-codex@work");
@@ -125,7 +125,7 @@ describe("adding an account in one step", () => {
   });
 
   test("a ChatGPT sign-in that fails records nothing", async () => {
-    const { hands: given, settingsPath, models } = hands();
+    const { hands: given, settingsPath, models } = await hands();
     const codex = models.getProvider("openai-codex");
     if (codex?.auth.oauth === undefined) throw new Error("no Codex provider");
     models.setProvider({ ...codex, auth: { oauth: { ...codex.auth.oauth, login: () => Promise.reject(new Error("Login cancelled")) } } });
@@ -134,7 +134,7 @@ describe("adding an account in one step", () => {
   });
 
   test("an account already there, an invalid name, or another provider is refused before any sign-in", async () => {
-    const { hands: given, settingsPath, fake, logins } = hands();
+    const { hands: given, settingsPath, fake, logins } = await hands();
     writeSettings({ accounts: [{ name: "b", provider: "claude-code", folder: folder("claude-b-") }] }, settingsPath);
     await expect(addAccount(given, "claude-code", "b")).rejects.toThrow("already");
     await expect(addAccount(given, "claude-code", "not a name")).rejects.toThrow("name");
@@ -146,7 +146,7 @@ describe("adding an account in one step", () => {
 
 describe("signing an account in again", () => {
   test("a Claude account signs in again in its own folder; its record is unchanged", async () => {
-    const { hands: given, settingsPath, fake } = hands();
+    const { hands: given, settingsPath, fake } = await hands();
     const own = folder("claude-b-");
     const accounts = [{ name: "b", provider: "claude-code" as const, folder: own }];
     writeSettings({ accounts }, settingsPath);
@@ -156,7 +156,7 @@ describe("signing an account in again", () => {
   });
 
   test("a ChatGPT account replaces its own slot's sign-in only", async () => {
-    const { hands: given, settingsPath, credentials } = hands();
+    const { hands: given, settingsPath, credentials } = await hands();
     writeSettings({ accounts: [{ name: "work", provider: "openai-codex" }] }, settingsPath);
     await credentials.modify("openai-codex", async () => ({ type: "oauth", access: "default", refresh: "r", expires: 0 }));
     await addAccount(given, "openai-codex", "other");
@@ -167,7 +167,7 @@ describe("signing an account in again", () => {
   });
 
   test("an account that is not there is named", async () => {
-    const { hands: given } = hands();
+    const { hands: given } = await hands();
     await expect(signInAgain(given, "claude-code@nobody")).rejects.toThrow("no account claude-code@nobody");
   });
 });
@@ -175,7 +175,7 @@ describe("signing an account in again", () => {
 describe("the view of the accounts", () => {
   test("lists each account with its signed-in identity and flags the same account signed in twice", async () => {
     const fake = fakeClaude({ default: "owner@example.test" });
-    const { hands: given, settingsPath, credentials } = hands({ claude: fake.claude });
+    const { hands: given, settingsPath, credentials } = await hands({ claude: fake.claude });
     const b = folder("claude-b-");
     const c = folder("claude-c-");
     fake.signedIn.set(b, "owner@example.test");
@@ -194,14 +194,14 @@ describe("the view of the accounts", () => {
   });
 
   test("with no account, says how to add one", async () => {
-    const { hands: given } = hands();
+    const { hands: given } = await hands();
     expect(await accountsView(given)).toContain("tesota accounts add");
   });
 });
 
 describe("removing an account", () => {
   test("refused while the model setting or an agent type names it, saying which", async () => {
-    const { hands: given, settingsPath, cwd } = hands();
+    const { hands: given, settingsPath, cwd } = await hands();
     const accounts = [{ name: "b", provider: "claude-code" as const, folder: folder("claude-b-") }, { name: "work", provider: "openai-codex" as const }];
     writeSettings({ accounts, model: "claude-code@b/claude-opus-5-5" }, settingsPath);
     mkdirSync(join(cwd, ".agents", "agents"), { recursive: true });
@@ -212,7 +212,7 @@ describe("removing an account", () => {
   });
 
   test("an account in no use is removed from the settings, and its ChatGPT sign-in with it", async () => {
-    const { hands: given, settingsPath, credentials } = hands();
+    const { hands: given, settingsPath, credentials } = await hands();
     writeSettings({ accounts: [{ name: "work", provider: "openai-codex" }, { name: "home", provider: "openai-codex" }], model: "openai-codex@home/gpt-6.1-sol" }, settingsPath);
     await credentials.modify("openai-codex@work", async () => ({ type: "oauth", access: "t", refresh: "r", expires: 0 }));
     await removeAccount(given, "openai-codex@work");
@@ -221,7 +221,7 @@ describe("removing an account", () => {
   });
 
   test("removes the folder Tesota made, never one the operator made by hand", async () => {
-    const { hands: given, settingsPath } = hands();
+    const { hands: given, settingsPath } = await hands();
     await addAccount(given, "claude-code", "made");
     const made = claudeAccountFolder(settingsPath, "made");
     const own = folder("claude-own-");
@@ -245,7 +245,7 @@ describe("removing an account", () => {
 
 describe("tesota accounts", () => {
   test("adds, lists and removes, answering with a code a script can read", async () => {
-    const { hands: given, settingsPath } = hands();
+    const { hands: given, settingsPath } = await hands();
     let out = "";
     let error = "";
     const output = { out: (text: string) => { out += text; }, error: (text: string) => { error += text; } };

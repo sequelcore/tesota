@@ -192,7 +192,7 @@ export async function accountsCommand(args: readonly string[], output: { out(tex
   hands?: AccountHands): Promise<number> {
   if (hands === undefined) {
     const { terminalSignIn } = await import("./shell/sign-in.ts");
-    return terminalSignIn(async (interaction) => accountsCommand(args, output, cliHands(interaction)), { write: output.error });
+    return terminalSignIn(async (interaction) => accountsCommand(args, output, await cliHands(interaction)), { write: output.error });
   }
   const [action, first, second] = args;
   try {
@@ -209,10 +209,10 @@ export async function accountsCommand(args: readonly string[], output: { out(tex
 }
 
 /** The operator's own settings, credentials and models, and a sign-in that asks on this terminal. */
-function cliHands(interaction: AuthInteraction): AccountHands {
+async function cliHands(interaction: AuthInteraction): Promise<AccountHands> {
   const settingsPath = join(tesotaHome(), "settings.json");
   const credentials = fileCredentialStore();
-  return { settingsPath, credentials, models: engineModels(credentials, readSettings(settingsPath).settings.accounts ?? []),
+  return { settingsPath, credentials, models: await engineModels(credentials, readSettings(settingsPath).settings.accounts ?? []),
     cwd: process.cwd(), interaction };
 }
 

@@ -191,7 +191,7 @@ export async function runPrint(args: readonly string[], cwd: string, write: Prin
   if ("refused" in named) { write.error(`${named.refused}\n`); return 1; }
   const { settings } = readSettings(settingsPath);
   const accounts = settings.accounts ?? [];
-  models ??= engineModels(fileCredentialStore(), accounts);
+  models ??= await engineModels(fileCredentialStore(), accounts);
   for (const [id, label] of await accountLabels(fileCredentialStore(), accounts)) write.error(`${id}: ${label}\n`);
   const runnable = await modelFor(models, asked.model, named.file, settings.model, write);
   if (runnable === undefined) return 1;
