@@ -19,7 +19,8 @@ requests and issues in [sequelcore/tesota](https://github.com/sequelcore/tesota)
   orb is a lit sphere whose motion says what the run is doing: it turns
   while the model works, scans in the accent while Tesota verifies,
   condenses while compacting and pulses while waiting to retry. The pixel
-  tree is gone (#750, #749).
+  tree is gone (#750, #749). The HTML model graph the viewer's `o` opens
+  uses the same palette (#755).
 - The receipt names a model's opinion worth reading beside its counts
   (`1 opinion to read`), never counting it as a flag or a limit, and its
   acceptance line reads "Evidence, not approval: accepting the change is
