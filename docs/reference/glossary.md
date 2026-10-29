@@ -11,7 +11,7 @@ that writes the code is an LLM.
 | receipt | The record of what was verified and what wasn't, at the end of each run |
 | standing | How a run ended: verified, incomplete, unverified, unchanged (shown in print mode as `Completed (nothing to verify)`) or failed |
 | verification | What Tesota does after the agent finishes: proofs, tests, model checks, weakening checks |
-| proof | A LemmaScript contract proved with Dafny in LemmaScript's model of TypeScript; JavaScript runtime behavior, including floating-point rounding, can differ. See [What a proof covers](../concepts/verification.md#what-a-proof-covers) |
+| proof | A LemmaScript contract proved with Dafny in LemmaScript's model of TypeScript; JavaScript runtime behavior, including floating-point rounding, can differ. See [What a proof covers](checks.md#proofs) |
 | design model | A TLA+ or Quint model checked with TLC; a pass establishes the declared properties in every reachable state as configured. Apalache translates Quint for TLC |
 | model | The LLM the agent runs on (`provider/model`) |
 | model graph | The states a model checker explored, shown by `/graph` |

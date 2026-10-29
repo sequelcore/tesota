@@ -104,9 +104,33 @@ export function instanceEnvironment(configDir?: string): NodeJS.ProcessEnv {
   return { ...inherited, ...configDir === undefined ? {} : { CLAUDE_CONFIG_DIR: configDir } };
 }
 
-/** Non-secret account metadata from Claude Code itself; never reads its credential files. `signal` stops Claude Code when it aborts. */
+type ClaudeCodeStatus = { readonly loggedIn: boolean; readonly email?: string };
+
+/** The checks running now with no signal, by how they run and the folder they check; each is gone once it returns. */
+const checking = new WeakMap<typeof execFile, Map<string, Promise<ClaudeCodeStatus>>>();
+
+/**
+ * Non-secret account metadata from Claude Code itself; never reads its
+ * credential files. `signal` stops Claude Code when it aborts. Checks of one
+ * folder at the same time share one run (#744): `/model` asks a provider's
+ * sign-in and its account label together. A check with a signal runs on its
+ * own, so stopping it stops no one else's, and nothing is kept once a check
+ * returns, so signing in or out elsewhere shows at the next one.
+ */
 export function claudeCodeStatus(configDir?: string, execute: typeof execFile = execFile,
-  signal?: AbortSignal): Promise<{ readonly loggedIn: boolean; readonly email?: string }> {
+  signal?: AbortSignal): Promise<ClaudeCodeStatus> {
+  if (signal !== undefined) return statusOf(configDir, execute, signal);
+  const running = checking.get(execute) ?? new Map<string, Promise<ClaudeCodeStatus>>();
+  checking.set(execute, running);
+  const key = configDir ?? "";
+  const found = running.get(key);
+  if (found !== undefined) return found;
+  const started = statusOf(configDir, execute, undefined).finally(() => { running.delete(key); });
+  running.set(key, started);
+  return started;
+}
+
+function statusOf(configDir: string | undefined, execute: typeof execFile, signal: AbortSignal | undefined): Promise<ClaudeCodeStatus> {
   const program = claudeCodeExecutable();
   if (program === undefined) return Promise.resolve({ loggedIn: false });
   return new Promise((resolve) => {

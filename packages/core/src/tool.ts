@@ -1,5 +1,6 @@
 import type { JsonValue } from "@earendil-works/pi-ai";
 import type { Static, TSchema } from "typebox";
+import type { ParsedCommand } from "./permissions.ts";
 
 /** What a tool call gives back to the model: its text, and whether the call failed; an extension's tool adds its details. */
 export interface ToolOutput {
@@ -22,5 +23,7 @@ export interface EngineTool<Parameters extends TSchema = TSchema> {
   /** What a call does, for permissions (#449): only reads, writes or edits files, or runs something; runs when not said. */
   readonly access?: "read" | "write" | "run";
   readonly promptGuidelines?: readonly string[];
+  /** A command as this shell's own parser reads it, for the floor (#697); nothing when it can't read it. */
+  parse?(command: string): Promise<readonly ParsedCommand[] | undefined>;
   execute(args: Static<Parameters>, signal: AbortSignal, callId: string): Promise<ToolOutput>;
 }

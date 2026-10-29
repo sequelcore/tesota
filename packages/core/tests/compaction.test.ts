@@ -1,4 +1,4 @@
-import { createModels, fauxAssistantMessage, fauxProvider, type FauxResponseStep, fauxToolCall } from "@earendil-works/pi-ai";
+import { createModels, fauxAssistantMessage, fauxProvider, type FauxResponseStep, fauxToolCall, type JsonObject } from "@earendil-works/pi-ai";
 import { expect, spyOn, test } from "bun:test";
 import { filesTouched, summarize, summaryMessage, type SummaryRequest } from "../src/compaction.ts";
 import type { HistoryMessage } from "../src/loop.ts";
@@ -25,6 +25,12 @@ test("files are strings, unique, ordered by first appearance, and changed takes 
   ];
   expect(filesTouched(history)).toEqual({ read: ["read.txt", "last.txt"], changed: ["first.txt", "written.txt", "edited.txt"] });
   expect(filesTouched([])).toEqual({ read: [], changed: [] });
+});
+
+test("a call whose arguments aren't an object touches no file (#664)", () => {
+  const odd = [null, "path", 3, ["path"]] as unknown as JsonObject[];
+  const history: HistoryMessage[] = [fauxAssistantMessage(odd.map((args) => fauxToolCall("read", args)))];
+  expect(filesTouched(history)).toEqual({ read: [], changed: [] });
 });
 
 function scripted(responses: FauxResponseStep[], overrides: Partial<SummaryRequest> = {}) {

@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlink
 import { homedir, tmpdir } from "node:os";
 import { join, parse } from "node:path";
 import { type Decision, decide, type RuleVerdict, strongest } from "../src/permission-rule.ts";
-import { type Access, judge, loadRules, type Mode } from "../src/permissions.ts";
+import { type Access, judge, loadRules, type Mode, type ParsedCommand } from "../src/permissions.ts";
 import { createSession, type EngineSession } from "../src/session.ts";
 import { lastFloorNotice, peekSessionFile } from "../src/session-file.ts";
 import type { ScriptStep } from "./engine.ts";
@@ -265,6 +265,67 @@ describe("the floor, which no mode crosses", () => {
     }
   });
 
+  describe("a command as PowerShell's parser read it (#697)", () => {
+    // The text says nothing the net refuses, so only what the parser read decides.
+    const parsedFloor = (commands: ParsedCommand[]) => judge(call("powershell", { command: "x" }), "run", cwd, "full", [], true, undefined, commands);
+    const removing = (path: string, recurse = "True"): ParsedCommand =>
+      ({ name: "Remove-Item", parameters: { Recurse: [recurse], Path: [path] }, arguments: [] });
+    // As the parser states them: it has read `$HOME` and `$env:` values already.
+    const guarded = ["~", "~/", homedir(), join(homedir(), "*"), "~/*", "~/*.*", join(homedir(), ".."), parse(cwd).root,
+      ...process.platform === "win32" ? ["C:\\*", "C:\\*.*", "C:\\Users", "\\\\?\\C:\\", "FileSystem::C:\\",
+        "Microsoft.PowerShell.Core\\FileSystem::C:\\", "\\\\localhost\\C$\\", `${process.env["SystemRoot"] ?? "C:\\Windows"}`] : ["/*"]];
+
+    test.each(guarded)("a recursive Remove-Item of a guarded folder is refused, however it is spelled: %s", (path) => {
+      expect(parsedFloor([removing(path)])).toMatchObject({ decision: "deny", by: "floor" });
+      expect(parsedFloor([{ name: "Remove-Item", parameters: { Recurse: ["True"], LiteralPath: [path] }, arguments: [] }]))
+        .toMatchObject({ decision: "deny", by: "floor" });
+    });
+
+    test("a folder below home, a value only running decides, or no recursion is not the floor's", () => {
+      // A `$` the parser left is a character of the name, as in a single-quoted '$HOME'.
+      for (const command of [removing("./build"), removing("~/project"), removing(join(homedir(), "project", "*")), removing("~/project*"),
+        removing("?"), removing("$child"), removing("$HOME"), removing("$env:USERPROFILE"), removing("~", "False"),
+        { name: "Remove-Item", parameters: { Path: ["~"] }, arguments: [] },
+        { name: "Get-ChildItem", parameters: { Recurse: ["True"], Path: ["~"] }, arguments: [] },
+        { name: "Remove-Item", parameters: { Recurse: ["True"] }, arguments: ["-Recurse"] }]) {
+        expect(parsedFloor([command])).toMatchObject({ decision: "allow", by: "mode" });
+      }
+    });
+
+    test("an alias of Remove-Item the parser has not resolved yet is still Remove-Item", () => {
+      for (const name of ["ri", "rd", "del", "Microsoft.PowerShell.Management\\Remove-Item"]) {
+        expect(parsedFloor([{ name, parameters: { Recurse: ["True"], Path: ["~"] }, arguments: [] }])).toMatchObject({ decision: "deny", by: "floor" });
+      }
+    });
+
+    test("a command only running names is refused with recursion flags and a guarded folder", () => {
+      expect(parsedFloor([{ name: null, parameters: {}, arguments: ["-rf", "~"] }])).toMatchObject({ decision: "deny", by: "floor" });
+      for (const words of [["~"], ["-Force", "~"], ["-rf", "build"]]) {
+        expect(parsedFloor([{ name: null, parameters: {}, arguments: words }])).toMatchObject({ decision: "allow", by: "mode" });
+      }
+    });
+
+    test("a shell given command text is held to the net, quotes and all", () => {
+      const cmd = (text: string): ParsedCommand => ({ name: "cmd.exe", parameters: {}, arguments: ["/c", text] });
+      expect(parsedFloor([cmd("rg x & rd /s /q C:\\")])).toMatchObject({ decision: "deny", by: "floor" });
+      expect(parsedFloor([cmd("dir")])).toMatchObject({ decision: "allow", by: "mode" });
+    });
+
+    // cmd and the PowerShell tool exist only on Windows; elsewhere a path starting with `/` reads as cmd's own switch.
+    test.if(process.platform === "win32")("cmd's own deletions read its %NAME% variables, as do the words after a stop-parsing token", () => {
+      const cmd = (...words: string[]): ParsedCommand => ({ name: "cmd.exe", parameters: {}, arguments: ["/c", ...words] });
+      const home = Object.entries(process.env).find(([, value]) => value === homedir())?.[0];
+      if (home !== undefined) {
+        for (const command of [cmd(`rd /s /q %${home}%`), cmd("rd", "/s", "/q", `%${home}%`), cmd(`dir & del /s /q "%${home}%\\*"`), cmd("--%", `rd /s /q %${home}%`),
+          { name: "Remove-Item", parameters: { Path: ["--%"] }, arguments: ["--%", `-Recurse %${home}%`] }]) {
+          expect(parsedFloor([command])).toMatchObject({ decision: "deny", by: "floor" });
+        }
+        expect(parsedFloor([cmd(`rd /s /q %${home}%\\project`)])).toMatchObject({ decision: "allow", by: "mode" });
+      }
+      expect(parsedFloor([cmd("rd /q build")])).toMatchObject({ decision: "allow", by: "mode" });
+    });
+  });
+
   test("a root with a forward slash, a secret in capitals, and a shell call that also says a harmless path", () => {
     for (const command of ["Remove-Item -Recurse -Force C:/", "Get-Content .ENV", "type CONFIG\\.Env.local"]) {
       expect(floor(shell, { command }, "run")).toMatchObject({ decision: "deny", by: "floor" });
@@ -498,6 +559,14 @@ describe("the boundary every call passes", () => {
   const named = (script: string): ScriptStep => ({ tool: shell, args: { command: script } });
   const results = (created: EngineSession): string[] =>
     created.messages().flatMap((message) => message.role === "toolResult" ? [message.text ?? ""] : []);
+
+  // `-WhatIf` only describes the deletion, so the command harms nothing should the floor let it through.
+  test.if(process.platform === "win32")("the floor refuses what PowerShell's parser reads, though the text alone passes (#697)", async () => {
+    const { created } = session([named("ri -Recurse -WhatIf $env:USERPROFILE"), "done"], "full");
+    await created.prompt("go");
+    expect(entries(created.file).filter(({ type }) => type === "permission")).toMatchObject([{ decision: "deny", by: "floor" }]);
+    expect(results(created)[0]).toContain("Tesota never allows this: it would destroy a disk, the root or a home folder.");
+  }, 30_000);
 
   test("after the floor refuses, the model is told the refusal covers the effect, and with no one to ask the rest is refused (#622)", async () => {
     const alone = session([named("Get-Content .env"), write("../cleanup.cjs"), named("echo route > route.txt"), write("inside.txt"), "done"], "full");

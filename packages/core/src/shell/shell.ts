@@ -1,5 +1,5 @@
 import {
-  type Component, Container, Editor, type Focusable, getNativeClipboard, Input, Loader, matchesKey, ScrollView, type SelectItem, SelectList,
+  type Component, Container, Editor, type Focusable, getNativeClipboard, Input, matchesKey, ScrollView, type SelectItem, SelectList,
   type SlashCommand,
   Spacer, type Terminal, type TerminalColors, Text, TruncatedText, TuiAltScreen, type TuiAltScreenOptions, TuiMainScreen, VStack,
 } from "@earendil-works/pi-tui";
@@ -14,6 +14,7 @@ import { expandKey, type Surface } from "./surface.ts";
 import { listRow, type ShellTheme } from "../../../../src/theme.ts";
 import type { ClarificationQuestion } from "../../../../src/clarification.ts";
 import { Transcript } from "./transcript.ts";
+import { WorkingStatus } from "./working-status.ts";
 import type { QuestionOutcome, QuestionSubmit } from "../questions.ts";
 import { createQuestionDraft, type QuestionDraft, QuestionForm } from "./question.ts";
 import { framed, frameTitle, type FrameTone } from "./frame.ts";
@@ -223,7 +224,7 @@ export function startShell(options: ShellOptions): Shell {
   };
   drawPending();
   const status = new Container();
-  const loader = new Loader(tui, (text) => theme.fg("accent", text), (text) => theme.fg("muted", text), "Working…");
+  const loader = new WorkingStatus(tui, theme);
   const editorSlot = new VStack();
   let editor = new Editor(tui, theme.editor);
   /** The shell's commands, then the shown session's skills (#540); a command wins over a skill of its name. */
@@ -241,20 +242,32 @@ export function startShell(options: ShellOptions): Shell {
   // also show as working: the question leads, directly under the conversation.
   const statusRow: Component = { render: (width) => questions.length > 0 ? [] : status.render(width), invalidate: () => { status.invalidate(); } };
   // A blank row always above the input, so the conversation's last card never touches it.
-  const dock: readonly Component[] = [new Spacer(1), pending, statusRow, editorSlot, footerSlot];
+  const docked: readonly Component[] = [new Spacer(1), pending, statusRow, editorSlot];
+  /**
+   * The empty screen (#749): the header's welcome block with the input right under it, the pair centered in the rows
+   * the document and dock leave, and the footer kept at the bottom; none once there is activity or it does not fit.
+   */
+  const welcome = (width: number): { readonly above: number; readonly block: readonly string[]; readonly below: number } | undefined => {
+    const stage = mountedHeader?.emptyState;
+    if (activity || handedOver || stage === undefined) return undefined;
+    const block = stage.block(width);
+    const free = terminal.rows - document.render(width).length
+      - [...docked, footerSlot].reduce((rows, component) => rows + component.render(width).length, 0);
+    if (block.length === 0 || block.length > free) return undefined;
+    const below = Math.floor((free - block.length) / 2);
+    return { above: free - block.length - below, block, below };
+  };
+  const lift: Component = { render: (width) => Array<string>(welcome(width)?.below ?? 0).fill(""), invalidate: () => undefined };
+  const dock: readonly Component[] = [...docked, lift, footerSlot];
   // This decoration belongs to the live viewport, not the document exported to scrollback.
   const liveDocument = new Container();
   liveDocument.addChild(document);
   liveDocument.addChild({
     render: (width) => {
-      const stage = mountedHeader?.emptyState;
-      if (activity || handedOver || stage === undefined) { stage?.pause(); return []; }
-      const free = Math.max(0, terminal.rows - document.render(width).length
-        - dock.reduce((rows, component) => rows + component.render(width).length, 0));
-      return stage.renderIn(width, free);
+      const shown = welcome(width);
+      return shown === undefined ? [] : [...Array<string>(shown.above).fill(""), ...shown.block];
     },
-    handleMouse: (event) => activity ? undefined : mountedHeader?.emptyState?.handleMouse?.(event),
-    invalidate: () => mountedHeader?.emptyState?.invalidate(),
+    invalidate: () => undefined,
   });
   if (tui instanceof TuiAltScreen) {
     tui.setLayoutRoot(new VStack([
@@ -428,7 +441,7 @@ export function startShell(options: ShellOptions): Shell {
     drawBlock();
     if (detail === undefined) return;
     const show = (): void => {
-      loader.setMessage(verifyingLabel(detail.line(performance.now())));
+      loader.show("verifying", verifyingLabel(detail.line(performance.now())));
       drawBlock();
       tui.requestRender();
     };
@@ -441,10 +454,10 @@ export function startShell(options: ShellOptions): Shell {
   const clearRetry = (): void => { clearInterval(retryTick); retryTick = undefined; };
   const retrying = (attempt: number, delayMs: number): void => {
     clearRetry();
-    if (delayMs === 0) { loader.setMessage("Working…"); return; }
+    if (delayMs === 0) { loader.show("working", "Working…"); return; }
     const until = performance.now() + delayMs;
     const show = (): void => {
-      loader.setMessage(`Retry ${attempt}/3 in ${Math.max(0, Math.ceil((until - performance.now()) / 1000))}s · Esc to cancel`);
+      loader.show("retrying", `Retry ${attempt}/3 in ${Math.max(0, Math.ceil((until - performance.now()) / 1000))}s · Esc to cancel`);
       tui.requestRender();
     };
     retryTick = setInterval(show, 200);
@@ -456,8 +469,8 @@ export function startShell(options: ShellOptions): Shell {
     watchDetail(false);
     if (state === undefined) { loader.stop(); busy = false; } else {
       busy = true;
-      loader.setMessage(state === "working" ? "Working…" : verifyingLabel());
       status.addChild(loader);
+      loader.show(state === "working" ? "working" : "verifying", state === "working" ? "Working…" : verifyingLabel());
       loader.start();
       watchDetail(state === "settling");
     }
@@ -478,7 +491,6 @@ export function startShell(options: ShellOptions): Shell {
   const onEvent = (event: SessionEvent): void => {
     if (event.type === "message" || event.type === "reply" || event.type === "call") {
       activity = true;
-      mountedHeader?.emptyState?.pause();
     }
     if (event.type === "pending") drawPending();
     else if (event.type === "message") {
@@ -491,9 +503,9 @@ export function startShell(options: ShellOptions): Shell {
     else if (event.type === "state") { working(event.state); if (event.state === "working") replyError = undefined; }
     else if (event.type === "note") note(event.text, "warning");
     else if (event.type === "retry") retrying(event.attempt, event.delayMs);
-    else if (event.type === "compacting") loader.setMessage("Compacting…");
+    else if (event.type === "compacting") loader.show("compacting", "Compacting…");
     else if (event.type === "compacted") {
-      loader.setMessage("Working…");
+      loader.show("working", "Working…");
       note(`Compacted the conversation: about ${event.tokensBefore.toLocaleString("en")} tokens to ${event.tokensAfter.toLocaleString("en")}.`);
     } else endedRun(event);
     tui.requestRender();
@@ -503,7 +515,6 @@ export function startShell(options: ShellOptions): Shell {
   // Typed text sent while idle answers a pending question and otherwise is a new request; a skill line is always a request.
   const send = (text: string, behavior?: "steer" | "followUp", request = false): void => {
     activity = true;
-    mountedHeader?.emptyState?.pause();
     (behavior === undefined && !request ? session.reply(text) : session.prompt(text, behavior === undefined ? {} : { streamingBehavior: behavior })).catch((error: unknown) => {
       working(undefined);
       note(error instanceof Error ? error.message : String(error), "error");
@@ -792,7 +803,6 @@ export function startShell(options: ShellOptions): Shell {
     redraw: () => { drawFooter(); tui.requestRender(); },
     handOver: async (work) => {
       handedOver = true;
-      mountedHeader?.emptyState?.pause();
       if (tui instanceof TuiMainScreen) tui.renderNow();
       tui.stop();
       // Ctrl+C reaches every process on the terminal: it is the other program's to cancel with, and must not end the shell.

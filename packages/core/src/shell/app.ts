@@ -12,7 +12,7 @@ import { type AccountHands, accountRows, addAccount, type ClaudeCode, claudeOf, 
 import { fileCredentialStore } from "../credentials.ts";
 import { unusedModels } from "../agents.ts";
 import { startingModel } from "../resume-model-rule.ts";
-import { accountLabels, chosenModel, engineModels, loginOptions, runnableModel, runnableModels } from "../model-access.ts";
+import { accountLabels, chosenModel, loginOptions, runnableModel, runnableModels, shellModels } from "../model-access.ts";
 import { claudeCodeProviderId, claudeCodeSignIn } from "../providers/claude-code.ts";
 import type { Mode } from "../permission-rule.ts";
 import type { HistoryMessage } from "../loop.ts";
@@ -96,6 +96,9 @@ export function confirmation(call: { name: string; arguments: unknown }, reason:
   return { title: `Use ${call.name}?`, body: JSON.stringify(args), note };
 }
 
+/** How many accounts' sign-ins the shell checks at once: for the usage panel, /model and /login (#744). */
+const checksAtOnce = 4;
+
 /** On Windows over SSH the inline shell, which the remote terminal draws reliably; otherwise the operator's choice (#432). */
 const modeFor = (settings: Settings): "fullscreen" | "inline" =>
   process.platform === "win32" && (process.env["SSH_CONNECTION"] ?? process.env["SSH_CLIENT"]) !== undefined ? "inline"
@@ -110,7 +113,9 @@ export async function runApp(options: AppOptions): Promise<void> {
   const credentials = options.credentials ?? fileCredentialStore();
   const read = readSettings(options.settingsPath);
   let settings = read.settings;
-  const models = options.models ?? engineModels(credentials, settings.accounts ?? []);
+  // Only the providers the saved model and accounts are built on before the first frame; the rest of the catalog right after (#743).
+  const { models, rest } = options.models === undefined ? await shellModels(credentials, settings.accounts ?? [], settings.model)
+    : { models: options.models, rest: () => Promise.resolve() };
   // Another Tesota may have saved since this one started: only what changed here is written over it (#453).
   const save = (change: Partial<Settings>): void => {
     settings = { ...settings, ...change };
@@ -464,7 +469,7 @@ export async function runApp(options: AppOptions): Promise<void> {
    */
   const usagePanel = (tab: UsageTab): Promise<void> => {
     let hide = (): void => undefined;
-    const view: UsageView = { accounts: (signal, onUpdate) => accountRows(hands, model?.provider, { concurrency: 4, signal, onUpdate }),
+    const view: UsageView = { accounts: (signal, onUpdate) => accountRows(hands, model?.provider, { concurrency: checksAtOnce, signal, onUpdate }),
       pending: (accounts) => pendingUsage(accounts),
       read: (accounts, onEach, signal) => readUsage(accounts, options.usage ?? usageSources(models), { onEach, signal }),
       openaiChatGPT: async () => (await models.checkAuth("openai"))?.type === "oauth" };
@@ -571,8 +576,11 @@ export async function runApp(options: AppOptions): Promise<void> {
   };
   const commands: Readonly<Record<string, { description: string; argumentHint?: string; run: (args: string) => Promise<void> }>> = {
     "/model": { description: "Choose the model", run: async () => {
+      // The labels are checked while the models are, so a Claude Code folder's two checks share one run (#744).
+      const labels = accountLabels(credentials, settings.accounts ?? [], claude.status, { concurrency: checksAtOnce });
       let available: readonly Model<Api>[];
       try { available = await runnableModels(models); } catch (error) {
+        void labels.catch(() => undefined);
         shell.note(`No models to choose from: ${error instanceof Error ? error.message : String(error)}.`, "warning");
         return;
       }
@@ -580,7 +588,7 @@ export async function runApp(options: AppOptions): Promise<void> {
       if (models.getProvider(claudeCodeProviderId) !== undefined && !available.some(({ provider }) => provider === claudeCodeProviderId)) {
         shell.note(claudeCodeSignIn);
       }
-      const accounts = await accountLabels(credentials, settings.accounts ?? [], claude.status);
+      const accounts = await labels;
       for (const [id, account] of accounts) {
         if (id.startsWith("claude-code@") && !available.some(({ provider }) => provider === id)) {
           shell.note(`${id}: ${account}. Sign it in again with /accounts.`);
@@ -597,8 +605,10 @@ export async function runApp(options: AppOptions): Promise<void> {
       shell.note(`Model: ${label(next)}.`);
     } },
     "/login": { description: "Sign in to a model provider", run: async () => {
+      // The one list read before an async use: the whole catalog is loaded first (#743).
+      await rest();
       const providers = models.getProviders().filter(({ auth }) => auth.oauth !== undefined || auth.apiKey?.login !== undefined);
-      const accounts = await accountLabels(credentials, settings.accounts ?? [], claude.status);
+      const accounts = await accountLabels(credentials, settings.accounts ?? [], claude.status, { concurrency: checksAtOnce });
       const picked = await shell.pick("Log in to", [{ value: "", label: "Add an account", description: "Claude Code or ChatGPT, under a name" },
         ...providers.map(({ id, name }) => ({ value: id, label: name, description: accounts.get(id) ?? "" }))]);
       if (picked === "") { await addAnAccount(); return; }
@@ -707,6 +717,9 @@ export async function runApp(options: AppOptions): Promise<void> {
       await command.run(text.slice(word.length).trim());
       return true;
     } });
+  // The first frame is drawn: the rest of the catalog loads now, while the shell starts its hooks and servers (#743).
+  // A failure stays for the uses that wait on it, where it is reported, not as an unhandled rejection here.
+  rest().catch(() => undefined);
   if (read.invalid.length > 0) shell.note(`Settings left out as invalid: ${read.invalid.join(", ")}.`, "warning");
   providers = (await credentials.list()).length;
   if (typeof standards.ownHooks === "string") shell.note(`Your hooks were left out: ${standards.ownHooks}`, "error");

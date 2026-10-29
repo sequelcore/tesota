@@ -5,6 +5,47 @@ Each release of Tesota, newest first. The format follows
 the first stable release are prereleases. Numbers in parentheses are pull
 requests and issues in [sequelcore/tesota](https://github.com/sequelcore/tesota).
 
+## [0.1.0-alpha.8] - 2026-10-29
+
+### Changed
+
+- A calmer shell. The themes and terminal schemes use neutral grays with
+  one indigo accent, for what you act on and what a model thinks; green,
+  amber and red only say how a check ended. An empty session shows the
+  `tesota` wordmark, its version and folder, and a greeting, with the input
+  under them; the first message moves the input to the bottom. The receipt
+  sits behind a thin rule instead of a filled panel, the models' opinions
+  behind a dotted one, and passing lines are no longer green. The working
+  orb is a lit sphere whose motion says what the run is doing: it turns
+  while the model works, scans in the accent while Tesota verifies,
+  condenses while compacting and pulses while waiting to retry. The pixel
+  tree is gone (#750, #749). The HTML model graph the viewer's `o` opens
+  uses the same palette (#755).
+- The receipt names a model's opinion worth reading beside its counts
+  (`1 opinion to read`), never counting it as a flag or a limit, and its
+  acceptance line reads "Evidence, not approval: accepting the change is
+  yours." in the card, the plain text and the Markdown (#750).
+- The documentation is rewritten shorter, task first, with exact rules in
+  the reference: new pages for installation, checks and the permission
+  floor. A test holds each kind of page to a word budget (#752).
+- The permission floor also reads each PowerShell command with
+  PowerShell's own parser, so a recursive `Remove-Item` of a root, the
+  system folder or home is refused however it's spelled (#742, #697).
+- The shell loads only the saved model's provider before its first frame,
+  and the rest of pi-ai's catalog right after it (#747, #743).
+
+### Fixed
+
+- A JSON receipt export accepts the proof files verification itself wrote;
+  before, a committed `.dfy` beside its source made the export refuse the
+  run (#740, #737).
+- A tool call whose arguments are `null` gets an answer instead of crashing
+  the agent loop (#739, #664).
+- `/model` and `/login` check every sign-in at once before they show,
+  instead of one after another (#746, #744).
+- The shell's memory budget measures the shell with the models the real
+  shell loads (#745, #600).
+
 ## [0.1.0-alpha.7] - 2026-10-28
 
 ### Changed

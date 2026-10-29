@@ -46,7 +46,7 @@ const methods = "- ○ **Tested** — none recorded\n- ○ **Proved** — none r
 
 it("makes the chat receipt readable without hiding unchecked changes or interpreting their names as Markdown", () => {
   expect(renderReceiptMessage({ ...emptyReceipt, unverified: ["src/[rule]*.ts"] })).toBe(
-    "## Tesota receipt\n\n**No review flags · 1 verification limit**  \nCheck evidence, not your acceptance.\n\n" +
+    "## Tesota receipt\n\n**No review flags · 1 verification limit**  \nEvidence, not approval: accepting the change is yours.\n\n" +
     `${methods}\n\n- ○ No proof covers 1 changed file — Not checked by anything else.\n\n` +
     "**Details**\n\n```text\n  not verified  src/[rule]*.ts: no verifier covers it\nFrom the first commit · Tesota 0.1.0\n```");
 });
@@ -62,10 +62,10 @@ it("says nothing was verified when the run stopped, and why", () => {
   const receipt = { ...emptyReceipt, stopped: "quota exhausted" };
   expect(receiptFindings(receipt)).toEqual([{ standing: "decide", check: "coverage", label: "Not verified",
     subject: "this request's changes", detail: "quota exhausted", more: [] }]);
-  expect(renderReceipt(receipt)).toBe("Tesota receipt\n1 review flag · no verification limits\nCheck evidence, not your acceptance.\n\n" +
+  expect(renderReceipt(receipt)).toBe("Tesota receipt\n1 review flag · no verification limits\nEvidence, not approval: accepting the change is yours.\n\n" +
     "○ Tested   none recorded\n○ Proved   none recorded\n○ Models   none recorded\n\n! Not verified · this request's changes\n" +
     "  quota exhausted\n\nDetails\n  not verified  this request's changes: quota exhausted\nFrom the first commit · Tesota 0.1.0");
   expect(renderReceiptMessage(receipt)).toBe("## Tesota receipt\n\n**1 review flag · no verification limits**  \n" +
-    `Check evidence, not your acceptance.\n\n${methods}\n\n- ! Not verified · this request's changes — quota exhausted\n\n` +
+    `Evidence, not approval: accepting the change is yours.\n\n${methods}\n\n- ! Not verified · this request's changes — quota exhausted\n\n` +
     "**Details**\n\n```text\n  not verified  this request's changes: quota exhausted\nFrom the first commit · Tesota 0.1.0\n```");
 });

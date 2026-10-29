@@ -25,7 +25,8 @@ export function filesTouched(history: readonly HistoryMessage[]): FilesTouched {
     if (message.role !== "assistant") continue;
     for (const part of message.content) {
       if (part.type !== "toolCall" || (part.name !== "read" && part.name !== "write" && part.name !== "edit")) continue;
-      const path = part.arguments["path"];
+      // As the model sent them, which may be null (#664).
+      const path = (part.arguments ?? {})["path"];
       if (typeof path === "string") paths.set(path, paths.get(path) === true || part.name !== "read");
     }
   }

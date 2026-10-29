@@ -1,10 +1,63 @@
 import { type Api, type CredentialStore, createModels, type LoginOptions, type Model, type Models, type MutableModels,
   type Provider } from "@earendil-works/pi-ai";
 import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth";
-import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
 import { fileCredentialStore } from "./credentials.ts";
-import { claudeCodeProvider, claudeCodeStatus } from "./providers/claude-code.ts";
+import { claudeCodeProvider, claudeCodeProviderId, claudeCodeStatus } from "./providers/claude-code.ts";
 import { type Account, deviceId, readSettings, type Settings } from "./settings.ts";
+
+/**
+ * Each of pi-ai's built-in providers, loaded on its own (#743), so the shell can
+ * start with only those its saved model needs: a static `import()` each, which
+ * the compiled binary keeps in a chunk of its own until it is loaded. A test
+ * holds it to pi-ai's `builtinProviders()`.
+ */
+export const providerLoaders: Readonly<Record<string, () => Promise<Provider>>> = {
+  "amazon-bedrock": async () => (await import("@earendil-works/pi-ai/providers/amazon-bedrock")).amazonBedrockProvider(),
+  "ant-ling": async () => (await import("@earendil-works/pi-ai/providers/ant-ling")).antLingProvider(),
+  "anthropic": async () => (await import("@earendil-works/pi-ai/providers/anthropic")).anthropicProvider(),
+  "azure": async () => (await import("@earendil-works/pi-ai/providers/azure")).azureProvider(),
+  "baseten": async () => (await import("@earendil-works/pi-ai/providers/baseten")).basetenProvider(),
+  "cerebras": async () => (await import("@earendil-works/pi-ai/providers/cerebras")).cerebrasProvider(),
+  "cloudflare-ai-gateway": async () => (await import("@earendil-works/pi-ai/providers/cloudflare-ai-gateway")).cloudflareAIGatewayProvider(),
+  "cloudflare-workers-ai": async () => (await import("@earendil-works/pi-ai/providers/cloudflare-workers-ai")).cloudflareWorkersAIProvider(),
+  "deepseek": async () => (await import("@earendil-works/pi-ai/providers/deepseek")).deepseekProvider(),
+  "fireworks": async () => (await import("@earendil-works/pi-ai/providers/fireworks")).fireworksProvider(),
+  "github-copilot": async () => (await import("@earendil-works/pi-ai/providers/github-copilot")).githubCopilotProvider(),
+  "google": async () => (await import("@earendil-works/pi-ai/providers/google")).googleProvider(),
+  "google-vertex": async () => (await import("@earendil-works/pi-ai/providers/google-vertex")).googleVertexProvider(),
+  "groq": async () => (await import("@earendil-works/pi-ai/providers/groq")).groqProvider(),
+  "huggingface": async () => (await import("@earendil-works/pi-ai/providers/huggingface")).huggingfaceProvider(),
+  "kimi-coding": async () => (await import("@earendil-works/pi-ai/providers/kimi-coding")).kimiCodingProvider(),
+  "meta": async () => (await import("@earendil-works/pi-ai/providers/meta")).metaProvider(),
+  "minimax": async () => (await import("@earendil-works/pi-ai/providers/minimax")).minimaxProvider(),
+  "minimax-cn": async () => (await import("@earendil-works/pi-ai/providers/minimax-cn")).minimaxCnProvider(),
+  "mistral": async () => (await import("@earendil-works/pi-ai/providers/mistral")).mistralProvider(),
+  "moonshotai": async () => (await import("@earendil-works/pi-ai/providers/moonshotai")).moonshotaiProvider(),
+  "moonshotai-cn": async () => (await import("@earendil-works/pi-ai/providers/moonshotai-cn")).moonshotaiCnProvider(),
+  "nvidia": async () => (await import("@earendil-works/pi-ai/providers/nvidia")).nvidiaProvider(),
+  "openai": async () => (await import("@earendil-works/pi-ai/providers/openai")).openaiProvider(),
+  "openai-codex": async () => (await import("@earendil-works/pi-ai/providers/openai-codex")).openaiCodexProvider(),
+  "opencode": async () => (await import("@earendil-works/pi-ai/providers/opencode")).opencodeProvider(),
+  "opencode-go": async () => (await import("@earendil-works/pi-ai/providers/opencode-go")).opencodeGoProvider(),
+  "openrouter": async () => (await import("@earendil-works/pi-ai/providers/openrouter")).openrouterProvider(),
+  "qwen-token-plan": async () => (await import("@earendil-works/pi-ai/providers/qwen-token-plan")).qwenTokenPlanProvider(),
+  "qwen-token-plan-cn": async () => (await import("@earendil-works/pi-ai/providers/qwen-token-plan-cn")).qwenTokenPlanCnProvider(),
+  "qwen-token-plan-individual": async () => (await import("@earendil-works/pi-ai/providers/qwen-token-plan-individual")).qwenTokenPlanIndividualProvider(),
+  "radius": async () => (await import("@earendil-works/pi-ai/providers/radius")).radiusProvider(),
+  "together": async () => (await import("@earendil-works/pi-ai/providers/together")).togetherProvider(),
+  "typesafe": async () => (await import("@earendil-works/pi-ai/providers/typesafe")).typesafeProvider(),
+  "vercel-ai-gateway": async () => (await import("@earendil-works/pi-ai/providers/vercel-ai-gateway")).vercelAIGatewayProvider(),
+  "xai": async () => (await import("@earendil-works/pi-ai/providers/xai")).xaiProvider(),
+  "xiaomi": async () => (await import("@earendil-works/pi-ai/providers/xiaomi")).xiaomiProvider(),
+  "xiaomi-token-plan-ams": async () => (await import("@earendil-works/pi-ai/providers/xiaomi-token-plan-ams")).xiaomiTokenPlanAmsProvider(),
+  "xiaomi-token-plan-cn": async () => (await import("@earendil-works/pi-ai/providers/xiaomi-token-plan-cn")).xiaomiTokenPlanCnProvider(),
+  "xiaomi-token-plan-sgp": async () => (await import("@earendil-works/pi-ai/providers/xiaomi-token-plan-sgp")).xiaomiTokenPlanSgpProvider(),
+  "zai": async () => (await import("@earendil-works/pi-ai/providers/zai")).zaiProvider(),
+  "zai-coding-cn": async () => (await import("@earendil-works/pi-ai/providers/zai-coding-cn")).zaiCodingCnProvider(),
+};
+
+/** pi-ai's whole catalog, loaded when first asked, never on import (#743). */
+const catalog = async (): Promise<readonly Provider[]> => (await import("@earendil-works/pi-ai/providers/all")).builtinProviders();
 
 /**
  * The models a Tesota session runs on (#443): pi-ai's built-in providers,
@@ -14,15 +67,67 @@ import { type Account, deviceId, readSettings, type Settings } from "./settings.
  * out is `Models.login` and `Models.logout` with `loginOptions`. Pi's remote
  * catalog refresh is left out until something needs it.
  */
-export function engineModels(credentials: CredentialStore = fileCredentialStore(), accounts: readonly Account[] = readSettings().settings.accounts ?? []): MutableModels {
+export async function engineModels(credentials: CredentialStore = fileCredentialStore(), accounts: readonly Account[] = readSettings().settings.accounts ?? []): Promise<MutableModels> {
   // pi-ai imports each sign-in flow by a path a compiled `tesota` does not have, so they are embedded instead (#372).
   // pi-ai registers its flows only all at once; Anthropic's is never reached, since no provider here offers it.
   registerBunOAuthFlows();
   const models = createModels({ credentials });
-  for (const provider of builtinProviders()) models.setProvider(provider.id === "anthropic" ? anthropicKeyOnly(provider) : provider);
-  models.setProvider(claudeCodeProvider(models.getModels("anthropic")));
-  for (const account of accounts) setAccountProvider(models, account);
+  fill(models, await catalog(), accounts);
   return models;
+}
+
+/**
+ * Adds to `models` each of `providers` it doesn't hold yet, Anthropic's with
+ * its API key alone, then what is built on them: `claude-code` on Anthropic's
+ * models, and each account on the provider it is an instance of. Run again as
+ * more providers load, it adds only what is new (#743).
+ */
+function fill(models: MutableModels, providers: readonly Provider[], accounts: readonly Account[]): void {
+  for (const provider of providers) {
+    if (models.getProvider(provider.id) === undefined) models.setProvider(provider.id === "anthropic" ? anthropicKeyOnly(provider) : provider);
+  }
+  if (models.getProvider("anthropic") !== undefined && models.getProvider(claudeCodeProviderId) === undefined) {
+    models.setProvider(claudeCodeProvider(models.getModels("anthropic")));
+  }
+  for (const account of accounts) {
+    if (models.getProvider(builtOn(account.provider)) !== undefined && models.getProvider(accountId(account)) === undefined) setAccountProvider(models, account);
+  }
+}
+
+/** The built-in provider `provider` is built on: `claude-code` on Anthropic's models, any other on itself. */
+const builtOn = (provider: string): string => provider === claudeCodeProviderId ? "anthropic" : provider;
+
+/** The async uses of pi-ai's `Models` that can reach any provider: the shell's models load the whole catalog before each (#743). */
+const catalogUses = new Set(["refresh", "checkAuth", "getAvailable", "getAvailableOfType", "getAllAvailable", "getAuth", "login", "logout",
+  "complete", "completeSimple", "fetchDeferred", "cancelDeferred", "generateImages", "classify"]);
+
+/**
+ * The shell's models (#743): at first only the providers its saved model
+ * (`saved`, `provider/id`) and `accounts` are built on, so the shell draws its
+ * first frame without pi-ai's whole catalog, about 35 ms and 12 MB. `rest()`
+ * loads the rest once, and every async use that can reach any provider waits
+ * for it first; a synchronous read before then sees what is loaded. With no
+ * saved model, or one whose provider can't be loaded alone, everything loads
+ * at once.
+ */
+export async function shellModels(credentials: CredentialStore, accounts: readonly Account[], saved: string | undefined):
+  Promise<{ readonly models: MutableModels; readonly rest: () => Promise<void> }> {
+  registerBunOAuthFlows();
+  const models = createModels({ credentials });
+  let loaded: Promise<void> | undefined;
+  const rest = (): Promise<void> => loaded ??= catalog().then((providers) => { fill(models, providers, accounts); });
+  const base = builtOn(saved?.split("/")[0]?.split("@")[0] ?? "");
+  const startup = new Set([base, ...accounts.map(({ provider }) => builtOn(provider))]);
+  const loaders = [...startup].flatMap((id) => providerLoaders[id] ?? []);
+  if (providerLoaders[base] === undefined) await rest();
+  else fill(models, await Promise.all(loaders.map((load) => load())), accounts);
+  const waiting = new Proxy(models, { get: (target, key) => {
+    const value: unknown = Reflect.get(target, key);
+    if (typeof value !== "function") return value;
+    const method = value as (...args: unknown[]) => unknown;
+    return catalogUses.has(String(key)) ? async (...args: unknown[]) => { await rest(); return method.apply(target, args); } : method.bind(target);
+  } });
+  return { models: waiting, rest };
 }
 
 /** `account`'s provider ID, `<provider>@<name>`. */
@@ -133,10 +238,11 @@ export async function accountStates(credentials: CredentialStore, accounts: read
   return labelled(instances, signIns);
 }
 
-/** Non-secret labels for account pickers and runs. */
+/** Non-secret labels for account pickers and runs, checking `concurrency` sign-ins at once, one unless given. */
 export async function accountLabels(credentials: CredentialStore, accounts: readonly Account[],
-  status: typeof claudeCodeStatus = claudeCodeStatus): Promise<ReadonlyMap<string, string>> {
-  return new Map((await accountStates(credentials, accounts, status)).map(({ id, label }) => [id, label]));
+  status: typeof claudeCodeStatus = claudeCodeStatus, { concurrency }: Pick<AccountStatesOptions, "concurrency"> = {}): Promise<ReadonlyMap<string, string>> {
+  return new Map((await accountStates(credentials, accounts, status, [], concurrency === undefined ? {} : { concurrency }))
+    .map(({ id, label }) => [id, label]));
 }
 
 /** A Claude plan's OAuth token, which pi-ai's Anthropic API would send as Claude Code does. */
@@ -214,10 +320,12 @@ const narrowed = (available: readonly Model<Api>[], served: ReadonlySet<unknown>
  * The models Tesota can run (#563, #566): those of the providers it is
  * signed in to, but with ChatGPT sign-in only the OpenAI models it serves;
  * OpenAI refuses the rest of its catalog at the first request. `/model`
- * lists them. Throws when the ChatGPT sign-in's list cannot be fetched.
+ * lists them, ChatGPT's list asked while the sign-ins are checked (#744).
+ * Throws when the ChatGPT sign-in's list cannot be fetched.
  */
 export async function runnableModels(models: Models): Promise<readonly Model<Api>[]> {
-  return narrowed(await models.getAvailable(), await servedByChatGPT(models));
+  const [available, served] = await Promise.all([models.getAvailable(), servedByChatGPT(models)]);
+  return narrowed(available, served);
 }
 
 /**

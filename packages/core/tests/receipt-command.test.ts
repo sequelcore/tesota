@@ -142,7 +142,7 @@ it("writes the last receipt for a pull request as Markdown and as an in-toto Sta
   expect(markdown.status).toBe(0);
   expect(markdown.stdout).toContain(`Commit \`${commit.slice(0, 12)}\`, changes from \`${base.slice(0, 12)}\`; Tesota 0.1.0, ` +
     `model \`provider/model\`; session \`${incomplete}\``);
-  expect(markdown.stdout).toContain("```text\nTesota receipt\nNo review flags · 1 verification limit\nCheck evidence, not your acceptance.\n");
+  expect(markdown.stdout).toContain("```text\nTesota receipt\nNo review flags · 1 verification limit\nEvidence, not approval: accepting the change is yours.\n");
   expect(markdown.stdout).toContain("\nDetails\n  proved        src/rule.ts\n");
   expect(markdown.stdout).toContain("  not verified  src/rule.ts lines 4-6: outside the contracts that proved");
   expect(markdown.stdout).not.toContain("Not this commit's content");
@@ -242,6 +242,27 @@ it("refuses to export a verified receipt whose commit holds files changed after 
   // The Markdown still says so, as it did.
   expect(await receiptCommand([], root, holding(verifiedReceipt(base)), write)).toBe(0);
   expect(out.pop()).toContain("**Changed after the receipt:**");
+});
+
+it("exports a receipt whose proving wrote its proof files once they are committed, and refuses a later edit to them (#737)", async () => {
+  const root = repository();
+  const base = git(root, "rev-parse", "HEAD");
+  const proof = "// generated from src/rule.ts\n";
+  for (const path of ["src/rule.dfy", "src/rule.dfy.gen"]) writeFileSync(join(root, path), proof);
+  // As the gate records them: the files proving wrote are the run's changes, and the proof checked the source with its `.dfy`.
+  const verified = verifiedReceipt(base, ["src/rule.dfy", "src/rule.dfy.gen"].map((path) => ({ path, blob: git(root, "hash-object", path) })));
+  const receipt = { ...verified, proofs: verified.proofs.map((proved) => ({ ...proved, evidence: { ...proved.evidence,
+    files: ["src/rule.ts", "src/rule.dfy"], contentHash: contentHash([{ path: "src/rule.ts", content: rule }, { path: "src/rule.dfy", content: proof }]) } })) };
+  const errors: string[] = [];
+  const write = { out: () => undefined, error: (text: string) => { errors.push(text); } };
+  git(root, "add", "-A");
+  git(root, "commit", "-qm", "the change with its proof");
+  expect(await receiptCommand(["--json"], root, holding(receipt), write)).toBe(0);
+  writeFileSync(join(root, "src", "rule.dfy"), "// edited after the run\n");
+  git(root, "add", "-A");
+  git(root, "commit", "-qm", "edited after the run");
+  expect(await receiptCommand(["--json"], root, holding(receipt), write)).toBe(1);
+  expect(errors.pop()).toContain("what these checked changed after they ran: src/rule.ts. These files changed after the run: src/rule.dfy.");
 });
 
 it("exports each standing with the result it observed, and refuses one no result states truthfully", async () => {

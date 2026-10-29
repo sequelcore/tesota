@@ -190,6 +190,34 @@ describe("the claude-code provider", () => {
     expect(seen?.signal).toBe(stop.signal);
   });
 
+  test("checks of one folder's sign-in at the same time share one run of Claude Code, and a later check runs it again (#744)", async () => {
+    const pending: (() => void)[] = [];
+    let runs = 0;
+    const execute = ((_file: string, _args: readonly string[], _options: ExecFileOptions,
+      callback: (error: null, stdout: string, stderr: string) => void) => {
+      runs += 1;
+      pending.push(() => { callback(null, '{"loggedIn":true,"email":"owner@example.test"}', ""); });
+    }) as typeof execFile;
+    const first = claudeCodeStatus("/claude-b", execute);
+    const second = claudeCodeStatus("/claude-b", execute);
+    const other = claudeCodeStatus("/claude-c", execute);
+    expect(runs).toBe(2);
+    for (const release of pending.splice(0)) release();
+    expect(await first).toEqual({ loggedIn: true, email: "owner@example.test" });
+    expect(await second).toEqual({ loggedIn: true, email: "owner@example.test" });
+    await other;
+    // Nothing is kept once the check returns: signing in or out elsewhere shows at the next check.
+    const later = claudeCodeStatus("/claude-b", execute);
+    expect(runs).toBe(3);
+    for (const release of pending.splice(0)) release();
+    await later;
+    // A check a signal can stop runs on its own, so stopping it stops no one else's.
+    void claudeCodeStatus("/claude-b", execute);
+    void claudeCodeStatus("/claude-b", execute, new AbortController().signal);
+    expect(runs).toBe(5);
+    for (const release of pending.splice(0)) release();
+  });
+
   test("an account's sign-in is Claude Code's own login, on the terminal, in the account's folder with HOME unchanged (#642)", async () => {
     let seen: { args: readonly string[]; options: SpawnOptions } | undefined;
     const saved = process.env["ANTHROPIC_API_KEY"];
@@ -385,7 +413,7 @@ describe("the claude-code provider", () => {
 
   test("the models are pi-ai's Anthropic catalog, offered only once Claude Code is signed in", async () => {
     let signedIn = false;
-    const models = engineModels(new InMemoryCredentialStore());
+    const models = await engineModels(new InMemoryCredentialStore());
     models.setProvider(claudeCodeProvider(models.getModels("anthropic"), { signedIn: async () => signedIn }));
     expect((await runnableModels(models)).filter(({ provider }) => provider === "claude-code")).toEqual([]);
     signedIn = true;
@@ -401,7 +429,7 @@ describe("a session on claude-code", () => {
   test("print --model and the saved model run the explicitly chosen Claude account", async () => {
     const configDir = mkdtempSync(join(tmpdir(), "claude-print-account-"));
     const accounts = [{ name: "b", provider: "claude-code", folder: configDir }] as const;
-    const models = engineModels(new InMemoryCredentialStore(), accounts);
+    const models = await engineModels(new InMemoryCredentialStore(), accounts);
     expect(models.getModel("claude-code@b", "claude-haiku-4-5")?.provider).toBe("claude-code@b");
     const { start, runs } = replaying(answerReply, answerReply);
     models.setProvider(claudeCodeProvider(anthropic, { id: "claude-code@b", configDir, query: start, signedIn: async () => true }));

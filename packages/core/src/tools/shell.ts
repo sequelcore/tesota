@@ -3,6 +3,7 @@ import { closeSync, openSync, unlinkSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import { Type } from "typebox";
 import { runProcess } from "../../../../src/process.ts";
+import { parsePowerShell } from "../powershell-parser.ts";
 import type { EngineTool, ToolOutput } from "../tool.ts";
 import { keepTail, type Kept, maxBytes } from "../truncate.ts";
 
@@ -150,6 +151,7 @@ export function shellTool(cwd: string, shell: Shell, spool: () => string, env?: 
         : shell.label.startsWith("POSIX sh") ? " It is not bash: no arrays, [[ ]], <(...) or pipefail; "
           + "bash is not installed (on Alpine: apk add bash)." : ""),
     parameters,
+    ...shell.tool === "powershell" ? { parse: (command: string) => parsePowerShell(shell.executable, command) } : {},
     async execute({ command, timeout }, signal, callId): Promise<ToolOutput> {
       const capture = new Capture(() => join(spool(), `${outputPrefix(callId)}${randomUUID().slice(0, 8)}.txt`));
       let run: Awaited<ReturnType<typeof runProcess>>;

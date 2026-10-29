@@ -16,6 +16,8 @@ export interface EvidencePart {
 }
 
 const SEPARATOR = " · ";
+/** Between the groups at the right: as wide as `SEPARATOR`, which `footerLayout` counts. */
+const GROUPS = "   ";
 
 function part(full: string, short: string, glyphs: string, color: ThemeColor): EvidencePart {
   return { full, short, glyphs, color };
@@ -182,8 +184,10 @@ export function evidenceText(parts: readonly EvidencePart[], level: EvidenceLeve
   return parts.filter((item) => item[level] !== "").map((item) => item[level]).join(SEPARATOR);
 }
 
+/** The row in its colors, except that only its first part carries green: the parts that confirm a pass stay muted. */
 function paint(theme: Theme, parts: readonly EvidencePart[], level: EvidenceLevel): string {
-  return parts.filter((item) => item[level] !== "").map((item) => theme.fg(item.color, item[level])).join(theme.fg("dim", SEPARATOR));
+  return parts.filter((item) => item[level] !== "").map((item, index) =>
+    theme.fg(index > 0 && item.color === "success" ? "muted" : item.color, item[level])).join(theme.fg("dim", SEPARATOR));
 }
 
 /** A folder as the footer and the welcome header show it: under the home folder, from `~`. */
@@ -259,14 +263,16 @@ export class EvidenceFooter implements Component {
     const place = homeRelative(this.#session.cwd) + (branch === null ? "" : ` (${branch})`);
     const model = this.#session.model();
     // A waiting question is said by the evidence, so it is not listed again at the right.
-    const statuses = [...shown.entries()].filter(([key]) => key !== "tesota" && key !== QUESTION_STATUS)
-      .sort(([a], [b]) => a.localeCompare(b)).map(([, text]) => text.replace(/[\r\n\t]/gu, " ")).join(SEPARATOR);
+    const listed = [...shown.entries()].filter(([key]) => key !== "tesota" && key !== QUESTION_STATUS)
+      .sort(([a], [b]) => a.localeCompare(b)).map(([key, text]) => [key, text.replace(/[\r\n\t]/gu, " ")] as const);
+    const statuses = listed.map(([, text]) => text).join(SEPARATOR);
     const layout = footerLayout(inner, visibleWidth(evidenceText(parts, "full")), visibleWidth(evidenceText(parts, "short")),
       visibleWidth(evidenceText(parts, "glyphs")), visibleWidth(context.text), visibleWidth(place), visibleWidth(model),
       visibleWidth(statuses));
+    // The right side is quiet: only sessions waiting for you, something to act on, take the accent.
     const right = [...layout.place ? [this.#theme.fg("dim", place)] : [], ...layout.model ? [this.#theme.fg("dim", model)] : [],
-      ...layout.context ? [context.styled] : [], ...statuses === "" ? [] : [this.#theme.fg("text", statuses)]]
-      .join(this.#theme.fg("dim", SEPARATOR));
+      ...layout.context ? [context.styled] : [], ...listed.map(([key, text]) => this.#theme.fg(key === "sessions" ? "accent" : "muted", text))]
+      .join(this.#theme.fg("dim", GROUPS));
     // Too narrow for even the glyphs beside the statuses, the row is cut at the edge rather than wrapped.
     return ["", truncateToWidth(` ${row(paint(this.#theme, parts, layout.level), right === "" ? undefined : right, inner)}`, width, "")];
   }

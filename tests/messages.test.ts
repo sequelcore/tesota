@@ -61,8 +61,8 @@ const attention: Receipt = { ...clean,
   unverified: ["src/format.ts"], uncovered: [{ path: "src/range.ts", lines: [[9, 14]] }] };
 
 
-/** The card's rows as text, without the box's blank padding rows or the margin. */
-const text = (rows: readonly string[]): string[] => rows.map((row) => row.slice(1)).filter((row, k, all) =>
+/** The card's rows as text, without its blank first and last rows, the margin or the rule at its left edge. */
+const text = (rows: readonly string[]): string[] => rows.map((row) => row.replace(/^ [│┆] ?/u, "")).filter((row, k, all) =>
   !(row === "" && (k === 0 || k === all.length - 1)));
 
 it("keeps the graph preview visible in collapsed and expanded receipts without changing the finding's verdict", () => {
@@ -113,7 +113,7 @@ it("shows a clean receipt as its counts, the acceptance line and one row per met
   expect(text(shown("tesota-receipt", clean, 120))).toEqual([
     "Tesota receipt",
     "No review flags · no verification limits",
-    "Check evidence, not your acceptance.",
+    "Evidence, not approval: accepting the change is yours.",
     "",
     "✓ Tested      bun test · 0:02",
     "✓ Proved      src/range.ts · 0:02",
@@ -148,18 +148,43 @@ it("explains unknown start states and unmeasured paths in both card views", () =
   }
 });
 
-it("counts a receipt's limits, amber, and keeps green for one with none", () => {
+it("counts a receipt's limits in amber, and leaves muted each part that says there are none", () => {
   const gapped: Receipt = { ...clean, exercises: [], unverified: ["notes.md"] };
   const rows = text(shown("tesota-receipt", gapped, 120));
   expect(rows[1]).toBe("No review flags · 1 verification limit");
   expect(rows).toContain("○ No proof covers 1 changed file");
   const colored = (receipt: Receipt): string => renderers().get("tesota-receipt")?.({ customType: "tesota-receipt",
     content: "", details: receipt }, { expanded: false, outputPad: 1 }, theme)?.render(120)[2] ?? "";
-  expect(colored(gapped)).toContain(theme.fg("warning", "\x1b[1mNo review flags · 1 verification limit\x1b[22m"));
-  expect(colored(clean)).toContain(theme.fg("success", "\x1b[1mNo review flags · no verification limits\x1b[22m"));
+  const dot = theme.fg("dim", " · ");
+  expect(colored(gapped)).toContain(`${theme.fg("muted", "No review flags")}${dot}${theme.fg("warning", "\x1b[1m1 verification limit\x1b[22m")}`);
+  expect(colored(clean)).toContain(`${theme.fg("muted", "No review flags")}${dot}${theme.fg("muted", "no verification limits")}`);
 });
 
-it("leaves a file tested and exercised out of the limits, green, and says muted that no proof covers it", () => {
+it("names an opinion to read beside the counts, in the accent, and never counts it as a flag or a limit", () => {
+  const partial: Receipt = { ...clean, contracts: [{ ...contract,
+    judgment: { verdict: "partially_justified", explanation: "It does not say a value inside the range is returned unchanged." } }] };
+  const rows = text(shown("tesota-receipt", partial, 120));
+  expect(rows[1]).toBe("No review flags · no verification limits · 1 opinion to read");
+  expect(rows.slice(rows.indexOf("Model opinions · not evidence, not counted"))).toEqual([
+    "Model opinions · not evidence, not counted",
+    "◇ Covers only part of the request",
+    "  ClaimCheck · inRange · src/range.ts",
+    "  It does not say a value inside the range is returned unchanged.",
+    "",
+    "▸ Details · paths, output, assumptions, model opinions",
+  ]);
+  const drawn = renderers().get("tesota-receipt")?.({ customType: "tesota-receipt", content: "", details: partial },
+    { expanded: false, outputPad: 1 }, theme)?.render(120) ?? [];
+  expect(drawn[2]).toContain(theme.fg("accent", "1 opinion to read"));
+  // The opinion's rows stand behind a dotted rule, the evidence's behind a solid one.
+  const plain = drawn.map((row) => stripTerminalSequences(row));
+  expect(plain.filter((row) => row.startsWith(" ┆"))).toHaveLength(4);
+  expect(plain.find((row) => row.includes("Tested"))).toMatch(/^ │ /u);
+  // A model that agrees is quiet: nothing to read, and the card shows it only expanded.
+  expect(text(shown("tesota-receipt", clean, 120))[1]).toBe("No review flags · no verification limits");
+});
+
+it("leaves a file tested and exercised out of the limits, and says muted that no proof covers it", () => {
   const covered: Receipt = { ...clean, unverified: ["notes.md"] };
   const rows = text(shown("tesota-receipt", covered, 120));
   expect(rows[1]).toBe("No review flags · no verification limits");
@@ -167,7 +192,7 @@ it("leaves a file tested and exercised out of the limits, green, and says muted 
   expect(rows).toContain("· notes.md: tested and exercised; no proof covers it");
   const lines = renderers().get("tesota-receipt")?.({ customType: "tesota-receipt", content: "", details: covered },
     { expanded: false, outputPad: 1 }, theme)?.render(120) ?? [];
-  expect(lines[2]).toContain(theme.fg("success", "\x1b[1mNo review flags · no verification limits\x1b[22m"));
+  expect(lines[2]).toContain(theme.fg("muted", "No review flags"));
   expect(lines.join("\n")).toContain(theme.fg("muted", "notes.md: tested and exercised; no proof covers it"));
 });
 
@@ -186,7 +211,7 @@ it("shows the cases a model listed as left open in the opinions, outside the cou
   const listed: Receipt = { ...clean, openCases: { status: "listed", model: "openai/gpt-6-sol",
     cases: [{ input: "lateFee(-1)", outcomes: ["0.", "-5."] }, { input: "lateFee(1.5)", outcomes: ["7.5", "5"] }] } };
   const rows = text(shown("tesota-receipt", listed, 120));
-  expect(rows[1]).toBe("No review flags · no verification limits");
+  expect(rows[1]).toBe("No review flags · no verification limits · 1 opinion to read");
   const opinions = rows.indexOf("Model opinions · not evidence, not counted");
   expect(rows[opinions + 1]).toBe("◇ 2 open cases for you to settle, listed by openai/gpt-6-sol");
   expect(rows.join("\n")).not.toContain("lateFee(-1)");
@@ -194,14 +219,14 @@ it("shows the cases a model listed as left open in the opinions, outside the cou
   // A listing that did not happen is a limit of the opinion, in the same group.
   const unlisted: Receipt = { ...clean, openCases: { status: "not_listed", reason: "openai/gpt-6-sol was stopped" } };
   const without = text(shown("tesota-receipt", unlisted, 120));
-  expect(without[1]).toBe("No review flags · no verification limits");
+  expect(without[1]).toBe("No review flags · no verification limits · 1 opinion to read");
   expect(without.slice(without.indexOf("Model opinions · not evidence, not counted") + 1, -2))
     .toEqual(["◇ Open cases not listed", "  openai/gpt-6-sol was stopped"]);
 });
 
 it("leads with what needs the operator, grouped by reason, and keeps the model's opinion out of the count", () => {
   const rows = text(shown("tesota-receipt", attention, 120));
-  expect(rows.slice(1, 2)).toEqual(["4 review flags · 2 verification limits"]);
+  expect(rows.slice(1, 2)).toEqual(["4 review flags · 2 verification limits · 1 opinion to read"]);
   expect(rows.slice(rows.indexOf("○ Models   none recorded") + 2)).toEqual([
     "! Review test edits · 1 heuristic flag",
     "  May weaken evidence; not confirmed weakening.",
@@ -215,7 +240,8 @@ it("leads with what needs the operator, grouped by reason, and keeps the model's
     "○ No proof covers 1 changed file",
     "",
     "Model opinions · not evidence, not counted",
-    "◇ ClaimCheck: covers only part of the request · inRange · src/range.ts",
+    "◇ Covers only part of the request",
+    "  ClaimCheck · inRange · src/range.ts",
     "  It does not say a value inside the range is returned unchanged.",
     "",
     "▸ Details · paths, output, assumptions, model opinions",
@@ -326,7 +352,7 @@ it("shows every fact when expanded, each claim with what it does not show", () =
   expect(rows).toContain(`content sha256 ${hash}`);
   expect(rows).toContain("▾ Details");
   expect(rows).toContain("From the first commit · Tesota 0.1.0");
-  expect(rows).toContain("Check evidence, not your acceptance.");
+  expect(rows).toContain("Evidence, not approval: accepting the change is yours.");
 });
 
 it("fits narrow terminals, wrapping rows collapsed and expanded so no reason is cut", () => {
@@ -337,7 +363,7 @@ it("fits narrow terminals, wrapping rows collapsed and expanded so no reason is 
     expect(collapsed.join(" ").replace(/\s+/gu, " ")).toContain("1 change to its code still proves");
     const expanded = shown("tesota-receipt", attention, width, true);
     expect(expanded.join(" ")).toContain("still prove");
-    expect(expanded.join(" ").replace(/\s+/gu, " ")).toContain("Check evidence, not your acceptance.");
+    expect(text(expanded).join(" ").replace(/\s+/gu, " ")).toContain("Evidence, not approval: accepting the change is yours.");
   }
 });
 
@@ -346,19 +372,19 @@ it("shows what went back to the agent, and what it read when expanded", () => {
     failingTests: ["inRange lowers a value above the range"] }] };
   const content = "Tesota: `bun test` fails with your changes.\n\nThese tests fail:\n  inRange lowers a value above the range";
   const rows = shown("tesota-gate", sent, 120, false, content);
-  expect(rows[1]).toMatch(/^ ↺ Sent back to the agent: the tests fail +Tesota$/u);
-  expect(rows[3]).toBe(" ✗  Tests fail  bun test — 1 test fails: inRange lowers a value above the range");
-  expect(rows[5]).toBe(" ctrl+o to see what the agent read");
+  expect(rows[1]).toMatch(/^ │ ↺ Sent back to the agent: the tests fail +Tesota$/u);
+  expect(rows[3]).toBe(" │ ✗  Tests fail  bun test — 1 test fails: inRange lowers a value above the range");
+  expect(rows[5]).toBe(" │ ctrl+o to see what the agent read");
   expect(rows.join("\n")).not.toContain("Tesota: `bun test` fails");
   const expanded = shown("tesota-gate", sent, 120, true, content);
-  expect(expanded).toContain(" WHAT THE AGENT READ");
-  expect(expanded).toContain(" Tesota: `bun test` fails with your changes.");
-  expect(expanded).toContain("   inRange lowers a value above the range");
+  expect(expanded).toContain(" │ WHAT THE AGENT READ");
+  expect(expanded).toContain(" │ Tesota: `bun test` fails with your changes.");
+  expect(expanded).toContain(" │   inRange lowers a value above the range");
   const weak: SentBack = { round: "contracts", contracts: [{ ...contract, mutation: { ...contract.mutation, survived: [survivor] } }] };
-  expect(shown("tesota-gate", weak, 120)[1]).toMatch(/^ ↺ Sent back to the agent: a contract is too weak/u);
-  expect(shown("tesota-gate", weak, 120)[3]).toBe(" !  Contract too weak  inRange · src/range.ts — line 4: x > hi → x >= hi still proves");
+  expect(shown("tesota-gate", weak, 120)[1]).toMatch(/^ │ ↺ Sent back to the agent: a contract is too weak/u);
+  expect(shown("tesota-gate", weak, 120)[3]).toBe(" │ !  Contract too weak  inRange · src/range.ts — line 4: x > hi → x >= hi still proves");
   const proof: SentBack = { round: "proofs", proofs: [{ path: "src/range.ts", evidence: evidence("failed", dafnyFailure) }] };
-  expect(shown("tesota-gate", proof, 120)[3]).toBe(" ✗  Proof fails  src/range.ts — a postcondition could not be proved on this return path");
+  expect(shown("tesota-gate", proof, 120)[3]).toBe(" │ ✗  Proof fails  src/range.ts — a postcondition could not be proved on this return path");
 });
 
 it("leaves a message without details to Pi", () => {
@@ -396,7 +422,7 @@ it("draws the gate's live ledger as the receipt's block: what runs, what ended, 
   const detail = { line: () => undefined, subscribe: () => () => undefined,
     ledger: (_now: number, all: boolean) => { seen.push(all); return all ? [...rows, { glyph: "✗", text: "Proof · src/a.ts · 0:03", depth: 1 }] : rows; } };
   expect(text(shown("tesota-ledger", detail, 80))).toEqual([
-    "Verifying                                                       Tesota receipt",
+    "Verifying                                                      Tesota receipt",
     "↺ Attempt 1 · returned to agent · 1 check",
     "✓ Proof · src/a.ts · 0:02",
     "› Running project check · bun run check · 1:02",
@@ -405,11 +431,11 @@ it("draws the gate's live ledger as the receipt's block: what runs, what ended, 
   expect(seen).toEqual([false, true]);
   const colored = renderers().get("tesota-ledger")?.({ customType: "tesota-ledger", content: "", details: detail },
     { expanded: false, outputPad: 1 }, theme)?.render(80).join("\n") ?? "";
-  expect(colored).toContain(theme.fg("success", "✓"));
+  expect(colored).toContain(theme.fg("muted", "✓"));
   expect(colored).toContain(theme.fg("warning", "↺"));
   expect(renderers().get("tesota-ledger")?.({ customType: "tesota-ledger", content: "", details: undefined },
     { expanded: false, outputPad: 1 }, theme)).toBeUndefined();
   // The gate's operations name this renderer as their block, so the shell draws them with it.
   const operations = new GateOperations(() => 0);
-  expect(text(shown(operations.block, operations, 80))).toEqual(["Verifying                                                       Tesota receipt"]);
+  expect(text(shown(operations.block, operations, 80))).toEqual(["Verifying                                                      Tesota receipt"]);
 });

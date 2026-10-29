@@ -1,13 +1,13 @@
 [colors]
-foreground = "#f2eee6"
-background = "#202020"
-cursor_bg = "#c6a8d2"
-cursor_border = "#c6a8d2"
-cursor_fg = "#202020"
-selection_bg = "#4b3d53"
-selection_fg = "#f2eee6"
-ansi = ["#2f2a35", "#d88c8c", "#9ab08f", "#d5b36a", "#8fa3c6", "#c6a8d2", "#8fbfb8", "#b9b7aa"]
-brights = ["#6e6b73", "#e6a3a3", "#b2c6a8", "#e2c78a", "#a9badb", "#d6bfe0", "#a9d0ca", "#f2eee6"]
+foreground = "#ededed"
+background = "#0f0f10"
+cursor_bg = "#919cf0"
+cursor_border = "#919cf0"
+cursor_fg = "#0f0f10"
+selection_bg = "#27272b"
+selection_fg = "#ededed"
+ansi = ["#18181a", "#e5847d", "#7fb685", "#e0a84f", "#919cf0", "#b79be0", "#6cbdb9", "#a1a1a8"]
+brights = ["#808088", "#eea29c", "#9cc8a1", "#ebbf77", "#b0b8f5", "#cdb7ec", "#8fd0cc", "#ededed"]
 
 [metadata]
 name = "Tesota Dark"

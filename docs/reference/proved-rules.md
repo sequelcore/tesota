@@ -9,7 +9,7 @@ lsc check --backend=dafny src/verification/gate-rule.ts
 These are the rule files selected by `formal:check` in
 [package.json](../../package.json). Each contains pure TypeScript decisions
 with LemmaScript contracts checked by Dafny. These proofs use
-[LemmaScript's model of TypeScript](../concepts/verification.md#what-a-proof-covers),
+[LemmaScript's model of TypeScript](checks.md#proofs),
 whose numeric and other semantics can differ from JavaScript at runtime.
 A proof covers those contracts;
 it does not establish that callers supply the right facts or that the
@@ -21,7 +21,6 @@ Run `bun run formal:check` to check the full list.
 | File | What it decides | Re-prove |
 | --- | --- | --- |
 | [`src/verification/role-model-rule.ts`](../../src/verification/role-model-rule.ts) | Which verification model wins: nonempty flag, then setting, then session | `lsc check --backend=dafny src/verification/role-model-rule.ts` |
-| [`src/verification/mark-bloom-rule.ts`](../../src/verification/mark-bloom-rule.ts) | Whether the visual mark blooms for the receipt standing | `lsc check --backend=dafny src/verification/mark-bloom-rule.ts` |
 | [`src/verification/check-origin-rule.ts`](../../src/verification/check-origin-rule.ts) | Whether reports show a test failure introduced by the change | `lsc check --backend=dafny src/verification/check-origin-rule.ts` |
 | [`src/verification/comment-line-rule.ts`](../../src/verification/comment-line-rule.ts) | Whether a parsed line contains only a comment | `lsc check --backend=dafny src/verification/comment-line-rule.ts` |
 | [`src/verification/proof-cover-rule.ts`](../../src/verification/proof-cover-rule.ts) | Whether a changed line lies within a proved, unnarrowed contract | `lsc check --backend=dafny src/verification/proof-cover-rule.ts` |

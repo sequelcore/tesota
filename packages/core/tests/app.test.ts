@@ -62,8 +62,11 @@ function scripted(replies: readonly ScriptStep[], twoModels: boolean): { models:
   return { models, credentials };
 }
 
+/** The scripted models for the app, or none when it builds its own (#743). */
+const givenModels = (models: MutableModels, ownModels: boolean | undefined): { models?: MutableModels } => ownModels === true ? {} : { models };
+
 /** The app in a temporary folder, its settings and sessions there too, once it has drawn its first frame. */
-async function app(replies: readonly ScriptStep[] = [], { repository = false, earlier, earlierModel = "faux/faux-1", mcp, projectMcp, skills = {}, served, model, claudeCode, accounts, claude = { signIn: async () => undefined, status: async () => ({ loggedIn: false }) }, usage = noUsage }:
+async function app(replies: readonly ScriptStep[] = [], { repository = false, earlier, earlierModel = "faux/faux-1", mcp, projectMcp, skills = {}, served, model, claudeCode, accounts, claude = { signIn: async () => undefined, status: async () => ({ loggedIn: false }) }, usage = noUsage, ownModels }:
   { repository?: boolean;
     /** An earlier session of the folder that worked in its checkout, asked this and answered "earlier answer" (#595). */
     earlier?: string; earlierModel?: string; mcp?: object; projectMcp?: object; skills?: Record<string, string>;
@@ -74,7 +77,9 @@ async function app(replies: readonly ScriptStep[] = [], { repository = false, ea
     /** Claude Code's sign-in and status in an account's folder (#642), faked. */
     claude?: AppOptions["claude"];
     /** Where the usage panel reads from, faked: it reads no real Claude Code or ChatGPT. */
-    usage?: UsageSources } = {}) {
+    usage?: UsageSources;
+    /** The shell builds its own models over the test's credentials, as the operator's shell does (#743), instead of the scripted ones. */
+    ownModels?: boolean } = {}) {
   const terminal = new VirtualTerminal(100, 30);
   const { models, credentials } = scripted(replies, model === "faux/faux-2");
   if (claudeCode !== undefined) {
@@ -84,7 +89,7 @@ async function app(replies: readonly ScriptStep[] = [], { repository = false, ea
   const settingsPath = join(folder("tesota-core-app-settings-"), "settings.json");
   seedSettings(settingsPath, model, accounts);
   if (accounts !== undefined) {
-    for (const provider of engineModels(credentials, accounts).getProviders().filter(({ id }) => id.includes("@"))) models.setProvider(provider);
+    for (const provider of (await engineModels(credentials, accounts)).getProviders().filter(({ id }) => id.includes("@"))) models.setProvider(provider);
     for (const id of ["openai-codex", "openai-codex@work"]) await credentials.modify(id, async () =>
       ({ type: "oauth", access: "token", refresh: "refresh", expires: Date.now() + 3_600_000, accountId: "account-work" }));
   }
@@ -119,7 +124,7 @@ async function app(replies: readonly ScriptStep[] = [], { repository = false, ea
   const openedPages: string[] = [];
   let graphOpened = (_path: string): void => undefined;
   const openedGraph = new Promise<string>((resolve) => { graphOpened = resolve; });
-  const running = runApp({ cwd, terminal, models, credentials, settingsPath, sessions, claude, usage,
+  const running = runApp({ cwd, terminal, ...givenModels(models, ownModels), credentials, settingsPath, sessions, claude, usage,
     openSignInPage: async (url) => { openedPages.push(url); },
     openGraphFile: async (path) => { graphOpened(path); } }).finally(signOut);
   await terminal.until("tesota-core");
@@ -289,6 +294,42 @@ describe("tesota-core", () => {
     for (let down = 0; down < 40 && !(await terminal.screen()).join("\n").includes(`› ${item}`); down++) terminal.type("\x1b[B");
     terminal.type(enter);
   };
+
+  test("the shell starts on its saved model's provider, and /login at once after start lists the whole catalog (#743)", async () => {
+    const { terminal, running } = await app([], { model: "openai-codex/gpt-6.1-sol", ownModels: true });
+    try {
+      send(terminal, "/login");
+      // Amazon Bedrock is in the rest of the catalog only, never among the providers the saved model starts with.
+      expect(await terminal.until("Log in to")).toContain("Amazon Bedrock");
+      terminal.type("\x1b");
+    } finally { send(terminal, "/quit"); await running; }
+  });
+
+  test("/model and /login check the Claude Code accounts' sign-ins at once before they show (#744)", async () => {
+    let open = 0;
+    let most = 0;
+    // Each check takes a moment, as `claude auth status` does; one at a time, no two are ever open together.
+    const status = async (at?: string) => {
+      open += 1; most = Math.max(most, open);
+      await Bun.sleep(20);
+      open -= 1;
+      return { loggedIn: true, email: `${at ?? "default"}@example.test` };
+    };
+    const accounts: Account[] = ["b", "c"].map((name) => ({ name, provider: "claude-code", folder: join(folder("tesota-core-app-claude-"), name) }));
+    const { terminal, running } = await app([], { claude: { signIn: async () => undefined, status }, accounts, model: "faux/faux-1" });
+    const seen: number[] = [];
+    try {
+      for (const [command, shown] of [["/model", "Model"], ["/login", "Log in to"]] as const) {
+        most = 0;
+        send(terminal, command);
+        await terminal.until(shown);
+        seen.push(most);
+        terminal.type("\x1b");
+      }
+    } finally { send(terminal, "/quit"); await running; }
+    // The default Claude Code and both accounts, each checked while the others are.
+    expect(seen).toEqual([3, 3]);
+  });
 
   test("/login adds a Claude account in one step: its folder, Claude Code's sign-in there, and its record (#642)", async () => {
     const fake = fakeClaude("owner@example.test");

@@ -75,7 +75,7 @@ function items(): { case: string; file: string; run: number }[] {
   return Object.keys(LEFT_OPEN).flatMap((name) => shuffled.filter((item) => item.case === name).slice(0, 5));
 }
 
-const ctx = { model: undefined, modelRegistry: engineRegistry() };
+const ctx = { model: undefined, modelRegistry: await engineRegistry() };
 const done = new Set((() => { try { return readFileSync(out, "utf8"); } catch { return ""; } })().split("\n")
   .filter((line) => line.trim() !== "").map((line) => JSON.parse(line) as Record<string, any>)
   .map((record) => `${record["model"]}|${record["context"]}|${record["file"]}|${record["case"]}|${record["run"]}`));
