@@ -457,7 +457,8 @@ At most 8 mutants are tried per contract.
 A **Mutant** has these fields:
 
 - `line`: 1-based, in the file;
-- `operator`: `result`, `comparison`, `constant` or `arithmetic`;
+- `operator`: `result`, `comparison`, `constant`, `arithmetic` or `logical`
+  (`&&` ↔ `||`, or adding or removing an operand's `!`);
 - `before`: the text replaced;
 - `after`: the text that replaced it.
 

@@ -1,5 +1,7 @@
 import { basename } from "node:path";
+import type { ts as TypeScript } from "ts-morph";
 import type { Contract } from "./proof-guarantees.js";
+import { typescript } from "./typescript-source.js";
 import { proveSource } from "./verification/lemmascript-verifier.js";
 import { equivalentMutant, mutantFinding } from "./verification/mutation-rule.js";
 
@@ -13,7 +15,7 @@ import { equivalentMutant, mutantFinding } from "./verification/mutation-rule.js
  * 2024) with the prover in place of tests; no model decides it.
  */
 
-export type MutationOperator = "result" | "comparison" | "constant" | "arithmetic";
+export type MutationOperator = "result" | "comparison" | "constant" | "arithmetic" | "logical";
 
 export interface Mutant {
   /** The line changed, 1-based. */
@@ -69,8 +71,42 @@ function sites(line: string): [number, string, string, MutationOperator][] {
   return found.sort((a, b) => a[0] - b[0]);
 }
 
+/** Logical syntax needs expression boundaries: negating `a < b` must not become `!a < b`. */
+function logicalMutants(source: string, [from, to]: readonly [number, number]): Mutant[] {
+  const ts = typescript();
+  const file = ts.createSourceFile("mutation.ts", source, ts.ScriptTarget.Latest, true);
+  const found: Mutant[] = [];
+  const change = (node: TypeScript.Node, after: string): void => {
+    const start = node.getStart(file);
+    if (start < from || node.end > to) return;
+    const before = source.slice(start, node.end);
+    found.push({ line: file.getLineAndCharacterOfPosition(start).line + 1, operator: "logical", before, after,
+      source: `${source.slice(0, start)}${after}${source.slice(node.end)}` });
+  };
+  const negate = (operand: TypeScript.Expression): void => {
+    // The visit below removes an existing negation instead of adding a double one.
+    if (ts.isPrefixUnaryExpression(operand) && operand.operator === ts.SyntaxKind.ExclamationToken) return;
+    const text = operand.getText(file);
+    change(operand, ts.isIdentifier(operand) ? `!${text}` : `!(${text})`);
+  };
+  const visit = (node: TypeScript.Node): void => {
+    if (node.end <= from || node.getStart(file) >= to) return;
+    if (ts.isBinaryExpression(node) && (node.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken ||
+      node.operatorToken.kind === ts.SyntaxKind.BarBarToken)) {
+      change(node.operatorToken, node.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken ? "||" : "&&");
+      negate(node.left);
+      negate(node.right);
+    } else if (ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.ExclamationToken) {
+      change(node, node.operand.getText(file));
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return found;
+}
+
 const returned = /^(.*\breturn\s+)(.+?)(;?\s*)$/u;
-const OPERATORS: readonly MutationOperator[] = ["result", "comparison", "constant", "arithmetic"];
+const OPERATORS: readonly MutationOperator[] = ["result", "comparison", "constant", "arithmetic", "logical"];
 
 /**
  * The mutants of a function whose body spans the source offsets `body`
@@ -78,11 +114,14 @@ const OPERATORS: readonly MutationOperator[] = ["result", "comparison", "constan
  * line, taking each operator in turn so a cap keeps a mix of them. A result
  * mutant returns another of the function's returned values in place of one,
  * as a branch with its result swapped; the other operators flip a comparison,
- * move a number by one, or swap `+` and `-`, and often leave behavior the same.
+ * move a number by one, swap `+` and `-`, swap `&&` and `||`, or toggle an
+ * operand's `!`, and often leave behavior the same.
  */
 export function mutants(source: string, [from, to]: readonly [number, number], limit: number = MUTANT_LIMIT): Mutant[] {
   const lines = source.split("\n");
-  const byOperator: Readonly<Record<MutationOperator, Mutant[]>> = { result: [], comparison: [], constant: [], arithmetic: [] };
+  const byOperator: Readonly<Record<MutationOperator, Mutant[]>> = {
+    result: [], comparison: [], constant: [], arithmetic: [], logical: logicalMutants(source, [from, to]),
+  };
   const replace = (index: number, changed: string): string => [...lines.slice(0, index), changed, ...lines.slice(index + 1)].join("\n");
   // Each line the body reaches, with the columns of the line inside it.
   const body: { index: number; first: number; end: number }[] = [];

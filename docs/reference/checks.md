@@ -68,8 +68,10 @@ See the [LemmaScript specification](https://github.com/midspiral/LemmaScript/blo
 ## Contract strength
 
 Once the commands pass, Tesota tries up to eight small changes per new or
-changed top-level contract: a flipped comparison, another returned value,
-another operator. A change that still proves survives. Dafny then checks
+changed top-level contract: another returned value, a flipped comparison,
+a number moved by one, swapped `+` and `-`, swapped `&&` and `||`, or an
+operand's `!` added or removed. Operators take turns so the cap keeps a mix.
+A change that still proves survives. Dafny then checks
 whether each survivor returns the same result for every admitted input; an
 equivalent one doesn't count. Any other survivor makes the contract weak.
 
