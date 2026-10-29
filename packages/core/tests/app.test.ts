@@ -290,6 +290,32 @@ describe("tesota-core", () => {
     terminal.type(enter);
   };
 
+  test("/model and /login check the Claude Code accounts' sign-ins at once before they show (#744)", async () => {
+    let open = 0;
+    let most = 0;
+    // Each check takes a moment, as `claude auth status` does; one at a time, no two are ever open together.
+    const status = async (at?: string) => {
+      open += 1; most = Math.max(most, open);
+      await Bun.sleep(20);
+      open -= 1;
+      return { loggedIn: true, email: `${at ?? "default"}@example.test` };
+    };
+    const accounts: Account[] = ["b", "c"].map((name) => ({ name, provider: "claude-code", folder: join(folder("tesota-core-app-claude-"), name) }));
+    const { terminal, running } = await app([], { claude: { signIn: async () => undefined, status }, accounts, model: "faux/faux-1" });
+    const seen: number[] = [];
+    try {
+      for (const [command, shown] of [["/model", "Model"], ["/login", "Log in to"]] as const) {
+        most = 0;
+        send(terminal, command);
+        await terminal.until(shown);
+        seen.push(most);
+        terminal.type("\x1b");
+      }
+    } finally { send(terminal, "/quit"); await running; }
+    // The default Claude Code and both accounts, each checked while the others are.
+    expect(seen).toEqual([3, 3]);
+  });
+
   test("/login adds a Claude account in one step: its folder, Claude Code's sign-in there, and its record (#642)", async () => {
     const fake = fakeClaude("owner@example.test");
     const { terminal, settingsPath, running } = await app([], { claude: fake.claude, model: "faux/faux-1" });

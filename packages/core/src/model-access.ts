@@ -133,10 +133,11 @@ export async function accountStates(credentials: CredentialStore, accounts: read
   return labelled(instances, signIns);
 }
 
-/** Non-secret labels for account pickers and runs. */
+/** Non-secret labels for account pickers and runs, checking `concurrency` sign-ins at once, one unless given. */
 export async function accountLabels(credentials: CredentialStore, accounts: readonly Account[],
-  status: typeof claudeCodeStatus = claudeCodeStatus): Promise<ReadonlyMap<string, string>> {
-  return new Map((await accountStates(credentials, accounts, status)).map(({ id, label }) => [id, label]));
+  status: typeof claudeCodeStatus = claudeCodeStatus, { concurrency }: Pick<AccountStatesOptions, "concurrency"> = {}): Promise<ReadonlyMap<string, string>> {
+  return new Map((await accountStates(credentials, accounts, status, [], concurrency === undefined ? {} : { concurrency }))
+    .map(({ id, label }) => [id, label]));
 }
 
 /** A Claude plan's OAuth token, which pi-ai's Anthropic API would send as Claude Code does. */
@@ -214,10 +215,12 @@ const narrowed = (available: readonly Model<Api>[], served: ReadonlySet<unknown>
  * The models Tesota can run (#563, #566): those of the providers it is
  * signed in to, but with ChatGPT sign-in only the OpenAI models it serves;
  * OpenAI refuses the rest of its catalog at the first request. `/model`
- * lists them. Throws when the ChatGPT sign-in's list cannot be fetched.
+ * lists them, ChatGPT's list asked while the sign-ins are checked (#744).
+ * Throws when the ChatGPT sign-in's list cannot be fetched.
  */
 export async function runnableModels(models: Models): Promise<readonly Model<Api>[]> {
-  return narrowed(await models.getAvailable(), await servedByChatGPT(models));
+  const [available, served] = await Promise.all([models.getAvailable(), servedByChatGPT(models)]);
+  return narrowed(available, served);
 }
 
 /**
