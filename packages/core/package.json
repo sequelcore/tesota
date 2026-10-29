@@ -1,6 +1,6 @@
 {
   "name": "@tesota/core",
-  "version": "0.1.0-alpha.7",
+  "version": "0.1.0-alpha.8",
   "private": true,
   "description": "Tesota's engine: the host contract, its conformance tests and performance budgets",
   "license": "Apache-2.0",
