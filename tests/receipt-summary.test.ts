@@ -167,11 +167,24 @@ it("groups #575's note that the open-case lister lacked the issue's contents wit
   const opinions = text.indexOf("Model opinions · not evidence, not counted");
   expect(opinions).toBeGreaterThan(text.indexOf("○ No proof covers 3 changed files"));
   expect(text.indexOf("◇ 1 open case for you to settle")).toBeGreaterThan(opinions);
-  // ClaimCheck's opinion and a listing that did not happen sit in the same group.
+  // A listing that did not happen is not an opinion to read (#757).
   const unlisted = receiptSummary({ ...receipt, openCases: { status: "not_listed", reason: "openai/gpt-6-sol could not read issue #575's contents" } });
-  expect(unlisted.opinions).toEqual([{ glyph: "◇", title: "Open cases not listed", note: "openai/gpt-6-sol could not read issue #575's contents",
-    items: [] }]);
-  expect(unlisted.counts).toEqual(summary.counts);
+  expect(unlisted.opinions).toEqual([]);
+  expect(unlisted.counts).toBe("No review flags · 5 verification limits");
+});
+
+it("keeps an open-cases refusal only in muted details, not as an opinion to read (#757)", () => {
+  const receipt: Receipt = { ...emptyReceipt, openCases: { status: "not_listed", reason: "m cannot see the project files" } };
+  expect(receiptSummary(receipt).counts).toBe("No review flags · no verification limits");
+  expect(receiptSummary(receipt).opinions).toEqual([]);
+  const collapsed = plain(card(receipt, 120, false));
+  expect(collapsed).not.toContain("opinion to read");
+  expect(collapsed).not.toContain("m cannot see the project files");
+  for (const text of [renderReceipt(receipt), renderReceiptMessage(receipt), plain(card(receipt, 120, true))]) {
+    expect(text).not.toContain("◇");
+    expect(text.match(/m cannot see the project files/gu)).toHaveLength(1);
+    expect(flat(text)).toContain("not listed the cases the request leaves open: m cannot see the project files");
+  }
 });
 
 it("lists a subagent as context, never as evidence of the parent's change", () => {
