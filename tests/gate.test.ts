@@ -1957,6 +1957,44 @@ const counterModel = (name = "Counter"): Record<string, string> => ({
     `   fault: models/Fault.cfg lock removed\n*)\n---- MODULE ${name} ----\n====\n`,
   [`models/${name}.cfg`]: "SPECIFICATION Spec\n", "models/Fault.cfg": "SPECIFICATION Spec\n" });
 
+it("leaves a model's own files out of missing-proof limits (#758)", async () => {
+  const root = repository({ "src/counter.ts": "export const n = 0;\n", ...counterModel() });
+  const run = gate(root);
+  await run.input();
+  await run.tool("write");
+  write(root, { "src/counter.ts": "export const n = 1;\n",
+    "models/Counter.tla": `${counterModel()["models/Counter.tla"]}CONSTANT N\n`,
+    "models/Counter.cfg": "SPECIFICATION Spec\nCONSTANT N = 1\n",
+    "models/Fault.cfg": "SPECIFICATION Spec\nCONSTANT N = 2\n" });
+  const receipt = entry(await run.settle()).details as Receipt;
+  expect(receipt.models?.map(({ path, verdict }) => [path, verdict])).toEqual([["models/Counter.tla", "proved"]]);
+  expect(receipt.unverified).toEqual(["src/counter.ts"]);
+  expect(receiptFindings(receipt).filter(({ standing, check }) => standing === "gap" && check === "coverage").map(({ subject }) => subject))
+    .toEqual(["src/counter.ts"]);
+});
+
+it.each(["failed", "weak", "unchecked"] as const)("keeps a %s model's own files unverified by standing (#758)", async (status) => {
+  const root = repository({ "src/counter.ts": "export const n = 0;\n", ...counterModel() });
+  scriptedModels.set("models/Counter.tla", () => status === "unchecked"
+    ? { outcome: "not_started", run: "not_started", faults: [] }
+    : { outcome: "failed", run: status === "weak" ? "passed" : "violated",
+      faults: [{ path: "models/Fault.cfg", description: "lock removed", verdict: "passes", output: "", durationMs: 1 }] });
+  const run = gate(root);
+  await run.input();
+  await run.tool("write");
+  write(root, { "models/Counter.tla": `${counterModel()["models/Counter.tla"]}CONSTANT N\n`,
+    "models/Counter.cfg": "SPECIFICATION Spec\nCONSTANT N = 1\n",
+    "models/Fault.cfg": "SPECIFICATION Spec\nCONSTANT N = 2\n" });
+  const first = await run.settle();
+  const receipt = entry(first?.continue ? await run.settle() : first).details as Receipt;
+  expect(receiptStanding(receipt)).toBe(status === "unchecked" ? "unverified" : "failed");
+  expect(receipt.unverified).toEqual([]);
+  // Model failure or inability to run must stand independently of the mock's staleness gap.
+  const withoutModelGap = { ...receipt, models: (receipt.models ?? []).map((model) => ({ ...model,
+    staleness: "current" as const, stale: [] })) };
+  expect(receiptStanding(withoutModelGap)).not.toBe("verified");
+});
+
 it("publishes captured previews as transcript metadata without changing receipt v2", async () => {
   const root = repository({ "src/counter.ts": "export const n = 0;\n", ...counterModel() });
   scriptedModels.set("models/Counter.tla", () => ({ outcome: "passed", run: "passed", faults: [],

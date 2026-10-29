@@ -9,6 +9,7 @@ import { git, gitOutput, gitStopped, headCommit } from "./git.js";
 import { engineName } from "./engine-name.js";
 import { host } from "./host.js";
 import type { ModelCheck } from "./model-check.js";
+import { modelOwnFiles } from "./model-files.js";
 import { openCases } from "./open-cases.js";
 import { roleModel } from "./verification/role-model-rule.js";
 import { type AttemptEnd, GateOperations, type OperationSink, type OperationSpec } from "./operations.js";
@@ -259,8 +260,8 @@ function onlyComments(change: FileChange | undefined): boolean {
 }
 
 /**
- * The changed files no proof covers (`covered`), other than test files and
- * files whose change holds no code (`onlyComments`), and whether no file's
+ * The changed files no proof or model check accounts for (`covered`), other than
+ * test files and files whose change holds no code (`onlyComments`), and whether no file's
  * change held any.
  */
 function unprovedFiles(changes: Awaited<ReturnType<typeof fileChanges>>, changed: readonly string[],
@@ -1142,7 +1143,8 @@ async function unitEvidence(unit: ChangedUnit, proofs: Receipt["proofs"], rung: 
   const settledModels = models === undefined ? undefined : { ...models,
     models: await Promise.all(models.models.map((model) => settledCheck(unit.root, model))) };
   const sources = (measured?.sources ?? []).filter(({ path }) => settledProofs.some((proof) => proof.path === path && proof.verdict === "proved"));
-  const covered = new Set(proofFiles(settledProofs.filter(({ verdict }) => verdict === "proved")));
+  const covered = new Set([...proofFiles(settledProofs.filter(({ verdict }) => verdict === "proved")),
+    ...(settledModels?.models ?? []).flatMap(({ path, header }) => modelOwnFiles(path, header))]);
   const left = unit.unreadable ? [] : await leftIn(unit, settledProofs);
   return { repository: unit.snapshot === undefined, ...modelEvidence(settledModels),
     ...unit.snapshot === undefined ? {} : { snapshot: true, ...unit.snapshot.tooLarge.length === 0 ? {} : { tooLarge: unit.snapshot.tooLarge } },
