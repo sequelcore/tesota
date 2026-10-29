@@ -405,10 +405,10 @@ The `outcome` values are:
 | `header` | ModelHeader | What its header declares |
 | `problems` | string[] | What the header misses; the design model went back without running TLC while any was listed |
 | `evidence` | Evidence | The check's evidence, with `verifier` `tlc` and the outcome verification judged: the design model's run and its planted faults together |
-| `run` | `"passed"`, `"vacuous"`, `"violated"`, `"malformed"`, `"timed_out"`, `"cancelled"` or `"not_started"` | How TLC ended on the design model itself; `passed` establishes the declared properties in every reachable state of the design model as configured |
+| `run` | `"passed"`, `"vacuous"`, `"violated"`, `"deadlocked"`, `"assumption_failed"`, `"malformed"`, `"timed_out"`, `"cancelled"` or `"not_started"` | How TLC ended on the design model itself; `passed` establishes the declared properties in every reachable state of the design model as configured |
 | `states` | number | The distinct states TLC reported; 0 when it reported none |
 | `faults` | FaultCheck[] | Each planted fault TLC ran, once the design model passed |
-| `counterexample` | Counterexample, optional | The steps to the broken property, when `run` is `violated` |
+| `counterexample` | Counterexample, optional | The reported trace, when available, for `violated`, `deadlocked` or `assumption_failed` |
 | `staleness` | `"current"`, `"possibly_stale"` or `"unknown"` | Whether a covered file differs from the `confirmed` commit; `unknown` without one or when it isn't in the repository; always `current` for a design model written with its code whose check passed |
 | `stale` | string[] | The covered files that differ from it |
 | `writtenWithCode` | boolean | The request changed both the design model's own files and a covered file, so the evidence counts as weaker |
@@ -420,7 +420,10 @@ root and the functions named), `invariants`, `atomic` and `omits`
 (string[]), `faults` ({ path, description }[]), and optional `confirmed`
 and `replay` (string). A FaultCheck has a fault's `path` and `description`,
 its `verdict` (`"caught"`, `"passes"`, `"broken"` or `"unrun"`), the end of
-TLC's `output` and `durationMs`. A Counterexample has the `violation` TLC
+TLC's `output` and `durationMs`. Optional `deadlockRetry` records the second
+run's ModelResult `run` value after a deadlock-only fault; `output` keeps
+both results and `durationMs` sums both runs. `caught` requires a declared
+property violation or failed `Assert`, never a deadlock alone. A Counterexample has the `violation` TLC
 reported and `steps`, each `{ action, changes }`: the action TLC names and
 the variables it changed, as `name = value`, all of them for the initial
 state.

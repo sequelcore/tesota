@@ -1,13 +1,11 @@
 # Model checking
 
-A proof covers one function and a test covers the cases you wrote; neither
-sees two workers whose steps interleave. A design model does: a small TLA+
-or Quint description of the state, the steps that change it, and a rule
-that must always hold. TLC tries every order of the steps and confirms the
+A proof covers one function; a test covers chosen cases. Neither sees
+workers whose steps interleave. A design model does: a small TLA+ or Quint
+description of state, steps and a rule that must hold. TLC tries every order of the steps and confirms the
 rule, or shows the order that breaks it.
 
-Write one for steps that interleave: workers sharing a counter, a lock, a
-retry, two sessions writing one file.
+Use one for shared counters, locks, retries or concurrent file writes.
 
 ```mermaid
 flowchart LR
@@ -89,8 +87,12 @@ Tesota checks both:
 Model-checked: NoLostUpdate holds in all 9 reachable states; caught 1 of 1 planted fault; not linked to the code.
 ```
 
-A design model that still passes with its fault planted is too weak to
-trust.
+A fault is caught only by a declared invariant or property (in the header
+or configuration), or a failed `Assert`. A deadlock alone doesn't count.
+Tesota retries it with deadlock checking off (`-deadlock`), with the same
+limits: a violation catches it; exhaustive success means too weak; an
+unfinished or errored retry means not checked. The receipt names the fault
+and both results. A main-configuration deadlock still fails.
 
 ## The header
 
@@ -104,7 +106,7 @@ in Quint in a `/* … */` or `//` comment.
 | `invariant` | The definitions TLC checks, separated by commas |
 | `atomic` | What the model treats as one indivisible step |
 | `omits` | What the model leaves out |
-| `fault` | A variant that must break an invariant: another `.cfg`, a `.tla` with its own `.cfg`, or a `.qnt` |
+| `fault` | A variant that must break a declared property or assertion: another `.cfg`, a `.tla` with its own `.cfg`, or a `.qnt` |
 | `replay` | Optional: a command that replays the model's traces against the code |
 
 A TLA+ model uses the `.cfg` beside it, plus the header's invariants. A
@@ -127,10 +129,10 @@ Windows can't start; write models there in TLA+.
 
 | Receipt | Meaning |
 | --- | --- |
-| Model-checked | The invariants hold in every reachable state, and every fault broke one |
+| Model-checked | The invariants hold in every reachable state; caught faults broke a declared property or assertion |
 | Model-checked, written with the code | The same, but the model changed with the code, so it may mirror it: weaker evidence, not stale |
-| Model fails | A state breaks an invariant; the steps follow |
-| Model too weak | A planted fault passes, or couldn't be checked |
+| Model fails | A declared property or assertion breaks, or the main run deadlocks; the steps follow |
+| Model too weak | A planted fault passes or is broken; unfinished retries leave a gap |
 | Model not checkable | TLC couldn't read it |
 | Model not checked | Java, TLC or Quint is missing, it ran out of time, or it has no header |
 | Model possibly stale | Covered code changed since `confirmed`, without the model |

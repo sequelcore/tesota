@@ -108,13 +108,17 @@ header names the covered code, invariants, atomic steps, omissions and
 planted faults. A model is checked when its files, faults or covered code
 change; a passing check is reused for the same content.
 
-A fault that passes, or can't be read, fails the check; an unfinished one
-leaves a gap; a model with no fault earns no passing evidence. A
-counterexample comes back as numbered steps for the agent to compare with
-the code. The receipt states the omissions, whether the model was written
-with the code, and whether covered code differs from its confirmed commit;
-a passing `replay` command links the model to the code. A model graph
-shows explored states, not an execution trace.
+A fault is caught only by a header/configuration invariant or property, or
+a failed `Assert`. Deadlock-only faults retry with `-deadlock`, same limits:
+a declared violation catches it; exhaustive success means too weak; early
+stops or errors mean not checked. Main deadlocks still fail. The receipt
+names both results; retry graphs are captured normally.
+
+A passing or unreadable first-run fault fails the check; unfinished faults
+leave gaps; no faults earn no passing evidence. Counterexamples return as
+numbered steps to compare with code. Receipts state omissions, models
+written with code and changes since confirmation. A passing `replay` links
+the model to code. Graphs show explored states, not execution traces.
 
 ## Weakened evidence
 

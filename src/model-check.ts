@@ -21,7 +21,7 @@ import { type FaultVerdict, type ModelRun, type Staleness, faultVerdict, modelOu
 /** The word that makes a TLA+ or Quint file a model the gate checks, on the first line of its header. */
 export const MODEL_MARKER = "tesota-model";
 
-/** TLC's time limit per run, the proof timeout; a model with F faults takes at most (F + 1) times it. */
+/** TLC's time limit per run, the proof timeout; a deadlocking fault gets one more run within the same limits. */
 const timeoutMs = 5 * 60_000;
 /** The heap each TLC run may take, as accepted on 2026-10-21. */
 const maxHeap = "-Xmx2g";
@@ -157,7 +157,7 @@ function checkTarget(model: string, file: string): string {
 
 /** How a model run ended, as an operation's result: a violation is a failed run. */
 function modelRunResult(run: ModelRun): OperationResult {
-  return run === "violated" || run === "malformed" ? "failed" : run;
+  return run === "violated" || run === "deadlocked" || run === "assumption_failed" || run === "malformed" ? "failed" : run;
 }
 
 /** A model of the project, its header, whether the request changed it or what it covers, and the hash of what its check reads. */
@@ -265,7 +265,7 @@ function distinctStates(output: string): number {
  * extracts, removed after. A missing Java or TLC is a run that did not start.
  */
 async function runTlc(root: string, spec: string, config: string, invariants: readonly string[], jar: string,
-  signal: AbortSignal, capture?: GraphOptions, evidenceHash = ""): Promise<CheckerRun> {
+  signal: AbortSignal, capture?: GraphOptions, evidenceHash = "", deadlockCheck = true): Promise<CheckerRun> {
   const started = Date.now();
   if (await readIfPresent(jar) === undefined) {
     return { run: "not_started", durationMs: 0, trace: "", output: `TLC is not installed: Tesota looks for tla2tools.jar at ${jar}.` };
@@ -283,22 +283,24 @@ async function runTlc(root: string, spec: string, config: string, invariants: re
     const decoder = new StringDecoder("utf8");
     let reportTail = "";
     let violated = false;
+    let deadlocked = false;
     // From the specification's folder, where TLC finds the modules it extends.
     const args = [maxHeap, "-XX:+UseParallelGC", `-Djava.io.tmpdir=${directory}`, "-cp", jar, "tlc2.TLC",
       "-workers", "auto", "-metadir", join(directory, "states"), "-dump", "dot,actionlabels", dotFile,
-      ...capture?.continue === true ? ["-continue"] : [], "-config", written, posix.basename(spec)];
+      ...capture?.continue === true ? ["-continue"] : [], ...deadlockCheck ? [] : ["-deadlock"], "-config", written, posix.basename(spec)];
     const ran = await runProcess("java", args, join(root, posix.dirname(spec)),
     signal, timeoutMs, undefined, { onStdout: (chunk) => {
       const decoded = decoder.write(chunk);
       reportTail += decoded;
-      violated ||= /Error: (?:Invariant \w+ is violated|Action property .* is violated|Deadlock reached|Temporal properties were violated|The first argument of Assert)/u.test(reportTail);
+      violated ||= /Error: (?:Invariant \w+ is violated|Action property .* is violated|Temporal properties were violated|The first argument of Assert)/u.test(reportTail);
+      deadlocked ||= /Error: Deadlock reached/u.test(reportTail);
       reportTail = reportTail.slice(-1024);
       outputBytes += chunk.length;
       if (outputBytes <= (capture?.limits?.bytes ?? graphLimits.bytes)) capturedOutput += decoded;
     } });
     const output = ran.ended === "not_started" ? `Java could not start, so TLC did not run: ${ran.output}` : ran.output;
     return { run: reportedTlcRun(tlcRun(ran.ended === "cancelled", ran.ended === "timed_out", ran.ended !== "not_started", ran.exitCode ?? -1,
-      distinctStates(output)), violated), output, trace: ran.stdout, durationMs: Date.now() - started,
+      distinctStates(output)), violated, deadlocked), output, trace: ran.stdout, durationMs: Date.now() - started,
       ...capture === undefined ? {} : { capture: await captureGraph(dotFile, capturedOutput, { sessionFile: capture.sessionFile, root, model: spec, config,
           command: ["java", ...args], startedAt: new Date(started).toISOString(), finishedAt: new Date().toISOString(),
           processEnded: ran.ended, evidenceOutputHash: graphContentHash(output), modelHash: graphContentHash(modelSource), configHash: graphContentHash(configSource),
@@ -341,18 +343,37 @@ async function runQuint(root: string, model: string, invariants: readonly string
 
 /** One checker run of a model or a fault, in the model's language: a TLA+ fault may be another configuration of the same specification. */
 function check(root: string, model: string, file: string, invariants: readonly string[], jar: string, signal: AbortSignal,
-  capture?: GraphOptions, evidenceHash?: string): Promise<CheckerRun> {
+  capture?: GraphOptions, evidenceHash?: string, deadlockCheck = true): Promise<CheckerRun> {
   if (language(model) === "quint") return runQuint(root, file, invariants, signal);
-  return file.endsWith(".cfg") ? runTlc(root, model, file, invariants, jar, signal, capture, evidenceHash)
-    : runTlc(root, file, configOf(file), invariants, jar, signal, capture, evidenceHash);
+  return file.endsWith(".cfg") ? runTlc(root, model, file, invariants, jar, signal, capture, evidenceHash, deadlockCheck)
+    : runTlc(root, file, configOf(file), invariants, jar, signal, capture, evidenceHash, deadlockCheck);
 }
 
 /** A planted fault's check: how it ended, what that shows, and what the checker printed. */
 export interface FaultCheck extends ModelFault {
+  /** The second run after a deadlock-only result, with deadlock checking disabled. */
+  readonly deadlockRetry?: ModelRun;
   readonly capture?: GraphCapture;
   readonly verdict: FaultVerdict;
   readonly output: string;
   readonly durationMs: number;
+}
+
+/** Check a fault, retrying a deadlock alone without the deadlock check under identical limits. */
+async function checkFault(root: string, path: string, fault: ModelFault, invariants: readonly string[], jar: string,
+  signal: AbortSignal, ops: OperationSink, spec: OperationSpec, planned: string | undefined,
+  capture: GraphOptions | undefined, evidenceHash: string): Promise<FaultCheck> {
+  const ran = await ops.run(spec, () => check(root, path, fault.path, invariants, jar, signal, capture, evidenceHash),
+    ({ run }) => modelRunResult(run), planned);
+  const retrySpec: OperationSpec = { ...spec, target: `${checkTarget(path, fault.path)} -deadlock` };
+  const retry = ran.run !== "deadlocked" ? undefined : await ops.run(retrySpec,
+    () => check(root, path, fault.path, invariants, jar, signal, capture, evidenceHash, false),
+    ({ run }) => modelRunResult(run));
+  const final = retry ?? ran;
+  return { ...fault, verdict: faultVerdict(final.run, retry !== undefined),
+    output: retry === undefined ? ran.output : `${ran.output}\nChecked again without the deadlock check:\n${retry.output}`,
+    durationMs: ran.durationMs + (retry?.durationMs ?? 0),
+    ...retry === undefined ? {} : { deadlockRetry: retry.run }, capture: captureOf(final) };
 }
 
 /** Whether a model's traces replay against the code: the header names no replay, the replay passed, or it did not. */
@@ -454,13 +475,11 @@ export async function checkModel(root: string, path: string, changed: readonly s
   const faults: FaultCheck[] = [];
   if (main.run === "passed") {
     for (const [k, fault] of header.faults.entries()) {
-      const ran = await ops.run(faultSpecs[k] ?? mainSpec, () => check(root, path, fault.path, header.invariants, jar, signal, capture, contentHash(content)),
-        ({ run }) => modelRunResult(run), faultIds[k]);
-      faults.push({ ...fault, verdict: faultVerdict(ran.run), output: ran.output, durationMs: ran.durationMs,
-        capture: captureOf(ran) });
+      faults.push(await checkFault(root, path, fault, header.invariants, jar, signal, ops,
+        faultSpecs[k] ?? mainSpec, faultIds[k], capture, contentHash(content)));
     }
   }
-  const counterexample = main.run === "violated" ? tlcCounterexample(main.trace) : undefined;
+  const counterexample = ["violated", "deadlocked", "assumption_failed"].includes(main.run) ? tlcCounterexample(main.trace) : undefined;
   const result = evidence(main, faults);
   const link: ModelLink = header.replay === undefined || result.outcome !== "passed" ? "no_replay"
     : (await ops.run(replaySpec ?? mainSpec, () => runShell(header.replay ?? "", root, signal, timeoutMs, env), ({ outcome }) => outcome, replayId))

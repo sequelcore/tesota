@@ -722,7 +722,12 @@ function stalenessFindings({ path, staleness, stale, header }: ModelCheck): Find
 /** A model's check as its main finding: model-checked, not checked, failing, too weak, or unreadable to TLC. */
 export function modelFinding(model: ModelResult): Finding {
   const { path, verdict, counterexample, faults, writtenWithCode } = model;
-  const more = [...abstractionWords(model), ...faults.map((fault) => `Fault ${fault.path} (${fault.description}): ${fault.verdict}`),
+  const more = [...abstractionWords(model), ...faults.map((fault) => fault.deadlockRetry === undefined
+    ? `Fault ${fault.path} (${fault.description}): ${fault.verdict}`
+    : `fault ${fault.path} deadlocked without breaking ${model.header.invariants.join(", ")}; checked again without the deadlock check, ${
+      fault.verdict === "caught" ? "a declared property broke: caught"
+        : fault.verdict === "passes" ? "declared properties hold: too weak for this fault"
+          : `${fault.deadlockRetry}: not checked`}`),
     checked(model.evidence)];
   if (verdict === "proved") {
     return { standing: "holds", check: "model", label: writtenWithCode ? "Model-checked, written with the code" : "Model-checked", subject: path,
