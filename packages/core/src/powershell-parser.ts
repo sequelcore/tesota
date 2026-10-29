@@ -1,4 +1,5 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
+import { tmpdir } from "node:os";
 import type { ParsedCommand } from "./permissions.ts";
 
 /**
@@ -178,8 +179,9 @@ const parsers = new Map<string, Parser>();
 function started(executable: string): Parser {
   const found = parsers.get(executable);
   if (found !== undefined) return found;
+  // In the temporary folder: with LOCALAPPDATA unset, PowerShell writes its module cache under its current folder, never a project's.
   const child = spawn(executable, ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64")],
-    { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+    { cwd: tmpdir(), stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
   const parser: Parser = { child, waiting: [], answered: false, next: 0, end: () => {
     if (parsers.get(executable) === parser) parsers.delete(executable);
     for (const { resolve } of parser.waiting.splice(0)) resolve(undefined);
