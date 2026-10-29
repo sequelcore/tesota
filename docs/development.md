@@ -172,6 +172,24 @@ aliased. A change to a verification rule, an evidence format or what
 counts as accepted needs its reason and checks at that boundary, and must
 never look successful by removing what detected a failure.
 
+## Adding a verifier
+
+A verifier is a dependency, whether a third party or Sequel maintains it.
+Sequel's own lives in a separate package that works without Tesota, and
+improving an existing project upstream comes before a fork. The owner
+approves adopting one, which needs:
+
+- **Declared support.** It states which language and checks it supports
+  and rejects anything else as unsupported, never as a pass.
+- **A reference in its CI.** Each release is compared with a pinned
+  reference tool and with cases whose outcomes were written first,
+  planted faults included. Verdicts, traces and completed explorations
+  are compared, not exit codes alone; an unresolved disagreement blocks
+  adoption.
+- **Honest failures.** A timeout, cancellation, exhausted limit or crash
+  never counts as a pass.
+- **A named backend.** The receipt says which verifier and version ran.
+
 ## Branches
 
 `main` is stable and `dev` the protected integration branch. Work starts on
