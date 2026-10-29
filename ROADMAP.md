@@ -15,12 +15,16 @@ Direction, without dates. The plan lives in
   unverified run never ends as verified.
 - **Reuse existing tools:** LemmaScript and Dafny, TLC, your project's
   tests, pi-ai and pi-tui.
+- **Verifiers are dependencies.** Tesota contains no verifier. Where no
+  existing one fits, such as one that runs without Java or .NET, Sequel
+  may maintain one in its own package, held to the same comparison against
+  a reference as any verifier Tesota adopts.
 - **Build for a consumer that exists today.** A capability that claims to
   improve results is measured against the simplest alternative first.
 
 ## Not planned
 
-- **A sandbox or verifier of Tesota's own.** An existing operating-system
+- **A sandbox of Tesota's own.** An existing operating-system
   sandbox will be used when automated runs need one.
 - **Surfaces beyond the terminal,** such as a GUI or an ACP server, until a
   real client exists. A static file your browser opens counts as terminal
