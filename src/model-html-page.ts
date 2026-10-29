@@ -8,10 +8,11 @@ const get = <T extends HTMLElement>(id: string): T => document.getElementById(id
 let view = data.view;
 const expanded = new Set<string>();
 let traceVisible = false;
-const colors = (): { bg: string; fg: string; error: string; accent: string } => {
+const colors = (): { bg: string; fg: string; error: string; accent: string; border: string } => {
   const style = getComputedStyle(document.documentElement);
   return { bg: style.getPropertyValue("--panel").trim(), fg: style.getPropertyValue("--fg").trim(),
-    error: style.getPropertyValue("--error").trim(), accent: style.getPropertyValue("--accent").trim() };
+    error: style.getPropertyValue("--error").trim(), accent: style.getPropertyValue("--accent").trim(),
+    border: style.getPropertyValue("--border").trim() };
 };
 const cy = cytoscape({ container: get("graph"), elements: [], layout: { name: "grid" }, minZoom: .05, maxZoom: 5 });
 const count = (n: number): string => boundedCount(view.partial, n);
@@ -87,7 +88,7 @@ function elements(): cytoscape.ElementDefinition[] {
 }
 function styleGraph(): void {
   const c = colors();
-  cy.style().selector("node").style({ shape: "round-rectangle", "background-color": c.bg, color: c.fg, label: "data(label)", "text-wrap": "wrap", "text-max-width": "260px", width: "label", height: "label", padding: "12px", "text-valign": "center", "text-halign": "center", "font-family": "system-ui", "font-size": 14, "border-color": c.accent, "border-width": 1 })
+  cy.style().selector("node").style({ shape: "round-rectangle", "background-color": c.bg, color: c.fg, label: "data(label)", "text-wrap": "wrap", "text-max-width": "260px", width: "label", height: "label", padding: "12px", "text-valign": "center", "text-halign": "center", "font-family": "system-ui", "font-size": 14, "border-color": c.border, "border-width": 1 })
     .selector("edge").style({ label: "data(label)", color: c.fg, "line-color": c.fg, "line-opacity": .45, "target-arrow-color": c.fg, "arrow-scale": 1.2, "target-arrow-shape": "triangle", "font-family": "system-ui", "curve-style": "bezier", "control-point-step-size": 80, "font-size": 12, "text-background-color": c.bg, "text-background-opacity": 1, "text-background-padding": "3px", "text-background-shape": "roundrectangle" })
     .selector(".start").style({ "border-width": 3 })
     .selector(".trace").style({ "border-color": c.accent, "border-width": 5, "line-color": c.accent, "line-opacity": 1, "target-arrow-color": c.accent, width: 5 })

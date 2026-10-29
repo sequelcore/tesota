@@ -268,7 +268,7 @@ it("keeps readable text in nodes and a separate panel, and exports PNG through t
       expect(doc.querySelector("img")).toBeNull();
       expect(cy.edges()[0]?.data("label")).toBe(attack); // no ×1, even on a partial capture
       expect(cy.edges()[0]?.style("text-background-opacity")).toBe("1");
-      expect(cy.edges()[0]?.style("text-background-color")).toBe("rgb(238,233,226)");
+      expect(cy.edges()[0]?.style("text-background-color")).toBe("rgb(243,243,245)");
       const css = doc.querySelector("style")?.textContent ?? "";
       expect(css).toContain("height:100dvh");
       expect(css).toContain("grid-template-columns:minmax(0,1fr) minmax(260px,340px)");
@@ -287,7 +287,7 @@ it("keeps readable text in nodes and a separate panel, and exports PNG through t
       dom.window.URL.revokeObjectURL = () => {};
       dom.window.HTMLAnchorElement.prototype.click = function () { downloads.push(this.download, this.href); };
       node<HTMLButtonElement>(doc, "#download-png").click();
-      expect(exports).toEqual([{ output: "blob", full: true, scale: 2, bg: "#faf8f4" }]);
+      expect(exports).toEqual([{ output: "blob", full: true, scale: 2, bg: "#fafafa" }]);
       expect(downloads).toEqual(["__script__img_onerror_alert_1_______.png", "blob:viewer-export"]);
       expect(errors).toEqual([]);
     } finally { dom.window.close(); }
@@ -371,13 +371,13 @@ it("keeps a violating group's error border and text while trace and search highl
       for (const query of ["", "Safe"]) {
         search.value = query; search.dispatchEvent(new dom.window.Event("input"));
         expect(bad[0]?.hasClass("break")).toBe(true);
-        expect(bad[0]?.style("border-color")).toBe("rgb(162,61,72)");
-        expect(bad[0]?.style("color")).toBe("rgb(162,61,72)");
+        expect(bad[0]?.style("border-color")).toBe("rgb(179,55,47)");
+        expect(bad[0]?.style("color")).toBe("rgb(179,55,47)");
         expect(bad[0]?.style("border-width")).toBe("2px");
-        expect(bad[0]?.style("underlay-color")).toBe("rgb(113,86,126)");
+        expect(bad[0]?.style("underlay-color")).toBe("rgb(74,85,192)");
         expect(bad[0]?.style("underlay-opacity")).toBe("0.15");
       }
-      expect(cy.edges(".trace")[0]?.style("line-color")).toBe("rgb(113,86,126)");
+      expect(cy.edges(".trace")[0]?.style("line-color")).toBe("rgb(74,85,192)");
       expect(errors).toEqual([]);
     } finally { dom.window.close(); }
   } finally { await rm(root, { recursive: true, force: true }); }
