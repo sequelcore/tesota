@@ -1117,6 +1117,23 @@ async function settledCheck<T extends { readonly evidence: Evidence; readonly ve
     output: `${check.evidence.output.trimEnd()}\n\nEvidence is stale: checked content changed before the receipt settled; current content was not checked.` } };
 }
 
+/** The files `proofs` checked; a proof's `.dfy.gen` is the base `lsc regen` merges against, regenerated from the source the proof covers. */
+function proofFiles(proofs: Receipt["proofs"]): string[] {
+  return proofs.flatMap(({ evidence }) => evidence.files.flatMap((path) => path.endsWith(".dfy") ? [path, `${path}.gen`] : [path]));
+}
+
+/**
+ * What the run left in `unit`: its inventory and, since proving regenerates
+ * each proof in place after the inventory was read, the files of `proofs`
+ * that differ from the base (#737).
+ */
+async function leftIn(unit: ChangedUnit, proofs: Receipt["proofs"]): Promise<string[]> {
+  const proving = new Set(proofFiles(proofs));
+  if (proving.size === 0) return [...unit.changed];
+  const regenerated = (await pathsFromBase(unit.root, unit.base))?.all.filter((path) => proving.has(path)) ?? [];
+  return [...new Set([...unit.changed, ...regenerated])].sort();
+}
+
 /** One repository's evidence for the receipt, in its own terms. */
 async function unitEvidence(unit: ChangedUnit, proofs: Receipt["proofs"], rung: Pick<Receipt, "tests" | "exercises"> | undefined,
   measured: Measured | undefined, models: ModelRung | undefined): Promise<UnitEvidence> {
@@ -1125,9 +1142,8 @@ async function unitEvidence(unit: ChangedUnit, proofs: Receipt["proofs"], rung: 
   const settledModels = models === undefined ? undefined : { ...models,
     models: await Promise.all(models.models.map((model) => settledCheck(unit.root, model))) };
   const sources = (measured?.sources ?? []).filter(({ path }) => settledProofs.some((proof) => proof.path === path && proof.verdict === "proved"));
-  // A proof's `.dfy.gen` is the base `lsc regen` merges against, regenerated from the source the proof covers.
-  const covered = new Set(settledProofs.filter(({ verdict }) => verdict === "proved").flatMap(({ evidence }) =>
-    evidence.files.flatMap((path) => path.endsWith(".dfy") ? [path, `${path}.gen`] : [path])));
+  const covered = new Set(proofFiles(settledProofs.filter(({ verdict }) => verdict === "proved")));
+  const left = unit.unreadable ? [] : await leftIn(unit, settledProofs);
   return { repository: unit.snapshot === undefined, ...modelEvidence(settledModels),
     ...unit.snapshot === undefined ? {} : { snapshot: true, ...unit.snapshot.tooLarge.length === 0 ? {} : { tooLarge: unit.snapshot.tooLarge } },
     base: unit.base, proofs: settledProofs, ...measured?.strength,
@@ -1137,6 +1153,6 @@ async function unitEvidence(unit: ChangedUnit, proofs: Receipt["proofs"], rung: 
     ...unit.endState === undefined ? {} : { endState: unit.endState },
     tests, exercises: rung?.exercises ?? [], weakened: unit.weakened,
     ...unprovedFiles(unit.changes, unit.changed, covered), uncovered: uncovered(sources, unit.changes, unit.weakened),
-    changed: unit.unreadable ? "unreadable" : await recordedChanges(unit.root, unit.changed),
-    lines: unit.unreadable ? "unreadable" : await checks().changeLines(unit.root, unit.base, unit.changed) };
+    changed: unit.unreadable ? "unreadable" : await recordedChanges(unit.root, left),
+    lines: unit.unreadable ? "unreadable" : await checks().changeLines(unit.root, unit.base, left) };
 }
