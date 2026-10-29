@@ -57,8 +57,8 @@ it("uses the light band's text color instead of inheriting the terminal foregrou
   const look = shellTheme("light", "truecolor");
   const view = new BarEditor(tui(), editorTheme, () => look);
   view.setText("hello");
-  expect(view.render(40)[1]).toContain("\x1b[38;2;36;33;31m› hello");
-  expect(view.render(40)[1]).toContain("\x1b[48;2;228;217;233m");
+  expect(view.render(40)[1]).toContain("\x1b[38;2;24;24;27m› hello");
+  expect(view.render(40)[1]).toContain("\x1b[48;2;240;240;242m");
 });
 
 it.each(["dark", "light"] as const)("uses the readable muted text for the empty hint on the %s band", (appearance) => {

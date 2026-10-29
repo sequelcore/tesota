@@ -1,13 +1,13 @@
 [colors]
-foreground = "#24211f"
-background = "#edede5"
-cursor_bg = "#6d4b78"
-cursor_border = "#6d4b78"
-cursor_fg = "#edede5"
-selection_bg = "#d3c2dc"
-selection_fg = "#24211f"
-ansi = ["#24211f", "#8e3b3b", "#4f624a", "#6e602c", "#3f5578", "#6d4b78", "#3d6b66", "#c9c7bd"]
-brights = ["#5f6258", "#a8504f", "#64795d", "#857538", "#536b92", "#84618f", "#4f827c", "#faf7fb"]
+foreground = "#18181b"
+background = "#fafafa"
+cursor_bg = "#4a55c0"
+cursor_border = "#4a55c0"
+cursor_fg = "#fafafa"
+selection_bg = "#e4e4e7"
+selection_fg = "#18181b"
+ansi = ["#18181b", "#b3372f", "#2f6f3e", "#8f5a0a", "#4a55c0", "#7a4fa8", "#1d6f6c", "#c8c8ce"]
+brights = ["#6b6b73", "#c94a41", "#3d8450", "#a86c14", "#5d68d1", "#8f63bd", "#2a8582", "#ffffff"]
 
 [metadata]
 name = "Tesota Light"

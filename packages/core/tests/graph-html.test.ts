@@ -17,7 +17,7 @@ test("/graph then o writes beside the selected capture, prints its path and only
     openGraphFile: async path => { opened.push(path); } });
   const send = (text: string): void => { terminal.type(text); terminal.type("\r"); };
   try {
-    await terminal.until("Tesota v");
+    await terminal.until("for commands");
     const fixture = join(import.meta.dir, "fixtures", "model-viewer");
     const manifest = join(root, "lights-complete.manifest.json");
     const data = JSON.parse(readFileSync(join(fixture, "lights-complete.manifest.json"), "utf8"));

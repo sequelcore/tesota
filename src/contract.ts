@@ -179,8 +179,11 @@ export const QUESTION_STATUS = "question";
 /** A component the shell mounts that may hold something to let go when it is replaced. */
 export type Mounted = Component & {
   dispose?(): void;
-  /** A header's decoration in free screen space only, never in the transcript or exported scrollback. */
-  readonly emptyState?: Component & { renderIn(width: number, rows: number): string[]; pause(): void };
+  /**
+   * What a header shows on the empty screen, never in the transcript or exported scrollback: its rows at a width,
+   * which the shell centers with the input under them until the first message.
+   */
+  readonly emptyState?: { block(width: number): string[] };
 };
 
 /** How an extension's message is drawn: as its card, expanded or not, `outputPad` columns in; undefined draws it as plain text. */
@@ -206,12 +209,30 @@ export interface WorkingDetail {
   subscribe(listener: () => void): () => void;
 }
 
+/** What a run is doing while the working indicator shows (#749): the model at work, the gate verifying, compacting, or waiting to retry. */
+export type WorkPhase = "working" | "verifying" | "compacting" | "retrying";
+
+/** An animation the indicator plays: each frame its rows, all as wide, the next shown after `intervalMs`; one frame stays still. */
+export interface IndicatorAnimation {
+  readonly frames: readonly (readonly string[])[];
+  readonly intervalMs: number;
+}
+
+/** The working indicator an extension sets: an animation for each phase, drawn as given. */
+export interface WorkingIndicator {
+  readonly phases: Readonly<Record<WorkPhase, IndicatorAnimation>>;
+}
+
 /** What Tesota draws through the shell, as `ctx.ui`. */
 export interface ShellUI {
   setHeader(factory: ((tui: TUI, theme: Theme) => Mounted) | undefined): void;
   setFooter(factory: ((tui: TUI, theme: Theme, data: FooterData) => Mounted) | undefined): void;
   setEditorComponent(factory: ((tui: TUI, theme: EditorTheme) => Editor) | undefined): void;
-  setWorkingIndicator(options?: { frames?: string[]; intervalMs?: number }): void;
+  /**
+   * The indicator while a run works, drawn in the theme the shell gives it each time it draws, so it follows the
+   * terminal turning light or dark; undefined leaves the shell's own spinner.
+   */
+  setWorkingIndicator(factory: ((theme: Theme) => WorkingIndicator) | undefined): void;
   setStatus(key: string, text: string | undefined): void;
   /** What the label says while the gate verifies; undefined leaves it at its plain words. */
   setWorkingDetail(detail: WorkingDetail | undefined): void;

@@ -1,6 +1,6 @@
 import type { ExtensionAPI, MessageRenderer, Theme, ThemeColor } from "./contract.js";
 import { host } from "./host.js";
-import { Box, type Component, sliceByColumn, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { type Component, sliceByColumn, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { basename } from "node:path";
 import { terminalText } from "./terminal-text.js";
 import type { GraphCapture } from "./model-graph.js";
@@ -82,7 +82,7 @@ function glyph(finding: Finding): string {
 function color(finding: Finding): ThemeColor {
   if (finding.standing === "opinion") return "accent";
   if (finding.standing === "decide") return finding.failed === true ? "error" : "warning";
-  return finding.standing === "gap" ? "muted" : "success";
+  return "muted";
 }
 
 /** Compact adjacency notation: all concrete edges when it fits; never a nested viewport. */
@@ -133,15 +133,22 @@ function labelWidth(findings: readonly Finding[]): number {
   return Math.max(0, ...findings.map(({ label }) => label.length)) + 2;
 }
 
-function card(theme: Theme, options: RenderOptions, draw: (width: number) => readonly string[]): Component {
-  const box = new Box(options.outputPad, 1, (text) => theme.bg("customMessageBg", text));
-  box.addChild(new Rows(draw));
-  return box;
+/** A card's row; a model's opinion is marked, so the card draws it apart from the evidence. */
+type CardRow = string | { readonly opinion: string };
+
+/** Rows behind a thin rule at the card's left edge, a dotted one beside opinions; no fill, so the conversation stays quiet. */
+function card(theme: Theme, options: RenderOptions, draw: (width: number) => readonly CardRow[]): Component {
+  const pad = " ".repeat(options.outputPad);
+  return new Rows((width) => ["", ...draw(Math.max(1, width - options.outputPad - 2)).map((row) => typeof row === "string"
+    ? `${pad}${theme.fg("border", "│")} ${row}` : `${pad}${theme.fg("border", "┆")} ${row.opinion}`), ""]);
 }
 
-/** A summary row's glyph in the color of what it says: a pass green, a failure red, a flag or a partial result amber. */
+/**
+ * A summary row's glyph in the color of what departs from a pass: a failure red, a flag or a partial result amber, an
+ * opinion in the accent; a pass stays muted, and the summary and footer say it was verified.
+ */
 function tinted(theme: Theme, glyph: string): string {
-  const tone: ThemeColor = glyph === "✓" ? "success" : glyph === "✗" ? "error" : glyph === "!" || glyph === "◐" || glyph === "↺" ? "warning"
+  const tone: ThemeColor = glyph === "✗" ? "error" : glyph === "!" || glyph === "◐" || glyph === "↺" ? "warning"
     : glyph === "◇" || glyph === "›" ? "accent" : glyph === "·" ? "dim" : "muted";
   return theme.fg(tone, glyph);
 }
@@ -151,6 +158,25 @@ function groupRows(theme: Theme, groups: readonly SummaryGroup[], width: number)
   return groups.flatMap(({ glyph, title, note }) => [
     ...wrapUnder(`${tinted(theme, glyph)} ${theme.fg(glyph === "·" ? "muted" : "text", terminalText(title))}`, width, 2),
     ...note === "" ? [] : wrapUnder(theme.fg("muted", `  ${terminalText(note)}`), width, 2)]);
+}
+
+/** An opinion as the card shows it: what the model said, in bold; who said it and about what, dim; then its reason. */
+function opinionRows(theme: Theme, groups: readonly SummaryGroup[], width: number): string[] {
+  return groups.flatMap(({ glyph, title, note, items, source }) => {
+    const said = source !== undefined && title.startsWith(`${source}: `) ? title.slice(source.length + 2) : title;
+    const about = items.length === 1 ? ` · ${items[0]}` : items.length > 1 ? ` · ${items.length}` : "";
+    const lead = about !== "" && said.endsWith(about) ? said.slice(0, -about.length) : said;
+    const by = [...source === undefined || said === title ? [] : [source], ...lead === said ? [] : [items.join(", ")]].join(" · ");
+    return [...wrapUnder(`${tinted(theme, glyph)} ${theme.fg("text", bold(terminalText(lead.charAt(0).toUpperCase() + lead.slice(1))))}`, width, 2),
+      ...by === "" ? [] : wrapUnder(theme.fg("dim", `  ${terminalText(by)}`), width, 2),
+      ...note === "" ? [] : wrapUnder(theme.fg("muted", `  ${terminalText(note)}`), width, 2)];
+  });
+}
+
+/** The summary's counts, colored only where they depart from normal: each "no …" part muted, an opinion to read in the accent. */
+function countRow(theme: Theme, counts: string, tone: ThemeColor): string {
+  return counts.split(" · ").map((part) => /^no /iu.test(part) ? theme.fg("muted", part)
+    : part.endsWith(" to read") ? theme.fg("accent", part) : theme.fg(tone === "success" ? "text" : tone, bold(part))).join(theme.fg("dim", " · "));
 }
 
 /**
@@ -170,13 +196,16 @@ function receiptCard(theme: Theme, receipt: Receipt, options: RenderOptions, gra
   return card(theme, options, (width) => {
     const found = groupRows(theme, [...summary.notes, ...summary.flags, ...summary.limits], width);
     return [theme.fg("customMessageLabel", bold("Tesota receipt")),
-      ...wrapUnder(theme.fg(summary.tone, bold(summary.counts)), width, 0), theme.fg("muted", ACCEPTANCE), "",
-      ...summary.methods.flatMap(({ glyph, method: name, text }) =>
-        wrapUnder(`${tinted(theme, glyph)} ${theme.fg("text", name.padEnd(method))}${theme.fg("muted", terminalText(text))}`, width, method + 2)),
+      ...wrapUnder(countRow(theme, summary.counts, summary.tone), width, 0), ...wrapUnder(theme.fg("dim", ACCEPTANCE), width, 0), "",
+      // A method that recorded nothing stays listed, dim: what wasn't checked is said, not stressed.
+      ...summary.methods.flatMap(({ glyph, method: name, text }) => glyph === "○"
+        ? wrapUnder(theme.fg("dim", `${glyph} ${name.padEnd(method)}${terminalText(text)}`), width, method + 2)
+        : wrapUnder(`${tinted(theme, glyph)} ${theme.fg("text", name.padEnd(method))}${theme.fg("muted", terminalText(text))}`, width, method + 2)),
       ...graphs.flatMap(({ subject, capture }) => ["", ...hang(terminalText(subject), width, 0),
         ...graphPreviewRows(capture, width).map((line) => theme.fg("muted", line))]),
       ...found.length === 0 ? [] : ["", ...found],
-      ...opinions.length === 0 ? [] : ["", ...wrapUnder(theme.fg("dim", bold(OPINIONS)), width, 0), ...groupRows(theme, opinions, width)],
+      ...opinions.length === 0 ? [] : ["", ...[...wrapUnder(theme.fg("dim", OPINIONS), width, 0), ...opinionRows(theme, opinions, width)]
+        .map((opinion) => ({ opinion }))],
       "",
       ...options.expanded ? [theme.fg("dim", bold("▾ Details")), ...dim(receiptDetailLines(receipt), width)]
         : wrapUnder(theme.fg("dim", `▸ ${DETAILS}`), width, 2),
@@ -199,7 +228,7 @@ const isLedger = (value: unknown): value is Ledger =>
  */
 function ledgerCard(theme: Theme, ledger: Ledger, options: RenderOptions): Component {
   return card(theme, options, (width) => [
-    spread(theme.fg("accent", bold("Verifying")), theme.fg("customMessageLabel", bold("Tesota receipt")), width),
+    spread(theme.fg("accent", bold("Verifying")), theme.fg("dim", "Tesota receipt"), width),
     ...ledger.ledger(performance.now(), options.expanded).flatMap(({ glyph, text, depth }) =>
       wrapUnder(`${"  ".repeat(depth)}${tinted(theme, glyph)} ${theme.fg(glyph === "›" ? "text" : "muted", terminalText(text))}`, width, 2 * depth + 2)),
   ]);
@@ -232,7 +261,7 @@ function sentBackCard(theme: Theme, sent: SentBack, content: string, options: Re
   const findings = sentBackFindings(sent);
   const label = labelWidth(findings);
   return card(theme, options, (width) => [
-    spread(theme.fg("warning", bold(`↺ Sent back to the agent: ${headline(sent)}`)), theme.fg("customMessageLabel", bold("Tesota")), width),
+    spread(theme.fg("warning", bold(`↺ Sent back to the agent: ${headline(sent)}`)), theme.fg("dim", "Tesota"), width),
     "", ...findings.flatMap((finding) => findingRows(theme, finding, label, width, options.expanded)),
     "", ...options.expanded
       ? [theme.fg("dim", bold("WHAT THE AGENT READ")), ...content.split("\n")

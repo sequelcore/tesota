@@ -12,6 +12,8 @@ interface ThemeFile {
   readonly appearance: string;
   readonly vars?: Readonly<Record<string, string | number>>;
   readonly colors: Readonly<Record<string, string | number>>;
+  /** The surfaces the theme is drawn on, such as `pageBg`, the canvas. */
+  readonly export?: Readonly<Record<string, string | number>>;
 }
 
 /** The colors the shell draws with, by token; a token a theme lacks draws in the terminal's own color. */
@@ -22,10 +24,10 @@ export type ShellTheme = Theme;
 
 const wrap = (on: string, off: string) => (text: string): string => `\x1b[${on}m${text}\x1b[${off}m`;
 
-/** Each token's color, a theme variable resolved; a value that is not a color is left to the terminal. */
+/** Each token's color and each surface's, a theme variable resolved; a value that is not a color is left to the terminal. */
 function colorsOf(file: ThemeFile): Map<string, Color> {
   const colors = new Map<string, Color>();
-  for (const [token, value] of Object.entries(file.colors)) {
+  for (const [token, value] of [...Object.entries(file.colors), ...Object.entries(file.export ?? {})]) {
     const resolved = typeof value === "string" && file.vars?.[value] !== undefined ? file.vars[value] : value;
     try { colors.set(token, parseColor(resolved as string | number)); } catch { /* not a color: the terminal's own */ }
   }

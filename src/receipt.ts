@@ -602,6 +602,8 @@ export interface FindingGroup {
   readonly noun?: readonly [string, string];
   readonly note: string;
   readonly item?: string;
+  /** Who gave an opinion, when its title starts with that name and a colon, so a card can lead with what was said. */
+  readonly source?: string;
 }
 
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
@@ -821,7 +823,7 @@ function opinionFindings(run: ClaimCheckRun | undefined, contracts: readonly Con
     more: [judgment.explanation, ...restatement === undefined ? [] : [`Restated without the request: ${restated(restatement)}.`],
       `A model's opinion, not a proof: ${by}.`],
     group: { title: `ClaimCheck: ${judgmentWords[judgment.verdict]}`, note: judgment.verdict === "justified" ? "" : judgment.explanation,
-      item: `${name} · ${path}` } }]);
+      item: `${name} · ${path}`, source: "ClaimCheck" } }]);
 }
 
 /** The results someone could expect from an open case, as one phrase: models end each with a full stop. */
@@ -1107,6 +1109,8 @@ export interface SummaryGroup {
   readonly items: readonly string[];
   /** A model's agreement, which only the expanded card shows. */
   readonly quiet?: true;
+  /** Who gave the opinion (`FindingGroup.source`). */
+  readonly source?: string;
 }
 
 /**
@@ -1127,7 +1131,7 @@ export interface ReceiptSummary {
   readonly context: string;
 }
 
-export const ACCEPTANCE = "Check evidence, not your acceptance.";
+export const ACCEPTANCE = "Evidence, not approval: accepting the change is yours.";
 export const OPINIONS = "Model opinions · not evidence, not counted";
 export const DETAILS = "Details · paths, output, assumptions, model opinions";
 
@@ -1214,7 +1218,7 @@ function grouped(findings: readonly Finding[]): SummaryGroup[] {
       : group.noun !== undefined ? group.title.replace("%", plural(n, ...group.noun)) : group.item === undefined ? group.title : named(group.title);
     const items = group === undefined ? members.map(({ subject }) => subject).filter((subject) => subject !== "")
       : members.flatMap((member) => member.group?.item === undefined ? [] : [member.group.item]);
-    return { glyph: findingGlyph(first), title, note: group?.note ?? first.detail, items,
+    return { glyph: findingGlyph(first), title, note: group?.note ?? first.detail, items, ...group?.source === undefined ? {} : { source: group.source },
       ...first.standing === "opinion" && first.label === "Model: matches" ? { quiet: true as const } : {} };
   });
 }
@@ -1234,15 +1238,19 @@ export function receiptSummary(receipt: Receipt): ReceiptSummary {
   const failed = of("decide").filter((finding) => finding.failed === true).length;
   const flags = of("decide").length - failed;
   const inherited = allEvidence(receipt).inherited.length;
+  const opinions = grouped(of("opinion"));
+  // An opinion worth reading is named beside the counts so a clean summary never hides it; it is never counted as evidence.
+  const toRead = opinions.filter(({ quiet }) => quiet !== true).length;
   return {
     counts: [...failed === 0 ? [] : [plural(failed, "failed check", "failed checks")],
       counted(flags, "review flag", "review flags", "no review flags"),
-      counted(of("gap").length, "verification limit", "verification limits", "no verification limits")].join(" · ")
+      counted(of("gap").length, "verification limit", "verification limits", "no verification limits"),
+      ...toRead === 0 ? [] : [plural(toRead, "opinion to read", "opinions to read")]].join(" · ")
       .replace(/^n/u, "N"),
     tone: summaryTone(receipt, findings),
     methods: receipt.stopped === undefined ? methodRows(allEvidence(receipt)) : methodRows(noEvidence),
     notes: grouped(of("holds").filter(({ check }) => check === "coverage")),
-    flags: grouped(of("decide")), limits: grouped(of("gap")), opinions: grouped(of("opinion")),
+    flags: grouped(of("decide")), limits: grouped(of("gap")), opinions,
     context: [...(receipt.clarifications?.length ?? 0) === 0 ? [] : [plural(receipt.clarifications?.length ?? 0, "answer", "answers")],
       ...(receipt.children?.length ?? 0) === 0 ? [] : [plural(receipt.children?.length ?? 0, "subagent", "subagents")],
       ...(receipt.floorRefusals?.length ?? 0) === 0 ? [] : [`${plural(receipt.floorRefusals?.length ?? 0, "call", "calls")} the floor refused`],
