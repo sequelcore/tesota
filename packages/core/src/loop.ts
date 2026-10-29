@@ -23,7 +23,7 @@ import { type Hooks, runHooks } from "./hooks.ts";
 import {
   contextFiles, instructionsText, type Skill, skillCatalog, skills, startable, type StartedSkill, startedSkill,
 } from "./instructions.ts";
-import { judge, type Mode, type Rules, type Verdict } from "./permissions.ts";
+import { judge, type Mode, type ParsedCommand, type Rules, type Verdict } from "./permissions.ts";
 import { type Access, afterRefusal } from "./permission-rule.ts";
 
 import type { EngineTool, ToolOutput } from "./tool.ts";
@@ -371,6 +371,12 @@ function endedBy(exit: Exit.Exit<Ended>): Ended {
   if (Exit.isSuccess(exit)) return exit.value;
   if (Cause.hasInterruptsOnly(exit.cause)) return { outcome: "aborted", reason: stoppedReason };
   throw Cause.squash(exit.cause);
+}
+
+/** The command `call` gives `tool`, as the shell's own parser reads it for the floor (#697); nothing where it has none or can't read it. */
+async function parsedCommand(call: ToolCall, tool: EngineTool | undefined): Promise<readonly ParsedCommand[] | undefined> {
+  const command: unknown = ((call.arguments ?? {}) as Record<string, unknown>)["command"];
+  return typeof command === "string" && tool?.parse !== undefined ? await tool.parse(command) : undefined;
 }
 
 async function execute(tools: readonly EngineTool[], call: ToolCall, signal: AbortSignal): Promise<ToolOutput> {
@@ -846,11 +852,12 @@ export function createLoop(options: LoopOptions): LoopSession {
    */
   async function permitted(run: number, call: ToolCall, offered: readonly EngineTool[], signal: AbortSignal): Promise<boolean> {
     const permissions = options.permissions;
-    const access = offered.find((tool) => tool.name === call.name)?.access ?? "run";
+    const tool = offered.find(({ name }) => name === call.name);
+    const access = tool?.access ?? "run";
     const key = `${call.name}\n${JSON.stringify(call.arguments)}`;
     const present = permissions?.ask !== undefined;
     const verdict = heightened(judge(call, access, options.cwd, permissions?.mode() ?? "full", permissions?.rules ?? [], present,
-      options.scratch),
+      options.scratch, await parsedCommand(call, tool)),
       access, run, present);
     let decision: "allow" | "deny" = verdict.decision === "deny" ? "deny" : "allow";
     let by: Decider = verdict.by;
