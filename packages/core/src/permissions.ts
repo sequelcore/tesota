@@ -171,6 +171,95 @@ function deletesGuarded(command: string): boolean {
     unjoined || climbsBack(((doubled ?? single ?? "") + rest!.replace(/["']/gu, "")).split(/[\\/]/u).map(normalizeWindowsSegment))));
 }
 
+/** A command as PowerShell's parser and binder read it (#697): the command it runs, null when only running decides; what each parameter binds; its words. */
+export interface ParsedCommand {
+  readonly name: string | null;
+  readonly parameters: Readonly<Record<string, readonly string[]>>;
+  readonly arguments: readonly string[];
+}
+
+/**
+ * The folder a path the parser stated names, or nothing when only running
+ * could tell (`?`): `~` read as PowerShell reads it, a `FileSystem::`
+ * provider or an extended `\\?\` prefix dropped, and a segment that is all
+ * wildcards (`*`, `*.*`) read as its folder. The parser has already read
+ * `$HOME` and `$env:` values, so a `$` left is a character of the name.
+ */
+function namedFolder(word: string, cwd: string): string | undefined {
+  if (word === "?") return undefined;
+  const read = word.replace(/^(?:microsoft\.powershell\.core\\)?filesystem::/iu, "").replace(/^~(?=$|[\\/])/u, homedir());
+  const parts = read.replace(/^\\\\\?\\/u, "").split(/[\\/]/u);
+  while (parts.length > 1 && /^(?:[*?]+(?:\.[*?]+)?)?$/u.test(parts.at(-1) ?? "")) parts.pop();
+  // A bare `C:` is the current folder on that drive; what was written, `C:\`, is its root.
+  const path = parts.join("/");
+  return canonical(resolve(cwd, path === "" || /^[a-z]:$/iu.test(path) ? `${path}/` : path));
+}
+
+/** Whether `folder` is a disk's root, a network share's (`\\server\C$`), the system's folder, home or a folder that holds it. */
+function guardedFolder(folder: string): boolean {
+  const held = [homedir(), ...process.env["SystemRoot"] === undefined ? [] : [process.env["SystemRoot"]]].map(canonicalOnce);
+  return names(folder).length <= (/^[\\/]{2}[^\\/]/u.test(folder) ? 2 : 1) || held.some((path) => inside(path, folder));
+}
+
+/** Programs that run the command text they are given. */
+const shellPrograms = /^(?:cmd|powershell|pwsh|bash|sh|wsl)(?:\.exe)?$/iu;
+
+/**
+ * `Remove-Item` and its built-in aliases, module-qualified or not: a fresh
+ * PowerShell can answer before it resolves an alias, as Codex and Claude Code
+ * also name them.
+ */
+const removeItem = /^(?:microsoft\.powershell\.management\\)?(?:remove-item|ri|rm|rmdir|rd|del|erase)$/iu;
+
+/** `%NAME%` as cmd and the stop-parsing token read it: the environment variable's value, or the text itself when there is none. */
+const cmdVariables = (text: string): string => text.replace(/%([^%\s]+)%/gu, (spelled, name: string) => process.env[name] ?? spelled);
+
+/**
+ * Whether command text cmd runs deletes a guarded folder: `rd` or `rmdir`,
+ * `del` or `erase`, with `/s` and a path naming one, in any of the commands
+ * `&`, `&&`, `||` or `|` join, after cmd reads its `%NAME%` variables.
+ */
+function cmdDestroys(text: string, guarded: (word: string) => boolean): boolean {
+  return cmdVariables(text).split(/&&|\|\||[&|\r\n]/u).some((part) => {
+    const [program = "", ...words] = (part.match(/"[^"]*"|\S+/gu) ?? []).map((word) => word.replace(/^"|"$/gu, ""));
+    return /^(?:rd|rmdir|del|erase)$/iu.test(program) && words.some((word) => /^\/(?:[a-z]\/)*s/iu.test(word))
+      && words.filter((word) => !word.startsWith("/")).some(guarded);
+  });
+}
+
+/** Recursion as a word spells it: `-r`, `-Recurse`, `-rf` and the like, or cmd's `/s`. */
+const recursionFlag = /^(?:-(?:r[a-z]*|[a-z]*r)|\/s)$/iu;
+
+/**
+ * Whether a parsed command recursively deletes a guarded folder (#697):
+ * `Remove-Item` however spelled, bound to recurse, with a path naming one;
+ * a command only running names, or the verbatim words after a stop-parsing
+ * token (`--%`), given recursion flags and such a path; or a shell given
+ * command text that deletes one, or that the floor's net refuses.
+ */
+function parsedDestroys(commands: readonly ParsedCommand[], cwd: string): boolean {
+  const guarded = (word: string): boolean => { const folder = namedFolder(word, cwd); return folder !== undefined && guardedFolder(folder); };
+  const flagged = (words: readonly string[]): boolean => words.some((word) => recursionFlag.test(word)) && words.some(guarded);
+  return commands.some(({ name, parameters, arguments: words }) => {
+    const stop = words.indexOf("--%");
+    // What follows the stop-parsing token reaches the command as written, with only %NAME% read (about_Parsing).
+    const verbatim = stop < 0 ? "" : cmdVariables(words.slice(stop + 1).join(" "));
+    if (stop >= 0 && flagged(verbatim.match(/"[^"]*"|\S+/gu)?.map((word) => word.replace(/^"|"$/gu, "")) ?? [])) return true;
+    if (name === null) return flagged(words);
+    if (removeItem.test(name)) {
+      const recurse = parameters["Recurse"];
+      return recurse !== undefined && !recurse.some((value) => /^(?:\$?false|0)$/iu.test(value))
+        && [...parameters["Path"] ?? [], ...parameters["LiteralPath"] ?? []].some(guarded);
+    }
+    if (!shellPrograms.test(name)) return false;
+    // cmd runs what follows its /c or /k.
+    const run = words.filter((word) => word !== "--%");
+    const text = run.slice(run.findIndex((word) => /^\/[ck]$/iu.test(word)) + 1).join(" ");
+    return (/^cmd(?:\.exe)?$/iu.test(name) && cmdDestroys(text, guarded))
+      || words.some((word) => destructive.some((pattern) => pattern.test(word)) || deletesGuarded(word));
+  });
+}
+
 /**
  * Quoted arguments of simple data commands are not commands (#681). Recognize
  * the whole input before hiding anything: unknown syntax or a pipeline consumer
@@ -234,12 +323,18 @@ function subjectOf(call: ToolCall): string {
   return typeof said === "string" ? said : "";
 }
 
-/** Why the floor refuses `call`, if it does; a file tool writes only in `cwd` and the session's `scratch` folder (#653). */
-function floorReason(call: ToolCall, access: Access, cwd: string, scratch: string | undefined): string | undefined {
+/**
+ * Why the floor refuses `call`, if it does; a file tool writes only in `cwd`
+ * and the session's `scratch` folder (#653). A command's text is read as
+ * before, and also as its shell's parser read it (`parsed`), when it did.
+ */
+function floorReason(call: ToolCall, access: Access, cwd: string, scratch: string | undefined,
+  parsed: readonly ParsedCommand[] | undefined): string | undefined {
   const subject = subjectOf(call);
   if (shells.has(call.name)) {
     const destructiveText = destructiveSubject(subject);
-    if (destructive.some((pattern) => pattern.test(destructiveText)) || deletesGuarded(destructiveText)) return "it would destroy a disk, the root or a home folder";
+    if (destructive.some((pattern) => pattern.test(destructiveText)) || deletesGuarded(destructiveText)
+      || (parsed !== undefined && parsedDestroys(parsed, cwd))) return "it would destroy a disk, the root or a home folder";
     if (namesSecret(subject)) return "it names a secret: an .env file, SSH's keys or Tesota's credentials";
     return undefined;
   }
@@ -271,11 +366,12 @@ const modeWords: Readonly<Record<Mode, string>> = { read: "read only", ask: "ask
  * Whether `call`, a tool that `access`es, may run in `cwd` (#449): the
  * floor, then the mode and the strongest matching rule, decided by the
  * proved rule (`decide`), with `present` saying whether someone can answer,
- * and `scratch` the session's scratch folder by its real name, when it has one (#653).
+ * `scratch` the session's scratch folder by its real name, when it has one (#653),
+ * and `parsed` a command as its shell's parser read it, when it could (#697).
  */
 export function judge(call: ToolCall, access: Access, cwd: string, mode: Mode, rules: Rules, present: boolean,
-  scratch?: string): Verdict {
-  const floor = floorReason(call, access, cwd, scratch);
+  scratch?: string, parsed?: readonly ParsedCommand[]): Verdict {
+  const floor = floorReason(call, access, cwd, scratch, parsed);
   const shell = shells.has(call.name);
   const subject = shell || subjectOf(call) === "" ? subjectOf(call) : relative(cwd, resolve(cwd, subjectOf(call))).split("\\").join("/");
   // When in doubt, deny and ask rules match more and allow rules less: a deny or ask rule that names the whole

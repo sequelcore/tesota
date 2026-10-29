@@ -63,6 +63,36 @@ not establish a child folder, and ambiguous leading `..` dot/space-only
 segments count as parent steps. The patterns do not bind arbitrary parameters,
 evaluate expressions, expand variables or wildcards, or resolve symbolic links.
 
+On Windows the floor also reads each PowerShell command as PowerShell's own
+parser does, as Codex and Claude Code read one. Tesota keeps one parser
+process for the session's PowerShell, started at its first command. A recursive
+`Remove-Item` is refused when its path is a disk's root, a network share's
+root, the system's folder, home or a folder that holds it. That holds whatever the spelling:
+- an alias (`ri`, `rd`, `del`, `rm`) or a module-qualified name;
+- a parameter prefix (`-r`) or a colon (`-Path:$HOME`);
+- a line continuation;
+- `~`, `$HOME`, `$env:NAME` in any of its spellings, `\\?\`;
+- a `FileSystem::` provider prefix;
+- a wildcard such as `C:\*`;
+- a hashtable the command assigns and then splats (`Remove-Item @p`).
+
+These are refused too:
+- a command whose name only running decides (`& $rg -rf ~`), when it also
+  passes recursion flags and names such a folder;
+- the same, in the words after a stop-parsing token (`--%`);
+- cmd's own `rd`, `rmdir`, `del` and `erase` with `/s`, read with cmd's
+  `%NAME%` variables.
+
+PowerShell given to `powershell` or `pwsh` (`-Command`, `-EncodedCommand`) is
+read too, to three levels. Other command text given to `cmd` or `bash` is held
+to the patterns. This reading only adds refusals to the patterns'. When
+PowerShell can't parse a command, or its parser doesn't answer in time, the
+patterns alone decide.
+
+The parser never runs any part of a command, and loads no module beyond
+PowerShell's own. It states only values read from `$HOME` and `$env:`, so a
+path computed by a command or another variable names no folder.
+
 The floor is a net of patterns, not a sandbox: a command can do harm it
 doesn't recognize. Tesota has no sandbox of its own. It judges what a call
 names, so it can't see that a later call reaches what it refused another
