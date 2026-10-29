@@ -1,3 +1,4 @@
+import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
 import type { Terminal } from "@earendil-works/pi-tui";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -5,6 +6,7 @@ import { join } from "node:path";
 import { provideHost } from "../../../../src/host.ts";
 import tesota from "../../../../src/tesota.ts";
 import { loopRounds, scripted } from "../measure.ts";
+import { engineModels } from "../model-access.ts";
 import { createSession } from "../session.ts";
 import { startShell } from "./shell.ts";
 import { createSurface, shellHost } from "./surface.ts";
@@ -50,8 +52,10 @@ export async function measureShell(): Promise<void> {
     const theme = shellTheme("dark", "truecolor");
     const surface = createSurface(theme);
     // Tesota as an extension draws its interface; the measured run settles at once, so the gate's checks are not timed here.
-    const session = createSession({ cwd, folder: sessions, ...scripted(loopRounds), extensions: [(pi) => { tesota(pi); }], surface,
-      mode: "tui" });
+    // The models are the real shell's, pi-ai's provider catalog included, as `runApp` loads them before its first frame (#600),
+    // with no credentials or accounts, and the scripted model added to them.
+    const session = createSession({ cwd, folder: sessions, ...scripted(loopRounds, engineModels(new InMemoryCredentialStore(), [])),
+      extensions: [(pi) => { tesota(pi); }], surface, mode: "tui" });
     const shell = startShell({ terminal, mode: "fullscreen", fullRepaint: false, theme, session, status: () => "measure", surface });
     while (terminal.firstFrameMs === undefined) await new Promise((resolve) => setTimeout(resolve, 1));
     await session.prompt("measure");
