@@ -4,7 +4,8 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { fileCredentialStore } from "../src/credentials.ts";
-import { accountLabels, accountStates, chosenModel, engineModels, loginOptions, runnableModels } from "../src/model-access.ts";
+import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
+import { accountLabels, accountStates, chosenModel, engineModels, loginOptions, providerLoaders, runnableModels, shellModels } from "../src/model-access.ts";
 import { claudeCodeProvider } from "../src/providers/claude-code.ts";
 import { runPrint } from "../src/print.ts";
 import { createSession, type EngineSession } from "../src/session.ts";
@@ -49,7 +50,7 @@ describe("the engine's models", () => {
   test("ChatGPT instances use separate credential slots, never the plain provider's key", async () => {
     const path = join(folder("tesota-accounts-"), "auth.json");
     const credentials = fileCredentialStore(path);
-    const models = engineModels(credentials, [{ name: "work", provider: "openai-codex" }, { name: "personal", provider: "openai-codex" }]);
+    const models = await engineModels(credentials, [{ name: "work", provider: "openai-codex" }, { name: "personal", provider: "openai-codex" }]);
     expect(models.getProvider("openai-codex@work")?.auth.oauth).toBeDefined();
     expect(models.getProvider("openai-codex@work")?.auth.apiKey).toBeUndefined();
     await credentials.modify("openai", async () => ({ type: "api_key", key: "default-key" }));
@@ -148,7 +149,7 @@ describe("the engine's models", () => {
     const signOut = await signInWithChatGPT(models, credentials, ["gpt-6.1-sol"]);
     let answer = (_signedIn: boolean): void => undefined;
     // A Claude Code sign-in check that answers only when released, as a slow `claude auth status` would.
-    models.setProvider(claudeCodeProvider(engineModels(new InMemoryCredentialStore()).getModels("anthropic"),
+    models.setProvider(claudeCodeProvider((await engineModels(new InMemoryCredentialStore())).getModels("anthropic"),
       { signedIn: () => new Promise((resolve) => { answer = resolve; }) }));
     try {
       const runnable = runnableModels(models);
@@ -184,22 +185,62 @@ describe("the engine's models", () => {
     expect(held.signals).toHaveLength(2);
   });
 
+  test("each of pi-ai's built-in providers loads on its own, with the catalog's models (#743)", async () => {
+    // A pi-ai that adds or renames a provider fails here until the table names it, so none is dropped silently.
+    const catalog = builtinProviders();
+    expect(Object.keys(providerLoaders).sort()).toEqual(catalog.map(({ id }) => id).sort());
+    for (const expected of catalog) {
+      const loaded = await providerLoaders[expected.id]?.();
+      expect(loaded?.id).toBe(expected.id);
+      expect(loaded?.getModels().map(({ id }) => id)).toEqual(expected.getModels().map(({ id }) => id));
+    }
+  });
+
+  describe("the shell's models (#743)", () => {
+    const ids = (models: { getProviders(): readonly { id: string }[] }): string[] => models.getProviders().map(({ id }) => id).sort();
+
+    test("start with only the saved model's provider, and the saved model resolves", async () => {
+      const { models } = await shellModels(new InMemoryCredentialStore(), [], "openai-codex/gpt-6.1-sol");
+      expect(ids(models)).toEqual(["openai-codex"]);
+      expect(chosenModel(models, { model: "openai-codex/gpt-6.1-sol" })?.id).toBe("gpt-6.1-sol");
+    });
+
+    test("wait for the rest of the catalog before an async use, then hold what engineModels holds", async () => {
+      const accounts = [{ name: "work", provider: "openai-codex" as const }, { name: "b", provider: "claude-code" as const, folder: "/claude-b" }];
+      const { models } = await shellModels(new InMemoryCredentialStore(), accounts, "openai-codex@work/gpt-6.1-sol");
+      // Before the rest: the saved model's account, the provider it is built from, and the Claude account on Anthropic's models.
+      expect(ids(models)).toEqual(["anthropic", "claude-code", "claude-code@b", "openai-codex", "openai-codex@work"]);
+      await models.getAvailable();
+      const whole = await engineModels(new InMemoryCredentialStore(), accounts);
+      expect(ids(models)).toEqual(ids(whole));
+      expect(models.getModels().length).toBe(whole.getModels().length);
+      expect(models.getProvider("anthropic")?.auth.oauth).toBeUndefined();
+    });
+
+    test("load everything at once when no saved model names what to start with", async () => {
+      const whole = ids(await engineModels(new InMemoryCredentialStore()));
+      for (const saved of [undefined, "no-such-provider/model"]) {
+        expect(ids((await shellModels(new InMemoryCredentialStore(), [], saved)).models)).toEqual(whole);
+      }
+    });
+  });
+
   test("pi-ai's built-in providers are there, and none is available without a credential", async () => {
     delete process.env["ANTHROPIC_API_KEY"];
-    const models = engineModels(new InMemoryCredentialStore());
+    const models = await engineModels(new InMemoryCredentialStore());
     expect(models.getProviders().map(({ id }) => id)).toEqual(expect.arrayContaining(["anthropic", "openai", "google"]));
     expect((await models.getAvailable("anthropic")).length).toBe(0);
   });
 
   test("an API key in the environment makes its provider available", async () => {
     process.env["ANTHROPIC_API_KEY"] = "sk-ant-test";
-    const models = engineModels(new InMemoryCredentialStore());
+    const models = await engineModels(new InMemoryCredentialStore());
     expect((await models.getAvailable("anthropic")).length).toBeGreaterThan(0);
     expect(await models.checkAuth("anthropic")).toMatchObject({ type: "api_key" });
   });
 
-  test("no provider offers a Claude sign-in: Anthropic takes an API key alone", () => {
-    const models = engineModels(new InMemoryCredentialStore());
+  test("no provider offers a Claude sign-in: Anthropic takes an API key alone", async () => {
+    const models = await engineModels(new InMemoryCredentialStore());
     expect(models.getProvider("anthropic")?.auth.oauth).toBeUndefined();
     const signIns = models.getProviders().flatMap(({ id, auth }) => auth.oauth === undefined ? [] : [`${id}: ${auth.oauth.name}`]);
     expect(signIns.filter((name) => /anthropic|claude/iu.test(name))).toEqual([]);
@@ -212,15 +253,15 @@ describe("the engine's models", () => {
     try {
       delete process.env["ANTHROPIC_API_KEY"];
       process.env["ANTHROPIC_OAUTH_TOKEN"] = "sk-ant-oat01-test";
-      expect(await engineModels(new InMemoryCredentialStore()).checkAuth("anthropic")).toBeUndefined();
+      expect(await (await engineModels(new InMemoryCredentialStore())).checkAuth("anthropic")).toBeUndefined();
       delete process.env["ANTHROPIC_OAUTH_TOKEN"];
       process.env["ANTHROPIC_API_KEY"] = "sk-ant-oat01-test";
-      expect(await engineModels(new InMemoryCredentialStore()).checkAuth("anthropic")).toBeUndefined();
+      expect(await (await engineModels(new InMemoryCredentialStore())).checkAuth("anthropic")).toBeUndefined();
       delete process.env["ANTHROPIC_API_KEY"];
       const stored = new InMemoryCredentialStore();
       await stored.modify("anthropic", () => Promise.resolve({ type: "api_key", key: "sk-ant-oat01-test" }));
-      expect(await engineModels(stored).checkAuth("anthropic")).toBeUndefined();
-      const models = engineModels(new InMemoryCredentialStore());
+      expect(await (await engineModels(stored)).checkAuth("anthropic")).toBeUndefined();
+      const models = await engineModels(new InMemoryCredentialStore());
       await expect(models.login("anthropic", "api_key", { prompt: () => Promise.resolve("sk-ant-oat01-test"), notify: () => undefined }))
         .rejects.toThrow("Tesota takes no Claude plan token");
       expect(await models.checkAuth("anthropic")).toBeUndefined();
@@ -232,7 +273,7 @@ describe("the engine's models", () => {
 
   test("the model is the one the operator chose, never one picked for them from what a credential reaches (#425)", async () => {
     process.env["ANTHROPIC_API_KEY"] = "sk-ant-test";
-    const models = engineModels(new InMemoryCredentialStore());
+    const models = await engineModels(new InMemoryCredentialStore());
     const [first] = await models.getAvailable("anthropic");
     if (first === undefined) throw new Error("No model is available with the key");
     expect(chosenModel(models, {})).toBeUndefined();
@@ -242,7 +283,7 @@ describe("the engine's models", () => {
 
   test("with ChatGPT sign-in, -p refuses a --model or a saved model it does not serve, naming those it serves (#566)", async () => {
     const credentials = new InMemoryCredentialStore();
-    const models = engineModels(credentials);
+    const models = await engineModels(credentials);
     const signOut = await signInWithChatGPT(models, credentials, ["gpt-6.1-sol"]);
     try {
       const settingsPath = join(folder("tesota-core-print-"), "settings.json");
@@ -262,7 +303,7 @@ describe("the engine's models", () => {
 
   test("with ChatGPT sign-in, -p keeps a --model or saved model it could not check, saying why (#567)", async () => {
     const credentials = new InMemoryCredentialStore();
-    const models = engineModels(credentials);
+    const models = await engineModels(credentials);
     const signOut = await signInWithChatGPT(models, credentials, "offline");
     try {
       const settingsPath = join(folder("tesota-core-print-"), "settings.json");
@@ -283,7 +324,7 @@ describe("the engine's models", () => {
 
   test("-p names an agent type whose model it does not run, with the model it runs on instead (#568)", async () => {
     const credentials = new InMemoryCredentialStore();
-    const models = engineModels(credentials);
+    const models = await engineModels(credentials);
     const signOut = await signInWithChatGPT(models, credentials, "offline");
     try {
       const cwd = folder("tesota-core-print-cwd-");
@@ -300,7 +341,7 @@ describe("the engine's models", () => {
 
   test("logging in stores the credential in the engine's file, and logging out removes it", async () => {
     const path = join(folder("tesota-core-models-"), "auth.json");
-    const models = engineModels(fileCredentialStore(path));
+    const models = await engineModels(fileCredentialStore(path));
     const scripted = oauthProvider("scripted-oauth");
     models.setProvider(scripted.provider as never);
     const credential = await models.login("scripted-oauth", "oauth", {
@@ -318,7 +359,7 @@ describe("the engine's models", () => {
     const asked: (string | undefined)[] = [];
     const faux = fauxProvider();
     faux.setResponses([scriptedReply({ seen: (_context, options) => { asked.push(options?.sessionId); }, reply: "done" })]);
-    const models = engineModels(new InMemoryCredentialStore());
+    const models = await engineModels(new InMemoryCredentialStore());
     models.setProvider(faux.provider);
     const session = createSession({ cwd: folder("tesota-core-cwd-"), folder: folder("tesota-core-sessions-"), models,
       model: faux.getModel(), verifier: accepts });
@@ -328,7 +369,7 @@ describe("the engine's models", () => {
   });
 
   test("a session runs on the engine's models once its provider is logged in", async () => {
-    const models = engineModels(fileCredentialStore(join(folder("tesota-core-models-"), "auth.json")));
+    const models = await engineModels(fileCredentialStore(join(folder("tesota-core-models-"), "auth.json")));
     const scripted = oauthProvider("scripted-session");
     models.setProvider(scripted.provider as never);
     await models.login("scripted-session", "oauth", { prompt: () => Promise.resolve("5678"), notify: () => undefined });

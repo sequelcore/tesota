@@ -127,8 +127,10 @@ measurement exceeds its platform's limit in both of two attempts in
 size, the scripted loop's time and memory, the request's base, the number
 of syncs to disk, settlement, resuming a session of about 1,000 entries,
 that session's size, the shell's first frame, and its memory. The measured
-shell loads what the operator's shell loads before its first frame, pi-ai's
-provider catalog included, with no credentials or accounts. On Windows the
+shell loads its models as the operator's shell does, with no credentials or
+accounts: the saved model's provider before the first frame, and the rest of
+pi-ai's provider catalog right after it, so its memory includes the whole
+catalog. On Windows the
 first frame is limited divided by the same attempt's median startup, since
 runners there differ in speed for the whole job, with a looser limit in
 milliseconds for a regression that slows both. Linux does the same

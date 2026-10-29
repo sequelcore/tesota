@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { provideHost } from "../../../../src/host.ts";
 import tesota from "../../../../src/tesota.ts";
 import { loopRounds, scripted } from "../measure.ts";
-import { engineModels } from "../model-access.ts";
+import { shellModels } from "../model-access.ts";
 import { createSession } from "../session.ts";
 import { startShell } from "./shell.ts";
 import { createSurface, shellHost } from "./surface.ts";
@@ -35,6 +35,9 @@ class CountingTerminal implements Terminal {
 
 const tenths = (ms: number): number => Math.round(ms * 10) / 10;
 
+/** A saved model whose provider loads alone, as most operators' does; only its provider decides what loads first (#743). */
+const savedModel = "openai-codex/gpt-6.1-sol";
+
 /**
  * The shell's own budget (#444): the milliseconds from the process's start
  * to the shell's first frame, and the process's resident memory once it has
@@ -52,12 +55,14 @@ export async function measureShell(): Promise<void> {
     const theme = shellTheme("dark", "truecolor");
     const surface = createSurface(theme);
     // Tesota as an extension draws its interface; the measured run settles at once, so the gate's checks are not timed here.
-    // The models are the real shell's, pi-ai's provider catalog included, as `runApp` loads them before its first frame (#600),
-    // with no credentials or accounts, and the scripted model added to them.
-    const session = createSession({ cwd, folder: sessions, ...scripted(loopRounds, engineModels(new InMemoryCredentialStore(), [])),
+    // The models are the real shell's (#600), loaded as `runApp` loads them (#743): the saved model's provider before the
+    // first frame, the rest of pi-ai's catalog right after. No credentials or accounts; the scripted model is added to them.
+    const { models, rest } = await shellModels(new InMemoryCredentialStore(), [], savedModel);
+    const session = createSession({ cwd, folder: sessions, ...scripted(loopRounds, models),
       extensions: [(pi) => { tesota(pi); }], surface, mode: "tui" });
     const shell = startShell({ terminal, mode: "fullscreen", fullRepaint: false, theme, session, status: () => "measure", surface });
     while (terminal.firstFrameMs === undefined) await new Promise((resolve) => setTimeout(resolve, 1));
+    await rest();
     await session.prompt("measure");
     await new Promise((resolve) => setTimeout(resolve, 50));
     const shellRssBytes = process.memoryUsage().rss;
