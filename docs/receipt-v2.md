@@ -131,7 +131,7 @@ apply.
 | `models` | ModelResult[], optional | Each design model whose own files or covered files the request changed, checked with TLC, or kept from the session's passing check of the same content. Describes what the design model check established about its declared abstraction. Absent when the request touched no design model |
 | `unheaded` | string[], optional | TLA+ (with a `.cfg` beside it) and Quint files the request changed that declare no `tesota-model` header and no design model names as a fault, so nothing checked them |
 | `weakened` | Weakening[], or `"too_large"`, or `"unreadable"` | The changes that may weaken the evidence. `too_large` when Git's diff from the base passed 16 MiB; `unreadable` when Git could not show it |
-| `unverified` | string[] | Changed files no proof's evidence covers, other than test files and files whose changed lines are all blank or comment-only |
+| `unverified` | string[] | Changed files no proof's evidence covers, other than test files, files whose changed lines are all blank or comment-only, and design models' own files (models, configurations and declared faults) accounted for by `models` |
 | `commentsOnly` | `true`, optional | Present when every line the request added or removed is blank or comment-only, a `//@` line not counting as a comment. When nothing else is listed, the receipt says there was nothing to verify |
 | `uncovered` | UncoveredLines[] | The changed lines of each TypeScript file that proved that no contract's proof covers. Empty when `weakened` is a string |
 | `changed` | Changed[], or `"unreadable"` | Files changed during the request (by anyone), as the run left them, sorted by path: differences between fingerprints plus files changed between `base` and current `HEAD`, and the proof files (`.dfy`, `.dfy.gen`) that verification's own proving changed from `base`. Unmeasured paths are listed separately. On a stopped run, the same inventory, read and never checked |
@@ -199,8 +199,10 @@ For standing, changed paths are collected from `changed`, `unverified`,
 `proofs`, `uncovered` and `models`. Coverage is evaluated separately for
 each unit: a repository or snapshot folder with its own checks.
 
-A path counts as covered if `unverified` does not list it. Test files and
-comment-only changes are excluded from that list. A listed path can also
+A path counts as covered if `unverified` does not list it, except that a
+design model's own files require its current passing check. Test files and
+comment-only changes, and design models' own files are excluded from that list;
+model check failures and gaps are reported through `models`. A listed path can also
 count as covered through tests, but only when all these conditions hold:
 
 - It is the only path in the unit's `unverified` list.

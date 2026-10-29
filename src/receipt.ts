@@ -6,6 +6,7 @@ import type { UncoveredLines } from "./proof-coverage.js";
 import type { Restatement } from "./pi-claimcheck.js";
 import type { ClaimCheckRun, ContractStrength } from "./proof-guarantees.js";
 import type { Counterexample, ModelCheck, ModelLink } from "./model-check.js";
+import { modelOwnFiles } from "./model-files.js";
 import type { GraphCapture } from "./model-graph.js";
 import type { ChangeLines, LineCount } from "./change-lines.js";
 import type { TestEdit, WeakenedTest } from "./test-edits.js";
@@ -1045,7 +1046,8 @@ interface ChangedPath { readonly path: string; readonly proved: boolean; readonl
 
 /**
  * Each path a verified unit records as changed, read per unit, never
- * guessing for verified: proved unless its `unverified` lists it; tested
+ * guessing for verified: proved unless its `unverified` lists it or it belongs
+ * to a model without a current passing check; tested
  * when the unit ran a command and every one passed; exercised when the unit
  * lists exactly that one path unproved, records an exercise, and every
  * exercise is `fails_then_passes`.
@@ -1056,7 +1058,9 @@ function changedPaths(unit: UnitEvidence): ChangedPath[] {
   // Every path the receipt records as changed: the inventory, and each file it lists unproved, proved, with lines uncovered, or modeled.
   const changed = [...typeof unit.changed === "string" ? [] : unit.changed.map(({ path }) => path), ...unit.unverified,
     ...unit.proofs.map(({ path }) => path), ...unit.uncovered.map(({ path }) => path), ...(unit.models ?? []).map(({ path }) => path)];
-  return [...new Set(changed)].map((path) => ({ path, proved: !unit.unverified.includes(path), tested,
+  const uncheckedModelFiles = new Set((unit.models ?? []).filter(({ verdict, evidence }) =>
+    verdict !== "proved" || evidence.invalidated !== undefined).flatMap(({ path, header }) => modelOwnFiles(path, header)));
+  return [...new Set(changed)].map((path) => ({ path, proved: !unit.unverified.includes(path) && !uncheckedModelFiles.has(path), tested,
     exercised: noticed && unit.unverified.length === 1 && unit.unverified[0] === path }));
 }
 

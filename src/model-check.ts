@@ -4,6 +4,7 @@ import { join, posix } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { type Evidence, contentHash } from "./evidence.js";
 import { git } from "./git.js";
+import { configOf, modelOwnFiles } from "./model-files.js";
 import { captureGraph, graphContentHash, graphLimits, type GraphCapture, type GraphOptions } from "./model-graph.js";
 import { stateVariables } from "./model-state.js";
 import { tesotaHome } from "./home.js";
@@ -157,21 +158,6 @@ function checkTarget(model: string, file: string): string {
 /** How a model run ended, as an operation's result: a violation is a failed run. */
 function modelRunResult(run: ModelRun): OperationResult {
   return run === "violated" || run === "malformed" ? "failed" : run;
-}
-
-/** A TLA+ specification's configuration, which TLC reads beside it by default. */
-function configOf(spec: string): string {
-  return spec.replace(/\.tla$/u, ".cfg");
-}
-
-/**
- * The files a model's check depends on besides the code it covers: the
- * model, a TLA+ model's configuration, and each fault with a TLA+ fault's
- * configuration.
- */
-export function modelOwnFiles(path: string, header: ModelHeader): string[] {
-  const withConfig = (file: string): string[] => file.endsWith(".tla") ? [file, configOf(file)] : [file];
-  return [...new Set([...withConfig(path), ...header.faults.flatMap((fault) => withConfig(fault.path))])];
 }
 
 /** A model of the project, its header, whether the request changed it or what it covers, and the hash of what its check reads. */
