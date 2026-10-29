@@ -229,7 +229,8 @@ const namesSecret = (command: string): boolean =>
 
 /** What a call is about, for rules and the floor: the command a shell runs, or the path another tool reads or changes. */
 function subjectOf(call: ToolCall): string {
-  const said = (call.arguments as Record<string, unknown>)[shells.has(call.name) ? "command" : "path"];
+  // The model's arguments, unvalidated until the call runs: they may be null (#664).
+  const said = ((call.arguments ?? {}) as Record<string, unknown>)[shells.has(call.name) ? "command" : "path"];
   return typeof said === "string" ? said : "";
 }
 

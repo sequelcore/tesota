@@ -182,6 +182,20 @@ test("reopening refuses an answer outside its recorded question instead of trust
   expect(() => readSessionFile(session.file)).toThrow("broken entry");
 });
 
+test("reopening refuses an answer whose question call holds null arguments instead of crashing (#664)", async () => {
+  const session = start([{ tool: "ask_user", args: { questions } }, "done"], { questions: (_batch, submit) => {
+    submit([{ selected: [0] }]); return () => undefined;
+  } });
+  await session.prompt("Choose.");
+  await session.dispose();
+  const saved = readSessionFile(session.file);
+  const lines = [JSON.stringify(saved.header), ...saved.entries.map((entry) => JSON.stringify(entry.type === "assistant"
+    ? { ...entry, message: { ...entry.message, content: entry.message.content.map((part) =>
+      part.type === "toolCall" ? { ...part, arguments: null } : part) } } : entry))];
+  writeFileSync(session.file, `${lines.join("\n")}\n`);
+  expect(() => readSessionFile(session.file)).toThrow("broken entry");
+});
+
 test("stopping while a question waits releases it and ends aborted without accepting a late answer", async () => {
   let ready = (): void => undefined;
   const registered = new Promise<void>((resolve) => { ready = resolve; });

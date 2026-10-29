@@ -234,7 +234,7 @@ function linkedClarification(entry: Extract<SessionEntry, { readonly type: "clar
   if (invocation.some((prior) => prior.type === "clarification" && prior.clarification.callId === clarification.callId
     || prior.type === "tool_result" && prior.message.toolCallId === clarification.callId
     || prior.type === "run_end")) return false;
-  const argumentsOf = call.arguments as Record<string, unknown>;
+  const argumentsOf = (call.arguments ?? {}) as Record<string, unknown>;
   return JSON.stringify(argumentsOf["questions"]) === JSON.stringify(clarification.questions)
     && clarification.answers.length === clarification.questions.length;
 }
