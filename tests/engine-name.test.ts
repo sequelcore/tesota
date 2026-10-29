@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { engineOf } from "../src/engine-name.js";
+import { hangingFilter } from "./hanging-git.js";
 
 const scratch = mkdtempSync(join(tmpdir(), "tesota-engine-"));
 // Windows can retain directory handles briefly after the Git/filter processes exit.
@@ -48,14 +49,7 @@ describe("the engine a receipt names (#639)", () => {
 
   it("says unknown at its limit when Git hangs, and stops that Git with every process it started (#648)", async () => {
     const { folder } = checkout("hanging");
-    // A clean filter that never answers holds Git's status of the changed file; it records its parent, itself and its child.
-    const pids = join(folder, ".git", "pids");
-    writeFileSync(join(folder, ".git", "hang.cjs"), "const { spawn } = require('child_process');\n" +
-      "const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });\n" +
-      `require('fs').writeFileSync(${JSON.stringify(pids)}, JSON.stringify([process.ppid, process.pid, child.pid]));\n` +
-      "setInterval(() => {}, 1000);\n");
-    execFileSync("git", ["config", "filter.hang.clean", `"${process.execPath.replaceAll("\\", "/")}" "${join(folder, ".git", "hang.cjs").replaceAll("\\", "/")}"`], { cwd: folder });
-    writeFileSync(join(folder, ".gitattributes"), "a.txt filter=hang\n");
+    const { pids, release } = hangingFilter(folder, "a.txt filter=hang\n");
     // Same size as "a\n", so Git must read the content, through the filter, to know whether it changed.
     writeFileSync(join(folder, "a.txt"), "b\n");
     const alive = (pid: number): boolean => { try { process.kill(pid, 0); return true; } catch { return false; } };
@@ -76,6 +70,7 @@ describe("the engine a receipt names (#639)", () => {
       expect(started.filter(alive)).toEqual([]);
     } finally {
       vi.useRealTimers();
+      release();
       for (const pid of started) { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } }
     }
   }, 40_000);
