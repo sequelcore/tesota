@@ -55,7 +55,8 @@ Evidence, not approval: accepting the change is yours.
 ```
 
 - **The first row** counts what needs you: flags, then limits, in amber.
-  `1 opinion to read` points at a model's opinion, which is never counted.
+  `1 opinion to read` points at a model's opinion, not check evidence.
+  An open-cases refusal isn't an opinion; its reason stays in the details.
 - **Each method** says what ran. `Exercised` means the new test fails
   without the change; `Contracts` means every small change Tesota made to
   the code broke the proof.

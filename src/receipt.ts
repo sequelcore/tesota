@@ -833,11 +833,8 @@ function either(outcomes: readonly string[]): string {
 
 /** The cases a model listed as left open by the request, one opinion each, for the operator to settle. */
 function openCaseFindings(listed: OpenCases | undefined): Finding[] {
-  if (listed === undefined) return [];
-  if (listed.status === "not_listed") {
-    return [{ standing: "opinion", check: "request", label: "Not listed", subject: "the cases the request leaves open", detail: listed.reason, more: [],
-      group: { title: "Open cases not listed", note: listed.reason } }];
-  }
+  // A refusal is not an opinion about the change; openCaseLines keeps its reason in the details.
+  if (listed === undefined || listed.status === "not_listed") return [];
   return listed.cases.map(({ input, outcomes }) => ({ standing: "opinion", check: "request", label: "Model: open case", subject: input,
     detail: either(outcomes), more: [`A model's list for you to settle, not a check: ${listed.model}.`],
     group: { title: `% for you to settle, listed by ${listed.model}`, noun: ["open case", "open cases"], note: "",
