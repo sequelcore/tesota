@@ -17,6 +17,7 @@ import { entryReceipt, receiptDecisions, receiptFindings, receiptStanding, recei
 import { gateVerdict, keepsWorking, toolMayChangeFiles } from "../src/verification/gate-rule.js";
 import type { ProofOutcome } from "../src/verification/proof-outcome-rule.js";
 import { emptyReceipt } from "./receipts.js";
+import { hangingFilter } from "./hanging-git.js";
 import { host, provideHost } from "../src/host.js";
 
 let verificationModels: ReturnType<ReturnType<typeof host>["verificationModels"]> = {};
@@ -1012,14 +1013,8 @@ it("stops the Git a stopped run's inventory abandons at its limit, with every pr
   const run = gate(root);
   await run.input();
   await run.tool("write");
-  // A clean filter that never answers holds Git's status of the changed file; it records its parent, itself and its child.
-  const pids = join(root, ".git", "pids");
-  writeFileSync(join(root, ".git", "hang.cjs"), "const { spawn } = require('child_process');\n" +
-    "const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });\n" +
-    `require('fs').writeFileSync(${JSON.stringify(pids)}, JSON.stringify([process.ppid, process.pid, child.pid]));\n` +
-    "setInterval(() => {}, 1000);\n");
-  git(root, "config", "filter.hang.clean", `"${process.execPath.replaceAll("\\", "/")}" "${join(root, ".git", "hang.cjs").replaceAll("\\", "/")}"`);
-  write(root, { ".gitattributes": "* filter=hang\n", "notes.md": "# Changed\n" });
+  const { pids, release } = hangingFilter(root, "* filter=hang\n");
+  write(root, { "notes.md": "# Changed\n" });
   const alive = (pid: number): boolean => { try { process.kill(pid, 0); return true; } catch { return false; } };
   let started: number[] = [];
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
@@ -1047,6 +1042,7 @@ it("stops the Git a stopped run's inventory abandons at its limit, with every pr
     expect(started.filter(alive)).toEqual([]);
   } finally {
     vi.useRealTimers();
+    release();
     for (const pid of started) { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } }
   }
 }, 60_000);
