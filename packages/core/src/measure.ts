@@ -1,4 +1,4 @@
-import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
+import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall, type MutableModels } from "@earendil-works/pi-ai";
 import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,8 +15,8 @@ const resumeRounds = 166;
 /** A verifier that settles each run at once, so the measurement times the engine's settlement and not a check (#439). */
 const settles: ExtensionFactory = (pi) => { pi.on("agent_before_settle", () => undefined); };
 
-/** A scripted model's models and model, for `rounds` rounds of write and read, then an answer, with a verifier. */
-export function scripted(rounds: number): Pick<SessionOptions, "models" | "model" | "verifier"> {
+/** A scripted model, added to `models`, for `rounds` rounds of write and read, then an answer, with a verifier. */
+export function scripted(rounds: number, models: MutableModels = createModels()): Pick<SessionOptions, "models" | "model" | "verifier"> {
   const faux = fauxProvider();
   faux.setResponses([
     ...Array.from({ length: rounds }, (_, round) => [
@@ -26,7 +26,6 @@ export function scripted(rounds: number): Pick<SessionOptions, "models" | "model
     ]).flat(),
     fauxAssistantMessage("done"),
   ]);
-  const models = createModels();
   models.setProvider(faux.provider);
   return { models, model: faux.getModel(), verifier: settles };
 }
