@@ -190,6 +190,34 @@ describe("the claude-code provider", () => {
     expect(seen?.signal).toBe(stop.signal);
   });
 
+  test("checks of one folder's sign-in at the same time share one run of Claude Code, and a later check runs it again (#744)", async () => {
+    const pending: (() => void)[] = [];
+    let runs = 0;
+    const execute = ((_file: string, _args: readonly string[], _options: ExecFileOptions,
+      callback: (error: null, stdout: string, stderr: string) => void) => {
+      runs += 1;
+      pending.push(() => { callback(null, '{"loggedIn":true,"email":"owner@example.test"}', ""); });
+    }) as typeof execFile;
+    const first = claudeCodeStatus("/claude-b", execute);
+    const second = claudeCodeStatus("/claude-b", execute);
+    const other = claudeCodeStatus("/claude-c", execute);
+    expect(runs).toBe(2);
+    for (const release of pending.splice(0)) release();
+    expect(await first).toEqual({ loggedIn: true, email: "owner@example.test" });
+    expect(await second).toEqual({ loggedIn: true, email: "owner@example.test" });
+    await other;
+    // Nothing is kept once the check returns: signing in or out elsewhere shows at the next check.
+    const later = claudeCodeStatus("/claude-b", execute);
+    expect(runs).toBe(3);
+    for (const release of pending.splice(0)) release();
+    await later;
+    // A check a signal can stop runs on its own, so stopping it stops no one else's.
+    void claudeCodeStatus("/claude-b", execute);
+    void claudeCodeStatus("/claude-b", execute, new AbortController().signal);
+    expect(runs).toBe(5);
+    for (const release of pending.splice(0)) release();
+  });
+
   test("an account's sign-in is Claude Code's own login, on the terminal, in the account's folder with HOME unchanged (#642)", async () => {
     let seen: { args: readonly string[]; options: SpawnOptions } | undefined;
     const saved = process.env["ANTHROPIC_API_KEY"];

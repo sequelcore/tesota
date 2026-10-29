@@ -1,10 +1,11 @@
-import { type AuthPrompt, fauxAssistantMessage, fauxProvider, InMemoryCredentialStore, type OAuthCredential } from "@earendil-works/pi-ai";
+import { type AuthPrompt, createModels, fauxAssistantMessage, fauxProvider, InMemoryCredentialStore, type OAuthCredential } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { fileCredentialStore } from "../src/credentials.ts";
-import { accountLabels, accountStates, chosenModel, engineModels, loginOptions } from "../src/model-access.ts";
+import { accountLabels, accountStates, chosenModel, engineModels, loginOptions, runnableModels } from "../src/model-access.ts";
+import { claudeCodeProvider } from "../src/providers/claude-code.ts";
 import { runPrint } from "../src/print.ts";
 import { createSession, type EngineSession } from "../src/session.ts";
 import { writeSettings } from "../src/settings.ts";
@@ -139,6 +140,34 @@ describe("the engine's models", () => {
     held.waiting.at(-1)?.();
     expect((await labels).size).toBe(6);
     expect(held.most()).toBe(1);
+  });
+
+  test("the runnable models ask ChatGPT's list while the sign-ins are still being checked (#744)", async () => {
+    const credentials = new InMemoryCredentialStore();
+    const models = createModels({ credentials });
+    const signOut = await signInWithChatGPT(models, credentials, ["gpt-6.1-sol"]);
+    let answer = (_signedIn: boolean): void => undefined;
+    // A Claude Code sign-in check that answers only when released, as a slow `claude auth status` would.
+    models.setProvider(claudeCodeProvider(engineModels(new InMemoryCredentialStore()).getModels("anthropic"),
+      { signedIn: () => new Promise((resolve) => { answer = resolve; }) }));
+    try {
+      const runnable = runnableModels(models);
+      for (let round = 0; round < 10; round++) await Bun.sleep(0);
+      expect((globalThis.fetch as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(1);
+      answer(false);
+      expect((await runnable).map(({ provider, id }) => `${provider}/${id}`)).toEqual(["openai/gpt-6.1-sol"]);
+    } finally { signOut(); }
+  });
+
+  test("accountLabels, as /model and /login read them, checks up to four sign-ins at once (#744)", async () => {
+    const held = heldStatus();
+    const labels = accountLabels(new InMemoryCredentialStore(), claudeAccounts, held.status, { concurrency: 4 });
+    await Bun.sleep(0);
+    expect(held.waiting).toHaveLength(4);
+    for (let round = 0; round < 10 && held.waiting.length < 6; round++) { for (const release of held.waiting) release(); await Bun.sleep(0); }
+    for (const release of held.waiting) release();
+    expect((await labels).size).toBe(6);
+    expect(held.most()).toBe(4);
   });
 
   test("a stopped check gives Claude Code's status its signal, and ends without telling of more (#3)", async () => {
