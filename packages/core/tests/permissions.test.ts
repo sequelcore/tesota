@@ -311,7 +311,8 @@ describe("the floor, which no mode crosses", () => {
       expect(parsedFloor([cmd("dir")])).toMatchObject({ decision: "allow", by: "mode" });
     });
 
-    test("cmd's own deletions read its %NAME% variables, as do the words after a stop-parsing token", () => {
+    // cmd and the PowerShell tool exist only on Windows; elsewhere a path starting with `/` reads as cmd's own switch.
+    test.if(process.platform === "win32")("cmd's own deletions read its %NAME% variables, as do the words after a stop-parsing token", () => {
       const cmd = (...words: string[]): ParsedCommand => ({ name: "cmd.exe", parameters: {}, arguments: ["/c", ...words] });
       const home = Object.entries(process.env).find(([, value]) => value === homedir())?.[0];
       if (home !== undefined) {
