@@ -87,12 +87,10 @@ Tesota checks both:
 Model-checked: NoLostUpdate holds in all 9 reachable states; caught 1 of 1 planted fault; not linked to the code.
 ```
 
-A fault is caught only by a declared invariant or property (in the header
-or configuration), or a failed `Assert`. A deadlock alone doesn't count.
-Tesota retries it with deadlock checking off (`-deadlock`), with the same
-limits: a violation catches it; exhaustive success means too weak; an
-unfinished or errored retry means not checked. The receipt names the fault
-and both results. A main-configuration deadlock still fails.
+Only a declared invariant, property or failed `Assert` catches a fault. A
+fault that only deadlocks runs again with `-deadlock`, which finds it
+caught, too weak or not checked. A deadlock in the main configuration
+still fails.
 
 ## The header
 
@@ -148,15 +146,19 @@ Each TLA+ check captures the model graph: the states TLC reached and the
 steps between them. `/graph` opens the newest one full-screen; `!` marks a
 state that breaks an invariant.
 
-`g` groups states by up to two variables, `n` and `p` jump between breaking
-states, `t` shows TLC's trace, and `o` opens a self-contained HTML page in
-your browser; every key is in [Commands and keys](../reference/commands.md#model-graph-viewer).
+It opens on the **chart**: a few states labeled in your words by
+`<Model>.chart.ts`, which the agent writes, with TLC's trace numbered and
+the breaking state in red. Labels are a reading, not evidence. The file is
+project code, so it runs only once you trust it, as
+[hooks](hooks.md#trusting-a-projects-hooks) do; until then the chart is
+grouped by the control variable. `c` shows TLC's graph, `t` its trace, and
+`o` an HTML page; keys and the chart's format are in
+[Commands and keys](../reference/commands.md#model-graph-viewer).
 
-`/graph --plain`, the inline shell and terminals under 40×12 print the
-graph as text. Over SSH, `tesota graph --html <capture>.manifest.json`
-writes the page to copy elsewhere. The files sit beside the session, not
-in the project, and never change the receipt. A graph is **partial** when
-TLC stopped early (counts are lower bounds), and **unavailable** past
+`/graph --plain`, the inline shell and terminals under 40×12 print text.
+Over SSH, `tesota graph --html <capture>.manifest.json` writes the page.
+The files sit beside the session and never change the receipt. A graph is
+**partial** when TLC stopped early, and **unavailable** past
 16 MiB of output, 10,000 states or 50,000 edges, or on an error other than
 a broken invariant. Quint captures no graph.
 

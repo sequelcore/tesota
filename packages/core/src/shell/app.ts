@@ -24,7 +24,7 @@ import { checkoutRoot } from "../workspace.ts";
 import { anyHooks, type Hooks, joinHooks } from "../hooks.ts";
 import { lastFloorNotice, peekSessionFile } from "../session-file.ts";
 import { readStandards } from "../standards.ts";
-import { trust } from "../trust.ts";
+import { chartTrust, trust, trusted } from "../trust.ts";
 import { readSettings, type Settings, updateSettings } from "../settings.ts";
 import { pendingUsage, readUsage, type UsageSources } from "../usage.ts";
 import { usageSources } from "../usage-sources.ts";
@@ -365,10 +365,19 @@ export async function runApp(options: AppOptions): Promise<void> {
       "warning");
       return;
     }
-    const [{ appendOnlyText, fitsFullScreen, fullScreen, ModelViewer }, { loadModelView, writeModelViewHtml, openBrowser }] =
-      await Promise.all([import("./model-viewer.ts"), import("../../../../src/model-view-process.ts")]);
+    const [{ appendOnlyText, fitsFullScreen, fullScreen, ModelViewer }, { loadModelView, writeModelViewHtml, openBrowser }, { manifestReading }] =
+      await Promise.all([import("./model-viewer.ts"), import("../../../../src/model-view-process.ts"), import("../../../../src/model-chart.ts")]);
+    // A chart reading is the project's code: the viewer's process runs it only once trusted as it is now (#761).
+    const reading = await manifestReading(graph.manifest);
+    if (reading !== undefined && !trusted(reading.root, chartTrust(reading.file), reading.hash)) {
+      const picked = await shell.pick(`This project's chart reading would run: ${terminalText(reading.file)} labels the chart`, [
+        { value: "trust", label: "Trust it", description: "kept until the reading changes" },
+        { value: "skip", label: "Not now", description: "the chart is grouped by the control variable" },
+      ]);
+      if (picked === "trust") trust(reading.root, chartTrust(reading.file), reading.hash);
+    }
     if (plain || mode === "inline" || !fitsFullScreen(terminal.columns, terminal.rows)) {
-      try { shell.note(appendOnlyText(await loadModelView(graph.manifest, {}, new AbortController().signal), graph.manifest)); } catch (error) {
+      try { shell.note(appendOnlyText(await loadModelView(graph.manifest, { chart: true }, new AbortController().signal), graph.manifest)); } catch (error) {
         shell.note(terminalText(error instanceof Error ? error.message : String(error)), "warning");
         return;
       }

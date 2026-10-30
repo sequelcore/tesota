@@ -1,9 +1,11 @@
 import { expect, test } from "bun:test";
 import { sliceByColumn, visibleWidth } from "@earendil-works/pi-tui";
-import { copyFileSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { appendOnlyText, ModelViewer } from "../src/shell/model-viewer.ts";
+import { chartTrust, trust } from "../src/trust.ts";
+import { readingHash } from "../../../src/model-chart.ts";
 import { loadModelView } from "../../../src/model-view-process.ts";
 import { shellTheme } from "../../../src/theme.ts";
 import { terminalText } from "../../../src/terminal-text.ts";
@@ -24,6 +26,36 @@ async function viewer(source?: string) {
   return { view, component };
 }
 const screen = (component: ModelViewer, width = 100) => component.render(width).map(terminalText).join("\n");
+
+test("opens on the chart when the view has one, with the breaking path numbered, and c switches to TLC's graph", async () => {
+  const root = mkdtempSync(join(tmpdir(), "tesota-viewer-chart-"));
+  cpSync(join(import.meta.dir, "../../../tests/fixtures/model-chart"), root, { recursive: true });
+  const manifest = join(root, "dns-stale.manifest.json");
+  const data = JSON.parse(readFileSync(manifest, "utf8"));
+  writeFileSync(manifest, JSON.stringify({ ...data, binding: { ...data.binding, root } }));
+  trust(root, chartTrust("DnsPlans.chart.ts"), readingHash(readFileSync(join(root, "DnsPlans.chart.ts"))));
+  const requests: unknown[] = [];
+  const component = new ModelViewer({ theme, subject: "DnsPlans.tla", rows: () => 40,
+    load: async (request, signal) => { requests.push(request); return loadModelView(manifest, request, signal); },
+    close: () => undefined, redraw: () => undefined });
+  for (let i = 0; i < 200 && !screen(component, 160).includes("Model chart"); i++) await new Promise(resolve => setTimeout(resolve, 50));
+  expect(requests).toEqual([{ chart: true }]);
+  const chart = screen(component, 160);
+  expect(chart).toContain("DnsPlans.chart.ts");
+  expect(chart).toContain("1. the planner publishes plan 1");
+  expect(chart).toContain("7. enactor 1 writes plan 2 to endpoint 1");
+  expect(chart).toContain("an endpoint went back to an older plan");
+  expect(chart).toContain("⚠ breaks Safety");
+  expect(chart).not.toContain("┌");
+  expect(component.render(160).at(-1)).toContain("c graph");
+  component.handleInput("c");
+  const graph = screen(component, 160);
+  expect(graph).toContain("┌");
+  expect(graph).toContain("grouped by published");
+  expect(component.render(160).at(-1)).toContain("c chart");
+  component.handleInput("c");
+  expect(screen(component, 160)).toContain("7. enactor 1 writes plan 2 to endpoint 1");
+}, 30_000);
 
 test("manifest violation names are sanitized in the panel, trace and jump notice", async () => {
   const name = "Bad\x1b[2J\x07Name";

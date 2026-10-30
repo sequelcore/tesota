@@ -5,6 +5,7 @@ import type { Theme, ToolDefinition, ToolResult } from "./contract.js";
 import { type TObject, type TString, Type } from "typebox";
 import { quietOutput } from "./evidence.js";
 import { bold, expandHint, Rows, spread, wrapUnder } from "./messages.js";
+import { READING_FORMAT, readingPath } from "./model-chart.js";
 import { checkModel, HEADER_FORMAT, type ModelCheck, modelHeader, modelReport, tlaToolsJar } from "./model-check.js";
 import { linkWords, modelHolds, modelWhy } from "./receipt.js";
 
@@ -39,6 +40,13 @@ export const MODEL_GUIDELINES: readonly string[] = [
  * A model's check for the agent: what a pass establishes and what it does
  * not, why it did not run, or what the gate would send back (`modelReport`).
  */
+/** A captured model without a reading is asked for one once per check, as a model without a header is given the header (#761). */
+function readingAsk(root: string, model: string): string {
+  const reading = readingPath(model);
+  return existsSync(resolve(root, reading)) ? ""
+    : `\n\n/graph opens on a chart of this graph. To label its states and steps in the user's words, write ${reading}:\n\n${READING_FORMAT}`;
+}
+
 export function modelToolReport(check: ModelCheck): string {
   if (check.evidence.outcome === "passed") {
     return `Model-checked: ${modelHolds(check)}; ${linkWords[check.link]}.\n\n${check.evidence.limits}`;
@@ -110,7 +118,7 @@ export const modelTool: ToolDefinition<typeof parameters, ModelCheck | undefined
       ctx.sessionFile === undefined ? undefined : { sessionFile: ctx.sessionFile });
     const artifacts = ctx.sessionFile === undefined ? "" : check.capture?.manifest === undefined
       ? `\n\nGraph capture: ${check.capture?.status ?? "unavailable"}. ${check.capture?.status === "captured" ? "" : check.capture?.reason ?? ""}`
-      : `\n\nVerification artifacts beside the session file: ${check.capture.manifest}`;
+      : `\n\nVerification artifacts beside the session file: ${check.capture.manifest}${readingAsk(ctx.cwd, path)}`;
     return { content: [{ type: "text", text: `${modelToolReport(check)}${artifacts}` }], details: check,
       ...check.evidence.outcome === "passed" ? {} : { isError: true } };
   },

@@ -157,7 +157,10 @@ it("conserves the real continued 320-state graph under every ordered projection"
     const plain = await runProcess("bun", [entry, "graph", "--plain", manifest], root, new AbortController().signal, 30_000, undefined,
       { onStdout: chunk => plainChunks.push(chunk) });
     expect(plain.exitCode).toBe(0);
-    expect(Buffer.concat(plainChunks).toString("utf8")).toBe(`${view.plain}\n`);
+    // The chart leads; TLC's graph follows it unchanged.
+    const printed = Buffer.concat(plainChunks).toString("utf8");
+    expect(printed.startsWith("Chart: HostSessions.chart.ts does not exist.")).toBe(true);
+    expect(printed.endsWith(`\n\n${view.plain}\n`)).toBe(true);
     expect(plain.stdout).toContain("reported violating 60");
     expect(plain.stdout).toContain("⚠ breaks");
     const cancelled = new AbortController(); cancelled.abort();
