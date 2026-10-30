@@ -26,9 +26,10 @@ import { VirtualTerminal } from "./virtual-terminal.ts";
 const folder = (prefix: string): string => mkdtempSync(join(tmpdir(), prefix));
 const enter = "\r";
 
-/** The settings a test starts from, none when it asks for none. */
-function seedSettings(path: string, model: string | undefined, accounts: readonly Account[] | undefined): void {
-  if (model !== undefined || accounts !== undefined) writeSettings({ ...model === undefined ? {} : { model }, ...accounts === undefined ? {} : { accounts } }, path);
+/** The settings a test starts from, none when it asks for none; a file given as written is written as it is (#714). */
+function seedSettings(path: string, model: string | undefined, accounts: readonly Account[] | undefined, file: object | undefined): void {
+  if (file !== undefined) writeFileSync(path, JSON.stringify(file));
+  else if (model !== undefined || accounts !== undefined) writeSettings({ ...model === undefined ? {} : { model }, ...accounts === undefined ? {} : { accounts } }, path);
 }
 
 /** A usage source with no reading to give. */
@@ -66,7 +67,7 @@ function scripted(replies: readonly ScriptStep[], twoModels: boolean): { models:
 const givenModels = (models: MutableModels, ownModels: boolean | undefined): { models?: MutableModels } => ownModels === true ? {} : { models };
 
 /** The app in a temporary folder, its settings and sessions there too, once it has drawn its first frame. */
-async function app(replies: readonly ScriptStep[] = [], { repository = false, earlier, earlierModel = "faux/faux-1", mcp, projectMcp, skills = {}, served, model, claudeCode, accounts, claude = { signIn: async () => undefined, status: async () => ({ loggedIn: false }) }, usage = noUsage, ownModels }:
+async function app(replies: readonly ScriptStep[] = [], { repository = false, earlier, earlierModel = "faux/faux-1", mcp, projectMcp, skills = {}, served, model, claudeCode, accounts, claude = { signIn: async () => undefined, status: async () => ({ loggedIn: false }) }, usage = noUsage, ownModels, settingsFile }:
   { repository?: boolean;
     /** An earlier session of the folder that worked in its checkout, asked this and answered "earlier answer" (#595). */
     earlier?: string; earlierModel?: string; mcp?: object; projectMcp?: object; skills?: Record<string, string>;
@@ -79,7 +80,9 @@ async function app(replies: readonly ScriptStep[] = [], { repository = false, ea
     /** Where the usage panel reads from, faked: it reads no real Claude Code or ChatGPT. */
     usage?: UsageSources;
     /** The shell builds its own models over the test's credentials, as the operator's shell does (#743), instead of the scripted ones. */
-    ownModels?: boolean } = {}) {
+    ownModels?: boolean;
+    /** The operator's settings file as written, keys Tesota does not read included (#714). */
+    settingsFile?: object } = {}) {
   const terminal = new VirtualTerminal(100, 30);
   const { models, credentials } = scripted(replies, model === "faux/faux-2");
   if (claudeCode !== undefined) {
@@ -87,7 +90,7 @@ async function app(replies: readonly ScriptStep[] = [], { repository = false, ea
   }
   const signOut = served === undefined ? () => undefined : await signInWithChatGPT(models, credentials, served);
   const settingsPath = join(folder("tesota-core-app-settings-"), "settings.json");
-  seedSettings(settingsPath, model, accounts);
+  seedSettings(settingsPath, model, accounts, settingsFile);
   if (accounts !== undefined) {
     for (const provider of (await engineModels(credentials, accounts)).getProviders().filter(({ id }) => id.includes("@"))) models.setProvider(provider);
     for (const id of ["openai-codex", "openai-codex@work"]) await credentials.modify(id, async () =>
@@ -492,6 +495,16 @@ describe("tesota-core", () => {
     const screen = await terminal.until("was not checked");
     expect(screen).not.toContain("The saved model is not used");
     expect(screen.split("\n").at(-1)).toContain("gpt-6.1-sol");
+    send(terminal, "/quit");
+    await running;
+  });
+
+  test("a settings key Tesota does not read is named once at startup, with the file (#714)", async () => {
+    const { terminal, settingsPath, running } = await app([], { settingsFile: { tlcPath: "/tools/tla2tools.jar", hooks: {} } });
+    await terminal.until("did nothing: tlcPath.");
+    const screen = (await terminal.screen()).join("\n");
+    expect(screen.split("did nothing").length).toBe(2);
+    expect(screen.replace(/\s+/gu, "")).toContain(settingsPath.replace(/\s+/gu, ""));
     send(terminal, "/quit");
     await running;
   });

@@ -54,7 +54,9 @@ No tool call may read or change `auth.json` or `mcp-auth.json`.
 | `deviceId` | Installation UUID used by some sign-in flows | Generated when needed |
 
 Invalid values of known settings are left out and named at startup.
-Unknown keys are silently ignored. Saving a changed setting preserves
+Keys Tesota doesn't read do nothing. The shell, print mode and
+`tesota doctor` name them, with a suggestion when one is close to a real
+setting, and leave them in the file. Saving a changed setting preserves
 other keys under a lock, so two shells keep each other's changes.
 
 ## A project's files

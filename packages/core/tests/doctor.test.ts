@@ -78,7 +78,7 @@ test("repair commands for all operating systems come from the install guide", ()
 });
 
 test("human and JSON renderings retain the same report", () => {
-  const report = { exitCode: 0, capabilities: [{ id: "quint", requirement: "optional" as const, status: "unavailable", path: null, version: null,
+  const report = { exitCode: 0, warnings: ["Settings Tesota does not know, in /home/settings.json, did nothing: tlcPath."], capabilities: [{ id: "quint", requirement: "optional" as const, status: "unavailable", path: null, version: null,
     smoke: { ended: "not_started" as const, exitCode: null, output: "Executable not found." },
     consequence: "Model not checked: Quint models cannot be checked.", repair: "npm install -g @informalsystems/quint" }] };
   expect(JSON.parse(formatDoctorReport(report, true))).toEqual(report);
@@ -89,6 +89,7 @@ test("human and JSON renderings retain the same report", () => {
   expect(human).toContain("Model not checked: Quint models cannot be checked.");
   expect(human).toContain("npm install -g @informalsystems/quint");
   expect(human).toContain("Exit code: 0");
+  expect(human).toContain("Warning: Settings Tesota does not know, in /home/settings.json, did nothing: tlcPath.");
 });
 
 test("help and invalid arguments do not run any probe", async () => {
@@ -117,6 +118,22 @@ test("the CLI reports missing tools as JSON without writing to a fresh home or p
     expect(report.capabilities.find(({ id }) => id === "lsc")?.status).toBe("available");
     expect(report.capabilities.find(({ id }) => id === "claude-code")).toBeDefined();
     expect(readdirSync(home)).toEqual([]);
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
+test("the CLI warns about a settings key Tesota does not read, and leaves the file as written (#714)", async () => {
+  const home = mkdtempSync(join(tmpdir(), "tesota-doctor-unknown-"));
+  try {
+    const settingsPath = join(home, ".tesota", "settings.json");
+    mkdirSync(join(home, ".tesota"));
+    const written = JSON.stringify({ tlcPath: "/tools/tla2tools.jar", tuiMode: "inline" });
+    writeFileSync(settingsPath, written);
+    const result = await runProcess(process.execPath, [main, "doctor", "--json"], home, new AbortController().signal, 25_000,
+      undefined, { env: isolatedEnvironment(home) });
+    const report = JSON.parse(result.stdout) as { warnings: string[] };
+    expect(report.warnings).toEqual([`Settings Tesota does not know, in ${settingsPath}, did nothing: tlcPath. `
+      + "See https://github.com/sequelcore/tesota/blob/main/docs/reference/configuration.md#settingsjson"]);
+    expect(readFileSync(settingsPath, "utf8")).toBe(written);
   } finally { rmSync(home, { recursive: true, force: true }); }
 });
 

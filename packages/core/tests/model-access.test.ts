@@ -79,6 +79,15 @@ describe("the engine's models", () => {
     } finally { await credentials.delete("openai-codex@print"); }
   });
 
+  test("print mode names a settings key Tesota does not read, with the file (#714)", async () => {
+    const settingsPath = join(folder("tesota-print-unknown-"), "settings.json");
+    writeFileSync(settingsPath, JSON.stringify({ tlcPath: "/tools/tla2tools.jar", hooks: {} }));
+    let errors = "";
+    expect(await runPrint(["hi", "--model", "nope/none"], folder("tesota-print-cwd-"), { out: () => undefined, error: (text) => { errors += text; } },
+      {}, settingsPath)).toBe(1);
+    expect(errors).toContain(`Settings Tesota does not know, in ${settingsPath}, did nothing: tlcPath.`);
+  });
+
   test("instances are labeled by signed-in identity and duplicates flagged, including defaults", async () => {
     const credentials = new InMemoryCredentialStore();
     for (const id of ["openai-codex", "openai-codex@work"]) await credentials.modify(id, async () =>

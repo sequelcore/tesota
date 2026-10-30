@@ -18,7 +18,7 @@ import { loadRules } from "./permissions.ts";
 import { askedSessions, awaitingNotice, createSession, type EngineSession, openSession, type OpenOptions, pendingQuestion, sessionsFolder } from "./session.ts";
 import { lastFloorNotice, peekSessionFile, SessionFileError } from "./session-file.ts";
 import { SessionLockedError } from "./session-lock.ts";
-import { readSettings, type Settings } from "./settings.ts";
+import { readSettings, type Settings, unknownSettingsNote } from "./settings.ts";
 import { shellHost } from "./shell/surface.ts";
 import { readStandards } from "./standards.ts";
 
@@ -189,7 +189,9 @@ export async function runPrint(args: readonly string[], cwd: string, write: Prin
   if (typeof asked === "string") { write.error(`${asked}\n`); return 2; }
   const named = sessionNamed(cwd, asked.session);
   if ("refused" in named) { write.error(`${named.refused}\n`); return 1; }
-  const { settings } = readSettings(settingsPath);
+  const { settings, unknown } = readSettings(settingsPath);
+  const unread = unknownSettingsNote(unknown, settingsPath);
+  if (unread !== undefined) write.error(`${unread}\n`);
   const accounts = settings.accounts ?? [];
   models ??= await engineModels(fileCredentialStore(), accounts);
   for (const [id, label] of await accountLabels(fileCredentialStore(), accounts)) write.error(`${id}: ${label}\n`);
