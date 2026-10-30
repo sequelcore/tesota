@@ -437,17 +437,23 @@ function compactionAtStart(options: LoopOptions): {
 const nothingToSummarize = "the recent messages alone fill the part kept verbatim";
 
 /**
- * A session's tools and which the model may call, in the order they came
- * (#441), as Pi keeps them. An extension's tool is active unless it says
- * otherwise. Setting the active tools ignores unknown names and repeats and
- * takes effect from the next model request. Each request records the tools
- * it offers when they changed, so a resumed session restores what the model
- * last had; a restored tool registered only later becomes active then,
- * unless a change that dropped a tool came first.
+ * A session's tools and which the model may call (#441). An extension's tool
+ * is active unless it says otherwise. Setting the active tools ignores
+ * unknown names and repeats and takes effect from the next model request.
+ * Each request records the tools it offers when they changed, so a resumed
+ * session restores what the model last had; a restored tool registered only
+ * later becomes active then, unless a change that dropped a tool came first.
+ * A request offers the session's own tools in their given order, then the
+ * others by name, so the same tools always reach the model in the same
+ * order, however they arrived (#779).
  */
 function toolbox(given: EngineTool[], writer: SessionWriter) {
+  const own = given.map(({ name }) => name);
   let tools = given;
-  let active = tools.map(({ name }) => name);
+  let active = [...own];
+  const rank = (name: string): number => own.includes(name) ? own.indexOf(name) : own.length;
+  const ordered = (names: readonly string[]): string[] =>
+    [...names].sort((a, b) => rank(a) - rank(b) || (a < b ? -1 : a > b ? 1 : 0));
   /** Restored tools not registered yet; once restored, only these become active as they register. */
   let pending = new Set<string>();
   let restored = false;
@@ -456,7 +462,7 @@ function toolbox(given: EngineTool[], writer: SessionWriter) {
   /** The names of the MCP servers' tools in `tools` (#459). */
   let external = new Set<string>();
   const known = (name: string): boolean => tools.some((tool) => tool.name === name);
-  const activeTools = (): EngineTool[] => active.flatMap((name) => tools.filter((tool) => tool.name === name));
+  const activeTools = (): EngineTool[] => ordered(active).flatMap((name) => tools.filter((tool) => tool.name === name));
   return {
     activeTools,
     active: (): string[] => [...active],
@@ -501,8 +507,8 @@ function toolbox(given: EngineTool[], writer: SessionWriter) {
     },
     /** The tools one model request offers, which its calls run with; recorded when they changed. */
     forRequest(): EngineTool[] {
-      const offering = active.join("\n");
-      if (offering !== offered) writer.append({ type: "active_tools", names: [...active] });
+      const offering = ordered(active).join("\n");
+      if (offering !== offered) writer.append({ type: "active_tools", names: ordered(active) });
       offered = offering;
       return activeTools();
     },

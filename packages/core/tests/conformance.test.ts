@@ -1,3 +1,4 @@
+import type { Context } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -300,6 +301,40 @@ for (const engine of engines) {
       await session.prompt("go");
       expect(session.messages().find((message) => message.role === "toolResult")).toMatchObject({ toolName: "lookup", isError: false });
       expect(prompts.at(-1)).not.toContain("- lookup: Look a word up");
+    });
+
+    test("the same tools reach the model in the same order and words, whatever order they were turned on in (#779)", async () => {
+      // A provider caches the request's head: the same tools in another order would be written to the cache again.
+      const cwd = mkdtempSync(join(tmpdir(), "tesota-core-cwd-"));
+      const sent = async (order: readonly string[]) => {
+        let request = "";
+        const activate: ExtensionFactory = (pi) => {
+          pi.on("input", () => { for (const name of order) pi.setActiveTools([...pi.getActiveTools(), name]); return undefined; });
+        };
+        // The prompt and tools as sent, but for each session's own scratch folder.
+        const head = (context: Context) => JSON.stringify(context.messages.filter(({ role }) => role === "system"))
+          .replace(/[\w-]+\.scratch/gu, "<scratch>");
+        const session = await engine.createSession({ cwd, script: [{ seen: (context) => { request = head(context); }, reply: "done" }],
+          extensions: [tool("beta", "returns", { defaultActive: false, promptSnippet: "Beta" }),
+            tool("alpha", "returns", { defaultActive: false, promptSnippet: "Alpha" }), activate] });
+        await session.prompt("go");
+        await session.dispose();
+        return request;
+      };
+      const forward = await sent(["alpha", "beta"]);
+      expect(forward).toContain("- alpha: Alpha");
+      expect(await sent(["beta", "alpha"])).toBe(forward);
+    });
+
+    test("a session's requests repeat the same prompt and tools while nothing changes them (#779)", async () => {
+      const heads: string[] = [];
+      const see = (reply: string): ScriptStep => ({
+        seen: (context) => { heads.push(JSON.stringify(context.messages.filter(({ role }) => role === "system"))); }, reply });
+      const session = await start([{ tool: "echo", args: { text: "hi" } }, see("first"), see("second")], [echo]);
+      await session.prompt("go");
+      await session.prompt("again");
+      expect(heads).toHaveLength(2);
+      expect(heads[1]).toBe(heads[0]);
     });
 
     test("a tool registered as the session starts keeps its activation across a resume", async () => {
