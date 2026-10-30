@@ -355,6 +355,26 @@ for (const engine of engines) {
       expect(after?.messages[(changes[0]?.index ?? 0) - 1]?.role).toBe("toolResult");
     });
 
+    test("a tool's rules that start to apply mid-run reach the model as an appended change to the guidelines (#779)", async () => {
+      const sent: Context[] = [];
+      const see = (reply: string): ScriptStep => ({ seen: (context) => { sent.push(structuredClone(context)); }, reply });
+      let applies = false;
+      const ruled: ExtensionFactory = (pi) => {
+        pi.registerTool({ name: "ruled", label: "ruled", description: "Has rules.", parameters: Type.Object({ text: Type.String() }),
+          promptGuidelines: () => applies ? ["Follow the ruled rule"] : [],
+          execute: async (_id, params) => ({ content: [{ type: "text", text: params.text }], details: undefined }) });
+        pi.on("tool_execution_start", () => { applies = true; });
+      };
+      const session = await start([see("first"), { tool: "ruled", args: { text: "hi" } }, see("done")], [ruled]);
+      await session.prompt("go");
+      await session.prompt("again");
+      const [before, after] = sent;
+      expect(JSON.stringify(before)).not.toContain("Follow the ruled rule");
+      expect(after?.messages[0]).toEqual(before?.messages[0]);
+      expect(after?.messages.at(-1)).toMatchObject({ role: "system", sections: { guidelines: expect.stringContaining("- Follow the ruled rule") } });
+      expect(after?.messages.at(-1)).not.toHaveProperty("toolsAdded");
+    });
+
     test("a resumed session sends the system messages it had (#779)", async () => {
       const cwd = mkdtempSync(join(tmpdir(), "tesota-core-cwd-"));
       let last = "";

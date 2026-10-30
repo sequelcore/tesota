@@ -33,7 +33,8 @@ export function promptState(cwd: string, active: readonly EngineTool[], instruct
   if (given !== undefined) return { content: given, sections: sectionNames.map(() => ""), tools };
   const listed = active.flatMap(({ name, promptSnippet }) => promptSnippet === undefined || promptSnippet.trim() === "" ? []
     : [`- ${name}: ${promptSnippet.replace(/\s+/gu, " ").trim()}`]);
-  const rules = [...new Set(active.flatMap(({ promptGuidelines }) => promptGuidelines ?? []).map((rule) => rule.trim())
+  const rules = [...new Set(active.flatMap(({ promptGuidelines }) => typeof promptGuidelines === "function" ? promptGuidelines()
+    : promptGuidelines ?? []).map((rule) => rule.trim())
     .filter((rule) => rule !== ""))].map((rule) => `- ${rule}`);
   const explorers = active.filter(({ name }) => name === "ls" || name === "find" || name === "grep").map(({ name }) => name);
   const content = [`You are a coding agent working in ${cwd}. Use the tools to read, change and run what the request needs.`,

@@ -188,16 +188,18 @@ function renderResult(result: ToolResult<ProveDetails | undefined>, options: { e
 const parameters: TObject<{ path: TString }> = Type.Object({ path: Type.String({ description: "The TypeScript file to prove, relative to the project" }) });
 
 /**
- * `prove`, inactive until the extension finds contracts (`hasContracts`). It
- * runs alone, since the evidence must describe the files as no other tool
- * call left them mid-proof.
+ * `prove`, inactive until the extension offers it (#779): where Dafny is on
+ * the PATH or the project has contracts (`hasContracts`). It runs alone,
+ * since the evidence must describe the files as no other tool call left them
+ * mid-proof.
  */
 export const proveTool: ToolDefinition<typeof parameters, ProveDetails | undefined> = {
   name: "prove", label: "Prove",
   description: "Run LemmaScript with Dafny on one TypeScript file with //@ annotations and report whether its " +
     "contracts are proved. It first regenerates the file's .dfy proof, keeping the proof lines you added, as " +
     "lsc regen does.",
-  promptSnippet: "Prove a TypeScript file's //@ LemmaScript contracts with Dafny",
+  promptSnippet: "Prove a TypeScript file's //@ LemmaScript contracts with Dafny. Tesota runs both: write the //@ contract, " +
+    "then call prove; don't look for or install a prover",
   promptGuidelines: [...PROVE_GUIDELINES],
   parameters,
   defaultActive: false,
