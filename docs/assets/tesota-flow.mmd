@@ -1,0 +1,6 @@
+flowchart TD
+  request["Your request"] --> agent["The agent works"]
+  agent --> checks["Tesota checks the change"]
+  checks -- "a check failed" --> agent
+  checks -- "passed, or can't check more" --> receipt["Receipt"]
+  opinion["A model's review of your request, kept apart"] -.-> receipt
