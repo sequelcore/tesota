@@ -67,6 +67,61 @@ it("swaps a branch's result, flips comparisons, moves numbers and swaps + and -,
   expect(mutants(arrowInside, inside(arrowInside))).toEqual([]);
 });
 
+const moneyBody = "export function mayMoveMoney(hasKey: boolean, alreadyCharged: boolean): boolean {\n" +
+  "  return hasKey && !alreadyCharged;\n}\n";
+const moneyStrong = "//@ ensures \\result === (hasKey && !alreadyCharged)\n" + moneyBody;
+const moneyWeak = "//@ ensures \\result === true ==> hasKey\n" + moneyBody;
+
+it("tries each logical change in mayMoveMoney without changing its contract", () => {
+  const found = mutants(moneyStrong, only(moneyStrong).body);
+  expect(found.map(({ operator, source }) => [operator, source])).toEqual([
+    ["logical", moneyStrong.replace("return hasKey &&", "return hasKey ||")],
+    ["logical", moneyStrong.replace("return hasKey &&", "return !hasKey &&")],
+    ["logical", moneyStrong.replace("return hasKey && !alreadyCharged", "return hasKey && alreadyCharged")],
+  ]);
+});
+
+it("keeps logical mutations in the capped mix alongside every existing operator", () => {
+  const source = "//@ ensures true\nexport function f(a: number, b: boolean): number {\n" +
+    "  if (a < 1 && b) return a + 2 + 3 + 4 + 5 + 6 + 7 + 8;\n  return 0;\n}\n";
+  const found = mutants(source, only(source).body);
+  expect(found).toHaveLength(8);
+  expect(found.map(({ operator }) => operator)).toEqual([
+    "result", "comparison", "constant", "arithmetic", "logical", "result", "constant", "arithmetic",
+  ]);
+});
+
+it("swaps || and negates whole operands across lines, ignoring comments, strings and non-null assertions", () => {
+  const source = "//@ ensures true\nexport function f(a: number, b: boolean): boolean {\n" +
+    "  /* a && !b */\n  const s = 'a || !b';\n  return (a < 1) ||\n    !b; // && !a\n}\n";
+  const found = mutants(source, only(source).body, 30).filter(({ operator }) => operator === "logical");
+  expect(found.map(({ before, after }) => [before, after])).toEqual([
+    ["||", "&&"], ["(a < 1)", "!((a < 1))"], ["!b", "b"],
+  ]);
+  expect(found.every(({ source }) => source.includes("/* a && !b */") && source.includes("'a || !b'"))).toBe(true);
+  const unary = "//@ ensures true\nexport const f = (a: boolean): boolean => !a;\n";
+  expect(mutants(unary, only(unary).body).map(({ before, after }) => [before, after])).toEqual([["!a", "a"]]);
+  const nonNull = "//@ ensures true\nexport const f = (a: boolean): boolean => a!;\n";
+  expect(mutants(nonNull, only(nonNull).body)).toEqual([]);
+});
+
+it.runIf(dafny)("measures mayMoveMoney as strong only when its contract rules out all three logical changes", async () => {
+  for (const source of [moneyStrong, moneyWeak]) {
+    expect(await proveSource("charge-policy.ts", source, AbortSignal.timeout(120_000))).toBe("passed");
+  }
+  const strong = await mutateOnly("charge-policy.ts", moneyStrong);
+  expect(strong).toEqual({ rejected: 3, survived: [], inconclusive: 0, equivalent: 0 });
+  const weak = await mutateOnly("charge-policy.ts", moneyWeak);
+  expect(weak.rejected).toBe(2);
+  expect(weak.inconclusive).toBe(0);
+  expect(weak.equivalent).toBe(0);
+  expect(weak.survived).toEqual([{ line: 3, operator: "logical", before: "!alreadyCharged", after: "alreadyCharged" }]);
+  const receipt = (mutation: typeof strong): string => renderReceipt({ ...emptyReceipt,
+    contracts: [{ path: "charge-policy.ts", name: "mayMoveMoney", lines: [], mutation }] });
+  expect(receipt(strong)).toContain("all 3 decided changes to its code fail the proof");
+  expect(receipt(weak)).toContain("weak contract mayMoveMoney in charge-policy.ts");
+}, 600_000);
+
 it("changes only the expression a one-line arrow function returns, never its signature", () => {
   const source = "//@ ensures \\result >= 0\nexport const g = (n: number, m = 2): number => n < 0 ? 0 : n;\n";
   expect(mutants(source, only(source).body).map((mutant) => [mutant.line, mutant.operator, mutant.before, mutant.after])).toEqual([

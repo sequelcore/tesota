@@ -1,8 +1,11 @@
 import cytoscape from "cytoscape";
+import { register, render as renderMermaid } from "pele/core";
+import flowchart from "pele/diagrams/flowchart";
 import { NO_BROKEN_RULE, displayValue, boundedCount, stateCount, groupValues, groupLabel, groupRules, brokenRules, ruleText, RULE_PREFIX, SELECTED_STATE, PARTIAL_EXPLORATION, buildModelView, type ViewGroup } from "./model-view.js";
 import { stateVariables } from "./model-state.js";
 import type { HtmlModel } from "./model-html.js";
 
+register(flowchart);
 const data = JSON.parse(document.querySelector("#model-data")?.textContent ?? "") as HtmlModel;
 const get = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 let view = data.view;
@@ -65,7 +68,25 @@ function groupDetails(group: ViewGroup): void {
   appendRules(panel, rules(group).split(", "));
   panel.append(button(`Show its ${group.members.length} ${group.members.length === 1 ? "state" : "states"}`, () => { expanded.add(group.id); render(); }));
 }
+/** The failing run alone (#759): its states in order, every other state folded away. */
+function runElements(): cytoscape.ElementDefinition[] {
+  let previous: ReadonlyMap<string, string> = new Map();
+  return view.trace.flatMap((step, i): cytoscape.ElementDefinition[] => {
+    const state = view.states.find(s => s.fingerprint === step.fingerprint);
+    const vars = new Map(Object.entries(state?.variables ?? {}));
+    const changed = [...vars].filter(([k, v]) => previous.get(k) !== v).map(([k, v]) => `${k}: ${displayValue(v)}`);
+    const before = view.trace[i - 1];
+    previous = vars;
+    return [{ data: { id: `s${step.fingerprint}`, order: i, members: [step.fingerprint],
+      label: [i === 0 ? "start" : `step ${i}`, ...changed.length === 0 ? ["no variables changed"] : changed,
+        ...state?.breaks.length ? [brokenRules(state.breaks)] : []].join("\n") },
+    classes: `${state?.breaks.length ? "break" : ""} ${i === 0 ? "start" : ""}` },
+    ...before === undefined ? [] : [{ data: { id: `t${i}`, source: `s${before.fingerprint}`, target: `s${step.fingerprint}`,
+      label: `${i}. ${step.action.replace(/ line \d+.*$/u, "")}`, action: step.action } }]];
+  });
+}
 function elements(): cytoscape.ElementDefinition[] {
+  if (traceVisible) return runElements();
   const nodeIds = new Map<string, string>();
   const nodes: cytoscape.ElementDefinition[] = [];
   for (const [i, group] of view.groups.entries()) {
@@ -114,14 +135,7 @@ function search(): void {
 }
 function highlightTrace(): void {
   cy.elements().removeClass("trace");
-  if (!traceVisible) return;
-  for (const [i, step] of view.trace.entries()) {
-    cy.nodes().filter(n => (n.data("members") as string[] | undefined)?.includes(step.fingerprint) ?? false).addClass("trace");
-    const previous = view.trace[i - 1];
-    if (previous !== undefined) cy.edges().filter(e => e.source().id() === `s${previous.fingerprint}` && e.target().id() === `s${step.fingerprint}` && (step.action === e.data("action") || step.action.startsWith(`${String(e.data("action"))} line `))).forEach(e => {
-      e.addClass("trace"); e.data("label", `${String(e.data("label"))} · ${i} → ${i + 1}`);
-    });
-  }
+  if (traceVisible) cy.elements().addClass("trace");
 }
 function summary(): void {
   const bad = view.states.find(s => s.breaks.length > 0);
@@ -136,7 +150,18 @@ function summary(): void {
   get("caveats").textContent = view.partial ? `${PARTIAL_EXPLORATION}.` : "";
   get("counts").textContent = `${data.model} · reached ${states(view.states.length)} · reported violating ${states(view.violations.length)}`;
 }
+/** The run in reading order, left to right and row by row, in the grid that draws its labels largest. */
+function layoutRun(): void {
+  const nodes = cy.nodes();
+  const width = Math.max(1, ...nodes.map(n => n.outerWidth())) + 64, height = Math.max(1, ...nodes.map(n => n.outerHeight())) + 64;
+  const graph = get("graph");
+  const fit = (cols: number): number => Math.min(graph.clientWidth / (cols * width), graph.clientHeight / (Math.ceil(nodes.length / cols) * height));
+  const cols = Array.from({ length: Math.max(1, nodes.length) }, (_, i) => i + 1).reduce((best, cols) => fit(cols) > fit(best) ? cols : best, 1);
+  cy.layout({ name: "grid", cols, rows: Math.ceil(nodes.length / cols), avoidOverlap: true, animate: false, fit: true, padding: 48,
+    sort: (a, b) => Number(a.data("order")) - Number(b.data("order")) }).run();
+}
 function layoutGraph(): void {
+  if (traceVisible) { layoutRun(); return; }
   const leaves = cy.nodes().filter(n => n.isChildless());
   let roots = leaves.filter(n => n.hasClass("start")).map(n => n.id());
   // A layout seed is not evidence of an initial state. Without a trace, add no start tag.
@@ -170,7 +195,9 @@ function layoutGraph(): void {
 }
 function render(): void {
   summary();
-  get("grouping").textContent = `Grouped by ${view.projection.join(" → ") || "each state"}`;
+  get("grouping").textContent = traceVisible
+    ? `The failing run's ${view.trace.length} states, in order; ${count(view.states.length - view.trace.length)} other states folded. Hide the failing run to see them.`
+    : `Grouped by ${view.projection.join(" → ") || "each state"}`;
   cy.elements().remove(); cy.add(elements()); styleGraph(); cy.resize();
   layoutGraph();
   const groups = get("groups"); groups.replaceChildren();
@@ -193,7 +220,6 @@ function regroup(): void {
   const projection = [get<HTMLSelectElement>("first").value, get<HTMLSelectElement>("second").value].filter(Boolean);
   if (new Set(projection).size !== projection.length) { get<HTMLSelectElement>("second").value = ""; projection.pop(); }
   view = buildModelView(data.graph, data.reports, data.view.partial, data.header, { projection }); expanded.clear();
-  if (traceVisible) expandTraceGroups();
   render();
 }
 for (const [index, id] of ["first", "second"].entries()) {
@@ -228,18 +254,12 @@ cy.on("tap", "node", event => {
   if (group !== undefined && target.id().startsWith("g") && view.projection.length > 0) groupDetails(group);
   else { const ids = target.data("members") as string[]; if (ids[0] !== undefined) details(ids[0]); }
 });
-function expandTraceGroups(): void {
-  for (const group of view.groups) if (view.trace.some(step => group.members.includes(step.fingerprint))) expanded.add(group.id);
-}
 get("trace-toggle").onclick = () => {
   traceVisible = !traceVisible;
   get("trace").hidden = !traceVisible; get("trace-toggle").setAttribute("aria-expanded", String(traceVisible));
   get("trace-toggle").textContent = traceVisible ? "Hide the failing run" : "Show the failing run";
-  if (traceVisible) {
-    openPanel();
-    expanded.clear();
-    expandTraceGroups();
-  }
+  // The groups expanded before stay as they were, so hiding the run returns to that view.
+  if (traceVisible) openPanel();
   render();
 };
 get<HTMLButtonElement>("trace-toggle").disabled = view.trace.length === 0;
@@ -255,6 +275,64 @@ for (const [i, step] of view.trace.entries()) {
   });
   item.className = "trace-step"; trace.append(item); appendRules(trace, broken); previous = vars;
 }
+/** The chart (#761), drawn by Pele from Mermaid the worker wrote; Pele's own CSS variables follow the page's light and dark tokens. */
+function drawChart(text: string): void {
+  const parsed = new DOMParser().parseFromString(renderMermaid(text).svg, "image/svg+xml").documentElement;
+  const each = (root: Element): Element[] => [root, ...root.querySelectorAll("*")];
+  // The page's policy refuses style attributes; carry Pele's through the CSSOM, which it allows.
+  const styles = each(parsed).map(element => { const style = element.getAttribute("style"); element.removeAttribute("style"); return style; });
+  const svg = document.importNode(parsed, true) as unknown as SVGSVGElement;
+  for (const [i, element] of each(svg).entries()) {
+    for (const declaration of styles[i]?.split(";") ?? []) {
+      const at = declaration.indexOf(":");
+      if (at > 0) (element as SVGElement).style.setProperty(declaration.slice(0, at).trim(), declaration.slice(at + 1).trim());
+    }
+  }
+  // Fitted to its pane, so the whole chart reads without panning.
+  svg.style.removeProperty("max-width"); svg.style.removeProperty("height"); svg.removeAttribute("width"); svg.removeAttribute("height");
+  for (const element of svg.querySelectorAll(".pele-edge, .pele-edge-label")) if (/^p\d+$/u.test(element.getAttribute("data-id") ?? "")) element.classList.add("path");
+  labelsInView(svg);
+  get("chart").replaceChildren(svg);
+}
+/** Pele centers a self-loop's label on its state, past the view's edge when the label is the wider: widen the view to hold every label. */
+function labelsInView(svg: SVGSVGElement): void {
+  const view = (svg.getAttribute("viewBox") ?? "").split(/\s+/u).map(Number);
+  if (view.length !== 4 || view.some(Number.isNaN)) return;
+  const [x = 0, y = 0, width = 0, height = 0] = view, margin = 4;
+  let left = x, top = y, right = x + width, bottom = y + height;
+  for (const rect of svg.querySelectorAll(".pele-edge-label rect")) {
+    const [rx = 0, ry = 0, rw = 0, rh = 0] = ["x", "y", "width", "height"].map(name => Number(rect.getAttribute(name)));
+    if ([rx, ry, rw, rh].some(Number.isNaN)) continue;
+    left = Math.min(left, rx - margin); top = Math.min(top, ry - margin);
+    right = Math.max(right, rx + rw + margin); bottom = Math.max(bottom, ry + rh + margin);
+  }
+  svg.setAttribute("viewBox", `${left} ${top} ${right - left} ${bottom - top}`);
+}
+function chartPanel(): void {
+  const chart = data.view.chart, section = get("chart-path");
+  if (chart === undefined || chart.path.length === 0) return;
+  const title = document.createElement("h2"); title.textContent = "The breaking path";
+  section.append(title, paragraph("TLC's trace, each step in the reading's words; choose one to see its state.", "help"));
+  for (const step of chart.path) {
+    const item = button(`${step.number}. ${step.label} (TLC: ${step.action})`, () => { details(step.fingerprint); });
+    item.className = "chart-step"; section.append(item);
+  }
+}
+function showChart(shown: boolean): void {
+  for (const id of ["chart", "chart-note", "chart-path"]) get(id).hidden = !shown;
+  for (const id of ["graph", "graph-controls", "grouping", "groups", "explainer"]) get(id).hidden = shown;
+  get("view-toggle").textContent = shown ? "Show TLC's graph" : "Show the chart";
+  if (!shown) { cy.resize(); layoutGraph(); }
+}
 window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", styleGraph);
 render();
+const chart = data.view.chart;
+if (chart !== undefined && data.chart !== undefined) {
+  drawChart(data.chart);
+  chartPanel();
+  get("chart-note").textContent = `${chart.note}${chart.folded > 0 ? ` ${stateCount(chart.partial, chart.folded)} off the breaking path are folded; TLC's graph shows them.` : ""}`;
+  get("view-toggle").hidden = false;
+  get("view-toggle").onclick = () => { showChart(get("chart").hidden !== false); };
+  showChart(chart.opens === "chart");
+}
 performance.mark("tesota-first-render");

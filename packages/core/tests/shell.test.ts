@@ -905,6 +905,12 @@ function viewerOn(shell: Shell, terminal: VirtualTerminal, manifest = lights("co
   hide = shell.overlay(viewer);
 }
 
+/** A model that breaks a rule opens on its chart (#761); `c` shows TLC's graph, which these tests read. */
+async function toGraph(terminal: VirtualTerminal): Promise<void> {
+  await terminal.until("Model chart · Lights.tla");
+  terminal.type("c"); await terminal.until("Model graph · Lights.tla");
+}
+
 /** Read whole box interiors across wrapped rows, excluding the neighboring panel. */
 function graphBoxes(screen: string): string[] {
   const rows = screen.split("\n");
@@ -923,6 +929,7 @@ describe("the model graph viewer (#592)", () => {
   test("each key acts on a small real TLC graph, read through its worker", async () => {
     const { terminal, shell } = shellOn([], "fullscreen", [120, 40]);
     viewerOn(shell, terminal);
+    await toGraph(terminal);
     let screen = await terminal.until("grouped by door > lamp");
     expect(screen).toContain("Model graph · Lights.tla");
     expect(screen).toContain("Complete exploration; exact counts · reached 8 · edges 16 · reported violating 2");
@@ -975,12 +982,14 @@ describe("the model graph viewer (#592)", () => {
     await terminal.until("Match 1/4");
     terminal.type(enter); await terminal.until("Match 2/4");
     terminal.type(esc); await terminal.untilGone("Search reached states");
-    terminal.type(esc); await terminal.untilGone("Model graph");
+    terminal.type("c"); await terminal.until("Model chart · Lights.tla");
+    terminal.type(esc); await terminal.untilGone("Model chart");
   }, 30_000);
 
   test("keys, a drag and the wheel pan the graph, no further than it goes", async () => {
     const { terminal, shell } = shellOn([], "fullscreen", [100, 14]);
     viewerOn(shell, terminal);
+    await toGraph(terminal);
     await terminal.until("grouped by door > lamp");
     // The initial state's group, at the drawing's top left.
     terminal.type("+"); terminal.type("+"); terminal.type("\t"); await terminal.until("pan 0,0");
@@ -1035,6 +1044,7 @@ describe("the model graph viewer (#592)", () => {
   test("partial counts read as lower bounds", async () => {
     const { terminal, shell } = shellOn([], "fullscreen", [120, 40]);
     viewerOn(shell, terminal, lights("partial"));
+    await toGraph(terminal);
     const screen = await terminal.until("grouped by door > lamp");
     expect(screen).toContain("Partial exploration: counts are at least these numbers · reached ≥4 · edges ≥4 · reported violating ≥1");
     expect(graphBoxes(screen).some(box => box.includes("≥1 state · ⚠ breaks DarkWhenLocked · ≥1 state"))).toBe(true);

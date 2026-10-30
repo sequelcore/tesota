@@ -1,4 +1,5 @@
 import { conservesCounts, partitionWeights } from "./verification/group-count-rule.js";
+import type { ModelChart } from "./model-chart.js";
 import type { ReachedGraph, TraceState } from "./model-graph.js";
 import { stateVariables } from "./model-state.js";
 
@@ -9,6 +10,8 @@ export interface ViewRequest {
   /** Project these groups as individual states; all other groups keep their edge multiplicities. */
   readonly expanded?: readonly string[];
   readonly search?: string;
+  /** Also project the graph onto its chart (#761). */
+  readonly chart?: boolean;
 }
 export interface ViewState {
   readonly fingerprint: string;
@@ -37,6 +40,7 @@ export interface ModelView {
   readonly matches: readonly string[];
   readonly plain: string;
   readonly ruleDefinitions?: Readonly<Record<string, string>>;
+  readonly chart?: ModelChart;
 }
 
 /** A count as a partial graph allows reading it: a lower bound. */

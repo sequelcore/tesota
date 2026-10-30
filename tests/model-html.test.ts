@@ -35,7 +35,7 @@ function assertSearchAndNavigation(page: JSDOM, cy: Core): void {
   const search = node<HTMLInputElement>(doc, "#search");
   for (const query of ["2", "Safe", "x = 1"]) {
     search.value = query; search.dispatchEvent(new page.window.Event("input"));
-    expect(cy.nodes(".match").length).toBe(2); // state 2 and its expanded parent
+    expect(cy.nodes(".match").length).toBe(1); // state 2, alone in the failing run's view
   }
   search.value = attack.trim(); search.dispatchEvent(new page.window.Event("input"));
   expect(cy.edges(".match").length).toBe(1);
@@ -96,7 +96,7 @@ it("writes a self-contained, CSP protected file beside the capture with escaped 
       expect(doc.querySelectorAll(".trace-step")).toHaveLength(2);
       expect(node(doc, "#trace").textContent).toContain("x 0 → 1");
       const canvas = node<HTMLElement & { _cyreg: { cy: Core } }>(doc, "#graph");
-      expect(canvas._cyreg.cy.elements("node.trace").length).toBe(4);
+      expect(canvas._cyreg.cy.elements("node.trace").length).toBe(2); // the run's two states, no group around them
       expect(canvas._cyreg.cy.elements("edge.trace").length).toBe(1);
       expect(canvas._cyreg.cy.nodes().filter(n => n.isChildless()).map(n => n.data("label")).join("\n")).not.toContain("state 1 of 1");
       assertSearchAndNavigation(page, canvas._cyreg.cy);
@@ -105,7 +105,7 @@ it("writes a self-contained, CSP protected file beside the capture with escaped 
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-it("renders the real 320-state fixture, conserves regrouped counts and expands all trace members", async () => {
+it("renders the real 320-state fixture, conserves regrouped counts and shows the failing run alone, in order", async () => {
   const root = await mkdtemp(join(tmpdir(), "tesota-html-320-"));
   try {
     const operator = JSON.parse(process.env["TESOTA_TEST_OPERATOR_HOME"] ?? "{}") as { HOME?: string; USERPROFILE?: string };
@@ -161,29 +161,19 @@ it("renders the real 320-state fixture, conserves regrouped counts and expands a
       node<HTMLButtonElement>(doc, "#groups > div:last-child > button").click(); // unrelated manual expansion
       expect(node(doc, "#groups > div:last-child > button").getAttribute("aria-expanded")).toBe("true");
       node<HTMLButtonElement>(doc, "#trace-toggle").click();
-      expect(doc.querySelectorAll('#groups button[aria-expanded="true"]')).toHaveLength(3);
       expect(doc.querySelectorAll(".trace-step")).toHaveLength(data.view.trace.length);
-      expect(node(doc, "#groups").textContent).toContain("state 1 of");
       const leaves = cy.nodes().filter(n => n.isChildless());
-      for (const leaf of leaves.filter(n => n.id().startsWith("s"))) {
-        expect(leaf.data("label")).toContain("host:");
-        expect(leaf.data("label")).toContain("session:");
-      }
-      expect(new Set(leaves.map(n => (n.scratch("breadthfirst") as { depth: number }).depth)).size).toBeGreaterThan(1);
+      expect(leaves).toHaveLength(data.view.trace.length); // #759: the run alone, not every member of its groups
+      expect(cy.nodes(":parent")).toHaveLength(0);
       expect(leaves.filter(n => n.hasClass("start")).map(n => n.data("members"))).toEqual([[data.view.trace[0].fingerprint]]);
+      expect(leaves[0]?.data("label")).toContain("host:");
+      expect(leaves[0]?.data("label")).toContain("session:");
       for (const step of data.view.trace) expect(cy.$id(`s${step.fingerprint}`).length).toBe(1);
+      expect(cy.edges()).toHaveLength(data.view.trace.length - 1);
       expect(cy.nodes().boundingBox().w).toBeLessThan(10_000);
       expect(cy.nodes().boundingBox().h).toBeLessThan(10_000);
-      for (const parent of cy.nodes(":parent")) {
-        expect(parent.style("label")).toBe("");
-        expect(parent.style("border-width")).toBe("0px");
-        expect(parent.style("background-opacity")).toBe("0");
-        expect(parent.style("underlay-opacity")).toBe("0");
-      }
       first.value = "age"; second.value = ""; first.dispatchEvent(new dom.window.Event("change"));
-      expect(doc.querySelectorAll('#groups button[aria-expanded="true"]')).toHaveLength(1);
-      expect(cy.nodes(":parent")).toHaveLength(1); // only age=0 holds failing-run states
-      expect(cy.nodes().filter(n => n.id().startsWith("s"))).toHaveLength(64); // 4 hosts × 4 sessions × 4 job counts
+      expect(cy.nodes().filter(n => n.isChildless())).toHaveLength(data.view.trace.length); // regrouping keeps the run in view
       expect([...doc.querySelectorAll<HTMLButtonElement>("#groups button[aria-expanded]")].every(b => b.disabled)).toBe(true);
       for (const step of data.view.trace) expect(cy.$id(`s${step.fingerprint}`).length).toBe(1);
       expect(errors).toEqual([]);
@@ -316,7 +306,7 @@ it("keeps verbatim rule text safely in the summary and panel, not in nodes, and 
       expect(cy.nodes()[0]?.data("label")).not.toContain(definition);
       expect(cy.nodes()[0]?.style("font-family")).toBe("system-ui");
       expect([...doc.querySelectorAll("header > *")].map(e => e.id)).toEqual([
-        "title", "summary-values", "summary-rules", "explainer", "caveats", "counts",
+        "title", "summary-values", "summary-rules", "explainer", "caveats", "chart-note", "counts",
       ]);
       const row = node(doc, "#groups > div");
       expect(row.classList.contains("group-row")).toBe(true);
@@ -362,7 +352,7 @@ it("keeps a violating group's error border and text while trace and search highl
       const cy = node<HTMLElement & { _cyreg: { cy: Core } }>(doc, "#graph")._cyreg.cy;
       expect(cy.nodes(".break")).toHaveLength(1);
       node<HTMLButtonElement>(doc, "#trace-toggle").click();
-      expect(cy.nodes(".break.trace")).toHaveLength(2); // structural group and violating member
+      expect(cy.nodes(".break.trace")).toHaveLength(1); // the violating state, with no group around it
       const bad = cy.nodes(".break.trace").filter(n => n.isChildless());
       expect(bad).toHaveLength(1);
       expect(bad[0]?.data("members")).toEqual(["2"]);

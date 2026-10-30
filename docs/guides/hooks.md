@@ -103,6 +103,13 @@ it, Tesota lists them and asks: Trust them, kept until their commands
 change, or Not now. [Print mode](print-mode.md) never asks, and runs a
 project's hooks only once you've trusted them in the shell.
 
+A model's chart reading, `<Model>.chart.ts` beside the model, is the
+project's code too. `/graph` asks before running it: Trust it, kept until
+the file changes, or Not now. Until you trust it, the chart is grouped by
+the model's control variable and says the reading wasn't run; `o` and
+`tesota graph --plain|--html` never ask, and run only a reading you've
+trusted. See [Model checking](model-checking.md#see-what-tlc-explored).
+
 ## Related
 
 - [Permissions](permissions.md)

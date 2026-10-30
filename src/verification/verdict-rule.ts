@@ -90,7 +90,8 @@ export function methodStanding(held: number, partly: number, failed: number, run
  *
  * A failing test or a proof that doesn't hold (`outcome` `failed`) fails. A
  * design model fails only on an observed violation: a counterexample,
- * deadlock, liveness or assertion failure (`run` `violated`), or a planted
+ * liveness or assertion failure (`run` `violated`), a deadlock (`deadlocked`),
+ * a failed assumption (`assumption_failed`), or a planted
  * fault its check didn't catch (`faultPasses`), which shows the model can't
  * tell the fault from the code. Everything else is a gap: evidence the
  * settled content no longer holds (`stale`); a check that couldn't run, ran
@@ -100,7 +101,7 @@ export function methodStanding(held: number, partly: number, failed: number, run
  * started, or with only broken faults or none. `run` is a model's own run,
  * and is not read for a proof or a command.
  */
-//@ ensures \result === "failed" <==> !stale && ((kind === "model" && (run === "violated" || (run === "passed" && faultPasses))) || (kind !== "model" && outcome === "failed"))
+//@ ensures \result === "failed" <==> !stale && ((kind === "model" && (run === "violated" || run === "deadlocked" || run === "assumption_failed" || (run === "passed" && faultPasses))) || (kind !== "model" && outcome === "failed"))
 //@ ensures \result === "passed" <==> !stale && outcome === "passed" && (kind !== "model" || (run === "passed" && !faultPasses))
 //@ ensures \result === "passed" || \result === "failed" || \result === "gap"
 //@ ensures stale ==> \result === "gap"
@@ -110,7 +111,7 @@ export function checkEnd(kind: "proof" | "command" | "model", stale: boolean, ou
   faultPasses: boolean): "passed" | "failed" | "gap" {
   if (stale) return "gap";
   if (kind === "model") {
-    if (run === "violated" || (run === "passed" && faultPasses)) return "failed";
+    if (run === "violated" || run === "deadlocked" || run === "assumption_failed" || (run === "passed" && faultPasses)) return "failed";
     return outcome === "passed" && run === "passed" ? "passed" : "gap";
   }
   if (outcome === "failed") return "failed";

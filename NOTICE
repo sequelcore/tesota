@@ -77,7 +77,7 @@ except where noted.
 - is-glob 4.0.3: Copyright (c) 2014-2017, Jon Schlinkert.
 - json-bigint 1.0.0: Copyright (c) 2013 Andrey Sidorov
 - jwa 2.0.1 and jws 4.0.1: Copyright (c) 2013 Brian J. Brennan
-- lemmascript 0.6.4 (https://github.com/midspiral/LemmaScript) and
+- lemmascript 0.6.5 (https://github.com/midspiral/LemmaScript) and
   lemmascript-claimcheck 0.2.0: Copyright (c) 2026 midspiral
 - marked 18.0.11: Copyright (c) 2018+, MarkedJS (https://github.com/markedjs/)
   Copyright (c) 2011-2018, Christopher Jeffrey (https://github.com/chjj/)
@@ -89,6 +89,8 @@ except where noted.
   Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
 - partial-json 0.1.7: Copyright (c) 2023 Promplate Dev Team
 - path-browserify 1.0.1: Copyright (c) 2013 James Halliday
+- Pele 1.12.0, in the model graph page (https://github.com/obsidianmd/pele):
+  Copyright (c) 2026 kepano
 - picomatch 2.3.2: Copyright (c) 2017-present, Jon Schlinkert.
 - queue-microtask 1.2.3, run-parallel 1.2.0 and safe-buffer 5.2.1:
   Copyright (c) Feross Aboukhadijeh
@@ -134,6 +136,8 @@ list. Each copyright line is copied from the package's own license file.
 - fastq 1.20.3: Copyright (c) 2015-2020, Matteo Collina <matteo.collina@gmail.com>
 - glob-parent 5.1.2: Copyright (c) 2015, 2019 Elan Shanker
 - isexe 2.0.0 and which 2.0.2: Copyright (c) Isaac Z. Schlueter and Contributors
+- Lucide 1.14.0, the "rotate-ccw" icon included in Pele 1.12.0 (https://lucide.dev),
+  from Pele's LICENSE: Copyright (c) 2026 Lucide Icons and Contributors
 - minimatch 9.0.9: Copyright (c) 2011-2023 Isaac Z. Schlueter and Contributors
 
 Permission to use, copy, modify, and/or distribute this software for any

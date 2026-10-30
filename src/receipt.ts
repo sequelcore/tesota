@@ -6,6 +6,7 @@ import type { UncoveredLines } from "./proof-coverage.js";
 import type { Restatement } from "./pi-claimcheck.js";
 import type { ClaimCheckRun, ContractStrength } from "./proof-guarantees.js";
 import type { Counterexample, ModelCheck, ModelLink } from "./model-check.js";
+import { modelOwnFiles } from "./model-files.js";
 import type { GraphCapture } from "./model-graph.js";
 import type { ChangeLines, LineCount } from "./change-lines.js";
 import type { TestEdit, WeakenedTest } from "./test-edits.js";
@@ -721,7 +722,12 @@ function stalenessFindings({ path, staleness, stale, header }: ModelCheck): Find
 /** A model's check as its main finding: model-checked, not checked, failing, too weak, or unreadable to TLC. */
 export function modelFinding(model: ModelResult): Finding {
   const { path, verdict, counterexample, faults, writtenWithCode } = model;
-  const more = [...abstractionWords(model), ...faults.map((fault) => `Fault ${fault.path} (${fault.description}): ${fault.verdict}`),
+  const more = [...abstractionWords(model), ...faults.map((fault) => fault.deadlockRetry === undefined
+    ? `Fault ${fault.path} (${fault.description}): ${fault.verdict}`
+    : `fault ${fault.path} deadlocked without breaking ${model.header.invariants.join(", ")}; checked again without the deadlock check, ${
+      fault.verdict === "caught" ? "a declared property broke: caught"
+        : fault.verdict === "passes" ? "declared properties hold: too weak for this fault"
+          : `${fault.deadlockRetry}: not checked`}`),
     checked(model.evidence)];
   if (verdict === "proved") {
     return { standing: "holds", check: "model", label: writtenWithCode ? "Model-checked, written with the code" : "Model-checked", subject: path,
@@ -833,11 +839,8 @@ function either(outcomes: readonly string[]): string {
 
 /** The cases a model listed as left open by the request, one opinion each, for the operator to settle. */
 function openCaseFindings(listed: OpenCases | undefined): Finding[] {
-  if (listed === undefined) return [];
-  if (listed.status === "not_listed") {
-    return [{ standing: "opinion", check: "request", label: "Not listed", subject: "the cases the request leaves open", detail: listed.reason, more: [],
-      group: { title: "Open cases not listed", note: listed.reason } }];
-  }
+  // A refusal is not an opinion about the change; openCaseLines keeps its reason in the details.
+  if (listed === undefined || listed.status === "not_listed") return [];
   return listed.cases.map(({ input, outcomes }) => ({ standing: "opinion", check: "request", label: "Model: open case", subject: input,
     detail: either(outcomes), more: [`A model's list for you to settle, not a check: ${listed.model}.`],
     group: { title: `% for you to settle, listed by ${listed.model}`, noun: ["open case", "open cases"], note: "",
@@ -1045,7 +1048,8 @@ interface ChangedPath { readonly path: string; readonly proved: boolean; readonl
 
 /**
  * Each path a verified unit records as changed, read per unit, never
- * guessing for verified: proved unless its `unverified` lists it; tested
+ * guessing for verified: proved unless its `unverified` lists it or it belongs
+ * to a model without a current passing check; tested
  * when the unit ran a command and every one passed; exercised when the unit
  * lists exactly that one path unproved, records an exercise, and every
  * exercise is `fails_then_passes`.
@@ -1056,7 +1060,9 @@ function changedPaths(unit: UnitEvidence): ChangedPath[] {
   // Every path the receipt records as changed: the inventory, and each file it lists unproved, proved, with lines uncovered, or modeled.
   const changed = [...typeof unit.changed === "string" ? [] : unit.changed.map(({ path }) => path), ...unit.unverified,
     ...unit.proofs.map(({ path }) => path), ...unit.uncovered.map(({ path }) => path), ...(unit.models ?? []).map(({ path }) => path)];
-  return [...new Set(changed)].map((path) => ({ path, proved: !unit.unverified.includes(path), tested,
+  const uncheckedModelFiles = new Set((unit.models ?? []).filter(({ verdict, evidence }) =>
+    verdict !== "proved" || evidence.invalidated !== undefined).flatMap(({ path, header }) => modelOwnFiles(path, header)));
+  return [...new Set(changed)].map((path) => ({ path, proved: !unit.unverified.includes(path) && !uncheckedModelFiles.has(path), tested,
     exercised: noticed && unit.unverified.length === 1 && unit.unverified[0] === path }));
 }
 

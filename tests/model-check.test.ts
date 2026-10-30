@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, expect, it, onTestFinished } from "vitest";
 import { checkModel, inProject, modelContent, modelHeader, modelReport, plannedModels, tlcCounterexample, unheadedReport } from "../src/model-check.js";
 import { GateOperations } from "../src/operations.js";
-import { counterexampleSteps } from "../src/receipt.js";
+import { counterexampleSteps, modelFinding } from "../src/receipt.js";
 import { graphPreviewRows } from "../src/messages.js";
 
 /** The operator's TLC, where Tesota looks for it in their home; the runs that need it are skipped without it, as proofs are without Dafny. */
@@ -381,4 +381,114 @@ it.skipIf(!withTlc)("keeps a passing verdict when the artifact directory cannot 
   expect(check.capture?.status).toBe("failed");
   expect(check.faults[0]?.verdict).toBe("caught");
   expect(check.faults[0]?.capture?.status).toBe("failed");
+}, 120_000);
+
+/** The faulty branch stops at zero before TLC reaches the other branch's deeper states. */
+function deadlockingFault(base: string, safe = "x < 4", next = "x' = x + 1"): Record<string, string> {
+  return {
+    "models/Deadlock.tla": `${header(base, "models/Fault.cfg disables a step").replace("invariant: NoLostUpdate", "invariant: Safety")}
+---- MODULE Deadlock ----
+EXTENDS Naturals
+CONSTANT Locked
+VARIABLE x
+Init == IF Locked THEN x = 1 ELSE x \\in {0, 1}
+Next == IF Locked THEN x' = x ELSE x > 0 /\\ x < 4 /\\ ${next}
+Safety == ${safe}
+====
+`,
+    "models/Deadlock.cfg": "INIT Init\nNEXT Next\nCONSTANT Locked = TRUE\n",
+    "models/Fault.cfg": "INIT Init\nNEXT Next\nCONSTANT Locked = FALSE\n",
+  };
+}
+
+it.skipIf(!withTlc)("does not catch a deadlock-only fault; retries and reports it as too weak (#762)", async () => {
+  const { root } = repository(base => deadlockingFault(base, "x <= 4"));
+  const ops = new GateOperations();
+  const check = await checkModel(root, "models/Deadlock.tla", [], new AbortController().signal, jar, ops);
+  expect(check.faults[0]?.verdict).toBe("passes");
+  expect(check.evidence.outcome).toBe("failed");
+  const finding = modelFinding({ ...check, verdict: "send_back" });
+  expect(finding.more.join("\n")).toContain("fault models/Fault.cfg deadlocked without breaking Safety");
+  expect(finding.more.join("\n")).toContain("checked again without the deadlock check, declared properties hold: too weak for this fault");
+  expect(ops.operations().filter(op => op.target.includes("-deadlock"))).toHaveLength(1);
+}, 120_000);
+
+it.skipIf(!withTlc)("catches a declared invariant on the deadlock retry and captures that run's graph (#762)", async () => {
+  const { root } = repository(base => deadlockingFault(base));
+  const check = await checkModel(root, "models/Deadlock.tla", [], new AbortController().signal, jar, undefined, undefined,
+    { sessionFile: join(root, "session.jsonl") });
+  expect(check.faults[0]?.deadlockRetry).toBe("violated");
+  expect(check.faults[0]?.verdict).toBe("caught");
+  expect(check.faults[0]?.capture?.status).toBe("captured");
+  const manifest = JSON.parse(readFileSync(check.faults[0]?.capture?.manifest ?? "", "utf8"));
+  expect(manifest.binding.command).toContain("-deadlock");
+  expect(modelFinding({ ...check, verdict: "proved" }).more.join("\n")).toContain("a declared property broke: caught");
+}, 120_000);
+
+it.skipIf(!withTlc)("leaves a deadlock retry that errors as not checked, not caught or too weak (#762)", async () => {
+  const { root } = repository(base => deadlockingFault(base, "x <= 4", "x' = IF x = 3 THEN (CHOOSE n \\in {} : TRUE) ELSE x + 1"));
+  const check = await checkModel(root, "models/Deadlock.tla", [], new AbortController().signal, jar);
+  expect(check.faults[0]).toMatchObject({ deadlockRetry: "malformed" });
+  expect(check.faults[0]?.verdict).toBe("unrun");
+  expect(modelFinding({ ...check, verdict: "proved" }).more.join("\n")).toContain("malformed: not checked");
+}, 120_000);
+
+it.skipIf(!withTlc)("leaves a stopped deadlock retry as not checked (#762)", async () => {
+  const { root } = repository(base => deadlockingFault(base));
+  const controller = new AbortController();
+  const ops = new GateOperations();
+  ops.subscribe(() => {
+    if (ops.operations().some(op => op.target.includes("-deadlock") && op.state === "running")) controller.abort();
+  });
+  const check = await checkModel(root, "models/Deadlock.tla", [], controller.signal, jar, ops);
+  expect(check.faults[0]?.deadlockRetry).toBe("cancelled");
+  expect(check.faults[0]?.verdict).toBe("unrun");
+  expect(modelFinding({ ...check, verdict: "proved" }).more.join("\n")).toContain("cancelled: not checked");
+}, 120_000);
+
+it.skipIf(!withTlc)("keeps a main-configuration deadlock a failure with its trace, never retrying it (#762)", async () => {
+  const { root } = repository(base => {
+    const files = deadlockingFault(base, "x <= 4");
+    files["models/Deadlock.cfg"] = files["models/Fault.cfg"] ?? "";
+    return files;
+  });
+  const ops = new GateOperations();
+  const check = await checkModel(root, "models/Deadlock.tla", [], new AbortController().signal, jar, ops);
+  expect(check.run).toBe("deadlocked");
+  expect(check.evidence.outcome).toBe("failed");
+  expect(check.counterexample?.violation).toContain("Deadlock reached");
+  expect(modelFinding({ ...check, verdict: "send_back" })).toMatchObject({ label: "Model fails", failed: true });
+  expect(ops.operations().some(op => op.target.includes("-deadlock"))).toBe(false);
+}, 120_000);
+
+it.skipIf(!withTlc)("fails a main assumption but never credits it as catching a fault (#762)", async () => {
+  const { root } = repository(base => {
+    const files = deadlockingFault(base, "x <= 4");
+    files["models/Deadlock.tla"] = (files["models/Deadlock.tla"] ?? "").replace("VARIABLE x", "ASSUME Locked\nVARIABLE x");
+    return files;
+  });
+  const fault = await checkModel(root, "models/Deadlock.tla", [], new AbortController().signal, jar);
+  expect(fault.faults[0]?.verdict).toBe("broken");
+  write(root, { "models/Deadlock.cfg": "INIT Init\nNEXT Next\nCONSTANT Locked = FALSE\n" });
+  const main = await checkModel(root, "models/Deadlock.tla", [], new AbortController().signal, jar);
+  expect(main.run).toBe("assumption_failed");
+  expect(modelFinding({ ...main, verdict: "send_back" })).toMatchObject({ label: "Model fails", failed: true });
+}, 120_000);
+
+it.skipIf(!withTlc).each(["configuration property", "Assert"])("catches a %s on the deadlock retry (#762)", async kind => {
+  const { root } = repository(base => {
+    const files = deadlockingFault(base, "x <= 4");
+    if (kind === "configuration property") {
+      files["models/Deadlock.tla"] = (files["models/Deadlock.tla"] ?? "").replace("Safety ==", "Strict == x < 4\nSafety ==");
+      files["models/Fault.cfg"] += "INVARIANT Strict\n";
+    } else {
+      files["models/Deadlock.tla"] = (files["models/Deadlock.tla"] ?? "").replace("EXTENDS Naturals", "EXTENDS Naturals, TLC")
+        .replace("x' = x + 1", 'x\' = x + 1 /\\ Assert(x < 3, "planted fault")');
+    }
+    return files;
+  });
+  const check = await checkModel(root, "models/Deadlock.tla", [], new AbortController().signal, jar);
+  expect(check.faults[0]?.deadlockRetry).toBe("violated");
+  expect(check.faults[0]?.verdict).toBe("caught");
+  expect(modelFinding({ ...check, verdict: "proved" }).more.join("\n")).toContain("a declared property broke: caught");
 }, 120_000);

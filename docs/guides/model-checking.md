@@ -1,13 +1,11 @@
 # Model checking
 
-A proof covers one function and a test covers the cases you wrote; neither
-sees two workers whose steps interleave. A design model does: a small TLA+
-or Quint description of the state, the steps that change it, and a rule
-that must always hold. TLC tries every order of the steps and confirms the
+A proof covers one function; a test covers chosen cases. Neither sees
+workers whose steps interleave. A design model does: a small TLA+ or Quint
+description of state, steps and a rule that must hold. TLC tries every order of the steps and confirms the
 rule, or shows the order that breaks it.
 
-Write one for steps that interleave: workers sharing a counter, a lock, a
-retry, two sessions writing one file.
+Use one for shared counters, locks, retries or concurrent file writes.
 
 ```mermaid
 flowchart LR
@@ -89,8 +87,10 @@ Tesota checks both:
 Model-checked: NoLostUpdate holds in all 9 reachable states; caught 1 of 1 planted fault; not linked to the code.
 ```
 
-A design model that still passes with its fault planted is too weak to
-trust.
+Only a declared invariant, property or failed `Assert` catches a fault. A
+fault that only deadlocks runs again with `-deadlock`, which finds it
+caught, too weak or not checked. A deadlock in the main configuration
+still fails.
 
 ## The header
 
@@ -104,7 +104,7 @@ in Quint in a `/* … */` or `//` comment.
 | `invariant` | The definitions TLC checks, separated by commas |
 | `atomic` | What the model treats as one indivisible step |
 | `omits` | What the model leaves out |
-| `fault` | A variant that must break an invariant: another `.cfg`, a `.tla` with its own `.cfg`, or a `.qnt` |
+| `fault` | A variant that must break a declared property or assertion: another `.cfg`, a `.tla` with its own `.cfg`, or a `.qnt` |
 | `replay` | Optional: a command that replays the model's traces against the code |
 
 A TLA+ model uses the `.cfg` beside it, plus the header's invariants. A
@@ -127,10 +127,10 @@ Windows can't start; write models there in TLA+.
 
 | Receipt | Meaning |
 | --- | --- |
-| Model-checked | The invariants hold in every reachable state, and every fault broke one |
+| Model-checked | The invariants hold in every reachable state; caught faults broke a declared property or assertion |
 | Model-checked, written with the code | The same, but the model changed with the code, so it may mirror it: weaker evidence, not stale |
-| Model fails | A state breaks an invariant; the steps follow |
-| Model too weak | A planted fault passes, or couldn't be checked |
+| Model fails | A declared property or assertion breaks, or the main run deadlocks; the steps follow |
+| Model too weak | A planted fault passes or is broken; unfinished retries leave a gap |
 | Model not checkable | TLC couldn't read it |
 | Model not checked | Java, TLC or Quint is missing, it ran out of time, or it has no header |
 | Model possibly stale | Covered code changed since `confirmed`, without the model |
@@ -146,15 +146,19 @@ Each TLA+ check captures the model graph: the states TLC reached and the
 steps between them. `/graph` opens the newest one full-screen; `!` marks a
 state that breaks an invariant.
 
-`g` groups states by up to two variables, `n` and `p` jump between breaking
-states, `t` shows TLC's trace, and `o` opens a self-contained HTML page in
-your browser; every key is in [Commands and keys](../reference/commands.md#model-graph-viewer).
+It opens on the **chart**: a few states labeled in your words by
+`<Model>.chart.ts`, which the agent writes, with TLC's trace numbered and
+the breaking state in red. Labels are a reading, not evidence. The file is
+project code, so it runs only once you trust it, as
+[hooks](hooks.md#trusting-a-projects-hooks) do; until then the chart is
+grouped by the control variable. `c` shows TLC's graph, `t` its trace, and
+`o` an HTML page; keys and the chart's format are in
+[Commands and keys](../reference/commands.md#model-graph-viewer).
 
-`/graph --plain`, the inline shell and terminals under 40×12 print the
-graph as text. Over SSH, `tesota graph --html <capture>.manifest.json`
-writes the page to copy elsewhere. The files sit beside the session, not
-in the project, and never change the receipt. A graph is **partial** when
-TLC stopped early (counts are lower bounds), and **unavailable** past
+`/graph --plain`, the inline shell and terminals under 40×12 print text.
+Over SSH, `tesota graph --html <capture>.manifest.json` writes the page.
+The files sit beside the session and never change the receipt. A graph is
+**partial** when TLC stopped early, and **unavailable** past
 16 MiB of output, 10,000 states or 50,000 edges, or on an error other than
 a broken invariant. Quint captures no graph.
 

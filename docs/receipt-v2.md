@@ -131,7 +131,7 @@ apply.
 | `models` | ModelResult[], optional | Each design model whose own files or covered files the request changed, checked with TLC, or kept from the session's passing check of the same content. Describes what the design model check established about its declared abstraction. Absent when the request touched no design model |
 | `unheaded` | string[], optional | TLA+ (with a `.cfg` beside it) and Quint files the request changed that declare no `tesota-model` header and no design model names as a fault, so nothing checked them |
 | `weakened` | Weakening[], or `"too_large"`, or `"unreadable"` | The changes that may weaken the evidence. `too_large` when Git's diff from the base passed 16 MiB; `unreadable` when Git could not show it |
-| `unverified` | string[] | Changed files no proof's evidence covers, other than test files and files whose changed lines are all blank or comment-only |
+| `unverified` | string[] | Changed files no proof's evidence covers, other than test files, files whose changed lines are all blank or comment-only, and design models' own files (models, configurations and declared faults) accounted for by `models` |
 | `commentsOnly` | `true`, optional | Present when every line the request added or removed is blank or comment-only, a `//@` line not counting as a comment. When nothing else is listed, the receipt says there was nothing to verify |
 | `uncovered` | UncoveredLines[] | The changed lines of each TypeScript file that proved that no contract's proof covers. Empty when `weakened` is a string |
 | `changed` | Changed[], or `"unreadable"` | Files changed during the request (by anyone), as the run left them, sorted by path: differences between fingerprints plus files changed between `base` and current `HEAD`, and the proof files (`.dfy`, `.dfy.gen`) that verification's own proving changed from `base`. Unmeasured paths are listed separately. On a stopped run, the same inventory, read and never checked |
@@ -199,8 +199,10 @@ For standing, changed paths are collected from `changed`, `unverified`,
 `proofs`, `uncovered` and `models`. Coverage is evaluated separately for
 each unit: a repository or snapshot folder with its own checks.
 
-A path counts as covered if `unverified` does not list it. Test files and
-comment-only changes are excluded from that list. A listed path can also
+A path counts as covered if `unverified` does not list it, except that a
+design model's own files require its current passing check. Test files and
+comment-only changes, and design models' own files are excluded from that list;
+model check failures and gaps are reported through `models`. A listed path can also
 count as covered through tests, but only when all these conditions hold:
 
 - It is the only path in the unit's `unverified` list.
@@ -403,10 +405,10 @@ The `outcome` values are:
 | `header` | ModelHeader | What its header declares |
 | `problems` | string[] | What the header misses; the design model went back without running TLC while any was listed |
 | `evidence` | Evidence | The check's evidence, with `verifier` `tlc` and the outcome verification judged: the design model's run and its planted faults together |
-| `run` | `"passed"`, `"vacuous"`, `"violated"`, `"malformed"`, `"timed_out"`, `"cancelled"` or `"not_started"` | How TLC ended on the design model itself; `passed` establishes the declared properties in every reachable state of the design model as configured |
+| `run` | `"passed"`, `"vacuous"`, `"violated"`, `"deadlocked"`, `"assumption_failed"`, `"malformed"`, `"timed_out"`, `"cancelled"` or `"not_started"` | How TLC ended on the design model itself; `passed` establishes the declared properties in every reachable state of the design model as configured |
 | `states` | number | The distinct states TLC reported; 0 when it reported none |
 | `faults` | FaultCheck[] | Each planted fault TLC ran, once the design model passed |
-| `counterexample` | Counterexample, optional | The steps to the broken property, when `run` is `violated` |
+| `counterexample` | Counterexample, optional | The reported trace, when available, for `violated`, `deadlocked` or `assumption_failed` |
 | `staleness` | `"current"`, `"possibly_stale"` or `"unknown"` | Whether a covered file differs from the `confirmed` commit; `unknown` without one or when it isn't in the repository; always `current` for a design model written with its code whose check passed |
 | `stale` | string[] | The covered files that differ from it |
 | `writtenWithCode` | boolean | The request changed both the design model's own files and a covered file, so the evidence counts as weaker |
@@ -418,7 +420,10 @@ root and the functions named), `invariants`, `atomic` and `omits`
 (string[]), `faults` ({ path, description }[]), and optional `confirmed`
 and `replay` (string). A FaultCheck has a fault's `path` and `description`,
 its `verdict` (`"caught"`, `"passes"`, `"broken"` or `"unrun"`), the end of
-TLC's `output` and `durationMs`. A Counterexample has the `violation` TLC
+TLC's `output` and `durationMs`. Optional `deadlockRetry` records the second
+run's ModelResult `run` value after a deadlock-only fault; `output` keeps
+both results and `durationMs` sums both runs. `caught` requires a declared
+property violation or failed `Assert`, never a deadlock alone. A Counterexample has the `violation` TLC
 reported and `steps`, each `{ action, changes }`: the action TLC names and
 the variables it changed, as `name = value`, all of them for the initial
 state.
@@ -457,7 +462,8 @@ At most 8 mutants are tried per contract.
 A **Mutant** has these fields:
 
 - `line`: 1-based, in the file;
-- `operator`: `result`, `comparison`, `constant` or `arithmetic`;
+- `operator`: `result`, `comparison`, `constant`, `arithmetic` or `logical`
+  (`&&` ↔ `||`, or adding or removing an operand's `!`);
 - `before`: the text replaced;
 - `after`: the text that replaced it.
 

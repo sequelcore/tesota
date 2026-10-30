@@ -216,12 +216,16 @@ it("shows the cases a model listed as left open in the opinions, outside the cou
   expect(rows[opinions + 1]).toBe("◇ 2 open cases for you to settle, listed by openai/gpt-6-sol");
   expect(rows.join("\n")).not.toContain("lateFee(-1)");
   expect(shown("tesota-receipt", listed, 120, true).join("\n")).toContain("lateFee(-1): 0 or -5");
-  // A listing that did not happen is a limit of the opinion, in the same group.
+  // A listing that did not happen stays in muted details, not the opinions (#757).
   const unlisted: Receipt = { ...clean, openCases: { status: "not_listed", reason: "openai/gpt-6-sol was stopped" } };
   const without = text(shown("tesota-receipt", unlisted, 120));
-  expect(without[1]).toBe("No review flags · no verification limits · 1 opinion to read");
-  expect(without.slice(without.indexOf("Model opinions · not evidence, not counted") + 1, -2))
-    .toEqual(["◇ Open cases not listed", "  openai/gpt-6-sol was stopped"]);
+  expect(without[1]).toBe("No review flags · no verification limits");
+  expect(without).not.toContain("Model opinions · not evidence, not counted");
+  expect(without.join("\n")).not.toContain("openai/gpt-6-sol was stopped");
+  const expanded = renderers().get("tesota-receipt")?.({ customType: "tesota-receipt", content: "", details: unlisted },
+    { expanded: true, outputPad: 1 }, theme)?.render(120).join("\n") ?? "";
+  expect(expanded).toContain(theme.fg("dim", "  not listed    the cases the request leaves open: openai/gpt-6-sol was stopped"));
+  expect(expanded).not.toContain("Open cases not listed");
 });
 
 it("leads with what needs the operator, grouped by reason, and keeps the model's opinion out of the count", () => {

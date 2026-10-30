@@ -3,58 +3,66 @@ import type { ProofOutcome } from "./proof-outcome-rule.js";
 /**
  * How one TLC run of a model ended: every reachable state checked and none
  * broke a property (`passed`); TLC found no state to check (`vacuous`); a
- * reachable state broke an invariant or property, deadlocked or failed an
- * assertion, with a counterexample (`violated`); TLC could not read or
+ * reachable state broke a declared invariant or property or failed an
+ * assertion (`violated`); a run only deadlocked (`deadlocked`); an assumption
+ * failed (`assumption_failed`); TLC could not read or
  * evaluate the model or its configuration (`malformed`), which the model's
  * author must fix; or it ran past its limit, was stopped, or could not run,
  * Java and TLC included.
  */
-export type ModelRun = "passed" | "vacuous" | "violated" | "malformed" | "timed_out" | "cancelled" | "not_started";
+export type ModelRun = "assumption_failed" | "deadlocked" | "passed" | "vacuous" | "violated" | "malformed" | "timed_out" | "cancelled" | "not_started";
 
 /**
  * A TLC run from how its process ended: `started` says Java and TLC ran at
  * all, `exitCode` is TLC's and `states` the distinct states it reported.
  * TLC's exit status (`tlc2.output.EC.ExitStatus`) is 0 for success, 10 to 14
- * for a violation (assumption, deadlock, safety, liveness, assertion), 150
+ * for an assumption failure, deadlock, safety, liveness or assertion respectively, 150
  * and 151 for a specification or configuration it cannot parse, and 75 for
  * an error evaluating the model; any other is TLC's own failure, such as a
- * missing file or memory, so nothing was checked.
+ * missing file or memory, so nothing was checked. A false assumption (10)
+ * fails the main run but is not a declared property rejecting a fault.
  */
 //@ requires states >= 0
 //@ ensures cancelled ==> \result === "cancelled"
 //@ ensures !cancelled && timedOut ==> \result === "timed_out"
 //@ ensures \result === "passed" <==> !cancelled && !timedOut && started && exitCode === 0 && states > 0
 //@ ensures \result === "vacuous" <==> !cancelled && !timedOut && started && exitCode === 0 && states === 0
-//@ ensures \result === "violated" <==> !cancelled && !timedOut && started && exitCode >= 10 && exitCode <= 14
+//@ ensures \result === "violated" <==> !cancelled && !timedOut && started && exitCode >= 12 && exitCode <= 14
+//@ ensures \result === "deadlocked" <==> !cancelled && !timedOut && started && exitCode === 11
+//@ ensures \result === "assumption_failed" <==> !cancelled && !timedOut && started && exitCode === 10
 //@ ensures \result === "malformed" <==> !cancelled && !timedOut && started && (exitCode === 75 || exitCode === 150 || exitCode === 151)
 export function tlcRun(cancelled: boolean, timedOut: boolean, started: boolean, exitCode: number, states: number): ModelRun {
   if (cancelled) return "cancelled";
   if (timedOut) return "timed_out";
   if (!started) return "not_started";
   if (exitCode === 0) return states > 0 ? "passed" : "vacuous";
-  if (exitCode >= 10 && exitCode <= 14) return "violated";
+  if (exitCode === 11) return "deadlocked";
+  if (exitCode >= 12 && exitCode <= 14) return "violated";
+  if (exitCode === 10) return "assumption_failed";
   if (exitCode === 75 || exitCode === 150 || exitCode === 151) return "malformed";
   return "not_started";
 }
 
-/** TLC -continue can exit zero after reporting violations; its reports override a nominal pass. */
-//@ ensures run === "passed" && violated ==> \result === "violated"
-//@ ensures !(run === "passed" && violated) ==> \result === run
-export function reportedTlcRun(run: ModelRun, violated: boolean): ModelRun {
-  return run === "passed" && violated ? "violated" : run;
+/** TLC -continue can exit zero after reports; declared violations take precedence over a deadlock. */
+//@ ensures (run === "passed" || run === "deadlocked") && violated ==> \result === "violated"
+//@ ensures run === "passed" && !violated && deadlocked ==> \result === "deadlocked"
+//@ ensures !((run === "passed" || run === "deadlocked") && violated) && !(run === "passed" && deadlocked) ==> \result === run
+export function reportedTlcRun(run: ModelRun, violated: boolean, deadlocked: boolean): ModelRun {
+  if ((run === "passed" || run === "deadlocked") && violated) return "violated";
+  return run === "passed" && deadlocked ? "deadlocked" : run;
 }
 
 /**
  * A run as evidence states its outcome: a violation and a model TLC cannot
- * read both fail, so either goes back to the agent (`gateVerdict`); the rest
+ * read, and a deadlock, all fail, so either goes back to the agent (`gateVerdict`); the rest
  * keep their names.
  */
-//@ ensures \result === "failed" <==> (run === "violated" || run === "malformed")
+//@ ensures \result === "failed" <==> (run === "violated" || run === "deadlocked" || run === "assumption_failed" || run === "malformed")
 //@ ensures \result === "passed" <==> run === "passed"
 //@ ensures \result === "vacuous" <==> run === "vacuous"
 //@ ensures \result === "not_started" <==> run === "not_started"
 export function runOutcome(run: ModelRun): ProofOutcome {
-  if (run === "violated" || run === "malformed") return "failed";
+  if (run === "violated" || run === "deadlocked" || run === "assumption_failed" || run === "malformed") return "failed";
   if (run === "passed") return "passed";
   if (run === "vacuous") return "vacuous";
   if (run === "timed_out") return "timed_out";
@@ -67,18 +75,19 @@ export function runOutcome(run: ModelRun): ProofOutcome {
  * must break a property, so it is `caught` only by a violation; one that
  * passes shows the model cannot tell the fault from the code (`passes`); one
  * TLC cannot read, or with no state, shows nothing either way and must be
- * fixed (`broken`); one that did not finish is `unrun`.
+ * fixed (`broken`); a deadlock or unfinished run is `unrun`. After a deadlock
+ * retry, errors and empty explorations also leave the fault `unrun`.
  */
 export type FaultVerdict = "caught" | "passes" | "broken" | "unrun";
 
 //@ ensures \result === "caught" <==> run === "violated"
 //@ ensures \result === "passes" <==> run === "passed"
-//@ ensures \result === "broken" <==> (run === "malformed" || run === "vacuous")
-//@ ensures \result === "unrun" <==> (run === "timed_out" || run === "cancelled" || run === "not_started")
-export function faultVerdict(run: ModelRun): FaultVerdict {
+//@ ensures \result === "broken" <==> !retried && (run === "assumption_failed" || run === "malformed" || run === "vacuous")
+//@ ensures \result === "unrun" <==> (run === "deadlocked" || run === "timed_out" || run === "cancelled" || run === "not_started" || (retried && (run === "assumption_failed" || run === "malformed" || run === "vacuous")))
+export function faultVerdict(run: ModelRun, retried: boolean): FaultVerdict {
   if (run === "violated") return "caught";
   if (run === "passed") return "passes";
-  if (run === "malformed" || run === "vacuous") return "broken";
+  if (!retried && (run === "assumption_failed" || run === "malformed" || run === "vacuous")) return "broken";
   return "unrun";
 }
 

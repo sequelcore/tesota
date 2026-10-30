@@ -1,6 +1,6 @@
 {
   "name": "tesota",
-  "version": "0.1.0-alpha.8",
+  "version": "0.1.0-alpha.9",
   "private": true,
   "description": "A coding agent that checks its code, challenges its specs, and flags where they may miss your request.",
   "license": "Apache-2.0",
@@ -27,7 +27,8 @@
   "dependencies": {
     "cytoscape": "3.33.1",
     "effect": "4.0.5",
-    "lemmascript": "0.6.4",
+    "lemmascript": "0.6.5",
+    "pele": "1.12.0",
     "ts-morph": "25.0.1",
     "web-tree-sitter": "0.27.0"
   },

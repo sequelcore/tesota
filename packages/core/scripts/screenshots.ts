@@ -13,6 +13,7 @@ import { scriptedReply } from "../tests/scripted.ts";
 import { VirtualTerminal } from "../tests/virtual-terminal.ts";
 import { shellTheme } from "../../../src/theme.ts";
 import { WORDMARK } from "../../../src/welcome-header.ts";
+import { flowSvg, flowSvgPath } from "./readme-flow.ts";
 
 /**
  * The documentation's images (#468): Tesota's shell as it draws itself,
@@ -306,6 +307,7 @@ setCapabilityOverrides({ trueColor: true });
 mkdirSync(assets, { recursive: true });
 for (const appearance of ["dark", "light"] as const) {
   wordmark(appearance);
+  writeFileSync(flowSvgPath(appearance), flowSvg(appearance));
   await welcome(appearance);
   await turn(appearance);
 }

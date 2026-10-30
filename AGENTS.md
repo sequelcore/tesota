@@ -11,9 +11,11 @@ every run with a receipt. Keep changes scoped to the issue being worked on.
 - `src/` is the verification layer, written against the contract in
   `src/contract.ts`.
 - Model access stays in `pi-ai`, the terminal in `pi-tui` and MCP in
-  `pi-mcp`. Tesota builds no sandbox or verifier of its own, and no surface
-  beyond the terminal; a static file it writes for your browser to open,
-  with nothing left running, is allowed.
+  `pi-mcp`. Tesota builds no sandbox, contains no verifier, and has no
+  surface beyond the terminal; a static file it writes for your browser to
+  open, with nothing left running, is allowed. A verifier Sequel maintains
+  lives in its own package and is adopted as
+  [docs/development.md](docs/development.md#adding-a-verifier) says.
 - Read [docs/README.md](docs/README.md) for the map of the documentation,
   and the page a change touches before changing it.
 - Read [ROADMAP.md](ROADMAP.md) for principles and non-goals.
