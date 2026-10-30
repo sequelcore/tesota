@@ -21,14 +21,10 @@ the checks, and a check that fails goes back to the agent with what failed.
 The work reaches you when the checks pass, or when nothing more can be
 checked, with a receipt that says which.
 
-```mermaid
-flowchart LR
-  request["Your request"] --> agent["The agent changes the code"]
-  agent --> checks["Tesota checks the change"]
-  checks -- "a check failed" --> agent
-  checks -- "passed, or can't check more" --> receipt["Receipt: what passed, and what nothing checked"]
-  opinion["A model's review of your request, kept apart"] -.-> receipt
-```
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/tesota-flow-light.svg">
+  <img alt="Your request goes to the agent, which works; Tesota checks the change; a failed check goes back to the agent; when the checks pass, or nothing more can be checked, the run ends with a receipt, and a model's review of your request reaches the receipt kept apart." src="docs/assets/tesota-flow-dark.svg" width="444">
+</picture>
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/tesota-turn-light.svg">
