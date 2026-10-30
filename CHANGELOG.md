@@ -5,6 +5,45 @@ Each release of Tesota, newest first. The format follows
 the first stable release are prereleases. Numbers in parentheses are pull
 requests and issues in [sequelcore/tesota](https://github.com/sequelcore/tesota).
 
+## [0.1.0-alpha.9] - 2026-10-30
+
+### Added
+
+- The model graph opens on a chart: TLC's states grouped by a reading the
+  agent writes beside the model, `<Model>.chart.ts`, in your words, with
+  the path that breaks a rule numbered and the broken state in red. TLC's
+  full graph is one key away, and the receipt doesn't change. A reading is
+  project code, so it runs only once you trust it, as hooks do; until then
+  states are grouped by the model's control variable. The HTML page draws
+  the chart with Pele (#773, #761, #759).
+- `install.sh dafny` and `install.ps1 dafny` install Dafny from its
+  self-contained release, checked against an embedded SHA-256, with no
+  .NET SDK (#770).
+
+### Changed
+
+- Contract mutation also swaps `&&` and `||` and adds or removes an
+  operand's `!`, so a contract over boolean logic alone is measured, and a
+  weak one goes back to the agent (#766, #760).
+- A planted fault that only deadlocks no longer counts as caught. It runs
+  again without the deadlock check: a declared invariant, property or
+  `Assert` that breaks catches it; a full pass makes the model too weak for
+  it; anything else leaves it not checked. A deadlock in the main
+  configuration still fails (#767, #762).
+- The README leads with why an agent's own tests prove little and how a
+  failed check goes back to the agent, drawn as a flow, and shows the
+  receipt once (#764, #774).
+- LemmaScript 0.6.5, with its run log off so proofs write nothing into the
+  project (#771).
+
+### Fixed
+
+- An open-cases model that declines to list cases no longer counts as an
+  opinion to read; its reason stays in the details (#763, #757).
+- "No proof covers" no longer lists a design model's own files; a model
+  that fails, is too weak or wasn't checked still keeps them from counting
+  as verified (#765, #758).
+
 ## [0.1.0-alpha.8] - 2026-10-29
 
 ### Changed
@@ -306,6 +345,8 @@ The first published prerelease.
   (#492).
 - One folder's snapshots are taken one at a time across processes (#477).
 
+[0.1.0-alpha.9]: https://github.com/sequelcore/tesota/releases/tag/v0.1.0-alpha.9
+[0.1.0-alpha.8]: https://github.com/sequelcore/tesota/releases/tag/v0.1.0-alpha.8
 [0.1.0-alpha.7]: https://github.com/sequelcore/tesota/releases/tag/v0.1.0-alpha.7
 [0.1.0-alpha.6]: https://github.com/sequelcore/tesota/releases/tag/v0.1.0-alpha.6
 [0.1.0-alpha.5]: https://github.com/sequelcore/tesota/releases/tag/v0.1.0-alpha.5

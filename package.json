@@ -1,6 +1,6 @@
 {
   "name": "tesota",
-  "version": "0.1.0-alpha.8",
+  "version": "0.1.0-alpha.9",
   "private": true,
   "description": "A coding agent that checks its code, challenges its specs, and flags where they may miss your request.",
   "license": "Apache-2.0",
