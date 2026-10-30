@@ -4,7 +4,7 @@ datatype Standing = decide | gap | holds | opinion
 
 datatype ProofOutcome = passed | failed | vacuous | timed_out | cancelled | not_started
 
-datatype ModelRun = passed | vacuous | timed_out | cancelled | not_started | violated | malformed
+datatype ModelRun = passed | vacuous | timed_out | cancelled | not_started | assumption_failed | deadlocked | violated | malformed
 
 function verdictTone(decisions: int, failed: bool, gaps: int): string
   requires (decisions >= 0)
@@ -67,7 +67,7 @@ function checkEnd(kind: string, stale: bool, outcome: ProofOutcome, run: ModelRu
     "gap"
   else
     if (kind == "model") then
-      if (run.violated? || (run.passed? && faultPasses)) then
+      if (((run.violated? || run.deadlocked?) || run.assumption_failed?) || (run.passed? && faultPasses)) then
         "failed"
       else
         if (outcome.passed? && run.passed?) then
@@ -85,7 +85,7 @@ function checkEnd(kind: string, stale: bool, outcome: ProofOutcome, run: ModelRu
 }
 
 lemma checkEnd_ensures(kind: string, stale: bool, outcome: ProofOutcome, run: ModelRun, faultPasses: bool)
-  ensures ((checkEnd(kind, stale, outcome, run, faultPasses) == "failed") <==> (!(stale) && (((kind == "model") && (run.violated? || (run.passed? && faultPasses))) || ((kind != "model") && outcome.failed?))))
+  ensures ((checkEnd(kind, stale, outcome, run, faultPasses) == "failed") <==> (!(stale) && (((kind == "model") && (((run.violated? || run.deadlocked?) || run.assumption_failed?) || (run.passed? && faultPasses))) || ((kind != "model") && outcome.failed?))))
   ensures ((checkEnd(kind, stale, outcome, run, faultPasses) == "passed") <==> ((!(stale) && outcome.passed?) && ((kind != "model") || (run.passed? && !(faultPasses)))))
   ensures (((checkEnd(kind, stale, outcome, run, faultPasses) == "passed") || (checkEnd(kind, stale, outcome, run, faultPasses) == "failed")) || (checkEnd(kind, stale, outcome, run, faultPasses) == "gap"))
   ensures (stale ==> (checkEnd(kind, stale, outcome, run, faultPasses) == "gap"))
