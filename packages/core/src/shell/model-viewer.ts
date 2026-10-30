@@ -2,6 +2,7 @@ import { type Component, Input, type KeyId, matchesKey, sliceByColumn, type TuiM
   visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { ThemeColor } from "../../../../src/contract.ts";
 import { COMPLETE_EXPLORATION, ZERO_REPORTS, NO_BROKEN_RULE, adjacentViolation, boundedCount, stateCount, groupLabel, groupRules, groupValues, brokenRules, ruleText, PARTIAL_EXPLORATION, GROUPED_MOVES, SELECTED_STATE, type ModelView, type ViewGroup, type ViewRequest, type ViewState } from "../../../../src/model-view.ts";
+import { chartLines, type ChartLine, type ModelChart } from "../../../../src/model-chart.ts";
 import { terminalText } from "../../../../src/terminal-text.ts";
 import type { ShellTheme } from "../../../../src/theme.ts";
 
@@ -22,6 +23,13 @@ export interface ModelViewerOptions {
 /** The smallest terminal the full-screen viewer draws in; a smaller one gets the graph appended as text. */
 export const fullScreen = { columns: 40, rows: 12 } as const;
 export const fitsFullScreen = (columns: number, rows: number): boolean => columns >= fullScreen.columns && rows >= fullScreen.rows;
+
+/** The chart's header: where its labels came from, and that TLC's graph is the evidence. */
+function chartTop(chart: ModelChart, title: string, counts: string): string[] {
+  const source = chart.reading === undefined ? `grouped by ${oneLine(chart.projection.join(" > ")) || "each state"}` : `read by ${oneLine(chart.reading)}`;
+  return [`${title} · ${source}`, counts,
+    `A reading of TLC's graph, not evidence; c shows TLC's graph.${chart.path.length > 0 ? " The numbered steps are TLC's trace, a real execution." : ""}`];
+}
 
 /** The lines of step 3a's text rendering an append-only terminal is given; the rest is a command away. */
 export function appendOnlyText(view: ModelView, manifest: string, limit = 400): string {
@@ -122,6 +130,10 @@ export class ModelViewer implements Component {
   #pan: [number, number] = [0, 0];
   #panelTop = 0;
   #trace: { readonly selected: string | undefined; readonly pan: readonly [number, number] } | undefined;
+  /** The chart (#761), read once with the first view; regroups and drills read TLC's graph only. */
+  #chart: ModelChart | undefined;
+  #chartShown = false;
+  #chartRows: readonly { readonly line: ChartLine; readonly text: string }[] = [];
   #prompt: { readonly kind: "group" | "search"; readonly input: Input; status: string; error: boolean } | undefined;
   #search: { readonly query: string; readonly matches: readonly string[]; index: number } | undefined;
   #controller: AbortController | undefined;
@@ -137,8 +149,10 @@ export class ModelViewer implements Component {
 
   constructor(options: ModelViewerOptions) {
     this.options = options;
-    this.#load({}, (view) => {
+    this.#load({ chart: true }, (view) => {
       this.#view = view;
+      this.#chart = view.chart;
+      this.#chartShown = view.chart?.opens === "chart";
       this.#selected = view.violations[0] ?? view.states[0]?.fingerprint;
     }, (reason) => { this.#error = reason; });
   }
@@ -253,6 +267,20 @@ export class ModelViewer implements Component {
     }, (reason) => { this.#notice = reason; });
   }
 
+  /** `c`: the chart or TLC's graph; the graph is the evidence, unchanged by the chart. */
+  #toggleChart(): void {
+    if (this.#chart === undefined) { this.#notice = "No chart for this graph."; return; }
+    this.#chartShown = !this.#chartShown;
+    this.#pan = [0, 0];
+    this.#reveal = true;
+    this.#notice = "";
+  }
+
+  /** Keys that act on TLC's graph leave the chart first. */
+  #onGraph(then: () => void): () => void {
+    return () => { if (this.#chartShown) this.#toggleChart(); then(); };
+  }
+
   #back(): void {
     if (this.#prompt !== undefined) { this.#prompt = undefined; return; }
     if (this.#trace !== undefined) { this.#toggleTrace(); return; }
@@ -299,7 +327,8 @@ export class ModelViewer implements Component {
   #step(direction: 1 | -1): void {
     const view = this.#view;
     if (view === undefined) return;
-    const ids = this.#trace !== undefined ? view.trace.map(({ fingerprint }) => fingerprint) : view.states.map(({ fingerprint }) => fingerprint);
+    const path = this.#chartShown ? this.#chart?.path.map(({ fingerprint }) => fingerprint) ?? [] : [];
+    const ids = path.length > 0 ? path : this.#trace !== undefined ? view.trace.map(({ fingerprint }) => fingerprint) : view.states.map(({ fingerprint }) => fingerprint);
     if (ids.length === 0) return;
     const at = ids.indexOf(this.#selected ?? "");
     this.#select(ids[at < 0 ? 0 : (at + direction + ids.length) % ids.length]);
@@ -324,14 +353,15 @@ export class ModelViewer implements Component {
     ["+", () => { this.#detail = Math.min(2, this.#detail + 1); this.#reveal = true; }],
     ["=", () => { this.#detail = Math.min(2, this.#detail + 1); this.#reveal = true; }],
     ["-", () => { this.#detail = Math.max(0, this.#detail - 1); this.#reveal = true; }],
-    ["g", () => { if (this.#trace === undefined) this.#openPrompt("group"); }],
-    ["/", () => { if (this.#trace === undefined) this.#openPrompt("search"); }],
+    ["g", this.#onGraph(() => { if (this.#trace === undefined) this.#openPrompt("group"); })],
+    ["/", this.#onGraph(() => { if (this.#trace === undefined) this.#openPrompt("search"); })],
     ["n", () => { this.#jump(1); }],
     ["p", () => { this.#jump(-1); }],
-    ["t", () => { this.#toggleTrace(); }],
+    ["t", this.#onGraph(() => { this.#toggleTrace(); })],
+    ["c", () => { this.#toggleChart(); }],
     ["o", () => { this.#browser(); }],
     ["f", () => { this.#pan = [0, 0]; this.#reveal = false; }],
-    ["enter", () => { if (this.#trace === undefined) this.#drill(); }],
+    ["enter", this.#onGraph(() => { if (this.#trace === undefined) this.#drill(); })],
     ["tab", () => { this.#step(1); }],
     ["shift+tab", () => { this.#step(-1); }],
     ["left", () => { this.#panBy(-8, 0); }],
@@ -385,6 +415,11 @@ export class ModelViewer implements Component {
   #pick(x: number, y: number): void {
     const view = this.#view;
     if (view === undefined) return;
+    if (this.#chartShown) {
+      const state = this.#chartRows[y]?.line.state;
+      if (state !== undefined) { this.#selected = state; this.#panelTop = 0; }
+      return;
+    }
     if (this.#trace !== undefined) {
       const step = view.trace[Math.floor(y / 3)];
       if (step !== undefined && y % 3 !== 2) { this.#selected = step.fingerprint; this.#panelTop = 0; }
@@ -403,7 +438,7 @@ export class ModelViewer implements Component {
     const { theme } = this.options;
     const rows = Math.max(fullScreen.rows, this.options.rows());
     const view = this.#view;
-    const title = `Model graph · ${oneLine(this.options.subject)}`;
+    const title = `${this.#chartShown ? "Model chart" : "Model graph"} · ${oneLine(this.options.subject)}`;
     const bottom = this.#bottom(width);
     let bodyHeight = Math.max(1, rows - header - bottom.length);
     if (view === undefined) {
@@ -416,24 +451,31 @@ export class ModelViewer implements Component {
       `reached ${this.#count(view.states.length)}`,
       this.#parents.length === 0 ? `edges ${this.#count(reached + view.boundary)}` : `edges inside ${this.#count(reached)} · crossing ${this.#count(view.boundary)}`,
       `reported violating ${this.#count(view.violations.length)}${view.violations.length === 0 ? ` (${ZERO_REPORTS})` : ""}`].join(" · ");
-    const grouping = view.projection.length === 0 ? "each state" : oneLine(view.projection.join(" > "));
-    const top = this.#trace !== undefined
-      ? [`${title} · TLC concrete trace`, counts, `TLC concrete trace · ${view.trace.length} ${view.trace.length === 1 ? "step" : "steps"} · the only execution shown, not regrouped or filtered`]
-      : [`${title} · grouped by ${grouping} · ${this.#within === "" ? "all reached states" : `within ${oneLine(this.#within)}`}`, counts,
-        `${GROUPED_MOVES}${view.trace.length > 0 ? " t shows the failing run, a real execution." : ""}`];
+    const chart = this.#chartShown ? this.#chart : undefined;
+    const top = chart !== undefined ? chartTop(chart, title, counts) : this.#top(view, title, counts);
     const side = width >= 72;
     const topLines = this.#heading(view, top, width, rows - bottom.length - (side ? 3 : 4));
     bodyHeight = Math.max(1, rows - topLines.length - bottom.length);
     const panelWidth = side ? Math.min(44, Math.max(28, Math.floor(width * 0.34))) : width;
     const panelHeight = side ? bodyHeight : Math.min(8, Math.floor(bodyHeight / 2));
     this.#canvas = { x: 0, y: topLines.length, w: side ? width - panelWidth - 1 : width, h: side ? bodyHeight : Math.max(1, bodyHeight - panelHeight - 1) };
-    const canvas = this.#trace !== undefined ? this.#traceCanvas(view) : this.#graphCanvas(view);
+    const canvas = chart !== undefined ? this.#chartCanvas(chart) : this.#trace !== undefined ? this.#traceCanvas(view) : this.#graphCanvas(view);
     const panel = this.#panel(view, panelWidth, panelHeight);
     const body = side
       ? canvas.map((row, at) => `${row}${theme.fg("borderMuted", "│")}${panel[at] ?? ""}`)
       : [...canvas, theme.fg("borderMuted", "─".repeat(width)), ...panel];
     const footer = this.#bottom(width);
     return this.#frame([...topLines.map(line => theme.fg(line.role, line.text)), ...body].slice(0, rows - footer.length).concat(footer), width, rows);
+  }
+
+  /** The header of TLC's graph or its trace. */
+  #top(view: ModelView, title: string, counts: string): string[] {
+    if (this.#trace !== undefined) {
+      return [`${title} · TLC concrete trace`, counts, `TLC concrete trace · ${view.trace.length} ${view.trace.length === 1 ? "step" : "steps"} · the only execution shown, not regrouped or filtered`];
+    }
+    const grouping = view.projection.length === 0 ? "each state" : oneLine(view.projection.join(" > "));
+    return [`${title} · grouped by ${grouping} · ${this.#within === "" ? "all reached states" : `within ${oneLine(this.#within)}`}`, counts,
+      `${GROUPED_MOVES}${view.trace.length > 0 ? " t shows the failing run, a real execution." : ""}`];
   }
 
   /** Wrap semantic header lines without losing their roles or crowding out the body and keys. */
@@ -457,7 +499,7 @@ export class ModelViewer implements Component {
   #bottom(width: number): string[] {
     const { theme } = this.options;
     const hints = ["arrows/drag pan", "+/- detail", "g group", "Enter drill", "n/p break", "t trace", "/ search", "Tab state", "PgUp/PgDn variables"];
-    let keyText = "o browser · f fit · Esc back";
+    let keyText = `${this.#chart === undefined ? "" : this.#chartShown ? "c graph · " : "c chart · "}o browser · f fit · Esc back`;
     hints.unshift(`detail ${this.#detail + 1}/3`, `pan ${this.#pan[0]},${this.#pan[1]}`);
     for (const hint of hints) if (visibleWidth(`${keyText} · ${hint}`) <= width) keyText += ` · ${hint}`;
     const keys = theme.fg("dim", keyText);
@@ -533,6 +575,24 @@ export class ModelViewer implements Component {
     return lines;
   }
 
+  /** The chart as text: its states, the numbered breaking path and other moves, wrapped to the canvas. */
+  #chartCanvas(chart: ModelChart): string[] {
+    const { w, h } = this.#canvas;
+    const roles: Readonly<Record<ChartLine["kind"], ThemeColor>> = { note: "muted", heading: "accent", state: "text", broken: "error", step: "text", move: "muted" };
+    this.#chartRows = chartLines(chart).flatMap((line) => {
+      const selected = line.kind === "step" && line.state === this.#selected;
+      return wrapped(`${line.kind === "step" ? selected ? "▶ " : "  " : ""}${terminalText(line.text)}`, w).map((text) => ({ line, text }));
+    });
+    const at = this.#chartRows.findIndex(({ line }) => line.kind === "step" && line.state === this.#selected);
+    this.#settlePan(w, this.#chartRows.length, at < 0 ? undefined : { x: 0, y: at, w: 1, h: 1 });
+    return Array.from({ length: h }, (_, row) => {
+      const shown = this.#chartRows[row + this.#pan[1]];
+      if (shown === undefined) return " ".repeat(w);
+      const selected = shown.line.kind === "step" && shown.line.state === this.#selected;
+      return this.options.theme.fg(selected ? "accent" : roles[shown.line.kind], truncateToWidth(oneLine(shown.text), w, "", true));
+    });
+  }
+
   #traceCanvas(view: ModelView): string[] {
     const lines = view.trace.flatMap((step, at): Line[] => {
       const breaks = this.#state(step.fingerprint)?.breaks ?? [];
@@ -599,7 +659,7 @@ export class ModelViewer implements Component {
           text: `  ${terminalText(edge.action)} → ${edge.to === group.id ? "itself" : placed.byGroup.get(edge.to)?.number ?? "?"} ×${this.#count(edge.count)}`,
           role: "muted" as ThemeColor })));
     }
-    lines.push({ text: "", role: "muted" }, { text: "Keys: arrows/drag pan · f fit · +/- detail · g group · Enter drill · n/p break · t trace · / search · Tab/Shift+Tab state · PgUp/PgDn variables · o browser · Esc back", role: "muted" });
+    lines.push({ text: "", role: "muted" }, { text: `Keys: ${this.#chart === undefined ? "" : "c chart or graph · "}arrows/drag pan · f fit · +/- detail · g group · Enter drill · n/p break · t trace · / search · Tab/Shift+Tab state · PgUp/PgDn variables · o browser · Esc back`, role: "muted" });
     const rows = lines.flatMap((line) => wrapped(line.text, width - 1).map((text) => theme.fg(line.role, ` ${text}`)));
     this.#panelTop = Math.min(this.#panelTop, Math.max(0, rows.length - height));
     return rows.slice(this.#panelTop, this.#panelTop + height);

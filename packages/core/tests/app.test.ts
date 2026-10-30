@@ -4,7 +4,7 @@ import {
 } from "@earendil-works/pi-ai";
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -633,17 +633,18 @@ describe("tesota-core", () => {
       terminal.type(enter);
       await terminal.until("the receipt");
       send(terminal, "/graph");
-      expect(await terminal.until("grouped by door > lamp")).toContain("Model graph · models/Lights.tla");
+      // A broken rule opens on the chart (#761).
+      expect(await terminal.until("grouped by door > lamp")).toContain("Model chart · models/Lights.tla");
       terminal.type("o");
       const opened = await openedGraph;
       expect(opened).toEndWith(".html");
       expect(existsSync(opened)).toBe(true);
       terminal.type("\x1b");
-      await terminal.untilGone("Model graph");
+      await terminal.untilGone("Model chart");
       send(terminal, "/graph lights-other");
       await terminal.until("No captured graph lights-other in this session.");
       send(terminal, "/graph --plain lights-complete");
-      expect(await terminal.until("TLC concrete trace (not regrouped or filtered)")).not.toContain("Model graph");
+      expect(await terminal.until("TLC concrete trace (not regrouped or filtered)")).not.toMatch(/Model (?:graph|chart) ·/u);
       terminal.resize(100, 11);
       send(terminal, "/graph");
       await terminal.until("The graph is above as text");
@@ -653,6 +654,60 @@ describe("tesota-core", () => {
       await running;
     }
   }, 30_000);
+
+  test("/graph asks before it runs a project's chart reading, runs it once trusted, and asks again when it changes (#761)", async () => {
+    const { terminal, sessions, running, cwd } = await app();
+    try {
+      const capture = folder("tesota-core-graph-reading-");
+      copyFileSync(join(import.meta.dir, "fixtures", "model-viewer", "lights-complete.dot"), join(capture, "lights-complete.dot"));
+      const data = JSON.parse(readFileSync(join(import.meta.dir, "fixtures", "model-viewer", "lights-complete.manifest.json"), "utf8"));
+      const manifest = join(capture, "lights-complete.manifest.json");
+      writeFileSync(manifest, JSON.stringify({ ...data, binding: { root: capture, model: "Lights.tla" } }));
+      const reading = join(capture, "Lights.chart.ts");
+      const marker = join(capture, "ran");
+      writeFileSync(reading, `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(marker)}, "ran");\n` +
+        "export function state(v: { lamp: string }): string { return v.lamp === \"on\" ? \"the lamp is lit\" : \"the lamp is dark\"; }\n");
+      const at = new Date(0).toISOString();
+      writeFileSync(join(sessions, "reading.jsonl"), [{ type: "session", format: "tesota-session", version: 6, id: "reading", cwd, createdAt: at, checkout: cwd },
+        { type: "request", run: 1, text: "check the lights", origin: "interactive", at, base: { units: [] } },
+        { type: "custom_message", run: 1, customType: "tesota-receipt-graphs", content: "the receipt", display: true,
+          details: { receipt: {}, graphs: [{ subject: "Lights.tla", capture: { status: "captured", manifest } }] } }]
+        .map((line) => JSON.stringify(line)).join("\n") + "\n");
+      send(terminal, "/resume");
+      await terminal.until("check the lights");
+      terminal.type(enter);
+      await terminal.until("the receipt");
+
+      send(terminal, "/graph");
+      expect(await terminal.until("This project's chart reading would run")).toContain("Lights.chart.ts");
+      terminal.type("\x1b[B"); terminal.type(enter);
+      expect(await terminal.until("aren't trusted")).toContain("Model chart");
+      expect(existsSync(marker)).toBe(false);
+      terminal.type("\x1b"); await terminal.untilGone("Model chart");
+
+      send(terminal, "/graph");
+      await terminal.until("This project's chart reading would run");
+      terminal.type(enter);
+      expect(await terminal.until("read by Lights.chart.ts")).toContain("the lamp is lit");
+      expect(existsSync(marker)).toBe(true);
+      terminal.type("\x1b"); await terminal.untilGone("Model chart");
+
+      // Trusted as it is: no question.
+      send(terminal, "/graph");
+      expect(await terminal.until("read by Lights.chart.ts")).not.toContain("chart reading would run");
+      terminal.type("\x1b"); await terminal.untilGone("Model chart");
+
+      appendFileSync(reading, "// changed\n");
+      send(terminal, "/graph");
+      await terminal.until("This project's chart reading would run");
+      terminal.type("\x1b[B"); terminal.type(enter);
+      await terminal.until("aren't trusted");
+      terminal.type("\x1b"); await terminal.untilGone("Model chart");
+    } finally {
+      send(terminal, "/quit");
+      await running;
+    }
+  }, 60_000);
 
   test("/resume continues on the session's model rather than the shell's (#679)", async () => {
     const { terminal, sessions, running, settingsPath } = await app(["continued answer", "changed model answer"],

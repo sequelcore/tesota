@@ -62,7 +62,7 @@ export async function modelViewCommand(args: readonly string[]): Promise<void> {
   process.once("SIGINT", stop);
   try {
     const text = args[0] === "--html" ? await writeModelViewHtml(args[1], controller.signal)
-      : terminalText((await loadModelView(args[1], {}, controller.signal)).plain);
+      : terminalText((await loadModelView(args[1], { chart: true }, controller.signal)).plain);
     await new Promise<void>((resolve, reject) => {
       process.stdout.write(`${text}\n`, error => { if (error) reject(error); else resolve(); });
     });

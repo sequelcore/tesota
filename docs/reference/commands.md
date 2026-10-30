@@ -16,8 +16,8 @@ inside the shell; use command-line options from your terminal.
 | `tesota accounts add claude-code\|openai-codex <name>` | Adds an account in one step: its sign-in, then its record |
 | `tesota accounts login <provider>@<name>` | Signs an account in again |
 | `tesota accounts remove <provider>@<name>` | Removes an account no setting or agent type names |
-| `tesota graph --plain <manifest>` | Prints the captured model graph, its default grouping, full variables and TLC's concrete trace without a terminal UI |
-| `tesota graph --html <manifest>` | Writes a self-contained HTML viewer beside the capture and prints its absolute path; does not launch a browser |
+| `tesota graph --plain <manifest>` | Prints the model's chart, then the captured model graph, its default grouping, full variables and TLC's concrete trace without a terminal UI |
+| `tesota graph --html <manifest>` | Writes a self-contained HTML viewer beside the capture, opening on the chart, and prints its absolute path; does not launch a browser |
 | `tesota doctor [--json]` | Checks local verification tools and provider sign-ins without changing anything ([Doctor](#doctor)) |
 | `tesota --version` | Prints the version |
 
@@ -162,8 +162,23 @@ submit the batch.
 For captures, grouping and the browser viewer, see
 [Model checking](../guides/model-checking.md).
 
+The viewer and the HTML page open on the chart when a rule broke, or when
+every rule holds and the chart has at most 50 states; otherwise on TLC's
+graph. The chart's labels come from `<Model>.chart.ts` beside the model,
+which exports `state(v)` and optionally `step(action, before, after)` and
+`group(v)`, each returning a label; `v` holds a TLC state's variables,
+tuples and sets as arrays, records and functions as objects. States with
+the same labels share a chart state. The file is the project's code: it
+runs only once trusted as it is, which `/graph` asks, as for
+[hooks](../guides/hooks.md#trusting-a-projects-hooks), in the viewer's
+process, and can't import files beside it. Untrusted, missing, failing or
+label-less, states are grouped by the control variable and the chart says
+why.
+On the page, "Show the failing run" shows only the run's states in order.
+
 | Key | Action |
 | --- | --- |
+| `c` | Switch between the chart and TLC's graph |
 | `+`, `=`, `-` | Increase or decrease label detail |
 | `g` | Choose grouping on the grouped graph |
 | `/` | Search the grouped graph |

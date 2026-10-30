@@ -8,9 +8,13 @@ import { writeWholeJson } from "./whole-file.ts";
 
 /**
  * What of a project runs its own commands, and so runs only once the
- * operator trusts it as it is now: its hooks (#457) and its MCP servers (#459).
+ * operator trusts it as it is now: its hooks (#457), its MCP servers (#459)
+ * and each of its model charts' readings (#761).
  */
-export type Trusted = "hooks" | "mcp";
+export type Trusted = "hooks" | "mcp" | `chart:${string}`;
+
+/** The trust of one chart reading, by its path from the project root, so trusting one leaves another's as it was. */
+export const chartTrust = (file: string): Trusted => `chart:${file}`;
 
 /** A hash of what a project would run, which its trust is given to: any change asks again. */
 export const trustHash = (what: unknown): string => createHash("sha256").update(JSON.stringify(what)).digest("hex");

@@ -148,9 +148,15 @@ Each TLA+ check captures the model graph: the states TLC reached and the
 steps between them. `/graph` opens the newest one full-screen; `!` marks a
 state that breaks an invariant.
 
-`g` groups states by up to two variables, `n` and `p` jump between breaking
-states, `t` shows TLC's trace, and `o` opens a self-contained HTML page in
-your browser; every key is in [Commands and keys](../reference/commands.md#model-graph-viewer).
+It opens on the **chart**: a few states labeled in your words by
+`<Model>.chart.ts`, which the agent writes, with TLC's trace numbered and
+the breaking state in red. Labels are a reading, not evidence. The file
+is the project's code: `/graph` asks you to trust it first, as
+[hooks](hooks.md#trusting-a-projects-hooks) do, and until you do the chart
+is grouped by the control variable. `c` shows
+TLC's graph, `t` its trace, and `o` an HTML page in your browser; every
+key and the chart's format are in
+[Commands and keys](../reference/commands.md#model-graph-viewer).
 
 `/graph --plain`, the inline shell and terminals under 40×12 print the
 graph as text. Over SSH, `tesota graph --html <capture>.manifest.json`

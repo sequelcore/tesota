@@ -165,4 +165,10 @@ it.skipIf(!withTlc)("writes and reports graph artifacts beside the tool context'
   expect(result.details?.capture?.manifest?.startsWith(sessions)).toBe(true);
   expect(said(result)).toContain(result.details?.capture?.manifest);
   expect(existsSync(result.details?.capture?.manifest ?? "")).toBe(true);
+  expect(said(result)).toContain("models/Counter.chart.ts");
+  expect(said(result)).toContain("export function state(v)");
+  writeFileSync(join(root, "models/Counter.chart.ts"), "export function state(): string { return \"counting\"; }\n");
+  const read = await modelTool.execute("c", { path: "models/Counter.tla" }, new AbortController().signal, undefined,
+    { cwd: root, sessionFile } as never);
+  expect(said(read)).not.toContain("export function state(v)");
 }, 120_000);

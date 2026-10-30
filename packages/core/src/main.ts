@@ -92,7 +92,11 @@ else if (command === "--measure-loop" || command === "--measure-resume") {
 }
 else if (command === "--measure-shell") exitWith(import("./shell/measure-shell.ts").then(({ measureShell }) => measureShell()));
 else if (command === "graph") exitWith(import("../../../src/model-view-process.ts").then(({ modelViewCommand }) => modelViewCommand(rest)));
-else if (command === "__model-view") exitWith(import("../../../src/model-view-worker.ts").then(({ modelViewWorker }) => modelViewWorker()));
+else if (command === "__model-view") {
+  // A chart reading is the project's code: the worker runs it only if the operator trusts it as it is now (#761).
+  exitWith(Promise.all([import("../../../src/model-view-worker.ts"), import("./trust.ts")])
+    .then(([{ modelViewWorker }, { chartTrust, trusted }]) => modelViewWorker((root, file, hash) => trusted(root, chartTrust(file), hash))));
+}
 else if (command === "__lsc") {
   import("./lsc.ts").then(({ runLsc }) => runLsc(rest)).catch((error: unknown) => {
     console.error(error);

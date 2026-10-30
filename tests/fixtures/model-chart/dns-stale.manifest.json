@@ -1,0 +1,2125 @@
+{
+  "version": 1,
+  "binding": {
+    "root": "",
+    "command": [],
+    "startedAt": "2026-10-29T00:00:00.000Z",
+    "finishedAt": "2026-10-29T00:00:01.000Z",
+    "processEnded": "exited",
+    "evidenceOutputHash": "f74d033ceaae2c09fedbe513cafac0e6071b19c80e097e45bd5c0d9072d62cc8",
+    "sessionFile": "dns-stale.jsonl",
+    "model": "DnsPlans.tla",
+    "config": "DnsPlansStaleWrite.cfg",
+    "modelHash": "d697f1ceae65e2d740010d86462e9b8629190d73539c3ded584a149e1a501f79",
+    "configHash": "636554a383d828550d525b77de34bcb7356c0a4f3cea3a8ef4f0a820a007335d",
+    "effectiveConfigHash": "",
+    "evidenceHash": "",
+    "exitCode": 12,
+    "runId": "dns-stale",
+    "tlcVersion": "TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)",
+    "continued": false
+  },
+  "limits": {
+    "bytes": 16777216,
+    "states": 10000,
+    "edges": 50000
+  },
+  "status": "captured",
+  "header": "(* tesota-model\n   covers: src/dns.ts Dns.point Enactor.run Enactor.apply Enactor.cleanup\n   confirmed: uncommitted (working-tree fix; baseline c94c73e does not implement this model)\n   invariant: Safety\n   atomic: Dns.point's existence and per-endpoint generation checks with its write; synchronous cleanup\n   omits: transport internals; empty IP lists; external direct PlanStore deletion; differing endpoint lists; more than two endpoints or enactors; unbounded generations\n   fault: models/DnsPlansNoGuard.cfg cleanup deletes the plan it just applied\n   fault: models/DnsPlansStaleWrite.cfg check only the first endpoint before waiting, then write unconditionally\n*)\n---- MODULE DnsPlans ----\nEXTENDS Naturals, FiniteSets\nCONSTANTS MaxGen, Keep, Guard, WriteGuard\n\nVARIABLES plans, published, active, pending, cursor, highWater\nvars == <<plans, published, active, pending, cursor, highWater>>\nEnactors == {1, 2}\nEndpoints == 1..2\n\nMax(S) == CHOOSE x \\in S : \\A y \\in S : x >= y\n\nInit == /\\ plans = {}\n        /\\ published = 0\n        /\\ active = [ep \\in Endpoints |-> 0]\n        /\\ pending = [e \\in Enactors |-> 0]\n        /\\ cursor = [e \\in Enactors |-> 1]\n        /\\ highWater = [ep \\in Endpoints |-> 0]\n\nPublish == /\\ published < MaxGen\n           /\\ published' = published + 1\n           /\\ plans' = plans \\cup {published + 1}\n           /\\ UNCHANGED <<active, pending, cursor, highWater>>\n\n\\* Capture the newest plan before waiting. Other enactors and the planner\n\\* can run arbitrarily many steps before this enactor writes either endpoint.\nSelect(e) == /\\ pending[e] = 0\n             /\\ plans # {}\n             /\\ (WriteGuard \\/ Max(plans) > active[1])\n             /\\ pending' = [pending EXCEPT ![e] = Max(plans)]\n             /\\ cursor' = [cursor EXCEPT ![e] = 1]\n             /\\ UNCHANGED <<plans, published, active, highWater>>\n\n\\* The pause/retry is BEFORE this action, not inside its atomic boundary.\nPoint(e) == /\\ pending[e] # 0\n            /\\ cursor[e] \\in Endpoints\n            /\\ LET ep == cursor[e]\n                   g == pending[e]\n                   allowed == ~WriteGuard \\/ (g \\in plans /\\ g > active[ep])\n               IN /\\ active' = IF allowed THEN [active EXCEPT ![ep] = g] ELSE active\n                  /\\ highWater' = IF allowed /\\ g > highWater[ep]\n                                    THEN [highWater EXCEPT ![ep] = g] ELSE highWater\n            /\\ cursor' = [cursor EXCEPT ![e] = @ + 1]\n            /\\ UNCHANGED <<plans, published, pending>>\n\nCleanup(e) == /\\ pending[e] # 0\n              /\\ cursor[e] = 3\n              /\\ plans' = IF Guard\n                            THEN {p \\in plans : p >= pending[e] - Keep}\n                            ELSE {p \\in plans : p > pending[e]}\n              /\\ pending' = [pending EXCEPT ![e] = 0]\n              /\\ UNCHANGED <<published, active, cursor, highWater>>\n\n\\* A rejected pause aborts apply without cleanup; a later run can retry.\nAbort(e) == /\\ pending[e] # 0\n            /\\ cursor[e] \\in Endpoints\n            /\\ pending' = [pending EXCEPT ![e] = 0]\n            /\\ UNCHANGED <<plans, published, active, cursor, highWater>>\n\nNext == Publish \\/ (\\E e \\in Enactors : Select(e) \\/ Point(e) \\/ Cleanup(e) \\/ Abort(e))\n\nEndpointHasPlan == \\A ep \\in Endpoints : active[ep] = 0 \\/ active[ep] \\in plans\nEndpointNeverRegresses == active = highWater\nSafety == EndpointHasPlan /\\ EndpointNeverRegresses\n====\n",
+  "ruleDefinitions": {
+    "modelHash": "d697f1ceae65e2d740010d86462e9b8629190d73539c3ded584a149e1a501f79",
+    "properties": {}
+  },
+  "exploration": "partial",
+  "counts": {
+    "kind": "lower_bounds",
+    "reached": 164,
+    "edges": 274,
+    "violating": 1
+  },
+  "graph": {
+    "states": [
+      {
+        "fingerprint": "-8226579126091377285",
+        "valuation": "/\\ pending = <<0, 0>>\n/\\ active = <<0, 0>>\n/\\ published = 0\n/\\ plans = {}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "7858897891639948977",
+        "valuation": "/\\ pending = <<0, 0>>\n/\\ active = <<0, 0>>\n/\\ published = 1\n/\\ plans = {1}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "8425219237503076447",
+        "valuation": "/\\ pending = <<0, 0>>\n/\\ active = <<0, 0>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "-8156480775883942454",
+        "valuation": "/\\ pending = <<0, 0>>\n/\\ active = <<0, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "2017479232226397652",
+        "valuation": "/\\ pending = <<2, 0>>\n/\\ active = <<0, 0>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "-7230912871408879833",
+        "valuation": "/\\ pending = <<1, 0>>\n/\\ active = <<0, 0>>\n/\\ published = 1\n/\\ plans = {1}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "3133901084139613533",
+        "valuation": "/\\ pending = <<0, 2>>\n/\\ active = <<0, 0>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "2159689971959625916",
+        "valuation": "/\\ pending = <<0, 1>>\n/\\ active = <<0, 0>>\n/\\ published = 1\n/\\ plans = {1}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "-1201499470527486582",
+        "valuation": "/\\ pending = <<0, 0>>\n/\\ active = <<0, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "-5931968620192221291",
+        "valuation": "/\\ pending = <<2, 0>>\n/\\ active = <<0, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "6350304886783644684",
+        "valuation": "/\\ pending = <<3, 0>>\n/\\ active = <<0, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "229472090886255118",
+        "valuation": "/\\ pending = <<2, 0>>\n/\\ active = <<2, 0>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<2, 0>>"
+      },
+      {
+        "fingerprint": "6732112136799466013",
+        "valuation": "/\\ pending = <<0, 3>>\n/\\ active = <<0, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "-6387875118072793044",
+        "valuation": "/\\ pending = <<1, 0>>\n/\\ active = <<0, 0>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "4930940778884622550",
+        "valuation": "/\\ pending = <<2, 2>>\n/\\ active = <<0, 0>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "120417698741332794",
+        "valuation": "/\\ pending = <<1, 0>>\n/\\ active = <<1, 0>>\n/\\ published = 1\n/\\ plans = {1}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<1, 0>>"
+      },
+      {
+        "fingerprint": "-6063095644697169013",
+        "valuation": "/\\ pending = <<0, 2>>\n/\\ active = <<0, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "-1491245195801642710",
+        "valuation": "/\\ pending = <<1, 1>>\n/\\ active = <<0, 0>>\n/\\ published = 1\n/\\ plans = {1}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "-8535641153020114343",
+        "valuation": "/\\ pending = <<0, 2>>\n/\\ active = <<2, 0>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<1, 2>>\n/\\ highWater = <<2, 0>>"
+      },
+      {
+        "fingerprint": "6567580135888911070",
+        "valuation": "/\\ pending = <<0, 1>>\n/\\ active = <<0, 0>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "4455047554387082367",
+        "valuation": "/\\ pending = <<0, 1>>\n/\\ active = <<1, 0>>\n/\\ published = 1\n/\\ plans = {1}\n/\\ cursor = <<1, 2>>\n/\\ highWater = <<1, 0>>"
+      },
+      {
+        "fingerprint": "5123890264384413722",
+        "valuation": "/\\ pending = <<4, 0>>\n/\\ active = <<0, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "-4938473713041807550",
+        "valuation": "/\\ pending = <<2, 0>>\n/\\ active = <<0, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "3563665909402349212",
+        "valuation": "/\\ pending = <<0, 4>>\n/\\ active = <<0, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "6388990858413133707",
+        "valuation": "/\\ pending = <<2, 0>>\n/\\ active = <<2, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<2, 0>>"
+      },
+      {
+        "fingerprint": "-7969907651763190234",
+        "valuation": "/\\ pending = <<3, 0>>\n/\\ active = <<0, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "3553714990816814435",
+        "valuation": "/\\ pending = <<3, 0>>\n/\\ active = <<3, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<3, 0>>"
+      },
+      {
+        "fingerprint": "-8393637661078768677",
+        "valuation": "/\\ pending = <<3, 3>>\n/\\ active = <<0, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "9083327631407452226",
+        "valuation": "/\\ pending = <<2, 3>>\n/\\ active = <<0, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "6049839910850941042",
+        "valuation": "/\\ pending = <<0, 3>>\n/\\ active = <<0, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "-1939202585232210370",
+        "valuation": "/\\ pending = <<2, 0>>\n/\\ active = <<2, 2>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<3, 1>>\n/\\ highWater = <<2, 2>>"
+      },
+      {
+        "fingerprint": "7799351970293725061",
+        "valuation": "/\\ pending = <<0, 0>>\n/\\ active = <<2, 0>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<2, 0>>"
+      },
+      {
+        "fingerprint": "-8197979591472784468",
+        "valuation": "/\\ pending = <<0, 3>>\n/\\ active = <<3, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<1, 2>>\n/\\ highWater = <<3, 0>>"
+      },
+      {
+        "fingerprint": "8882192123678799443",
+        "valuation": "/\\ pending = <<1, 0>>\n/\\ active = <<0, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "5212600615528684846",
+        "valuation": "/\\ pending = <<1, 0>>\n/\\ active = <<1, 0>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<1, 0>>"
+      },
+      {
+        "fingerprint": "-8594912452585172524",
+        "valuation": "/\\ pending = <<2, 2>>\n/\\ active = <<0, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "6682921326507120396",
+        "valuation": "/\\ pending = <<2, 2>>\n/\\ active = <<2, 0>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<2, 0>>"
+      },
+      {
+        "fingerprint": "-520153371302945490",
+        "valuation": "/\\ pending = <<1, 2>>\n/\\ active = <<0, 0>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "-1830522528008089646",
+        "valuation": "/\\ pending = <<2, 2>>\n/\\ active = <<2, 0>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<1, 2>>\n/\\ highWater = <<2, 0>>"
+      },
+      {
+        "fingerprint": "-2230270696287817880",
+        "valuation": "/\\ pending = <<1, 0>>\n/\\ active = <<1, 1>>\n/\\ published = 1\n/\\ plans = {1}\n/\\ cursor = <<3, 1>>\n/\\ highWater = <<1, 1>>"
+      },
+      {
+        "fingerprint": "-9205207601684537343",
+        "valuation": "/\\ pending = <<0, 2>>\n/\\ active = <<0, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "-640349313264129364",
+        "valuation": "/\\ pending = <<0, 0>>\n/\\ active = <<1, 0>>\n/\\ published = 1\n/\\ plans = {1}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<1, 0>>"
+      },
+      {
+        "fingerprint": "9022123989917725261",
+        "valuation": "/\\ pending = <<3, 2>>\n/\\ active = <<0, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "-8605980335977559379",
+        "valuation": "/\\ pending = <<1, 1>>\n/\\ active = <<0, 0>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "-1947091111592553653",
+        "valuation": "/\\ pending = <<0, 2>>\n/\\ active = <<2, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<1, 2>>\n/\\ highWater = <<2, 0>>"
+      },
+      {
+        "fingerprint": "8161477083571561783",
+        "valuation": "/\\ pending = <<1, 1>>\n/\\ active = <<1, 0>>\n/\\ published = 1\n/\\ plans = {1}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<1, 0>>"
+      },
+      {
+        "fingerprint": "-3790543423439979031",
+        "valuation": "/\\ pending = <<1, 1>>\n/\\ active = <<1, 0>>\n/\\ published = 1\n/\\ plans = {1}\n/\\ cursor = <<1, 2>>\n/\\ highWater = <<1, 0>>"
+      },
+      {
+        "fingerprint": "455138513232295459",
+        "valuation": "/\\ pending = <<0, 2>>\n/\\ active = <<2, 2>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<1, 3>>\n/\\ highWater = <<2, 2>>"
+      },
+      {
+        "fingerprint": "8680847712901321820",
+        "valuation": "/\\ pending = <<0, 1>>\n/\\ active = <<0, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "-3018834830986760357",
+        "valuation": "/\\ pending = <<0, 0>>\n/\\ active = <<2, 0>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<1, 2>>\n/\\ highWater = <<2, 0>>"
+      },
+      {
+        "fingerprint": "3762574675619381077",
+        "valuation": "/\\ pending = <<2, 1>>\n/\\ active = <<0, 0>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "1012679221356152578",
+        "valuation": "/\\ pending = <<0, 1>>\n/\\ active = <<1, 0>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<1, 2>>\n/\\ highWater = <<1, 0>>"
+      },
+      {
+        "fingerprint": "-5434109367491891097",
+        "valuation": "/\\ pending = <<0, 1>>\n/\\ active = <<1, 1>>\n/\\ published = 1\n/\\ plans = {1}\n/\\ cursor = <<1, 3>>\n/\\ highWater = <<1, 1>>"
+      },
+      {
+        "fingerprint": "1658921068440967039",
+        "valuation": "/\\ pending = <<4, 0>>\n/\\ active = <<4, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<4, 0>>"
+      },
+      {
+        "fingerprint": "5565087176818258546",
+        "valuation": "/\\ pending = <<0, 0>>\n/\\ active = <<1, 0>>\n/\\ published = 1\n/\\ plans = {1}\n/\\ cursor = <<1, 2>>\n/\\ highWater = <<1, 0>>"
+      },
+      {
+        "fingerprint": "-7772329822838614871",
+        "valuation": "/\\ pending = <<2, 0>>\n/\\ active = <<2, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<2, 0>>"
+      },
+      {
+        "fingerprint": "-7404917415839257844",
+        "valuation": "/\\ pending = <<4, 4>>\n/\\ active = <<0, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "7300547790675045460",
+        "valuation": "/\\ pending = <<2, 4>>\n/\\ active = <<0, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "-2644563648813022937",
+        "valuation": "/\\ pending = <<0, 4>>\n/\\ active = <<4, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<1, 2>>\n/\\ highWater = <<4, 0>>"
+      },
+      {
+        "fingerprint": "741923415619816493",
+        "valuation": "/\\ pending = <<2, 0>>\n/\\ active = <<2, 2>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<3, 1>>\n/\\ highWater = <<2, 2>>"
+      },
+      {
+        "fingerprint": "-6101780389064307728",
+        "valuation": "/\\ pending = <<3, 0>>\n/\\ active = <<3, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<3, 0>>"
+      },
+      {
+        "fingerprint": "8919787388211949012",
+        "valuation": "/\\ pending = <<0, 0>>\n/\\ active = <<2, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<2, 0>>"
+      },
+      {
+        "fingerprint": "-8428100811979265956",
+        "valuation": "/\\ pending = <<2, 3>>\n/\\ active = <<2, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<2, 0>>"
+      },
+      {
+        "fingerprint": "5711398771108597040",
+        "valuation": "/\\ pending = <<3, 4>>\n/\\ active = <<0, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "3297480413238211550",
+        "valuation": "/\\ pending = <<3, 3>>\n/\\ active = <<0, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "-5817280583393318681",
+        "valuation": "/\\ pending = <<3, 0>>\n/\\ active = <<3, 3>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<3, 1>>\n/\\ highWater = <<3, 3>>"
+      },
+      {
+        "fingerprint": "-2093528042512563532",
+        "valuation": "/\\ pending = <<3, 3>>\n/\\ active = <<3, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<3, 0>>"
+      },
+      {
+        "fingerprint": "-1747432245186665307",
+        "valuation": "/\\ pending = <<0, 0>>\n/\\ active = <<3, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<3, 0>>"
+      },
+      {
+        "fingerprint": "6400854951288167018",
+        "valuation": "/\\ pending = <<3, 3>>\n/\\ active = <<3, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<1, 2>>\n/\\ highWater = <<3, 0>>"
+      },
+      {
+        "fingerprint": "563292529251455674",
+        "valuation": "/\\ pending = <<2, 3>>\n/\\ active = <<0, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "-306943184199166494",
+        "valuation": "/\\ pending = <<4, 3>>\n/\\ active = <<0, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "-5955483892519273997",
+        "valuation": "/\\ pending = <<2, 3>>\n/\\ active = <<3, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<1, 2>>\n/\\ highWater = <<3, 0>>"
+      },
+      {
+        "fingerprint": "-3178317017552747142",
+        "valuation": "/\\ pending = <<0, 3>>\n/\\ active = <<3, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<1, 2>>\n/\\ highWater = <<3, 0>>"
+      },
+      {
+        "fingerprint": "-8501261830356040779",
+        "valuation": "/\\ pending = <<0, 0>>\n/\\ active = <<2, 2>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<3, 1>>\n/\\ highWater = <<2, 2>>"
+      },
+      {
+        "fingerprint": "-4232998830203304722",
+        "valuation": "/\\ pending = <<1, 0>>\n/\\ active = <<0, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "8776809241996090978",
+        "valuation": "/\\ pending = <<0, 3>>\n/\\ active = <<3, 3>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<1, 3>>\n/\\ highWater = <<3, 3>>"
+      },
+      {
+        "fingerprint": "-2114581079083208525",
+        "valuation": "/\\ pending = <<1, 0>>\n/\\ active = <<1, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<1, 0>>"
+      },
+      {
+        "fingerprint": "6744689501890247803",
+        "valuation": "/\\ pending = <<0, 0>>\n/\\ active = <<3, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<1, 2>>\n/\\ highWater = <<3, 0>>"
+      },
+      {
+        "fingerprint": "-2468237455777729976",
+        "valuation": "/\\ pending = <<1, 0>>\n/\\ active = <<1, 1>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<3, 1>>\n/\\ highWater = <<1, 1>>"
+      },
+      {
+        "fingerprint": "-6277739636458516092",
+        "valuation": "/\\ pending = <<1, 3>>\n/\\ active = <<0, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "-7213867712579130019",
+        "valuation": "/\\ pending = <<0, 0>>\n/\\ active = <<1, 0>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<1, 0>>"
+      },
+      {
+        "fingerprint": "-3142132930018254135",
+        "valuation": "/\\ pending = <<2, 2>>\n/\\ active = <<0, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "1713442134396450860",
+        "valuation": "/\\ pending = <<1, 2>>\n/\\ active = <<1, 0>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<1, 0>>"
+      },
+      {
+        "fingerprint": "9061123721776277962",
+        "valuation": "/\\ pending = <<2, 2>>\n/\\ active = <<2, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<2, 0>>"
+      },
+      {
+        "fingerprint": "-5005980051313401028",
+        "valuation": "/\\ pending = <<2, 2>>\n/\\ active = <<2, 2>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<3, 1>>\n/\\ highWater = <<2, 2>>"
+      },
+      {
+        "fingerprint": "-4064013812448382700",
+        "valuation": "/\\ pending = <<2, 2>>\n/\\ active = <<2, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<1, 2>>\n/\\ highWater = <<2, 0>>"
+      },
+      {
+        "fingerprint": "3723741749075202695",
+        "valuation": "/\\ pending = <<0, 2>>\n/\\ active = <<2, 0>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<2, 0>>"
+      },
+      {
+        "fingerprint": "6797682246055383058",
+        "valuation": "/\\ pending = <<1, 2>>\n/\\ active = <<0, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "-2086683327920586685",
+        "valuation": "/\\ pending = <<2, 2>>\n/\\ active = <<2, 0>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<2, 2>>\n/\\ highWater = <<2, 0>>"
+      },
+      {
+        "fingerprint": "6502809412390468138",
+        "valuation": "/\\ pending = <<1, 2>>\n/\\ active = <<2, 0>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<1, 2>>\n/\\ highWater = <<2, 0>>"
+      },
+      {
+        "fingerprint": "7584933673140679592",
+        "valuation": "/\\ pending = <<2, 2>>\n/\\ active = <<2, 2>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<1, 3>>\n/\\ highWater = <<2, 2>>"
+      },
+      {
+        "fingerprint": "1709879588719521534",
+        "valuation": "/\\ pending = <<0, 0>>\n/\\ active = <<1, 1>>\n/\\ published = 1\n/\\ plans = {1}\n/\\ cursor = <<3, 1>>\n/\\ highWater = <<1, 1>>"
+      },
+      {
+        "fingerprint": "-5113534620410271024",
+        "valuation": "/\\ pending = <<2, 0>>\n/\\ active = <<2, 0>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<1, 2>>\n/\\ highWater = <<2, 0>>"
+      },
+      {
+        "fingerprint": "2884649988469204369",
+        "valuation": "/\\ pending = <<4, 2>>\n/\\ active = <<0, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "-110670404992810067",
+        "valuation": "/\\ pending = <<3, 2>>\n/\\ active = <<0, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "1527428287565712180",
+        "valuation": "/\\ pending = <<0, 2>>\n/\\ active = <<2, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<1, 2>>\n/\\ highWater = <<2, 0>>"
+      },
+      {
+        "fingerprint": "1460434725618582306",
+        "valuation": "/\\ pending = <<3, 2>>\n/\\ active = <<3, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<3, 0>>"
+      },
+      {
+        "fingerprint": "-8217617559764469819",
+        "valuation": "/\\ pending = <<1, 1>>\n/\\ active = <<0, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "3608511014112105101",
+        "valuation": "/\\ pending = <<3, 2>>\n/\\ active = <<2, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<1, 2>>\n/\\ highWater = <<2, 0>>"
+      },
+      {
+        "fingerprint": "7466475273935433647",
+        "valuation": "/\\ pending = <<1, 1>>\n/\\ active = <<1, 0>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<1, 0>>"
+      },
+      {
+        "fingerprint": "-2470203162372065423",
+        "valuation": "/\\ pending = <<1, 1>>\n/\\ active = <<1, 0>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<1, 2>>\n/\\ highWater = <<1, 0>>"
+      },
+      {
+        "fingerprint": "-2307805193576539993",
+        "valuation": "/\\ pending = <<0, 2>>\n/\\ active = <<2, 2>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<1, 3>>\n/\\ highWater = <<2, 2>>"
+      },
+      {
+        "fingerprint": "-4472250752369330934",
+        "valuation": "/\\ pending = <<0, 0>>\n/\\ active = <<2, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<1, 2>>\n/\\ highWater = <<2, 0>>"
+      },
+      {
+        "fingerprint": "-7933979189740396187",
+        "valuation": "/\\ pending = <<1, 1>>\n/\\ active = <<1, 1>>\n/\\ published = 1\n/\\ plans = {1}\n/\\ cursor = <<3, 1>>\n/\\ highWater = <<1, 1>>"
+      },
+      {
+        "fingerprint": "-8649815258030250847",
+        "valuation": "/\\ pending = <<0, 1>>\n/\\ active = <<1, 0>>\n/\\ published = 1\n/\\ plans = {1}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<1, 0>>"
+      },
+      {
+        "fingerprint": "-3533222123503832456",
+        "valuation": "/\\ pending = <<1, 1>>\n/\\ active = <<1, 0>>\n/\\ published = 1\n/\\ plans = {1}\n/\\ cursor = <<2, 2>>\n/\\ highWater = <<1, 0>>"
+      },
+      {
+        "fingerprint": "4765055388869046769",
+        "valuation": "/\\ pending = <<1, 1>>\n/\\ active = <<1, 1>>\n/\\ published = 1\n/\\ plans = {1}\n/\\ cursor = <<1, 3>>\n/\\ highWater = <<1, 1>>"
+      },
+      {
+        "fingerprint": "6467525579733046049",
+        "valuation": "/\\ pending = <<0, 0>>\n/\\ active = <<2, 2>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<1, 3>>\n/\\ highWater = <<2, 2>>"
+      },
+      {
+        "fingerprint": "-4932035610999704604",
+        "valuation": "/\\ pending = <<1, 0>>\n/\\ active = <<1, 0>>\n/\\ published = 1\n/\\ plans = {1}\n/\\ cursor = <<1, 2>>\n/\\ highWater = <<1, 0>>"
+      },
+      {
+        "fingerprint": "4388401276186908153",
+        "valuation": "/\\ pending = <<0, 1>>\n/\\ active = <<0, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "6565020151378474499",
+        "valuation": "/\\ pending = <<2, 1>>\n/\\ active = <<0, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "3235801908784218255",
+        "valuation": "/\\ pending = <<2, 1>>\n/\\ active = <<2, 0>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<2, 0>>"
+      },
+      {
+        "fingerprint": "6998066670084801161",
+        "valuation": "/\\ pending = <<2, 1>>\n/\\ active = <<1, 0>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<1, 2>>\n/\\ highWater = <<1, 0>>"
+      },
+      {
+        "fingerprint": "-5866472511076117094",
+        "valuation": "/\\ pending = <<3, 1>>\n/\\ active = <<0, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "6609631581416737378",
+        "valuation": "/\\ pending = <<0, 1>>\n/\\ active = <<1, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<1, 2>>\n/\\ highWater = <<1, 0>>"
+      },
+      {
+        "fingerprint": "-1007057607046864850",
+        "valuation": "/\\ pending = <<0, 1>>\n/\\ active = <<1, 1>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<1, 3>>\n/\\ highWater = <<1, 1>>"
+      },
+      {
+        "fingerprint": "2433383563553617283",
+        "valuation": "/\\ pending = <<0, 0>>\n/\\ active = <<1, 0>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<1, 2>>\n/\\ highWater = <<1, 0>>"
+      },
+      {
+        "fingerprint": "-6114743848477958477",
+        "valuation": "/\\ pending = <<4, 0>>\n/\\ active = <<4, 4>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<3, 1>>\n/\\ highWater = <<4, 4>>"
+      },
+      {
+        "fingerprint": "-4287847706704576918",
+        "valuation": "/\\ pending = <<0, 0>>\n/\\ active = <<1, 1>>\n/\\ published = 1\n/\\ plans = {1}\n/\\ cursor = <<1, 3>>\n/\\ highWater = <<1, 1>>"
+      },
+      {
+        "fingerprint": "-4661939779158322449",
+        "valuation": "/\\ pending = <<0, 0>>\n/\\ active = <<4, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<4, 0>>"
+      },
+      {
+        "fingerprint": "-3953476337226818455",
+        "valuation": "/\\ pending = <<4, 4>>\n/\\ active = <<4, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<4, 0>>"
+      },
+      {
+        "fingerprint": "3226483911848846641",
+        "valuation": "/\\ pending = <<2, 0>>\n/\\ active = <<2, 2>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<3, 1>>\n/\\ highWater = <<2, 2>>"
+      },
+      {
+        "fingerprint": "-4609629936038324639",
+        "valuation": "/\\ pending = <<0, 0>>\n/\\ active = <<2, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<2, 0>>"
+      },
+      {
+        "fingerprint": "8287822657660011703",
+        "valuation": "/\\ pending = <<4, 4>>\n/\\ active = <<4, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<1, 2>>\n/\\ highWater = <<4, 0>>"
+      },
+      {
+        "fingerprint": "5333641773723721663",
+        "valuation": "/\\ pending = <<2, 4>>\n/\\ active = <<2, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<2, 0>>"
+      },
+      {
+        "fingerprint": "1049127355470037153",
+        "valuation": "/\\ pending = <<0, 4>>\n/\\ active = <<4, 4>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<1, 3>>\n/\\ highWater = <<4, 4>>"
+      },
+      {
+        "fingerprint": "-8112969105876941841",
+        "valuation": "/\\ pending = <<2, 4>>\n/\\ active = <<4, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<1, 2>>\n/\\ highWater = <<4, 0>>"
+      },
+      {
+        "fingerprint": "390505319705201201",
+        "valuation": "/\\ pending = <<0, 0>>\n/\\ active = <<4, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<1, 2>>\n/\\ highWater = <<4, 0>>"
+      },
+      {
+        "fingerprint": "-6178411692783153835",
+        "valuation": "/\\ pending = <<3, 0>>\n/\\ active = <<3, 3>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<3, 1>>\n/\\ highWater = <<3, 3>>"
+      },
+      {
+        "fingerprint": "2965872561010732658",
+        "valuation": "/\\ pending = <<0, 0>>\n/\\ active = <<2, 2>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<3, 1>>\n/\\ highWater = <<2, 2>>"
+      },
+      {
+        "fingerprint": "-3070251255864498084",
+        "valuation": "/\\ pending = <<0, 0>>\n/\\ active = <<3, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<3, 0>>"
+      },
+      {
+        "fingerprint": "-2744723209135461382",
+        "valuation": "/\\ pending = <<2, 3>>\n/\\ active = <<2, 2>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<3, 1>>\n/\\ highWater = <<2, 2>>"
+      },
+      {
+        "fingerprint": "8463911640345837798",
+        "valuation": "/\\ pending = <<3, 4>>\n/\\ active = <<3, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<3, 0>>"
+      },
+      {
+        "fingerprint": "2919758574511219025",
+        "valuation": "/\\ pending = <<2, 3>>\n/\\ active = <<2, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<2, 0>>"
+      },
+      {
+        "fingerprint": "-6289899272623889533",
+        "valuation": "/\\ pending = <<3, 0>>\n/\\ active = <<2, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<2, 0>>"
+      },
+      {
+        "fingerprint": "-6311112097476097533",
+        "valuation": "/\\ pending = <<0, 3>>\n/\\ active = <<2, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<2, 0>>"
+      },
+      {
+        "fingerprint": "-6283666002178083230",
+        "valuation": "/\\ pending = <<2, 3>>\n/\\ active = <<3, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<2, 2>>\n/\\ highWater = <<3, 0>>"
+      },
+      {
+        "fingerprint": "1726053829243534856",
+        "valuation": "/\\ pending = <<3, 3>>\n/\\ active = <<3, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<3, 0>>"
+      },
+      {
+        "fingerprint": "-6522682376063442293",
+        "valuation": "/\\ pending = <<3, 4>>\n/\\ active = <<4, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<1, 2>>\n/\\ highWater = <<4, 0>>"
+      },
+      {
+        "fingerprint": "-5921670369186421034",
+        "valuation": "/\\ pending = <<3, 3>>\n/\\ active = <<3, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<1, 2>>\n/\\ highWater = <<3, 0>>"
+      },
+      {
+        "fingerprint": "-215502010639375405",
+        "valuation": "/\\ pending = <<0, 0>>\n/\\ active = <<3, 3>>\n/\\ published = 3\n/\\ plans = {2, 3}\n/\\ cursor = <<3, 1>>\n/\\ highWater = <<3, 3>>"
+      },
+      {
+        "fingerprint": "9000375150892666672",
+        "valuation": "/\\ pending = <<3, 3>>\n/\\ active = <<3, 3>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<3, 1>>\n/\\ highWater = <<3, 3>>"
+      },
+      {
+        "fingerprint": "3755087310227522418",
+        "valuation": "/\\ pending = <<0, 3>>\n/\\ active = <<3, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<3, 0>>"
+      },
+      {
+        "fingerprint": "6721154386946348539",
+        "valuation": "/\\ pending = <<3, 3>>\n/\\ active = <<3, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<2, 2>>\n/\\ highWater = <<3, 0>>"
+      },
+      {
+        "fingerprint": "-5826542101512134748",
+        "valuation": "/\\ pending = <<3, 3>>\n/\\ active = <<3, 3>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<1, 3>>\n/\\ highWater = <<3, 3>>"
+      },
+      {
+        "fingerprint": "-8397111001091048003",
+        "valuation": "/\\ pending = <<3, 0>>\n/\\ active = <<3, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<1, 2>>\n/\\ highWater = <<3, 0>>"
+      },
+      {
+        "fingerprint": "-6078847754087030137",
+        "valuation": "/\\ pending = <<4, 3>>\n/\\ active = <<4, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<4, 0>>"
+      },
+      {
+        "fingerprint": "-8664864895216728142",
+        "valuation": "/\\ pending = <<2, 3>>\n/\\ active = <<3, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<1, 2>>\n/\\ highWater = <<3, 0>>"
+      },
+      {
+        "fingerprint": "8911643000080433386",
+        "valuation": "/\\ pending = <<4, 3>>\n/\\ active = <<3, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<1, 2>>\n/\\ highWater = <<3, 0>>"
+      },
+      {
+        "fingerprint": "5852115208083623715",
+        "valuation": "/\\ pending = <<2, 3>>\n/\\ active = <<2, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<2, 2>>\n/\\ highWater = <<3, 0>>"
+      },
+      {
+        "fingerprint": "-4965919576853197931",
+        "valuation": "/\\ pending = <<0, 3>>\n/\\ active = <<3, 3>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<1, 3>>\n/\\ highWater = <<3, 3>>"
+      },
+      {
+        "fingerprint": "8017087125051895938",
+        "valuation": "/\\ pending = <<0, 0>>\n/\\ active = <<3, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<1, 2>>\n/\\ highWater = <<3, 0>>"
+      },
+      {
+        "fingerprint": "-3048823316087392958",
+        "valuation": "/\\ pending = <<1, 0>>\n/\\ active = <<1, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<1, 0>>"
+      },
+      {
+        "fingerprint": "1974432777208958968",
+        "valuation": "/\\ pending = <<1, 4>>\n/\\ active = <<0, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "3370475137244738375",
+        "valuation": "/\\ pending = <<0, 0>>\n/\\ active = <<3, 3>>\n/\\ published = 3\n/\\ plans = {2, 3}\n/\\ cursor = <<1, 3>>\n/\\ highWater = <<3, 3>>"
+      },
+      {
+        "fingerprint": "3252315813525406750",
+        "valuation": "/\\ pending = <<1, 0>>\n/\\ active = <<1, 1>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<3, 1>>\n/\\ highWater = <<1, 1>>"
+      },
+      {
+        "fingerprint": "1669365313692275498",
+        "valuation": "/\\ pending = <<0, 0>>\n/\\ active = <<1, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<1, 0>>"
+      },
+      {
+        "fingerprint": "3532053649907652452",
+        "valuation": "/\\ pending = <<1, 3>>\n/\\ active = <<1, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<1, 0>>"
+      },
+      {
+        "fingerprint": "1011865369013617211",
+        "valuation": "/\\ pending = <<0, 0>>\n/\\ active = <<1, 1>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<3, 1>>\n/\\ highWater = <<1, 1>>"
+      },
+      {
+        "fingerprint": "-9066114166904907958",
+        "valuation": "/\\ pending = <<1, 2>>\n/\\ active = <<1, 1>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<3, 1>>\n/\\ highWater = <<1, 1>>"
+      },
+      {
+        "fingerprint": "8784110807961399574",
+        "valuation": "/\\ pending = <<1, 3>>\n/\\ active = <<0, 0>>\n/\\ published = 4\n/\\ plans = {1, 2, 3, 4}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "8914688138335221813",
+        "valuation": "/\\ pending = <<1, 3>>\n/\\ active = <<3, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<1, 2>>\n/\\ highWater = <<3, 0>>"
+      },
+      {
+        "fingerprint": "-1053030319984728249",
+        "valuation": "/\\ pending = <<2, 0>>\n/\\ active = <<1, 0>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<1, 0>>"
+      },
+      {
+        "fingerprint": "-4291209550452930465",
+        "valuation": "/\\ pending = <<0, 2>>\n/\\ active = <<1, 0>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<2, 1>>\n/\\ highWater = <<1, 0>>"
+      }
+    ],
+    "edges": [
+      {
+        "from": "-8226579126091377285",
+        "to": "7858897891639948977",
+        "action": "Publish"
+      },
+      {
+        "from": "7858897891639948977",
+        "to": "8425219237503076447",
+        "action": "Publish"
+      },
+      {
+        "from": "8425219237503076447",
+        "to": "-8156480775883942454",
+        "action": "Publish"
+      },
+      {
+        "from": "8425219237503076447",
+        "to": "2017479232226397652",
+        "action": "Select"
+      },
+      {
+        "from": "7858897891639948977",
+        "to": "-7230912871408879833",
+        "action": "Select"
+      },
+      {
+        "from": "8425219237503076447",
+        "to": "3133901084139613533",
+        "action": "Select"
+      },
+      {
+        "from": "7858897891639948977",
+        "to": "2159689971959625916",
+        "action": "Select"
+      },
+      {
+        "from": "-8156480775883942454",
+        "to": "-1201499470527486582",
+        "action": "Publish"
+      },
+      {
+        "from": "2017479232226397652",
+        "to": "-5931968620192221291",
+        "action": "Publish"
+      },
+      {
+        "from": "-8156480775883942454",
+        "to": "6350304886783644684",
+        "action": "Select"
+      },
+      {
+        "from": "2017479232226397652",
+        "to": "229472090886255118",
+        "action": "Point"
+      },
+      {
+        "from": "-8156480775883942454",
+        "to": "6732112136799466013",
+        "action": "Select"
+      },
+      {
+        "from": "2017479232226397652",
+        "to": "8425219237503076447",
+        "action": "Abort"
+      },
+      {
+        "from": "-7230912871408879833",
+        "to": "-6387875118072793044",
+        "action": "Publish"
+      },
+      {
+        "from": "2017479232226397652",
+        "to": "4930940778884622550",
+        "action": "Select"
+      },
+      {
+        "from": "-7230912871408879833",
+        "to": "120417698741332794",
+        "action": "Point"
+      },
+      {
+        "from": "3133901084139613533",
+        "to": "-6063095644697169013",
+        "action": "Publish"
+      },
+      {
+        "from": "-7230912871408879833",
+        "to": "7858897891639948977",
+        "action": "Abort"
+      },
+      {
+        "from": "3133901084139613533",
+        "to": "4930940778884622550",
+        "action": "Select"
+      },
+      {
+        "from": "-7230912871408879833",
+        "to": "-1491245195801642710",
+        "action": "Select"
+      },
+      {
+        "from": "3133901084139613533",
+        "to": "-8535641153020114343",
+        "action": "Point"
+      },
+      {
+        "from": "2159689971959625916",
+        "to": "6567580135888911070",
+        "action": "Publish"
+      },
+      {
+        "from": "3133901084139613533",
+        "to": "8425219237503076447",
+        "action": "Abort"
+      },
+      {
+        "from": "2159689971959625916",
+        "to": "-1491245195801642710",
+        "action": "Select"
+      },
+      {
+        "from": "2159689971959625916",
+        "to": "4455047554387082367",
+        "action": "Point"
+      },
+      {
+        "from": "-1201499470527486582",
+        "to": "5123890264384413722",
+        "action": "Select"
+      },
+      {
+        "from": "2159689971959625916",
+        "to": "7858897891639948977",
+        "action": "Abort"
+      },
+      {
+        "from": "-5931968620192221291",
+        "to": "-4938473713041807550",
+        "action": "Publish"
+      },
+      {
+        "from": "-1201499470527486582",
+        "to": "3563665909402349212",
+        "action": "Select"
+      },
+      {
+        "from": "-5931968620192221291",
+        "to": "6388990858413133707",
+        "action": "Point"
+      },
+      {
+        "from": "6350304886783644684",
+        "to": "-7969907651763190234",
+        "action": "Publish"
+      },
+      {
+        "from": "-5931968620192221291",
+        "to": "-8156480775883942454",
+        "action": "Abort"
+      },
+      {
+        "from": "6350304886783644684",
+        "to": "3553714990816814435",
+        "action": "Point"
+      },
+      {
+        "from": "6350304886783644684",
+        "to": "-8156480775883942454",
+        "action": "Abort"
+      },
+      {
+        "from": "6350304886783644684",
+        "to": "-8393637661078768677",
+        "action": "Select"
+      },
+      {
+        "from": "-5931968620192221291",
+        "to": "9083327631407452226",
+        "action": "Select"
+      },
+      {
+        "from": "6732112136799466013",
+        "to": "6049839910850941042",
+        "action": "Publish"
+      },
+      {
+        "from": "229472090886255118",
+        "to": "6388990858413133707",
+        "action": "Publish"
+      },
+      {
+        "from": "229472090886255118",
+        "to": "-1939202585232210370",
+        "action": "Point"
+      },
+      {
+        "from": "6732112136799466013",
+        "to": "-8393637661078768677",
+        "action": "Select"
+      },
+      {
+        "from": "229472090886255118",
+        "to": "7799351970293725061",
+        "action": "Abort"
+      },
+      {
+        "from": "6732112136799466013",
+        "to": "-8197979591472784468",
+        "action": "Point"
+      },
+      {
+        "from": "-6387875118072793044",
+        "to": "8882192123678799443",
+        "action": "Publish"
+      },
+      {
+        "from": "6732112136799466013",
+        "to": "-8156480775883942454",
+        "action": "Abort"
+      },
+      {
+        "from": "-6387875118072793044",
+        "to": "5212600615528684846",
+        "action": "Point"
+      },
+      {
+        "from": "4930940778884622550",
+        "to": "-8594912452585172524",
+        "action": "Publish"
+      },
+      {
+        "from": "-6387875118072793044",
+        "to": "8425219237503076447",
+        "action": "Abort"
+      },
+      {
+        "from": "4930940778884622550",
+        "to": "6682921326507120396",
+        "action": "Point"
+      },
+      {
+        "from": "-6387875118072793044",
+        "to": "-520153371302945490",
+        "action": "Select"
+      },
+      {
+        "from": "4930940778884622550",
+        "to": "3133901084139613533",
+        "action": "Abort"
+      },
+      {
+        "from": "120417698741332794",
+        "to": "5212600615528684846",
+        "action": "Publish"
+      },
+      {
+        "from": "4930940778884622550",
+        "to": "-1830522528008089646",
+        "action": "Point"
+      },
+      {
+        "from": "120417698741332794",
+        "to": "-2230270696287817880",
+        "action": "Point"
+      },
+      {
+        "from": "4930940778884622550",
+        "to": "2017479232226397652",
+        "action": "Abort"
+      },
+      {
+        "from": "-6063095644697169013",
+        "to": "-9205207601684537343",
+        "action": "Publish"
+      },
+      {
+        "from": "120417698741332794",
+        "to": "-640349313264129364",
+        "action": "Abort"
+      },
+      {
+        "from": "-6063095644697169013",
+        "to": "9022123989917725261",
+        "action": "Select"
+      },
+      {
+        "from": "-1491245195801642710",
+        "to": "-8605980335977559379",
+        "action": "Publish"
+      },
+      {
+        "from": "-6063095644697169013",
+        "to": "-1947091111592553653",
+        "action": "Point"
+      },
+      {
+        "from": "-1491245195801642710",
+        "to": "8161477083571561783",
+        "action": "Point"
+      },
+      {
+        "from": "-6063095644697169013",
+        "to": "-8156480775883942454",
+        "action": "Abort"
+      },
+      {
+        "from": "-1491245195801642710",
+        "to": "2159689971959625916",
+        "action": "Abort"
+      },
+      {
+        "from": "-8535641153020114343",
+        "to": "-1947091111592553653",
+        "action": "Publish"
+      },
+      {
+        "from": "-1491245195801642710",
+        "to": "-3790543423439979031",
+        "action": "Point"
+      },
+      {
+        "from": "-8535641153020114343",
+        "to": "455138513232295459",
+        "action": "Point"
+      },
+      {
+        "from": "-1491245195801642710",
+        "to": "-7230912871408879833",
+        "action": "Abort"
+      },
+      {
+        "from": "6567580135888911070",
+        "to": "8680847712901321820",
+        "action": "Publish"
+      },
+      {
+        "from": "-8535641153020114343",
+        "to": "-3018834830986760357",
+        "action": "Abort"
+      },
+      {
+        "from": "6567580135888911070",
+        "to": "3762574675619381077",
+        "action": "Select"
+      },
+      {
+        "from": "4455047554387082367",
+        "to": "1012679221356152578",
+        "action": "Publish"
+      },
+      {
+        "from": "6567580135888911070",
+        "to": "1012679221356152578",
+        "action": "Point"
+      },
+      {
+        "from": "6567580135888911070",
+        "to": "8425219237503076447",
+        "action": "Abort"
+      },
+      {
+        "from": "4455047554387082367",
+        "to": "-5434109367491891097",
+        "action": "Point"
+      },
+      {
+        "from": "5123890264384413722",
+        "to": "1658921068440967039",
+        "action": "Point"
+      },
+      {
+        "from": "4455047554387082367",
+        "to": "5565087176818258546",
+        "action": "Abort"
+      },
+      {
+        "from": "5123890264384413722",
+        "to": "-1201499470527486582",
+        "action": "Abort"
+      },
+      {
+        "from": "-4938473713041807550",
+        "to": "-7772329822838614871",
+        "action": "Point"
+      },
+      {
+        "from": "5123890264384413722",
+        "to": "-7404917415839257844",
+        "action": "Select"
+      },
+      {
+        "from": "-4938473713041807550",
+        "to": "-1201499470527486582",
+        "action": "Abort"
+      },
+      {
+        "from": "3563665909402349212",
+        "to": "-7404917415839257844",
+        "action": "Select"
+      },
+      {
+        "from": "-4938473713041807550",
+        "to": "7300547790675045460",
+        "action": "Select"
+      },
+      {
+        "from": "3563665909402349212",
+        "to": "-2644563648813022937",
+        "action": "Point"
+      },
+      {
+        "from": "6388990858413133707",
+        "to": "-7772329822838614871",
+        "action": "Publish"
+      },
+      {
+        "from": "3563665909402349212",
+        "to": "-1201499470527486582",
+        "action": "Abort"
+      },
+      {
+        "from": "6388990858413133707",
+        "to": "741923415619816493",
+        "action": "Point"
+      },
+      {
+        "from": "-7969907651763190234",
+        "to": "-6101780389064307728",
+        "action": "Point"
+      },
+      {
+        "from": "6388990858413133707",
+        "to": "8919787388211949012",
+        "action": "Abort"
+      },
+      {
+        "from": "-7969907651763190234",
+        "to": "-1201499470527486582",
+        "action": "Abort"
+      },
+      {
+        "from": "6388990858413133707",
+        "to": "-8428100811979265956",
+        "action": "Select"
+      },
+      {
+        "from": "-7969907651763190234",
+        "to": "5711398771108597040",
+        "action": "Select"
+      },
+      {
+        "from": "3553714990816814435",
+        "to": "-6101780389064307728",
+        "action": "Publish"
+      },
+      {
+        "from": "-8393637661078768677",
+        "to": "3297480413238211550",
+        "action": "Publish"
+      },
+      {
+        "from": "3553714990816814435",
+        "to": "-5817280583393318681",
+        "action": "Point"
+      },
+      {
+        "from": "-8393637661078768677",
+        "to": "-2093528042512563532",
+        "action": "Point"
+      },
+      {
+        "from": "3553714990816814435",
+        "to": "-1747432245186665307",
+        "action": "Abort"
+      },
+      {
+        "from": "-8393637661078768677",
+        "to": "6732112136799466013",
+        "action": "Abort"
+      },
+      {
+        "from": "-8393637661078768677",
+        "to": "6400854951288167018",
+        "action": "Point"
+      },
+      {
+        "from": "9083327631407452226",
+        "to": "563292529251455674",
+        "action": "Publish"
+      },
+      {
+        "from": "-8393637661078768677",
+        "to": "6350304886783644684",
+        "action": "Abort"
+      },
+      {
+        "from": "9083327631407452226",
+        "to": "-8428100811979265956",
+        "action": "Point"
+      },
+      {
+        "from": "9083327631407452226",
+        "to": "6732112136799466013",
+        "action": "Abort"
+      },
+      {
+        "from": "6049839910850941042",
+        "to": "-306943184199166494",
+        "action": "Select"
+      },
+      {
+        "from": "9083327631407452226",
+        "to": "-5955483892519273997",
+        "action": "Point"
+      },
+      {
+        "from": "6049839910850941042",
+        "to": "-3178317017552747142",
+        "action": "Point"
+      },
+      {
+        "from": "9083327631407452226",
+        "to": "-5931968620192221291",
+        "action": "Abort"
+      },
+      {
+        "from": "6049839910850941042",
+        "to": "-1201499470527486582",
+        "action": "Abort"
+      },
+      {
+        "from": "-1939202585232210370",
+        "to": "741923415619816493",
+        "action": "Publish"
+      },
+      {
+        "from": "7799351970293725061",
+        "to": "8919787388211949012",
+        "action": "Publish"
+      },
+      {
+        "from": "-1939202585232210370",
+        "to": "-8501261830356040779",
+        "action": "Cleanup"
+      },
+      {
+        "from": "-8197979591472784468",
+        "to": "-3178317017552747142",
+        "action": "Publish"
+      },
+      {
+        "from": "8882192123678799443",
+        "to": "-4232998830203304722",
+        "action": "Publish"
+      },
+      {
+        "from": "-8197979591472784468",
+        "to": "8776809241996090978",
+        "action": "Point"
+      },
+      {
+        "from": "8882192123678799443",
+        "to": "-2114581079083208525",
+        "action": "Point"
+      },
+      {
+        "from": "-8197979591472784468",
+        "to": "6744689501890247803",
+        "action": "Abort"
+      },
+      {
+        "from": "8882192123678799443",
+        "to": "-8156480775883942454",
+        "action": "Abort"
+      },
+      {
+        "from": "5212600615528684846",
+        "to": "-2114581079083208525",
+        "action": "Publish"
+      },
+      {
+        "from": "5212600615528684846",
+        "to": "-2468237455777729976",
+        "action": "Point"
+      },
+      {
+        "from": "8882192123678799443",
+        "to": "-6277739636458516092",
+        "action": "Select"
+      },
+      {
+        "from": "5212600615528684846",
+        "to": "-7213867712579130019",
+        "action": "Abort"
+      },
+      {
+        "from": "-8594912452585172524",
+        "to": "-3142132930018254135",
+        "action": "Publish"
+      },
+      {
+        "from": "5212600615528684846",
+        "to": "1713442134396450860",
+        "action": "Select"
+      },
+      {
+        "from": "-8594912452585172524",
+        "to": "9061123721776277962",
+        "action": "Point"
+      },
+      {
+        "from": "6682921326507120396",
+        "to": "9061123721776277962",
+        "action": "Publish"
+      },
+      {
+        "from": "-8594912452585172524",
+        "to": "-6063095644697169013",
+        "action": "Abort"
+      },
+      {
+        "from": "6682921326507120396",
+        "to": "-5005980051313401028",
+        "action": "Point"
+      },
+      {
+        "from": "-8594912452585172524",
+        "to": "-4064013812448382700",
+        "action": "Point"
+      },
+      {
+        "from": "6682921326507120396",
+        "to": "3723741749075202695",
+        "action": "Abort"
+      },
+      {
+        "from": "-8594912452585172524",
+        "to": "-5931968620192221291",
+        "action": "Abort"
+      },
+      {
+        "from": "-520153371302945490",
+        "to": "6797682246055383058",
+        "action": "Publish"
+      },
+      {
+        "from": "6682921326507120396",
+        "to": "-2086683327920586685",
+        "action": "Point"
+      },
+      {
+        "from": "-520153371302945490",
+        "to": "1713442134396450860",
+        "action": "Point"
+      },
+      {
+        "from": "6682921326507120396",
+        "to": "229472090886255118",
+        "action": "Abort"
+      },
+      {
+        "from": "-520153371302945490",
+        "to": "3133901084139613533",
+        "action": "Abort"
+      },
+      {
+        "from": "-1830522528008089646",
+        "to": "-4064013812448382700",
+        "action": "Publish"
+      },
+      {
+        "from": "-520153371302945490",
+        "to": "6502809412390468138",
+        "action": "Point"
+      },
+      {
+        "from": "-1830522528008089646",
+        "to": "-2086683327920586685",
+        "action": "Point"
+      },
+      {
+        "from": "-520153371302945490",
+        "to": "-6387875118072793044",
+        "action": "Abort"
+      },
+      {
+        "from": "-1830522528008089646",
+        "to": "-8535641153020114343",
+        "action": "Abort"
+      },
+      {
+        "from": "-2230270696287817880",
+        "to": "-2468237455777729976",
+        "action": "Publish"
+      },
+      {
+        "from": "-1830522528008089646",
+        "to": "7584933673140679592",
+        "action": "Point"
+      },
+      {
+        "from": "-2230270696287817880",
+        "to": "1709879588719521534",
+        "action": "Cleanup"
+      },
+      {
+        "from": "-1830522528008089646",
+        "to": "-5113534620410271024",
+        "action": "Abort"
+      },
+      {
+        "from": "-640349313264129364",
+        "to": "-7213867712579130019",
+        "action": "Publish"
+      },
+      {
+        "from": "-9205207601684537343",
+        "to": "2884649988469204369",
+        "action": "Select"
+      },
+      {
+        "from": "9022123989917725261",
+        "to": "-110670404992810067",
+        "action": "Publish"
+      },
+      {
+        "from": "-9205207601684537343",
+        "to": "1527428287565712180",
+        "action": "Point"
+      },
+      {
+        "from": "9022123989917725261",
+        "to": "1460434725618582306",
+        "action": "Point"
+      },
+      {
+        "from": "-9205207601684537343",
+        "to": "-1201499470527486582",
+        "action": "Abort"
+      },
+      {
+        "from": "9022123989917725261",
+        "to": "-6063095644697169013",
+        "action": "Abort"
+      },
+      {
+        "from": "-8605980335977559379",
+        "to": "-8217617559764469819",
+        "action": "Publish"
+      },
+      {
+        "from": "9022123989917725261",
+        "to": "3608511014112105101",
+        "action": "Point"
+      },
+      {
+        "from": "-8605980335977559379",
+        "to": "7466475273935433647",
+        "action": "Point"
+      },
+      {
+        "from": "9022123989917725261",
+        "to": "6350304886783644684",
+        "action": "Abort"
+      },
+      {
+        "from": "-8605980335977559379",
+        "to": "6567580135888911070",
+        "action": "Abort"
+      },
+      {
+        "from": "-1947091111592553653",
+        "to": "1527428287565712180",
+        "action": "Publish"
+      },
+      {
+        "from": "-8605980335977559379",
+        "to": "-2470203162372065423",
+        "action": "Point"
+      },
+      {
+        "from": "-1947091111592553653",
+        "to": "3608511014112105101",
+        "action": "Select"
+      },
+      {
+        "from": "-8605980335977559379",
+        "to": "-6387875118072793044",
+        "action": "Abort"
+      },
+      {
+        "from": "-1947091111592553653",
+        "to": "-2307805193576539993",
+        "action": "Point"
+      },
+      {
+        "from": "8161477083571561783",
+        "to": "7466475273935433647",
+        "action": "Publish"
+      },
+      {
+        "from": "-1947091111592553653",
+        "to": "-4472250752369330934",
+        "action": "Abort"
+      },
+      {
+        "from": "8161477083571561783",
+        "to": "-7933979189740396187",
+        "action": "Point"
+      },
+      {
+        "from": "-3790543423439979031",
+        "to": "-2470203162372065423",
+        "action": "Publish"
+      },
+      {
+        "from": "8161477083571561783",
+        "to": "-8649815258030250847",
+        "action": "Abort"
+      },
+      {
+        "from": "-3790543423439979031",
+        "to": "-3533222123503832456",
+        "action": "Point"
+      },
+      {
+        "from": "8161477083571561783",
+        "to": "-3533222123503832456",
+        "action": "Point"
+      },
+      {
+        "from": "-3790543423439979031",
+        "to": "4455047554387082367",
+        "action": "Abort"
+      },
+      {
+        "from": "8161477083571561783",
+        "to": "120417698741332794",
+        "action": "Abort"
+      },
+      {
+        "from": "455138513232295459",
+        "to": "-2307805193576539993",
+        "action": "Publish"
+      },
+      {
+        "from": "-3790543423439979031",
+        "to": "4765055388869046769",
+        "action": "Point"
+      },
+      {
+        "from": "455138513232295459",
+        "to": "6467525579733046049",
+        "action": "Cleanup"
+      },
+      {
+        "from": "-3790543423439979031",
+        "to": "-4932035610999704604",
+        "action": "Abort"
+      },
+      {
+        "from": "8680847712901321820",
+        "to": "4388401276186908153",
+        "action": "Publish"
+      },
+      {
+        "from": "-3018834830986760357",
+        "to": "-4472250752369330934",
+        "action": "Publish"
+      },
+      {
+        "from": "3762574675619381077",
+        "to": "6565020151378474499",
+        "action": "Publish"
+      },
+      {
+        "from": "3762574675619381077",
+        "to": "3235801908784218255",
+        "action": "Point"
+      },
+      {
+        "from": "3762574675619381077",
+        "to": "6567580135888911070",
+        "action": "Abort"
+      },
+      {
+        "from": "3762574675619381077",
+        "to": "6998066670084801161",
+        "action": "Point"
+      },
+      {
+        "from": "8680847712901321820",
+        "to": "-5866472511076117094",
+        "action": "Select"
+      },
+      {
+        "from": "3762574675619381077",
+        "to": "2017479232226397652",
+        "action": "Abort"
+      },
+      {
+        "from": "8680847712901321820",
+        "to": "6609631581416737378",
+        "action": "Point"
+      },
+      {
+        "from": "1012679221356152578",
+        "to": "6609631581416737378",
+        "action": "Publish"
+      },
+      {
+        "from": "8680847712901321820",
+        "to": "-8156480775883942454",
+        "action": "Abort"
+      },
+      {
+        "from": "1012679221356152578",
+        "to": "6998066670084801161",
+        "action": "Select"
+      },
+      {
+        "from": "-5434109367491891097",
+        "to": "-1007057607046864850",
+        "action": "Publish"
+      },
+      {
+        "from": "1012679221356152578",
+        "to": "-1007057607046864850",
+        "action": "Point"
+      },
+      {
+        "from": "1012679221356152578",
+        "to": "2433383563553617283",
+        "action": "Abort"
+      },
+      {
+        "from": "1658921068440967039",
+        "to": "-6114743848477958477",
+        "action": "Point"
+      },
+      {
+        "from": "-5434109367491891097",
+        "to": "-4287847706704576918",
+        "action": "Cleanup"
+      },
+      {
+        "from": "1658921068440967039",
+        "to": "-4661939779158322449",
+        "action": "Abort"
+      },
+      {
+        "from": "5565087176818258546",
+        "to": "2433383563553617283",
+        "action": "Publish"
+      },
+      {
+        "from": "-7404917415839257844",
+        "to": "-3953476337226818455",
+        "action": "Point"
+      },
+      {
+        "from": "-7772329822838614871",
+        "to": "3226483911848846641",
+        "action": "Point"
+      },
+      {
+        "from": "-7404917415839257844",
+        "to": "3563665909402349212",
+        "action": "Abort"
+      },
+      {
+        "from": "-7772329822838614871",
+        "to": "-4609629936038324639",
+        "action": "Abort"
+      },
+      {
+        "from": "-7404917415839257844",
+        "to": "8287822657660011703",
+        "action": "Point"
+      },
+      {
+        "from": "-7772329822838614871",
+        "to": "5333641773723721663",
+        "action": "Select"
+      },
+      {
+        "from": "-7404917415839257844",
+        "to": "5123890264384413722",
+        "action": "Abort"
+      },
+      {
+        "from": "7300547790675045460",
+        "to": "5333641773723721663",
+        "action": "Point"
+      },
+      {
+        "from": "7300547790675045460",
+        "to": "3563665909402349212",
+        "action": "Abort"
+      },
+      {
+        "from": "-2644563648813022937",
+        "to": "1049127355470037153",
+        "action": "Point"
+      },
+      {
+        "from": "7300547790675045460",
+        "to": "-8112969105876941841",
+        "action": "Point"
+      },
+      {
+        "from": "-2644563648813022937",
+        "to": "390505319705201201",
+        "action": "Abort"
+      },
+      {
+        "from": "7300547790675045460",
+        "to": "-4938473713041807550",
+        "action": "Abort"
+      },
+      {
+        "from": "741923415619816493",
+        "to": "3226483911848846641",
+        "action": "Publish"
+      },
+      {
+        "from": "-6101780389064307728",
+        "to": "-6178411692783153835",
+        "action": "Point"
+      },
+      {
+        "from": "741923415619816493",
+        "to": "2965872561010732658",
+        "action": "Cleanup"
+      },
+      {
+        "from": "-6101780389064307728",
+        "to": "-3070251255864498084",
+        "action": "Abort"
+      },
+      {
+        "from": "741923415619816493",
+        "to": "-2744723209135461382",
+        "action": "Select"
+      },
+      {
+        "from": "-6101780389064307728",
+        "to": "8463911640345837798",
+        "action": "Select"
+      },
+      {
+        "from": "8919787388211949012",
+        "to": "-4609629936038324639",
+        "action": "Publish"
+      },
+      {
+        "from": "-8428100811979265956",
+        "to": "2919758574511219025",
+        "action": "Publish"
+      },
+      {
+        "from": "8919787388211949012",
+        "to": "-6289899272623889533",
+        "action": "Select"
+      },
+      {
+        "from": "-8428100811979265956",
+        "to": "-2744723209135461382",
+        "action": "Point"
+      },
+      {
+        "from": "-8428100811979265956",
+        "to": "-6311112097476097533",
+        "action": "Abort"
+      },
+      {
+        "from": "8919787388211949012",
+        "to": "-6311112097476097533",
+        "action": "Select"
+      },
+      {
+        "from": "-8428100811979265956",
+        "to": "-6283666002178083230",
+        "action": "Point"
+      },
+      {
+        "from": "5711398771108597040",
+        "to": "8463911640345837798",
+        "action": "Point"
+      },
+      {
+        "from": "-8428100811979265956",
+        "to": "6388990858413133707",
+        "action": "Abort"
+      },
+      {
+        "from": "5711398771108597040",
+        "to": "3563665909402349212",
+        "action": "Abort"
+      },
+      {
+        "from": "3297480413238211550",
+        "to": "1726053829243534856",
+        "action": "Point"
+      },
+      {
+        "from": "5711398771108597040",
+        "to": "-6522682376063442293",
+        "action": "Point"
+      },
+      {
+        "from": "3297480413238211550",
+        "to": "6049839910850941042",
+        "action": "Abort"
+      },
+      {
+        "from": "5711398771108597040",
+        "to": "-7969907651763190234",
+        "action": "Abort"
+      },
+      {
+        "from": "3297480413238211550",
+        "to": "-5921670369186421034",
+        "action": "Point"
+      },
+      {
+        "from": "-5817280583393318681",
+        "to": "-6178411692783153835",
+        "action": "Publish"
+      },
+      {
+        "from": "3297480413238211550",
+        "to": "-7969907651763190234",
+        "action": "Abort"
+      },
+      {
+        "from": "-2093528042512563532",
+        "to": "1726053829243534856",
+        "action": "Publish"
+      },
+      {
+        "from": "-5817280583393318681",
+        "to": "-215502010639375405",
+        "action": "Cleanup"
+      },
+      {
+        "from": "-2093528042512563532",
+        "to": "9000375150892666672",
+        "action": "Point"
+      },
+      {
+        "from": "-1747432245186665307",
+        "to": "-3070251255864498084",
+        "action": "Publish"
+      },
+      {
+        "from": "-2093528042512563532",
+        "to": "3755087310227522418",
+        "action": "Abort"
+      },
+      {
+        "from": "6400854951288167018",
+        "to": "-5921670369186421034",
+        "action": "Publish"
+      },
+      {
+        "from": "6400854951288167018",
+        "to": "6721154386946348539",
+        "action": "Point"
+      },
+      {
+        "from": "6400854951288167018",
+        "to": "-8197979591472784468",
+        "action": "Abort"
+      },
+      {
+        "from": "6400854951288167018",
+        "to": "-5826542101512134748",
+        "action": "Point"
+      },
+      {
+        "from": "6400854951288167018",
+        "to": "-8397111001091048003",
+        "action": "Abort"
+      },
+      {
+        "from": "-2093528042512563532",
+        "to": "6721154386946348539",
+        "action": "Point"
+      },
+      {
+        "from": "-2093528042512563532",
+        "to": "3553714990816814435",
+        "action": "Abort"
+      },
+      {
+        "from": "563292529251455674",
+        "to": "2919758574511219025",
+        "action": "Point"
+      },
+      {
+        "from": "-306943184199166494",
+        "to": "-6078847754087030137",
+        "action": "Point"
+      },
+      {
+        "from": "563292529251455674",
+        "to": "6049839910850941042",
+        "action": "Abort"
+      },
+      {
+        "from": "-306943184199166494",
+        "to": "6049839910850941042",
+        "action": "Abort"
+      },
+      {
+        "from": "563292529251455674",
+        "to": "-8664864895216728142",
+        "action": "Point"
+      },
+      {
+        "from": "-306943184199166494",
+        "to": "8911643000080433386",
+        "action": "Point"
+      },
+      {
+        "from": "563292529251455674",
+        "to": "-4938473713041807550",
+        "action": "Abort"
+      },
+      {
+        "from": "-306943184199166494",
+        "to": "5123890264384413722",
+        "action": "Abort"
+      },
+      {
+        "from": "-5955483892519273997",
+        "to": "-8664864895216728142",
+        "action": "Publish"
+      },
+      {
+        "from": "-5955483892519273997",
+        "to": "5852115208083623715",
+        "action": "Point"
+      },
+      {
+        "from": "-3178317017552747142",
+        "to": "8911643000080433386",
+        "action": "Select"
+      },
+      {
+        "from": "-3178317017552747142",
+        "to": "-4965919576853197931",
+        "action": "Point"
+      },
+      {
+        "from": "-3178317017552747142",
+        "to": "8017087125051895938",
+        "action": "Abort"
+      },
+      {
+        "from": "-8501261830356040779",
+        "to": "2965872561010732658",
+        "action": "Publish"
+      },
+      {
+        "from": "-4232998830203304722",
+        "to": "-3048823316087392958",
+        "action": "Point"
+      },
+      {
+        "from": "-4232998830203304722",
+        "to": "-1201499470527486582",
+        "action": "Abort"
+      },
+      {
+        "from": "-4232998830203304722",
+        "to": "1974432777208958968",
+        "action": "Select"
+      },
+      {
+        "from": "8776809241996090978",
+        "to": "-4965919576853197931",
+        "action": "Publish"
+      },
+      {
+        "from": "8776809241996090978",
+        "to": "3370475137244738375",
+        "action": "Cleanup"
+      },
+      {
+        "from": "-2114581079083208525",
+        "to": "-3048823316087392958",
+        "action": "Publish"
+      },
+      {
+        "from": "-2114581079083208525",
+        "to": "3252315813525406750",
+        "action": "Point"
+      },
+      {
+        "from": "-2114581079083208525",
+        "to": "1669365313692275498",
+        "action": "Abort"
+      },
+      {
+        "from": "-2114581079083208525",
+        "to": "3532053649907652452",
+        "action": "Select"
+      },
+      {
+        "from": "6744689501890247803",
+        "to": "8017087125051895938",
+        "action": "Publish"
+      },
+      {
+        "from": "-2468237455777729976",
+        "to": "3252315813525406750",
+        "action": "Publish"
+      },
+      {
+        "from": "-2468237455777729976",
+        "to": "1011865369013617211",
+        "action": "Cleanup"
+      },
+      {
+        "from": "-2468237455777729976",
+        "to": "-9066114166904907958",
+        "action": "Select"
+      },
+      {
+        "from": "-6277739636458516092",
+        "to": "8784110807961399574",
+        "action": "Publish"
+      },
+      {
+        "from": "-6277739636458516092",
+        "to": "3532053649907652452",
+        "action": "Point"
+      },
+      {
+        "from": "-6277739636458516092",
+        "to": "6732112136799466013",
+        "action": "Abort"
+      },
+      {
+        "from": "-6277739636458516092",
+        "to": "8914688138335221813",
+        "action": "Point"
+      },
+      {
+        "from": "-6277739636458516092",
+        "to": "8882192123678799443",
+        "action": "Abort"
+      },
+      {
+        "from": "-7213867712579130019",
+        "to": "1669365313692275498",
+        "action": "Publish"
+      },
+      {
+        "from": "-7213867712579130019",
+        "to": "-1053030319984728249",
+        "action": "Select"
+      },
+      {
+        "from": "-7213867712579130019",
+        "to": "-4291209550452930465",
+        "action": "Select"
+      }
+    ],
+    "trace": [
+      {
+        "fingerprint": "-8226579126091377285",
+        "action": "Initial predicate",
+        "valuation": "/\\ pending = <<0, 0>>\n/\\ active = <<0, 0>>\n/\\ published = 0\n/\\ plans = {}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "7858897891639948977",
+        "action": "Publish line 28, col 12 to line 31, col 62 of module DnsPlans",
+        "valuation": "/\\ pending = <<0, 0>>\n/\\ active = <<0, 0>>\n/\\ published = 1\n/\\ plans = {1}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "8425219237503076447",
+        "action": "Publish line 28, col 12 to line 31, col 62 of module DnsPlans",
+        "valuation": "/\\ pending = <<0, 0>>\n/\\ active = <<0, 0>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "2017479232226397652",
+        "action": "Select line 35, col 14 to line 40, col 65 of module DnsPlans",
+        "valuation": "/\\ pending = <<2, 0>>\n/\\ active = <<0, 0>>\n/\\ published = 2\n/\\ plans = {1, 2}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "-5931968620192221291",
+        "action": "Publish line 28, col 12 to line 31, col 62 of module DnsPlans",
+        "valuation": "/\\ pending = <<2, 0>>\n/\\ active = <<0, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "9083327631407452226",
+        "action": "Select line 35, col 14 to line 40, col 65 of module DnsPlans",
+        "valuation": "/\\ pending = <<2, 3>>\n/\\ active = <<0, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<1, 1>>\n/\\ highWater = <<0, 0>>"
+      },
+      {
+        "fingerprint": "-5955483892519273997",
+        "action": "Point line 43, col 13 to line 52, col 54 of module DnsPlans",
+        "valuation": "/\\ pending = <<2, 3>>\n/\\ active = <<3, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<1, 2>>\n/\\ highWater = <<3, 0>>"
+      },
+      {
+        "fingerprint": "5852115208083623715",
+        "action": "Point line 43, col 13 to line 52, col 54 of module DnsPlans",
+        "valuation": "/\\ pending = <<2, 3>>\n/\\ active = <<2, 0>>\n/\\ published = 3\n/\\ plans = {1, 2, 3}\n/\\ cursor = <<2, 2>>\n/\\ highWater = <<3, 0>>"
+      }
+    ],
+    "violations": {
+      "Safety": [
+        "5852115208083623715"
+      ]
+    }
+  },
+  "artifacts": {
+    "dot": {
+      "file": "dns-stale.dot",
+      "sha256": "659128f4dc399d28e1d66f2a8739aeb46f0c215c0c0628becb6d58d0968e205f"
+    }
+  }
+}
