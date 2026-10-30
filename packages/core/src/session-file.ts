@@ -1,4 +1,4 @@
-import type { AssistantMessage, ToolResultMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage, SystemMessage, ToolResultMessage } from "@earendil-works/pi-ai";
 import { closeSync, fsyncSync, ftruncateSync, openSync, readFileSync, renameSync, writeSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Base } from "./base.ts";
@@ -21,9 +21,12 @@ import type { PromptOptions, RunOutcome, SessionOutcome } from "../../../src/con
  * Version 5 (#525) records the jobs a run starts and how each ended, and a
  * child session names its parent in its header. Version 6 (#606) records
  * withdrawal of pending amendments without erasing the original input.
+ * Version 7 (#779) records the system prompt and tools as the model has them:
+ * a leading system message, then each change appended, in place of the
+ * active tools' names.
  */
 export const sessionFormat = "tesota-session";
-export const sessionVersion = 6;
+export const sessionVersion = 7;
 
 export interface SessionHeader {
   readonly type: "session";
@@ -123,8 +126,12 @@ export type SessionEntry =
    */
   | { readonly type: "permission"; readonly run: number; readonly callId: string; readonly decision: "allow" | "deny";
     readonly by: "floor" | "mode" | "rule" | "operator" | "session" | "hook" | "after_floor"; readonly reason: string }
-  /** The tools the model may call from now on, as extensions set them (#441); a resumed session restores the last. */
-  | { readonly type: "active_tools"; readonly names: readonly string[] }
+  /**
+   * The system prompt and tools the model has from here on (#779): the
+   * session's leading system message, or a change to it appended after the
+   * conversation so far. A compaction starts them over with a new leading one.
+   */
+  | { readonly type: "system"; readonly message: SystemMessage }
   /**
    * Job `job` of run `run` starts (#525), recorded and synced before it
    * runs: an agent job's child session, in `session`, from call `callId`. A
@@ -188,7 +195,7 @@ const shapes: Record<SessionEntry["type"], (entry: Record<string, unknown>) => b
     && Number.isInteger(entry["tokensBefore"]) && Number.isInteger(entry["tokensAfter"]),
   settled: (entry) => Number.isInteger(entry["generation"]) && phases.has(entry["phase"] as string) && isFlag(entry["continued"])
     && Array.isArray(entry["errors"]) && entry["errors"].every(isText) && isFlag(entry["registered"]),
-  active_tools: (entry) => Array.isArray(entry["names"]) && entry["names"].every(isText),
+  system: (entry) => isObject(entry["message"]) && entry["message"]["role"] === "system",
   permission: (entry) => isText(entry["callId"]) && (entry["decision"] === "allow" || entry["decision"] === "deny")
     && ["floor", "mode", "rule", "operator", "session", "hook", "after_floor"].includes(entry["by"] as string) && isText(entry["reason"]),
   job_start: (entry) => isText(entry["job"]) && isText(entry["callId"]) && entry["kind"] === "agent" && isText(entry["description"])
@@ -210,9 +217,9 @@ function entryAt(value: unknown, runs: number, previous: SessionEntry | undefine
   if (!isObject(value) || typeof value["type"] !== "string" || !(value["type"] in shapes)) return undefined;
   const type = value["type"] as SessionEntry["type"];
   const run = value["run"];
-  // The active tools belong to the session, not to a run: an extension sets them before the first.
+  // The system prompt belongs to the session, not to a run: an extension may change it before the first.
   const placed = type === "request" ? run === runs + 1
-    : type === "active_tools" ? run === undefined : isCount(run) && (run as number) <= runs;
+    : type === "system" ? run === undefined : isCount(run) && (run as number) <= runs;
   const completes = type === "run_end" && value["outcome"] === "completed";
   return placed && shapes[type](value) && (!completes || (previous?.type === "settled" && verifiedBy(previous) && previous.run === run))
     ? value as unknown as SessionEntry : undefined;

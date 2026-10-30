@@ -101,7 +101,7 @@ describe("the request ledger", () => {
     const created = session([{ tool: "probe", args: {} }, "done"], { tools: () => [probe] });
     await created.prompt("the exact request", { source: "rpc" });
     const lines = seen.trimEnd().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
-    expect(lines.map((line) => line["type"])).toEqual(["session", "request", "active_tools", "assistant", "permission", "call_intent"]);
+    expect(lines.map((line) => line["type"])).toEqual(["session", "request", "system", "assistant", "permission", "call_intent"]);
     expect(lines[1]).toMatchObject({ text: "the exact request", origin: "rpc", run: 1 });
     expect(lines.at(-1)).toMatchObject({ type: "call_intent", access: "run",
       tool: { name: "probe", nativeQuestion: false, readOnly: false } });
@@ -496,36 +496,39 @@ describe("the session file", () => {
     expect(() => openSession(file, scriptless())).toThrow(SessionFileError);
   });
 
-  test("the active tools belong to the session: before any request, between runs and at the end, never to a run (#441)", async () => {
+  /** A system message as a session records one (#779). */
+  const systemEntry = { type: "system", message: { role: "system", content: "", timestamp: 0 } };
+
+  test("the system prompt belongs to the session: before any request, between runs and at the end, never to a run (#779)", async () => {
     const file = await finished();
     const lines = readFileSync(file, "utf8").trimEnd().split("\n");
-    const tools = JSON.stringify({ type: "active_tools", names: ["read"] });
+    const tools = JSON.stringify(systemEntry);
     writeFileSync(file, `${[lines[0], tools, ...lines.slice(1), tools].join("\n")}\n`);
     const resumed = openSession(file, scriptless());
     open.push(resumed);
     expect(resumed.outcome()).toBe("completed");
     await resumed.dispose();
-    appendFileSync(file, `${JSON.stringify({ type: "active_tools", run: 1, names: ["read"] })}\n`);
+    appendFileSync(file, `${JSON.stringify({ ...systemEntry, run: 1 })}\n`);
     expect(() => openSession(file, scriptless())).toThrow(SessionFileError);
   });
 
-  test("active tools recorded mid-run stay where they are when recovery ends the run", async () => {
+  test("a system message recorded mid-run stays where it is when recovery ends the run", async () => {
     const file = await finished();
     const lines = readFileSync(file, "utf8").trimEnd().split("\n");
     const ended = lines.findLastIndex((line) => line.includes("\"type\":\"settle\""));
-    writeFileSync(file, `${[...lines.slice(0, ended), JSON.stringify({ type: "active_tools", names: ["read"] })].join("\n")}\n`);
+    writeFileSync(file, `${[...lines.slice(0, ended), JSON.stringify(systemEntry)].join("\n")}\n`);
     const resumed = openSession(file, scriptless());
     open.push(resumed);
     expect(resumed.outcome()).toBe("interrupted");
-    expect(entriesOf(file).slice(-2).map((entry) => entry.type)).toEqual(["active_tools", "run_end"]);
+    expect(entriesOf(file).slice(-2).map((entry) => entry.type)).toEqual(["system", "run_end"]);
   });
 
   // Older formats are refused, not reinterpreted or migrated.
-  for (const version of [1, 2, 3, 4, 5]) {
+  for (const version of [1, 2, 3, 4, 5, 6]) {
     test(`a session of version ${version} refuses to open, naming it`, async () => {
       const file = await finished();
       const lines = readFileSync(file, "utf8").split("\n");
-      lines[0] = (lines[0] ?? "").replace("\"version\":6", `"version":${version}`);
+      lines[0] = (lines[0] ?? "").replace("\"version\":7", `"version":${version}`);
       const before = lines.join("\n");
       writeFileSync(file, before);
       expect(() => openSession(file, scriptless())).toThrow(`version ${version}`);
@@ -533,9 +536,9 @@ describe("the session file", () => {
     });
   }
 
-  test("version 6 reads, with the verifier's message in the conversation and its data outside it", () => {
-    const fixture = join(import.meta.dir, "fixtures", "session-v6.jsonl");
-    const copy = join(folder(), "session-v6.jsonl");
+  test("version 7 reads, with the verifier's message in the conversation and its data outside it", () => {
+    const fixture = join(import.meta.dir, "fixtures", "session-v7.jsonl");
+    const copy = join(folder(), "session-v7.jsonl");
     writeFileSync(copy, readFileSync(fixture));
     const resumed = openSession(copy, scriptless());
     open.push(resumed);

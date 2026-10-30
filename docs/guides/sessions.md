@@ -18,7 +18,7 @@ history, permissions and receipts. The shell runs several at once.
 `/model` changes it. If that model can no longer run, Tesota says why and
 opens the session on the current model; with none, choose one first.
 
-Sessions are saved as they run, in `~/.tesota/sessions` (format version 6;
+Sessions are saved as they run, in `~/.tesota/sessions` (format version 7;
 other versions are refused untouched). A session cut off by a crash or a
 closed terminal resumes where its file ends, and nothing runs again on its
 own: reads say they changed nothing, other started calls say their outcome

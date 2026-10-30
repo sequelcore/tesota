@@ -1,5 +1,5 @@
 import {
-  type Api, type AssistantMessage, type JsonValue, type Message, type Model, type Models, type ModelThinkingLevel, type ToolCall, type ToolResultMessage,
+  type Api, type AssistantMessage, getCurrentTools, type JsonValue, type Message, type Model, type Models, type ModelThinkingLevel, type ToolCall, type ToolResultMessage,
   isContextOverflow, validateToolArguments,
 } from "@earendil-works/pi-ai";
 import { observeProviderError, providerFailure, providerFetch, providerRetryType, type RetryEvidence } from "./provider-retry.ts";
@@ -20,6 +20,7 @@ import { afterExtensions, afterVerifier, continuationLimit } from "./settle-rule
 import { cutPoint, shouldCompact } from "./compact-rule.ts";
 import { type FilesTouched, filesTouched, summarize, summaryMessage } from "./compaction.ts";
 import { type Hooks, runHooks } from "./hooks.ts";
+import { modelContext, type PromptEntry, promptChange, promptState, promptText } from "./prompt.ts";
 import {
   contextFiles, instructionsText, type Skill, skillCatalog, skills, startable, type StartedSkill, startedSkill,
 } from "./instructions.ts";
@@ -238,8 +239,8 @@ export interface LoopState {
   readonly amendments: number;
   readonly tokens: { readonly input: number; readonly output: number; readonly total: number };
   readonly outcome: SessionOutcome | undefined;
-  /** The tools the model could call when the session was last written, when an extension changed them. */
-  readonly activeTools?: readonly string[];
+  /** The transcript's system messages since the last compaction (#779): the prompt and tools the model had. */
+  readonly prompt?: readonly PromptEntry[];
   /** The last run's request, its delivered amendments and its submitted answers, as the messages that brought them. */
   readonly ledger?: readonly HistoryMessage[];
   /** The last compaction (#451): its summary, the files summarized so far, and where replies count toward usage again. */
@@ -281,27 +282,6 @@ export function compactedHead(ledger: readonly HistoryMessage[], summary: string
   return { role: "custom", customType: "tesota.compaction", content, display: false, timestamp: Date.now() };
 }
 
-/**
- * The engine's system prompt in `cwd` with the active tools: what each
- * that has one says of itself, and their rules, trimmed and each once, in
- * Pi's form (#441); and the session's `scratch` folder, when it has one (#653).
- */
-export function defaultPrompt(cwd: string, active: readonly EngineTool[], scratch?: string): string {
-  const listed = active.flatMap(({ name, promptSnippet }) => promptSnippet === undefined || promptSnippet.trim() === "" ? []
-    : [`- ${name}: ${promptSnippet.replace(/\s+/gu, " ").trim()}`]);
-  const rules = [...new Set(active.flatMap(({ promptGuidelines }) => promptGuidelines ?? []).map((rule) => rule.trim())
-    .filter((rule) => rule !== ""))].map((rule) => `- ${rule}`);
-  const explorers = active.filter(({ name }) => name === "ls" || name === "find" || name === "grep").map(({ name }) => name);
-  return [`You are a coding agent working in ${cwd}. Use the tools to read, change and run what the request needs.`,
-    ...scratch === undefined ? [] : [`Write temporary files, such as a commit message, a probe script or a fixture, in ${scratch}: `
-      + "the session's own scratch folder, removed when the session ends and never part of the change. "
-      + `File tools may write only there and in ${cwd}; other writes are refused.`],
-    ...explorers.length > 0 ? [`Use ${explorers.join(", ")} to explore.`
-      + (active.some(({ name }) => name === "bash" || name === "powershell") ? " Use the shell to run commands." : "")] : [],
-    ...listed.length > 0 ? [`Available tools:\n${listed.join("\n")}`] : [],
-    ...rules.length > 0 ? [`Guidelines:\n${rules.join("\n")}`] : []].join("\n\n");
-}
-
 /** The instructions given, or the operator's and the project's and the catalog of `available` skills (#457). */
 const instructionsOf = (options: LoopOptions, available: readonly Skill[]): string => options.instructions
   ?? instructionsText(contextFiles(options.cwd), skillCatalog(available, options.model.contextWindow));
@@ -311,10 +291,6 @@ export const toolResult = (call: Pick<ToolCall, "id" | "name">, output: ToolOutp
   role: "toolResult", toolCallId: call.id, toolName: call.name, content: [{ type: "text", text: output.text }],
   ...output.details === undefined ? {} : { details: output.details }, isError: output.isError, timestamp,
 });
-
-/** The conversation as the model reads it: a settle handler's message is context from the operator's side. */
-export const modelContext = (history: readonly HistoryMessage[]): Message[] => history.map((message) =>
-  message.role === "custom" ? { role: "user", content: message.content, timestamp: message.timestamp } : message);
 
 /**
  * Runs one tool call: an unknown or inactive tool, invalid arguments or an
@@ -423,15 +399,24 @@ const stoppedAfter = (ms: number): ToolOutput => ({ text: `Stopped: the operator
 const stoppedReason = "the operator stopped the run";
 const disposedReason = "The session is closed; start or resume one to go on.";
 
-/** Compaction as a loop starts (#451): its margins, Pi's when not given, and what a resumed session last held. */
+/**
+ * Compaction as a loop starts (#451): its margins, Pi's when not given, and
+ * what a resumed session last held, the system messages since the last
+ * compaction (#779) among it.
+ */
 function compactionAtStart(options: LoopOptions): {
   readonly margins: { readonly reserve: number; readonly keep: number };
   readonly ledger: HistoryMessage[];
   readonly compacted: LoopState["compacted"];
+  readonly prompt: PromptEntry[];
 } {
   return { margins: options.compaction ?? { reserve: 16_384, keep: 20_000 }, ledger: [...options.resumed?.ledger ?? []],
-    compacted: options.resumed?.compacted };
+    compacted: options.resumed?.compacted, prompt: [...options.resumed?.prompt ?? []] };
 }
+
+/** The tools a resumed session's system messages left the model, or none to restore when it had none. */
+const promptTools = (prompt: readonly PromptEntry[]): string[] | undefined => prompt.length === 0 ? undefined
+  : getCurrentTools(prompt.map(({ message }) => message)).map(({ name }) => name);
 
 /** Why a compaction did not happen when the recent messages alone already reach the tail it keeps. */
 const nothingToSummarize = "the recent messages alone fill the part kept verbatim";
@@ -440,14 +425,14 @@ const nothingToSummarize = "the recent messages alone fill the part kept verbati
  * A session's tools and which the model may call (#441). An extension's tool
  * is active unless it says otherwise. Setting the active tools ignores
  * unknown names and repeats and takes effect from the next model request.
- * Each request records the tools it offers when they changed, so a resumed
- * session restores what the model last had; a restored tool registered only
- * later becomes active then, unless a change that dropped a tool came first.
+ * A resumed session restores the tools the model last had; a restored tool
+ * registered only later becomes active then, unless a change that dropped a
+ * tool came first.
  * A request offers the session's own tools in their given order, then the
  * others by name, so the same tools always reach the model in the same
  * order, however they arrived (#779).
  */
-function toolbox(given: EngineTool[], writer: SessionWriter) {
+function toolbox(given: EngineTool[]) {
   const own = given.map(({ name }) => name);
   let tools = given;
   let active = [...own];
@@ -457,8 +442,6 @@ function toolbox(given: EngineTool[], writer: SessionWriter) {
   /** Restored tools not registered yet; once restored, only these become active as they register. */
   let pending = new Set<string>();
   let restored = false;
-  /** The tools the last request offered, as recorded. */
-  let offered: string | undefined;
   /** The names of the MCP servers' tools in `tools` (#459). */
   let external = new Set<string>();
   const known = (name: string): boolean => tools.some((tool) => tool.name === name);
@@ -479,7 +462,6 @@ function toolbox(given: EngineTool[], writer: SessionWriter) {
     restore(names: readonly string[] | undefined): void {
       if (names === undefined) return;
       restored = true;
-      offered = names.join("\n");
       active = names.filter(known);
       pending = new Set(names.filter((name) => !known(name)));
     },
@@ -505,13 +487,8 @@ function toolbox(given: EngineTool[], writer: SessionWriter) {
       }
       external = names;
     },
-    /** The tools one model request offers, which its calls run with; recorded when they changed. */
-    forRequest(): EngineTool[] {
-      const offering = ordered(active).join("\n");
-      if (offering !== offered) writer.append({ type: "active_tools", names: ordered(active) });
-      offered = offering;
-      return activeTools();
-    },
+    /** The tools one model request offers, which its calls run with. */
+    forRequest: activeTools,
   };
 }
 
@@ -519,9 +496,6 @@ function toolbox(given: EngineTool[], writer: SessionWriter) {
 const sessionTools = (options: LoopOptions, spool: () => string, questions: AskHost, jobs: Jobs): EngineTool[] =>
   [...options.tools?.(spool, options.cwd, options.env) ?? codingTools(options.cwd, spool, undefined, questions, options.env),
     ...options.jobTools?.(jobs) ?? []];
-
-/** What the model is told of a tool. */
-const declaration = ({ name, description, parameters }: EngineTool) => ({ name, description, parameters });
 
 /** The thinking level the provider is asked for: the session's for a model that reasons, `off` otherwise. */
 const thinkingOf = (model: Model<Api>, level: ModelThinkingLevel | undefined): ModelThinkingLevel =>
@@ -666,16 +640,25 @@ export function createLoop(options: LoopOptions): LoopSession {
     for (const { controller: stopper } of stopping) stopper.abort();
     await Promise.all(stopping.map(({ done }) => done));
   };
-  const tools = toolbox(sessionTools(options, spool, questionHost, jobHost), writer);
+  const tools = toolbox(sessionTools(options, spool, questionHost, jobHost));
   const thinkingLevel = thinkingOf(options.model, options.thinkingLevel);
   const base = options.captureBase ?? captureBase;
   /** The operator's and the project's skills, read once as the session starts, from its own folder (#457). */
   const available = skills(options.cwd);
   const instructions = options.systemPrompt === undefined ? instructionsOf(options, available) : "";
-  const promptFor = (): string => options.systemPrompt
-    ?? [defaultPrompt(options.cwd, tools.activeTools(), options.scratch), instructions].filter((part) => part !== "").join("\n\n");
+  /** The prompt and tools the model should have with `active` (#779). */
+  const stateFor = (active: readonly EngineTool[]) => promptState(options.cwd, active, instructions, options.scratch, options.systemPrompt);
+  /** Appends, and records, what the model must be told so it has the prompt and `offered` tools; nothing when it has them already. */
+  const tellPrompt = (offered: readonly EngineTool[]): void => {
+    const change = promptChange(prompt.map(({ message }) => message), stateFor(offered), Date.now());
+    if (change === undefined) return;
+    prompt.push({ message: change, after: prompt.length === 0 ? undefined : history.at(-1) });
+    writer.append({ type: "system", message: change });
+  };
   const resumedCompaction = compactionAtStart(options);
   const margins = resumedCompaction.margins;
+  /** The transcript's system messages since the last compaction, each after the conversation message it follows. */
+  let prompt = resumedCompaction.prompt;
   /** The current run's request and delivered amendments, which a compaction keeps as given. */
   let ledger = resumedCompaction.ledger;
   /** Where each of the ledger's messages came among the request's input: an amendment is delivered, and an answer reaches
@@ -694,8 +677,10 @@ export function createLoop(options: LoopOptions): LoopSession {
   let stuck = false;
   /** A compaction `/compact` started between runs, which a prompt waits for and stopping stops. */
   let compacting: { readonly done: Promise<void>; readonly controller: AbortController } | undefined;
-  const usage = () => contextUsage(history, promptFor(), tools.activeTools().map(declaration), options.model.contextWindow,
-    compacted?.counted ?? 0);
+  const usage = () => {
+    const state = stateFor(tools.activeTools());
+    return contextUsage(history, promptText(state), [...state.tools], options.model.contextWindow, compacted?.counted ?? 0);
+  };
   const host = createHost({
     cwd: options.cwd, mode: options.mode ?? "print", models: options.models, model: options.model, thinkingLevel,
     ...options.env === undefined ? {} : { env: options.env },
@@ -707,7 +692,7 @@ export function createLoop(options: LoopOptions): LoopSession {
     contextUsage: usage,
     ...options.surface === undefined ? {} : { surface: options.surface },
   }, options.extensions ?? [], options.verifier);
-  tools.restore(options.resumed?.activeTools);
+  tools.restore(promptTools(prompt));
   /** Stops when the session is disposed: what started with the session, its startup handlers, is told. */
   const lifetime = new AbortController();
   const started = host.sessionStart({ type: "session_start", reason: options.resumed === undefined ? "startup" : "resume" },
@@ -737,7 +722,7 @@ export function createLoop(options: LoopOptions): LoopSession {
   async function streamedOnce(signal: AbortSignal, left: AbortSignal, offered: readonly EngineTool[], evidence: RetryEvidence): Promise<AssistantMessage | Ended> {
     try {
       const stream = options.models.streamSimple(options.model,
-        { systemPrompt: promptFor(), messages: modelContext(history), tools: offered.map(declaration) },
+        { messages: modelContext(history, prompt) },
         // Claude Code reads metadata.cwd for its query and transient transcript; never the shell's folder.
         // The session's id is the provider's prompt-cache key and session affinity, as Pi passed it (`prompt_cache_key` for OpenAI).
         { signal, maxRetries: 0,
@@ -1092,6 +1077,9 @@ export function createLoop(options: LoopOptions): LoopSession {
       stuck = shouldCompact(tokensAfter, options.model.contextWindow ?? 0, margins.reserve);
       writer.append({ type: "compaction", run, summary: result.summary, kept, read: files.read, changed: files.changed,
         tokensBefore, tokensAfter });
+      // The summary rewrites the head anyway: the prompt starts over with one leading message holding what the model had (#779).
+      prompt = [];
+      tellPrompt(tools.forRequest());
       writer.sync();
       emit({ type: "compacted", tokensBefore, tokensAfter });
       return undefined;
@@ -1173,6 +1161,7 @@ export function createLoop(options: LoopOptions): LoopSession {
       tools.offer(options.mcp?.()?.tools(spool) ?? []);
       // A reply's calls run with the tools its request offered, whatever extensions change meanwhile.
       const offered = tools.forRequest();
+      tellPrompt(offered);
       const message = yield* reply(run, signal, offered);
       if (!("role" in message)) return message;
       // A provider that rejects the conversation as too long gets it once more, compacted.

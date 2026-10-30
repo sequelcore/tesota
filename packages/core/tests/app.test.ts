@@ -115,7 +115,7 @@ async function app(replies: readonly ScriptStep[] = [], { repository = false, ea
   }
   if (earlier !== undefined) {
     const at = new Date(0).toISOString();
-    const header = { type: "session", format: "tesota-session", version: 6, id: "earlier", cwd, createdAt: at, checkout: cwd };
+    const header = { type: "session", format: "tesota-session", version: 7, id: "earlier", cwd, createdAt: at, checkout: cwd };
     writeFileSync(join(sessions, "earlier.jsonl"), [header,
       { type: "request", run: 1, text: earlier, origin: "interactive", at, base: { units: [] } },
       ...earlierModel === "" ? [] : [{ type: "assistant", run: 1, message: { ...fauxAssistantMessage("earlier answer"),
@@ -623,7 +623,7 @@ describe("tesota-core", () => {
       }
       const manifest = join(capture, "lights-complete.manifest.json");
       const at = new Date(0).toISOString();
-      writeFileSync(join(sessions, "graphs.jsonl"), [{ type: "session", format: "tesota-session", version: 6, id: "graphs", cwd, createdAt: at, checkout: cwd },
+      writeFileSync(join(sessions, "graphs.jsonl"), [{ type: "session", format: "tesota-session", version: 7, id: "graphs", cwd, createdAt: at, checkout: cwd },
         { type: "request", run: 1, text: "check the lights", origin: "interactive", at, base: { units: [] } },
         { type: "custom_message", run: 1, customType: "tesota-receipt-graphs", content: "the receipt", display: true,
           details: { receipt: {}, graphs: [{ subject: "models/Lights.tla", capture: { status: "captured", manifest } }] } }]
@@ -668,7 +668,7 @@ describe("tesota-core", () => {
       writeFileSync(reading, `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(marker)}, "ran");\n` +
         "export function state(v: { lamp: string }): string { return v.lamp === \"on\" ? \"the lamp is lit\" : \"the lamp is dark\"; }\n");
       const at = new Date(0).toISOString();
-      writeFileSync(join(sessions, "reading.jsonl"), [{ type: "session", format: "tesota-session", version: 6, id: "reading", cwd, createdAt: at, checkout: cwd },
+      writeFileSync(join(sessions, "reading.jsonl"), [{ type: "session", format: "tesota-session", version: 7, id: "reading", cwd, createdAt: at, checkout: cwd },
         { type: "request", run: 1, text: "check the lights", origin: "interactive", at, base: { units: [] } },
         { type: "custom_message", run: 1, customType: "tesota-receipt-graphs", content: "the receipt", display: true,
           details: { receipt: {}, graphs: [{ subject: "Lights.tla", capture: { status: "captured", manifest } }] } }]
@@ -1049,7 +1049,7 @@ test("plain graph worker error notices sanitize manifest-derived terminal contro
     const manifest = join(cwd, "missing\x1b]52;c;INJECT\x07.json");
     const at = new Date(0).toISOString();
     writeFileSync(join(sessions, "unsafe-graph.jsonl"), [
-      { type: "session", format: "tesota-session", version: 6, id: "unsafe-graph", cwd, createdAt: at, checkout: cwd },
+      { type: "session", format: "tesota-session", version: 7, id: "unsafe-graph", cwd, createdAt: at, checkout: cwd },
       { type: "request", run: 1, text: "unsafe graph notice", origin: "interactive", at, base: { units: [] } },
       { type: "custom_message", run: 1, customType: "tesota-receipt-graphs", content: "unsafe receipt", display: true,
         details: { receipt: {}, graphs: [{ subject: "Lights", capture: { status: "captured", manifest } }] } },

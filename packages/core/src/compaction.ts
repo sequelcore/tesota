@@ -1,5 +1,6 @@
 import type { Api, Model, Models, Usage } from "@earendil-works/pi-ai";
-import { type HistoryMessage, modelContext } from "./loop.ts";
+import type { HistoryMessage } from "./loop.ts";
+import { modelContext } from "./prompt.ts";
 
 /** What the summary model needs to condense the earlier conversation. */
 export interface SummaryRequest {

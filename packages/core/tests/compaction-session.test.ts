@@ -3,7 +3,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { compactedHead, type HistoryMessage, modelContext } from "../src/loop.ts";
+import { compactedHead, type HistoryMessage } from "../src/loop.ts";
+import { modelContext } from "../src/prompt.ts";
 import { createSession, type EngineSession, openSession, type SessionOptions } from "../src/session.ts";
 
 /**
@@ -100,6 +101,21 @@ describe("compaction", () => {
     expect(verified.request).toBe(request);
   });
 
+  test("a compaction starts the prompt over with one leading system message that holds the tools the model had (#779)", async () => {
+    const model = scripted([...writes(6), { text: "done" }], ["## Goal\nwrite notes"], smallWindow);
+    const created = session(model);
+    await created.prompt(request);
+    const recorded = entries(created.file);
+    const compaction = recorded.findIndex(({ type }) => type === "compaction");
+    expect(compaction).toBeGreaterThan(0);
+    expect(recorded[compaction + 1]?.type).toBe("system");
+    const summaryRequest = model.seen.find(({ summary }) => summary);
+    const after = model.seen.slice(model.seen.indexOf(summaryRequest!) + 1).find(({ summary }) => !summary);
+    const system = after?.context.messages.flatMap((message, index) => message.role === "system" ? [index] : []);
+    expect(system).toEqual([0]);
+    expect(after?.context.messages[0]).toMatchObject({ toolsAdded: expect.arrayContaining([expect.objectContaining({ name: "write" })]) });
+  });
+
   test("a second compaction merges into the first summary, and a resumed session holds the same conversation", async () => {
     const model = scripted([...writes(12), { text: "done" }], ["## Goal\nfirst summary", "## Goal\nsecond summary"], smallWindow);
     const created = session(model);
@@ -175,7 +191,7 @@ describe("compaction", () => {
     const reply = (id: string, stopReason: string) => ({ role: "assistant", content: [{ type: "toolCall", id, name: "write",
       arguments: { path: `${id}.txt`, content: "x" } }], api: "faux", provider: "faux", model: "small", usage, stopReason, timestamp: 0 });
     const lines = [
-      { type: "session", format: "tesota-session", version: 6, id: "repaired", cwd, createdAt: new Date(0).toISOString() },
+      { type: "session", format: "tesota-session", version: 7, id: "repaired", cwd, createdAt: new Date(0).toISOString() },
       { type: "request", run: 1, text: request, origin: "interactive", at: new Date(0).toISOString(), base: { units: [] } },
       { type: "assistant", run: 1, message: reply("first", "toolUse") },
       { type: "tool_result", run: 1, message: { role: "toolResult", toolCallId: "first", toolName: "write",
