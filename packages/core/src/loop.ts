@@ -1469,6 +1469,7 @@ export function createLoop(options: LoopOptions): LoopSession {
       if (window === undefined || window <= 0) return undefined;
       const state = stateFor(tools.activeTools());
       return contextBreakdown({ prompt: promptText(state), catalog: memory.catalog, tools: state.tools, history, contextWindow: window,
+        counted: compacted?.counted ?? 0,
         files: memory.files.map(({ path, content }) => ({ path: shownPath(path, options.cwd), content })) });
     },
     messages: () => history.map(conversationMessage),

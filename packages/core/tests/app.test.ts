@@ -998,8 +998,9 @@ describe("tesota-core", () => {
     await terminal.untilGone("Verifying…");
     send(terminal, "/context");
     const shown = await terminal.until("Free");
-    expect(shown).toMatch(/Context: [\d,]+ of [\d,]+ tokens \(\d+%\), estimated at a quarter of the characters\./u);
-    for (const part of ["System prompt", "Tools", "Memory files", "Skills", "Messages"]) expect(shown).toContain(part);
+    // After a reply the total is what the provider counted, and what no part accounts for has its own line (#779).
+    expect(shown).toMatch(/Context: [\d,]+ of [\d,]+ tokens \(\d+%\), counted by the provider at the last reply; parts estimated/u);
+    for (const part of ["System prompt", "Tools", "Memory files", "Skills", "Messages", "Not attributed"]) expect(shown).toContain(part);
     send(terminal, "/quit");
     await running;
   });
