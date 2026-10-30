@@ -986,6 +986,24 @@ describe("tesota-core", () => {
     await running;
   });
 
+  test("/context shows what fills the model's window, part by part (#779)", async () => {
+    const { terminal, running } = await app(["hello"]);
+    send(terminal, "/model");
+    await terminal.until("Model");
+    terminal.type(enter);
+    await terminal.until("Model: ");
+    send(terminal, "say hello");
+    await terminal.until("hello");
+    await terminal.untilGone("Working…");
+    await terminal.untilGone("Verifying…");
+    send(terminal, "/context");
+    const shown = await terminal.until("Free");
+    expect(shown).toMatch(/Context: [\d,]+ of [\d,]+ tokens \(\d+%\), estimated at a quarter of the characters\./u);
+    for (const part of ["System prompt", "Tools", "Memory files", "Skills", "Messages"]) expect(shown).toContain(part);
+    send(terminal, "/quit");
+    await running;
+  });
+
   test("your MCP servers start, the project's once trusted, and /mcp lists them and reconnects one (#459)", async () => {
     const server = { command: process.execPath, args: [fileURLToPath(new URL("./mcp-server.mjs", import.meta.url))] };
     const { terminal, running } = await app([], { mcp: { mcpServers: { mine: server } }, projectMcp: { mcpServers: { theirs: server } } });

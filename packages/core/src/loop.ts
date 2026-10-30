@@ -9,10 +9,12 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
 import { randomUUID } from "node:crypto";
+import { homedir } from "node:os";
+import { isAbsolute, relative } from "node:path";
 import { mkdirSync } from "node:fs";
 import { type Base, captureBase } from "./base.ts";
 import type { BranchEntry, EntryDraft, ExtensionFactory, PromptOptions, RunOutcome, Session, SessionOutcome, ToolDefinition } from "../../../src/contract.ts";
-import { contextUsage, estimateTokens } from "../../../src/context-usage.js";
+import { type ContextBreakdown, contextBreakdown, contextUsage, estimateTokens } from "../../../src/context-usage.js";
 import { conversationMessage } from "./conversation.ts";
 import { createHost, type DrawingSurface, type PhaseResult } from "./extensions.ts";
 import type { Behavior, Origin, SessionWriter, SettlePhase } from "./session-file.ts";
@@ -230,6 +232,8 @@ export interface LoopSession extends Session {
   compact(): Promise<void>;
   /** The skills the operator may start by name, `/name` at the start of a request (#540), read as the session started. */
   skills(): readonly Skill[];
+  /** What fills the model's window now (#779), by part; unknown without a context window. */
+  context(): ContextBreakdown | undefined;
 }
 
 /** Where a session stands: its conversation, its last run and amendment, its usage and how its last run ended. */
@@ -282,9 +286,26 @@ export function compactedHead(ledger: readonly HistoryMessage[], summary: string
   return { role: "custom", customType: "tesota.compaction", content, display: false, timestamp: Date.now() };
 }
 
-/** The instructions given, or the operator's and the project's and the catalog of `available` skills (#457). */
-const instructionsOf = (options: LoopOptions, available: readonly Skill[]): string => options.instructions
-  ?? instructionsText(contextFiles(options.cwd), skillCatalog(available, options.model.contextWindow));
+/**
+ * The instructions after the default prompt (#457): those given, or the
+ * operator's and the project's files and the catalog of `available` skills,
+ * which `/context` counts apart (#779); none under a given prompt.
+ */
+function instructionsOf(options: LoopOptions, available: readonly Skill[]): { text: string; files: readonly { path: string; content: string }[]; catalog: string } {
+  if (options.systemPrompt !== undefined) return { text: "", files: [], catalog: "" };
+  if (options.instructions !== undefined) return { text: options.instructions, files: [], catalog: "" };
+  const files = contextFiles(options.cwd);
+  const catalog = skillCatalog(available, options.model.contextWindow);
+  return { text: instructionsText(files, catalog), files, catalog };
+}
+
+/** A memory file's path as `/context` shows it: from the session's folder inside it, from `~` inside the home folder. */
+function shownPath(path: string, cwd: string): string {
+  const inside = relative(cwd, path);
+  if (inside !== "" && !inside.startsWith("..") && !isAbsolute(inside)) return inside.split("\\").join("/");
+  const home = relative(homedir(), path);
+  return home !== "" && !home.startsWith("..") && !isAbsolute(home) ? `~/${home.split("\\").join("/")}` : path;
+}
 
 /** A call's result as the model sees it, with an extension tool's details. */
 export const toolResult = (call: Pick<ToolCall, "id" | "name">, output: ToolOutput, timestamp: number = Date.now()): ToolResultMessage => ({
@@ -645,7 +666,8 @@ export function createLoop(options: LoopOptions): LoopSession {
   const base = options.captureBase ?? captureBase;
   /** The operator's and the project's skills, read once as the session starts, from its own folder (#457). */
   const available = skills(options.cwd);
-  const instructions = options.systemPrompt === undefined ? instructionsOf(options, available) : "";
+  const memory = instructionsOf(options, available);
+  const instructions = memory.text;
   /** The prompt and tools the model should have with `active` (#779). */
   const stateFor = (active: readonly EngineTool[]) => promptState(options.cwd, active, instructions, options.scratch, options.systemPrompt);
   /** Appends, and records, what the model must be told so it has the prompt and `offered` tools; nothing when it has them already. */
@@ -1442,6 +1464,13 @@ export function createLoop(options: LoopOptions): LoopSession {
       try { await done; } finally { compacting = undefined; }
     },
     skills: () => available.filter((skill) => startable(skill, "operator")),
+    context: () => {
+      const window = options.model.contextWindow;
+      if (window === undefined || window <= 0) return undefined;
+      const state = stateFor(tools.activeTools());
+      return contextBreakdown({ prompt: promptText(state), catalog: memory.catalog, tools: state.tools, history, contextWindow: window,
+        files: memory.files.map(({ path, content }) => ({ path: shownPath(path, options.cwd), content })) });
+    },
     messages: () => history.map(conversationMessage),
     history: () => history,
     pendingMessages: () => queue.map(({ id, behavior, text }) => ({ id, behavior, text })),

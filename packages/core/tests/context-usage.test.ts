@@ -1,6 +1,6 @@
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { expect, test } from "bun:test";
-import { contextUsage } from "../../../src/context-usage.js";
+import { contextBreakdown, contextReport, contextUsage } from "../../../src/context-usage.js";
 import type { HistoryMessage } from "../src/loop.ts";
 
 /**
@@ -90,4 +90,40 @@ test("without a reply to count from, the tools the system message declares count
   const tokens = 1023;
   expect(contextUsage([], "system", tools, 10_000)).toEqual({ tokens, contextWindow: 10_000, percent: (tokens / 10_000) * 100 });
   expect(tokens).toBeGreaterThan(1000);
+});
+
+test("/context splits the window by what fills it: prompt, tools, MCP tools, memory files, skills, messages and what is free (#779)", () => {
+  // 100 characters of the prompt's own text, a 40-character memory file and a 20-character skill catalog, as the prompt holds them.
+  const prompt = `${"P".repeat(100)}${"F".repeat(40)}${"S".repeat(20)}`;
+  const tools = [{ name: "read", description: "d", parameters: {} }, { name: "mcp__x__y", description: "d", parameters: {} }];
+  const history: HistoryMessage[] = [{ role: "user", content: "hello", timestamp: 0 }];
+  expect(contextBreakdown({ prompt, files: [{ path: "AGENTS.md", content: "F".repeat(40) }], catalog: "S".repeat(20), tools, history,
+    contextWindow: 1000 })).toEqual({
+    contextWindow: 1000, systemPrompt: 25, tools: 13, mcpTools: 14, memoryFiles: [{ path: "AGENTS.md", tokens: 10 }], skills: 5,
+    messages: 2, free: 931,
+  });
+});
+
+test("/context says how much the last reply read from the provider's cache, and nothing before a reply (#779)", () => {
+  const reply = fauxAssistantMessage("done");
+  reply.usage = { ...reply.usage, cacheRead: 300 };
+  const failed = fauxAssistantMessage("broke", { stopReason: "error" });
+  const parts = { prompt: "", files: [], catalog: "", tools: [], contextWindow: 1000 };
+  expect(contextBreakdown({ ...parts, history: [{ role: "user", content: "go", timestamp: 0 }] })).not.toHaveProperty("cached");
+  expect(contextBreakdown({ ...parts, history: [{ role: "user", content: "go", timestamp: 0 }, reply, failed] }).cached).toBe(300);
+});
+
+test("/context reads as one line per part, the memory files by name, and what the cache held (#779)", () => {
+  expect(contextReport({ contextWindow: 200_000, systemPrompt: 1_250, tools: 1_170, mcpTools: 0,
+    memoryFiles: [{ path: "~/.agents/AGENTS.md", tokens: 1_100 }, { path: "AGENTS.md", tokens: 567 }], skills: 2_533, messages: 12_380,
+    free: 181_000, cached: 18_018 })).toBe([
+    "Context: 19,000 of 200,000 tokens (10%), estimated at a quarter of the characters.",
+    "  System prompt    1,250",
+    "  Tools            1,170",
+    "  Memory files     1,667  ~/.agents/AGENTS.md 1,100 · AGENTS.md 567",
+    "  Skills           2,533",
+    "  Messages        12,380",
+    "  Free           181,000",
+    "The last reply read 18,018 tokens from the provider's cache.",
+  ].join("\n"));
 });

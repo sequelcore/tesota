@@ -11,6 +11,7 @@ history, permissions and receipts. The shell runs several at once.
 | Esc | Stops the agent's run |
 | `/new` | Starts another session beside the open ones |
 | `/resume` | Opens a session this folder ran before, by its first request |
+| `/context` | Shows what fills the context, part by part |
 | `/compact` | Summarizes the older conversation to free context |
 | `/quit`, or Ctrl+C twice | Ends the shell |
 
