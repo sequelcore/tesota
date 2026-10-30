@@ -28,7 +28,7 @@ Bun or a checkout.
 | Tool | For |
 | --- | --- |
 | [Git](https://git-scm.com) | Verification. Without it the agent still works, but nothing it changes is verified |
-| [Dafny 4](https://dafny.org) | Proving contracts |
+| [Dafny 4](https://dafny.org), which the install script adds with `dafny` ([how](../reference/installation.md#tools)) | Proving contracts |
 | Java 11+ and TLC | Checking TLA+ and Quint design models |
 | [Quint](https://quint-lang.org) | Quint models (not on Windows) |
 

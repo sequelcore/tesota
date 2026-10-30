@@ -131,6 +131,34 @@ jobs:
           $entries = @($environment.GetValue('Path', '', $unexpanded) -split ';')
           if (-not ($entries -contains '%USERPROFILE%\kept') -or $environment.GetValueKind('Path') -ne 'ExpandString' -or
             @($entries | Where-Object { $_ -eq $env:TESOTA_INSTALL_DIR }).Count -ne 1) { Write-Error "The user PATH was not kept: $entries"; exit 1 }
+      # Downloads Dafny's real release, where Dafny has a build, and proves a method with it; elsewhere it must refuse.
+      - name: The install script installs Dafny
+        if: runner.os != 'Windows'
+        env:
+          TESOTA_INSTALL_DIR: ${{ runner.temp }}/tesota-bin
+        run: |
+          if [ "$(uname -s)-$(uname -m)" = Linux-aarch64 ]; then
+            if sh install.sh dafny; then echo "::error::installed Dafny where it has no build"; exit 1; fi
+            exit 0
+          fi
+          sh install.sh dafny
+          sh install.sh dafny
+          printf 'method Max(a: int, b: int) returns (m: int) ensures m >= a && m >= b { m := if a > b then a else b; }\n' > max.dfy
+          "$TESOTA_INSTALL_DIR/dafny" verify max.dfy
+      - name: The install script installs Dafny
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          .\install.ps1 dafny
+          .\install.ps1 dafny
+          $folder = Join-Path $HOME '.tesota\tools\dafny'
+          if ((Get-Command dafny).Source -ne "$folder\Dafny.exe") { Write-Error "dafny resolves to $((Get-Command dafny).Source)"; exit 1 }
+          'method Max(a: int, b: int) returns (m: int) ensures m >= a && m >= b { m := if a > b then a else b; }' | Set-Content max.dfy
+          dafny verify max.dfy
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $environment = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')
+          $entries = @($environment.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames) -split ';')
+          if (@($entries | Where-Object { $_ -eq $folder }).Count -ne 1) { Write-Error "The user PATH holds Dafny's folder other than once: $entries"; exit 1 }
   # The whole check, on the tagged commit itself: a release is never published from a commit that fails it.
   check:
     if: startsWith(github.ref, 'refs/tags/v')
