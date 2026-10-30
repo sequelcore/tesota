@@ -2,6 +2,7 @@ import type { Api, AuthInteraction, CredentialStore, Model, ModelThinkingLevel, 
 import { getTerminalColorMode, ProcessTerminal, type Terminal } from "@earendil-works/pi-tui";
 import { rmSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
+import { contextReport } from "../../../../src/context-usage.ts";
 import { tesotaHome } from "../../../../src/home.ts";
 import { provideHost } from "../../../../src/host.ts";
 import { entryReceipt, isReceipt, isStanding, type Receipt, type ReceiptStanding, receiptStanding, sessionGraphs, standingWords }
@@ -702,6 +703,12 @@ export async function runApp(options: AppOptions): Promise<void> {
     "/compact": { description: "Summarize the older conversation", run: async () => {
       shell.note("Compacting…");
       await attached.session.compact().catch((error: unknown) => { shell.note(error instanceof Error ? error.message : String(error), "warning"); });
+    } },
+    // What fills the model's window, part by part, as Claude Code's and Qwen Code's /context show it (#779).
+    "/context": { description: "What fills the model's window, part by part", run: () => {
+      const context = attached.session.context();
+      shell.note(context === undefined ? "The model's context window is unknown, so its use can't be shown." : contextReport(context));
+      return Promise.resolve();
     } },
     "/mcp": { description: "Manage MCP servers", argumentHint: "[login|logout|reconnect <server>]", run: async (args) => { await mcpCommand(args); } },
     "/quit": { description: "End the shell", run: () => { shell.stop(); return Promise.resolve(); } },

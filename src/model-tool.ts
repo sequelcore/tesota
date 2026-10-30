@@ -17,7 +17,7 @@ import { linkWords, modelHolds, modelWhy } from "./receipt.js";
  * JavaScript interleaving test instead of a model.
  */
 
-/** Whether Tesota finds TLC (`tlaToolsJar`), which turns on `check_model` and its guidance. */
+/** Whether Tesota finds TLC (`tlaToolsJar`), which turns on `check_model`. */
 export function hasTlc(): boolean {
   return existsSync(tlaToolsJar());
 }
@@ -97,7 +97,8 @@ export const modelTool: ToolDefinition<typeof parameters, ModelCheck | undefined
   name: "check_model", label: "Check model",
   description: "Check a TLA+ or Quint model with TLC, as Tesota's gate does: its tesota-model header, its invariants " +
     "in every reachable state, then each planted fault, which must break one. Reports the counterexample as numbered steps.",
-  promptSnippet: "Model-check a TLA+ or Quint model with TLC, which is installed, and its planted faults",
+  promptSnippet: "Model-check a TLA+ or Quint model with TLC, which is installed, and its planted faults: for a design whose " +
+    "steps interleave, write the model in the project, then call check_model",
   promptGuidelines: [...MODEL_GUIDELINES],
   parameters,
   defaultActive: false,

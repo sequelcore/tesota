@@ -1,4 +1,4 @@
-import { createModels, fauxProvider } from "@earendil-works/pi-ai";
+import { createModels, fauxProvider, getCurrentTools, type SystemMessage } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -460,11 +460,11 @@ describe("MCP tools in a session", () => {
   const results = (created: EngineSession) => created.messages().filter((message) => message.role === "toolResult")
     .map((message) => ({ text: message.text, isError: message.isError }));
 
-  /** The tools the session last recorded as offered. */
+  /** The tools the session's recorded system messages last gave the model (#779). */
   const offered = (created: EngineSession): string[] => {
-    const last = readFileSync(created.file, "utf8").trimEnd().split("\n").map((line) => JSON.parse(line) as { type: string; names?: string[] })
-      .findLast((entry) => entry.type === "active_tools");
-    return last?.names ?? [];
+    const entries = readFileSync(created.file, "utf8").trimEnd().split("\n").map((line) => JSON.parse(line) as { type: string; message?: SystemMessage });
+    return getCurrentTools(entries.flatMap(({ type, message }) => type === "system" && message !== undefined ? [message] : []))
+      .map(({ name }) => name);
   };
 
   test("the model is offered the servers' tools and calls them, and the session records them among its tools", async () => {

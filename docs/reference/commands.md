@@ -79,7 +79,7 @@ A nonzero result doesn't stop you using what is available.
 | `/resume` | Open an earlier session of this folder |
 | `/agents` | Open the dashboard of sessions |
 | `/graph [--plain] [name]` | Open a [model graph](../guides/model-checking.md) a receipt captured; press `o` in the viewer to write HTML and open the system browser; `--plain` appends its text |
-| `/compact` | Summarize the older conversation |
+| `/context`, `/compact` | What fills context; summarize the older conversation |
 | `/mcp` | MCP servers: state, reconnect, sign in and out; also `/mcp login\|logout\|reconnect <server>` |
 | `/quit` | End the shell |
 | `/<skill> [arguments]` | Run a skill on the arguments ([Starting a skill by name](../guides/instructions-and-skills.md#starting-a-skill-by-name)) |

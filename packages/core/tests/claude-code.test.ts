@@ -74,8 +74,9 @@ function replaying(...scripts: (SDKMessage | typeof hang)[][]): { readonly start
     const stopped = new Promise<undefined>((resolve) => { stop = () => { resolve(undefined); }; });
     void (async () => { for await (const message of prompt) { run.prompts.push(message); run.events.push("prompt"); } })();
     const pending = new Map<number, (message: { result?: unknown; error?: unknown }) => void>();
-    const transport: { onmessage?: (message: unknown) => void; send(message: { id: number; result?: unknown; error?: unknown }): Promise<void> } = {
-      send: async (message) => { pending.get(message.id)?.(message); },
+    const transport: { onmessage?: (message: unknown) => void; send(message: { id?: number; method?: string; result?: unknown; error?: unknown }): Promise<void> } = {
+      // A notification, such as the tools changing, has no id: it is kept among what happened.
+      send: async (message) => { if (message.id === undefined) run.events.push(message.method ?? ""); else pending.get(message.id)?.(message); },
     };
     const config = options.mcpServers?.["tesota"] as unknown as { instance: { connect(transport: unknown): Promise<void> } };
     let next = 0;
@@ -278,6 +279,21 @@ describe("the claude-code provider", () => {
     expect(runs).toHaveLength(1);
     expect(runs[0]?.results).toEqual([{ content: [{ type: "text", text: "echoed: pong" }], isError: false }]);
     expect(second.usage.cacheRead).toBeGreaterThan(0);
+  });
+
+  test("a change to the prompt or tools after a call reaches the same query: Claude Code lists the tools again and reads the change (#779)", async () => {
+    const { start, runs } = replaying(toolCall);
+    const { step } = provider(start);
+    const history: Message[] = [user("Call the echo tool with text \"pong\". After its result, reply with exactly: done")];
+    const first = await step(history);
+    const late: Tool = { name: "late", description: "Arrives later.", parameters: Type.Object({}) };
+    history.push(first, result(recordedId, "echoed: pong"),
+      { role: "system", content: "", sections: { guidelines: "Guidelines:\n- Prove it" }, toolsAdded: [late], timestamp: Date.now() });
+    const second = await step(history);
+    expect(textOf(second)).toBe("done");
+    expect(runs).toHaveLength(1);
+    expect(runs[0]?.events).toContain("notifications/tools/list_changed");
+    expect(JSON.stringify(runs[0]?.prompts.at(-1))).toContain('Updated system prompt section \\"guidelines\\"');
   });
 
   test("Claude Code runs unmodified, isolated: none of its own tools, settings or compaction, and only Tesota's tools allowed", async () => {

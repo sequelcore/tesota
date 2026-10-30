@@ -50,16 +50,27 @@ async function run(root: string, path: string): Promise<Awaited<ReturnType<typeo
 const said = (result: Awaited<ReturnType<typeof modelTool.execute>>): string =>
   result.content.map((part) => part.type === "text" ? part.text : "").join("");
 
-/** The tools a session started in `root` leaves active. */
-function activeTools(root: string): string[] {
+/** A session started in `root`, with no Dafny on the PATH: the tools it leaves active, `check_model`'s rules, and a tool result to hand it. */
+async function session(root: string): Promise<{ active: () => string[]; rules: () => string; result: (toolName: string, path: string) => void }> {
   let active = ["read", "bash"];
-  const handlers = new Map<string, (event: unknown, ctx: unknown) => void>();
-  tesota({ registerTool: () => undefined, registerFlag: () => undefined, registerMessageRenderer: () => undefined,
-    on: (name: string, handler: (event: unknown, ctx: unknown) => void) => { handlers.set(name, handler); },
+  const handlers = new Map<string, (event: unknown, ctx: unknown) => unknown>();
+  const tools = new Map<string, { name: string; promptGuidelines?: string[] | (() => readonly string[]) }>();
+  tesota({ registerTool: (tool: { name: string; promptGuidelines?: string[] | (() => readonly string[]) }) => { tools.set(tool.name, tool); }, registerFlag: () => undefined,
+    registerMessageRenderer: () => undefined,
+    on: (name: string, handler: (event: unknown, ctx: unknown) => unknown) => { handlers.set(name, handler); },
     getActiveTools: () => active, getSettings: () => ({}), setActiveTools: (names: string[]) => { active = names; } } as never);
-  handlers.get("session_start")?.({}, { cwd: root, sessionManager: { getBranch: () => [] }, ui: { setStatus: () => undefined,
-    setHeader: () => undefined, setEditorComponent: () => undefined, setFooter: () => undefined, setWorkingDetail: () => undefined } });
-  return active;
+  const path = process.env["PATH"];
+  process.env["PATH"] = folder();
+  try {
+    await handlers.get("session_start")?.({}, { cwd: root, sessionManager: { getBranch: () => [] }, ui: { setStatus: () => undefined,
+      setHeader: () => undefined, setEditorComponent: () => undefined, setFooter: () => undefined, setWorkingDetail: () => undefined } });
+  } finally { process.env["PATH"] = path; }
+  const rules = (): string => {
+    const guidelines = tools.get("check_model")?.promptGuidelines;
+    return (typeof guidelines === "function" ? guidelines() : guidelines ?? []).join("\n");
+  };
+  return { active: () => active, rules, result: (toolName, path) =>
+    handlers.get("tool_result")?.({ type: "tool_result", toolName, input: { path }, isError: false }, { cwd: root }) };
 }
 
 /** Two processes adding one to a counter in two steps, read then write; the lock makes the pair atomic when `Locked`. */
@@ -90,17 +101,26 @@ NoLostUpdate == Done => count = 2
 
 const config = (locked: boolean): string => `SPECIFICATION Spec\nCONSTANT Locked = ${locked ? "TRUE" : "FALSE"}\n`;
 
-it("offers check_model, with TLC's guidance and the header, only where Tesota finds TLC", () => {
+it("offers check_model only where Tesota finds TLC, and its rules once the agent writes a model (#779)", async () => {
   expect(modelTool.defaultActive).toBe(false);
   expect(modelTool.promptSnippet).toContain("TLC, which is installed");
-  expect(modelTool.promptGuidelines?.join("\n")).toContain("(* tesota-model");
-  expect(modelTool.promptGuidelines?.join("\n")).toContain("Never weaken an invariant");
   const root = folder();
   expect(hasTlc()).toBe(false);
-  expect(activeTools(root)).toEqual(["read", "bash"]);
+  expect((await session(root)).active()).toEqual(["read", "bash"]);
   installTlc();
   expect(hasTlc()).toBe(true);
-  expect(activeTools(root)).toEqual(["read", "bash", "check_model"]);
+  const started = await session(root);
+  expect(started.active()).toEqual(["read", "bash", "check_model"]);
+  expect(started.rules()).toBe("");
+  started.result("write", "models/Counter.tla");
+  expect(started.rules()).toContain("(* tesota-model");
+  expect(started.rules()).toContain("Never weaken an invariant");
+});
+
+it("gives check_model's rules from the start in a project that already has a model", async () => {
+  installTlc();
+  const started = await session(folder({ "models/Counter.tla": spec("Counter", "models/CounterUnlocked.cfg") }));
+  expect(started.rules()).toContain("(* tesota-model");
 });
 
 it("checks only TLA+ and Quint models with a header inside the project", async () => {

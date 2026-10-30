@@ -1,3 +1,4 @@
+import type { Context } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -300,6 +301,99 @@ for (const engine of engines) {
       await session.prompt("go");
       expect(session.messages().find((message) => message.role === "toolResult")).toMatchObject({ toolName: "lookup", isError: false });
       expect(prompts.at(-1)).not.toContain("- lookup: Look a word up");
+    });
+
+    test("the same tools reach the model in the same order and words, whatever order they were turned on in (#779)", async () => {
+      // A provider caches the request's head: the same tools in another order would be written to the cache again.
+      const cwd = mkdtempSync(join(tmpdir(), "tesota-core-cwd-"));
+      const sent = async (order: readonly string[]) => {
+        let request = "";
+        const activate: ExtensionFactory = (pi) => {
+          pi.on("input", () => { for (const name of order) pi.setActiveTools([...pi.getActiveTools(), name]); return undefined; });
+        };
+        // The prompt and tools as sent, but for each session's own scratch folder and when it started.
+        const head = (context: Context) => JSON.stringify(context.messages.filter(({ role }) => role === "system"),
+          (key, value: unknown) => key === "timestamp" ? undefined : value).replace(/[\w-]+\.scratch/gu, "<scratch>");
+        const session = await engine.createSession({ cwd, script: [{ seen: (context) => { request = head(context); }, reply: "done" }],
+          extensions: [tool("beta", "returns", { defaultActive: false, promptSnippet: "Beta" }),
+            tool("alpha", "returns", { defaultActive: false, promptSnippet: "Alpha" }), activate] });
+        await session.prompt("go");
+        await session.dispose();
+        return request;
+      };
+      const forward = await sent(["alpha", "beta"]);
+      expect(forward).toContain("- alpha: Alpha");
+      expect(await sent(["beta", "alpha"])).toBe(forward);
+    });
+
+    test("a session's requests repeat the same prompt and tools while nothing changes them (#779)", async () => {
+      const heads: string[] = [];
+      const see = (reply: string): ScriptStep => ({
+        seen: (context) => { heads.push(JSON.stringify(context.messages.filter(({ role }) => role === "system"))); }, reply });
+      const session = await start([{ tool: "echo", args: { text: "hi" } }, see("first"), see("second")], [echo]);
+      await session.prompt("go");
+      await session.prompt("again");
+      expect(heads).toHaveLength(2);
+      expect(heads[1]).toBe(heads[0]);
+    });
+
+    test("a tool turned on mid-run leaves the head as it was and reaches the model appended after the results (#779)", async () => {
+      const sent: Context[] = [];
+      const see = (reply: string): ScriptStep => ({ seen: (context) => { sent.push(structuredClone(context)); }, reply });
+      const turnOn: ExtensionFactory = (pi) => {
+        pi.on("tool_execution_start", () => { pi.setActiveTools([...pi.getActiveTools(), "late"]); });
+      };
+      const session = await start([see("first"), { tool: "echo", args: { text: "hi" } }, see("done")],
+        [echo, tool("late", "returns", { defaultActive: false, promptSnippet: "Late" }), turnOn]);
+      await session.prompt("go");
+      await session.prompt("again");
+      const [before, after] = sent;
+      expect(after?.messages[0]).toEqual(before?.messages[0]);
+      const changes = after?.messages.slice(1).flatMap((message, index) => message.role === "system" ? [{ message, index: index + 1 }] : []) ?? [];
+      expect(changes).toHaveLength(1);
+      expect(changes[0]?.message).toMatchObject({ toolsAdded: [{ name: "late" }], sections: { tools: expect.stringContaining("- late: Late") } });
+      expect(after?.messages[(changes[0]?.index ?? 0) - 1]?.role).toBe("toolResult");
+    });
+
+    test("a tool's rules that start to apply mid-run reach the model as an appended change to the guidelines (#779)", async () => {
+      const sent: Context[] = [];
+      const see = (reply: string): ScriptStep => ({ seen: (context) => { sent.push(structuredClone(context)); }, reply });
+      let applies = false;
+      const ruled: ExtensionFactory = (pi) => {
+        pi.registerTool({ name: "ruled", label: "ruled", description: "Has rules.", parameters: Type.Object({ text: Type.String() }),
+          promptGuidelines: () => applies ? ["Follow the ruled rule"] : [],
+          execute: async (_id, params) => ({ content: [{ type: "text", text: params.text }], details: undefined }) });
+        pi.on("tool_execution_start", () => { applies = true; });
+      };
+      const session = await start([see("first"), { tool: "ruled", args: { text: "hi" } }, see("done")], [ruled]);
+      await session.prompt("go");
+      await session.prompt("again");
+      const [before, after] = sent;
+      expect(JSON.stringify(before)).not.toContain("Follow the ruled rule");
+      expect(after?.messages[0]).toEqual(before?.messages[0]);
+      expect(after?.messages.at(-1)).toMatchObject({ role: "system", sections: { guidelines: expect.stringContaining("- Follow the ruled rule") } });
+      expect(after?.messages.at(-1)).not.toHaveProperty("toolsAdded");
+    });
+
+    test("a resumed session sends the system messages it had (#779)", async () => {
+      const cwd = mkdtempSync(join(tmpdir(), "tesota-core-cwd-"));
+      let last = "";
+      const system = (context: Context) => JSON.stringify(context.messages.filter(({ role }) => role === "system"));
+      const turnOn: ExtensionFactory = (pi) => {
+        pi.on("input", (event) => { if (event.text === "activate") pi.setActiveTools([...pi.getActiveTools(), "late"]); return undefined; });
+      };
+      const late = tool("late", "returns", { defaultActive: false, promptSnippet: "Late" });
+      const first = await engine.createSession({ cwd, script: ["started", { seen: (context) => { last = system(context); }, reply: "activated" }],
+        extensions: [late, turnOn] });
+      await first.prompt("go");
+      await first.prompt("activate");
+      let resumedHead = "";
+      const resumed = await engine.resume(first, { cwd, script: [{ seen: (context) => { resumedHead = system(context); }, reply: "again" }],
+        extensions: [late, turnOn] });
+      open.push(resumed);
+      await resumed.prompt("go on");
+      expect(last).toContain("- late: Late");
+      expect(resumedHead).toBe(last);
     });
 
     test("a tool registered as the session starts keeps its activation across a resume", async () => {

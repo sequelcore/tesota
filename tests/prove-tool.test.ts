@@ -35,37 +35,63 @@ async function call(root: string, path: string): Promise<string> {
   return (await run(root, path)).content.map((part) => part.type === "text" ? part.text : "").join("");
 }
 
-/** A session started in `root`: the tools the extension leaves active, and a tool result to hand it. */
-function session(root: string): { active: () => string[]; result: (toolName: string, path: string, isError?: boolean) => void } {
+/** A session started in `root`, with a `dafny` on the PATH or none: the tools it leaves active, `prove`'s rules, and a tool result to hand it. */
+async function session(root: string, { dafny: onPath = false } = {}): Promise<{
+  active: () => string[]; rules: () => string; result: (toolName: string, path: string, isError?: boolean) => void;
+}> {
   let active = ["read", "bash"];
-  const handlers = new Map<string, (event: unknown, ctx: unknown) => void>();
-  tesota({ registerTool: () => undefined, registerFlag: () => undefined, registerMessageRenderer: () => undefined,
-    on: (name: string, handler: (event: unknown, ctx: unknown) => void) => { handlers.set(name, handler); },
+  const handlers = new Map<string, (event: unknown, ctx: unknown) => unknown>();
+  const tools = new Map<string, { name: string; promptGuidelines?: string[] | (() => readonly string[]) }>();
+  tesota({ registerTool: (tool: { name: string; promptGuidelines?: string[] | (() => readonly string[]) }) => { tools.set(tool.name, tool); }, registerFlag: () => undefined,
+    registerMessageRenderer: () => undefined,
+    on: (name: string, handler: (event: unknown, ctx: unknown) => unknown) => { handlers.set(name, handler); },
     getActiveTools: () => active, getSettings: () => ({}), setActiveTools: (names: string[]) => { active = names; } } as never);
-  handlers.get("session_start")?.({}, { cwd: root, sessionManager: { getBranch: () => [] }, ui: { setStatus: () => undefined,
-    setHeader: () => undefined, setEditorComponent: () => undefined, setFooter: () => undefined, setWorkingDetail: () => undefined } });
-  return { active: () => active, result: (toolName, path, isError = false) =>
+  const bin = folder();
+  if (onPath) writeFileSync(join(bin, process.platform === "win32" ? "dafny.exe" : "dafny"), "", { mode: 0o755 });
+  const path = process.env["PATH"];
+  process.env["PATH"] = bin;
+  try {
+    await handlers.get("session_start")?.({}, { cwd: root, sessionManager: { getBranch: () => [] }, ui: { setStatus: () => undefined,
+      setHeader: () => undefined, setEditorComponent: () => undefined, setFooter: () => undefined, setWorkingDetail: () => undefined } });
+  } finally { process.env["PATH"] = path; }
+  const rules = (): string => {
+    const guidelines = tools.get("prove")?.promptGuidelines;
+    return (typeof guidelines === "function" ? guidelines() : guidelines ?? []).join("\n");
+  };
+  return { active: () => active, rules, result: (toolName, path, isError = false) =>
     handlers.get("tool_result")?.({ type: "tool_result", toolName, input: { path }, isError }, { cwd: root }) };
 }
 
-const activeTools = (root: string): string[] => session(root).active();
+const contract = "//@ ensures \\result >= 0\nexport function f(): number { return 0; }\n";
 
-it("offers prove with its measured guidance only in a project with contracts", () => {
+it("offers prove from the start where Dafny is on the PATH, and its rules once the agent writes a contract (#779)", async () => {
   expect(proveTool.defaultActive).toBe(false);
-  expect(proveTool.promptGuidelines?.join("\n")).toContain("never remove or loosen a contract, or add //@ assume");
-  expect(proveTool.promptGuidelines?.join("\n")).toContain("forall(j: nat, j < items.length ==> P)");
+  expect(proveTool.promptSnippet).toContain("don't look for or install a prover");
   const root = folder();
   writeFileSync(join(root, "plain.ts"), "export const a = 1;\n");
-  expect(activeTools(root)).toEqual(["read", "bash"]);
-  writeFileSync(join(root, "rule.ts"), "//@ ensures \\result >= 0\nexport function f(): number { return 0; }\n");
-  expect(activeTools(root)).toEqual(["read", "bash", "prove"]);
+  const started = await session(root, { dafny: true });
+  expect(started.active()).toEqual(["read", "bash", "prove"]);
+  expect(started.rules()).toBe("");
+  writeFileSync(join(root, "rule.ts"), contract);
+  started.result("write", "rule.ts");
+  expect(started.rules()).toContain("never remove or loosen a contract, or add //@ assume");
+  expect(started.rules()).toContain("forall(j: nat, j < items.length ==> P)");
 });
 
-it("offers prove once the agent writes or edits a contract into a project that had none, and not before", () => {
+it("offers prove with its rules from the start in a project with contracts, and not in one without", async () => {
   const root = folder();
   writeFileSync(join(root, "plain.ts"), "export const a = 1;\n");
-  const started = session(root);
-  const contract = "//@ ensures \\result >= 0\nexport function f(): number { return 0; }\n";
+  expect((await session(root)).active()).toEqual(["read", "bash"]);
+  writeFileSync(join(root, "rule.ts"), contract);
+  const started = await session(root);
+  expect(started.active()).toEqual(["read", "bash", "prove"]);
+  expect(started.rules()).toContain("never remove or loosen a contract");
+});
+
+it("without Dafny, offers prove once the agent writes or edits a contract into a project that had none, and not before", async () => {
+  const root = folder();
+  writeFileSync(join(root, "plain.ts"), "export const a = 1;\n");
+  const started = await session(root);
   // Code without a contract, a //@ line outside TypeScript, a failed write and a read leave prove off.
   started.result("write", "plain.ts");
   writeFileSync(join(root, "notes.md"), contract);

@@ -104,7 +104,7 @@ export function inFolder(folder: string, command: string): string {
 const packageManagers: readonly string[] = ["npm", "bun", "pnpm", "yarn"];
 
 /** Whether `program` is an executable file in a folder of the `PATH`, with one of `PATHEXT`'s endings on Windows. */
-function onPath(program: string): boolean {
+export function onPath(program: string): boolean {
   const endings = process.platform === "win32" ? (process.env["PATHEXT"] ?? ".COM;.EXE;.BAT;.CMD").split(";") : [""];
   return (process.env["PATH"] ?? "").split(delimiter).filter((folder) => folder !== "").some((folder) =>
     endings.some((ending) => {

@@ -1,5 +1,5 @@
 import { type AssistantMessage, type Context, createModels, InMemoryCredentialStore, type JsonObject, fauxAssistantMessage, fauxProvider,
-  fauxToolCall } from "@earendil-works/pi-ai";
+  fauxToolCall, getCurrentSystemPrompt } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -59,7 +59,8 @@ function routed(scripts: Record<string, Reply[]>): Pick<SessionOptions, "models"
 const system = (context: Context): { content?: string; toolsAdded?: { name: string; description: string }[] }[] =>
   (context.messages as unknown as { role: string }[]).filter((message) => message.role === "system") as never;
 const toolNames = (context: Context): string[] => system(context).flatMap(({ toolsAdded }) => (toolsAdded ?? []).map(({ name }) => name));
-const promptOf = (context: Context): string => system(context).map(({ content }) => content ?? "").join("\n");
+/** The system prompt the model read, its sections included (#779). */
+const promptOf = (context: Context): string => getCurrentSystemPrompt(context.messages);
 
 function session(scripts: Record<string, Reply[]>, options: Partial<SessionOptions> = {}): EngineSession {
   const created = createSession({ cwd: options.cwd ?? folder(), folder: folder("tesota-agents-sessions-"), verifier: accepts,
@@ -493,7 +494,7 @@ describe("recovery", () => {
     const cwd = folder();
     const child = join(sessions, "child.jsonl");
     const base = { units: [] };
-    const header = (id: string, extra: object) => JSON.stringify({ type: "session", format: "tesota-session", version: 6, id, cwd,
+    const header = (id: string, extra: object) => JSON.stringify({ type: "session", format: "tesota-session", version: 7, id, cwd,
       createdAt: new Date(0).toISOString(), ...extra });
     writeFileSync(child, [header("child", { parent: { session: "parent", job: "j1", depth: 1 } }),
       JSON.stringify({ type: "request", run: 1, text: "work", origin: "rpc", at: new Date(0).toISOString(), base }), ""].join("\n"));

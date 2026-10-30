@@ -321,6 +321,29 @@ test("a session sends the project's AGENTS.md and its skills to the model, after
   expect(prompt.indexOf("You are a coding agent")).toBeLessThan(prompt.indexOf("Keep each change small."));
 });
 
+test("/context reports the session's memory files by name, its skills and its messages (#779)", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "tesota-core-instructions-context-"));
+  mkdirSync(join(cwd, ".git"));
+  put(join(cwd, "AGENTS.md"), "Keep each change small.");
+  put(join(cwd, ".agents", "skills", "release", "SKILL.md"), "---\nname: release\ndescription: Cut a release.\n---\nSteps.");
+  const faux = fauxProvider({ models: [{ id: "windowed", contextWindow: 100_000 }] });
+  faux.setResponses([scriptedReply({ seen: () => undefined, reply: "ok" })]);
+  const models = createModels();
+  models.setProvider(faux.provider);
+  const session = createSession({ cwd, folder: mkdtempSync(join(tmpdir(), "tesota-core-instructions-context-sessions-")), models,
+    model: faux.getModel(), verifier: accepts });
+  try {
+    await session.prompt("hello");
+    const context = session.context();
+    expect(context?.memoryFiles).toEqual([{ path: "AGENTS.md", tokens: 6 }]);
+    expect(context?.skills).toBeGreaterThan(0);
+    expect(context?.messages).toBeGreaterThan(0);
+    expect(context?.contextWindow).toBe(100_000);
+  } finally {
+    await session.dispose();
+  }
+});
+
 test("a skill's frontmatter starts its file and ends at a --- from the first column, whatever its line endings (#457)", () => {
   const home = mkdtempSync(join(tmpdir(), "tesota-core-instructions-frontmatter-"));
   const cwd = mkdtempSync(join(tmpdir(), "tesota-core-instructions-frontmatter-cwd-"));

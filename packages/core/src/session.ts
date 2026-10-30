@@ -18,6 +18,7 @@ import {
   compactedHead, type Continuation, continuesType, createLoop, type HistoryMessage, jobMessage, type LoopOptions, type LoopSession, type LoopState, skillMessage,
   toolResult,
 } from "./loop.ts";
+import type { PromptEntry } from "./prompt.ts";
 import { agentTool } from "./tools/agent.ts";
 import { noEffect, notRun, outcomeUnknown, repairs } from "./reconcile-rule.ts";
 import {
@@ -327,11 +328,17 @@ function unsettledReceipt(entries: readonly SessionEntry[], run: number): Sessio
  * the other results of its reply, and the messages settle handlers added;
  * their data stays outside it. A compaction replaces
  * what came before its kept messages, as the loop did (#451); with the
- * conversation come the last run's request and amendments, and the last
- * compaction.
+ * conversation come the last run's request and amendments, the last
+ * compaction, and the system messages since it (#779), each after the
+ * message it followed.
  */
-function conversation(entries: readonly SessionEntry[]): Pick<LoopState, "history" | "ledger" | "compacted"> {
+function conversation(entries: readonly SessionEntry[]): Pick<LoopState, "history" | "ledger" | "compacted" | "prompt"> {
   const history: HistoryMessage[] = [];
+  let prompt: PromptEntry[] = [];
+  /** A system message comes after the message the conversation ended with then; the leading one after none. */
+  const system = (message: Extract<SessionEntry, { readonly type: "system" }>["message"]): void => {
+    prompt.push({ message, after: prompt.length === 0 ? undefined : history.at(-1) });
+  };
   let ledger: HistoryMessage[] = [];
   let compacted: LoopState["compacted"];
   const amendments = new Map<number, { readonly text: string; readonly order: number; readonly skill: StartedSkill | undefined }>();
@@ -396,7 +403,9 @@ function conversation(entries: readonly SessionEntry[]): Pick<LoopState, "histor
       const cut = Math.max(0, history.length - entry.kept);
       history.splice(0, cut, compactedHead(ledger, entry.summary, files, history.slice(cut)));
       compacted = { summary: entry.summary, files, counted: history.length };
-    } else if (entry.type === "assistant") {
+      prompt = [];
+    } else if (entry.type === "system") system(entry.message);
+    else if (entry.type === "assistant") {
       const index = counts.get(entry.run) ?? 0;
       counts.set(entry.run, index + 1);
       replies.set(`${entry.run}:${index}`, entry.message);
@@ -410,7 +419,7 @@ function conversation(entries: readonly SessionEntry[]): Pick<LoopState, "histor
       history.push({ role: "custom", customType, content, display, ...details === undefined ? {} : { details }, timestamp: 0 });
     }
   }
-  return { history, ledger, ...compacted === undefined ? {} : { compacted } };
+  return { history, ledger, prompt, ...compacted === undefined ? {} : { compacted } };
 }
 
 /**
@@ -462,7 +471,7 @@ function ownLedgerOf(entries: readonly SessionEntry[]): Omit<LedgerRequest, "unv
       id: amendment.id, behavior: amendment.behavior, origin: amendment.origin, text: amendment.text, at: amendment.at,
       delivered: delivered.has(amendment.id), withdrawn: withdrawn.has(amendment.id),
     }]),
-    inputs: entries.flatMap((input): RequestInput[] => (input.type === "active_tools" || input.run !== entry.run) ? []
+    inputs: entries.flatMap((input): RequestInput[] => (input.type === "system" || input.run !== entry.run) ? []
       : input.type === "amendment" ? withdrawn.has(input.id) ? [] : [{ kind: "amendment", origin: input.origin, text: input.text }]
         : input.type === "clarification" ? [{ kind: "clarification", clarification: input.clarification }]
           : input.type === "custom" ? continuedFrom(input).map(({ clarification }): RequestInput => ({ kind: "clarification", clarification })) : []),
@@ -607,9 +616,7 @@ function stateOf(entries: readonly SessionEntry[]): LoopState {
     tokens.total += entry.message.usage.totalTokens;
   }
   const ends = entries.flatMap((entry) => entry.type === "run_end" ? [entry.outcome] : []);
-  const tools = entries.findLast((entry) => entry.type === "active_tools");
   return {
-    ...tools === undefined ? {} : { activeTools: tools.names },
     ...conversation(entries), tokens, outcome: ends.at(-1),
     runs: entries.filter((entry) => entry.type === "request").length,
     amendments: entries.filter((entry) => entry.type === "amendment").length,

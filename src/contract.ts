@@ -273,8 +273,11 @@ export interface ToolDefinition<Parameters extends TSchema = TSchema, Details = 
   description: string;
   /** One line for the system prompt's list of tools while the tool is active. */
   promptSnippet?: string;
-  /** Rules for the system prompt while the tool is active. */
-  promptGuidelines?: string[];
+  /**
+   * Rules for the system prompt while the tool is active; a function is read
+   * on every request, so rules can arrive once they apply (#779).
+   */
+  promptGuidelines?: string[] | (() => readonly string[]);
   /** False keeps the tool from the model until an extension activates it. */
   defaultActive?: boolean;
   /** `sequential`: the call runs alone. */
