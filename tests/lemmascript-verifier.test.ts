@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, expect, it } from "vitest";
@@ -30,7 +30,7 @@ it("reads the properties a LemmaScript file claims", () => {
     ["//@ ensures \\result >= 0", "//@ invariant i >= 0"]);
 });
 
-it("finds the specification lines LemmaScript skips without a word, as lsc check 0.6.4 skips them", () => {
+it("finds the specification lines LemmaScript skips without a word, as lsc check 0.6.5 skips them", () => {
   // Read: one space after //@, the keyword, then a space and an expression, however indented or spaced after the keyword.
   for (const line of ["//@ ensures \\result > 0", "    //@ invariant 0 <= i", "//@ ensures  \\result > 0", "//@ requires x > 0",
     "//@ verify", "//@ skip", "//@ ensure \\result > 0", "// @ensures not an annotation"]) {
@@ -109,6 +109,13 @@ it.runIf(dafny)("never counts a run in which Dafny verified nothing as proved", 
   const proof = await prove(root, "loose.ts");
   expect(proof.outcome).toBe("vacuous");
   expect(proof.output).toContain("LemmaScript verified nothing in this file, so nothing was proved.");
+}, 120_000);
+
+it.runIf(dafny)("proves without writing LemmaScript's run log into the project", async () => {
+  const root = project({ "clamp.ts": clampFixed });
+  spawnSync("git", ["init", "-q"], { cwd: root });
+  expect((await prove(root, "clamp.ts")).outcome).toBe("passed");
+  expect(existsSync(join(root, ".lemmascript"))).toBe(false);
 }, 120_000);
 
 it.runIf(dafny)("regenerates an out-of-date proof before checking it, keeping the proof lines added by hand", async () => {

@@ -18,7 +18,7 @@ export function annotations(source: string): string[] {
   return source.split(/\r?\n/u).map((line) => line.trim()).filter((line) => line.startsWith("//@"));
 }
 
-/** The specification keywords LemmaScript 0.6.4 reads with an expression (`parseAnnotations` in its `extract.js`). */
+/** The specification keywords LemmaScript 0.6.5 reads with an expression (`parseAnnotations` in its `extract.js`). */
 const specificationWord = "(?:requires|ensures|contract|invariant|decreases|done_with|type)";
 const specificationLine = new RegExp(String.raw`^//@\s*${specificationWord}\b`, "u");
 const readSpecification = new RegExp(String.raw`^//@ ${specificationWord} +\S`, "u");
@@ -41,9 +41,13 @@ export function unreadSpecifications(source: string): { line: number; text: stri
   return source.split(/\r?\n/u).flatMap((text, k) => unreadSpecification(text) ? [{ line: k + 1, text: text.trim() }] : []);
 }
 
-/** LemmaScript's and Dafny's processes, run so that a timeout or a stop ends Dafny's too (`runProcess`). */
+/**
+ * LemmaScript's and Dafny's processes, run so that a timeout or a stop ends Dafny's too (`runProcess`).
+ * LemmaScript records each run in `.lemmascript/` at the project's root unless told not to; Tesota writes
+ * nothing into the project but the proof itself.
+ */
 function run(executable: string, args: readonly string[], cwd: string, signal: AbortSignal): Promise<ProcessRun> {
-  return runProcess(executable, args, cwd, signal, timeoutMs);
+  return runProcess(executable, args, cwd, signal, timeoutMs, undefined, { env: { ...process.env, LSC_RUN_LOG: "false" } });
 }
 
 /**
