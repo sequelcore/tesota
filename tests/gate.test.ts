@@ -335,7 +335,7 @@ it.each(["tui", "print"])("fingerprints inherited dirt without verifying an unch
   expect(await run.settle()).toBeUndefined();
   expect(find).not.toHaveBeenCalled();
   expect(run.steps.some(({ step }) => step === "proving" || step === "testing")).toBe(false);
-  expect(run.progress.status).toEqual({ step: "ready", readiness: "proofs_and_tests" });
+  expect(run.progress.status).toEqual({ step: "unchanged" });
 });
 
 it.each(["tui", "print"])("attributes only the request edit and preserves inherited files in %s", async (mode) => {
@@ -729,7 +729,7 @@ it("runs the project's checks with the session's environment, such as a writing 
   expect(readFileSync(join(root, ".git", "env-seen"), "utf8")).toBe("refs/heads/tesota/child");
 });
 
-it.each(["tui", "print"])("leaves a %s request ready without verification when no tool or only readers started", async (mode) => {
+it.each(["tui", "print"])("settles a %s request as unchanged, without verification, when no tool or only readers started (#536)", async (mode) => {
   const root = repository({ "src/rule.ts": contract, "bun.lock": "",
     "package.json": JSON.stringify({ scripts: { check: "node -e \"require('node:fs').writeFileSync('.git/check-ran','ran')\"" } }) });
   const find = vi.fn(() => ({ provider: "openai", id: "gpt-6-sol" }));
@@ -748,8 +748,8 @@ it.each(["tui", "print"])("leaves a %s request ready without verification when n
     expect(diffCalls).not.toHaveBeenCalled();
     expect(find).not.toHaveBeenCalled();
     expect(existsSync(join(root, ".git", "check-ran"))).toBe(false);
-    expect(run.progress.status).toEqual({ step: "ready", readiness: "proofs_and_tests" });
-    expect(run.steps.map(({ step }) => step)).toEqual(["ready", "waiting", "ready", "ready"]);
+    expect(run.progress.status).toEqual({ step: "unchanged" });
+    expect(run.steps.map(({ step }) => step)).toEqual(["ready", "waiting", "unchanged", "unchanged"]);
   } finally { gitCalls.mockRestore(); diffCalls.mockRestore(); }
 });
 
@@ -802,7 +802,7 @@ it.each(["interactive", "extension"])("starts a new %s request ineligible after 
   expect(entry(await run.settle()).customType).toBe("tesota-receipt");
   await run.input(source, undefined, "hi");
   expect(await run.settle()).toBeUndefined();
-  expect(run.progress.status.step).toBe("ready");
+  expect(run.progress.status.step).toBe("unchanged");
 });
 
 it("discloses a check script narrowed after its failing test went back, even when the remaining tests pass", async () => {
@@ -1108,7 +1108,7 @@ it("settles a print-mode run with the receipt outside the conversation, so Pi pr
   expect(shown).toMatchObject([{ type: "custom_message", customType: "tesota-receipt", display: true, details: { version: 2 } }]);
 });
 
-it("goes back to ready when the gate fails midway or the run changed nothing", async () => {
+it("goes back to ready when the gate fails midway, and settles unchanged when the run changed nothing (#536)", async () => {
   const root = project();
   const run = gate(root);
   run.progress.ready("proofs_and_tests");
@@ -1123,7 +1123,7 @@ it("goes back to ready when the gate fails midway or the run changed nothing", a
   expect(run.progress.status.step).toBe("sent_back");
   writeFileSync(join(root, "src", "rule.ts"), contract);
   expect(await run.settle()).toBeUndefined();
-  expect(run.progress.status).toEqual({ step: "ready", readiness: "proofs_and_tests" });
+  expect(run.progress.status).toEqual({ step: "unchanged" });
 });
 
 it("lists the changed lines of a proved file that no contract covers, and not those of a contract that proved", async () => {

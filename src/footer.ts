@@ -170,6 +170,8 @@ export function evidenceParts(status: GateStatus, now: number = performance.now(
       readinessWords[status.readiness]];
   }
   if (status.step === "settled") return receiptParts(status.receipt);
+  // Muted, never a warning: a question changes no file either (#536).
+  if (status.step === "unchanged") return [part("○ no file changed", "○ no change", "○ none", "muted")];
   if (status.step === "sent_back") return [workingHeads.sent_back, ...tallyParts(status.tally)];
   const { minutes, seconds } = elapsedTime(Math.max(0, Math.floor(now - status.startedAt)));
   const elapsed = minutes === 0 ? `${seconds}s` : `${minutes}m ${String(seconds).padStart(2, "0")}s`;

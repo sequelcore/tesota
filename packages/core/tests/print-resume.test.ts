@@ -211,13 +211,26 @@ describe("the final line's standing (#668)", () => {
     expect(ended.error).toContain("Completed, unverified: the changes are comments or blank lines only; tesota receipt writes it");
   });
 
-  test("a read-only run, or a question, ends Completed, with nothing to verify", async () => {
+  test("a read-only run, a command that changes nothing, or a question, ends Completed and says no file changed (#536)", async () => {
     const cwd = repository();
     const read = await printer([{ tool: "read", args: { path: "README.md" } }, "It says project."])(["What does README.md say?"], cwd);
-    expect(read.error).toContain("Completed.\n");
+    const ran = await printer([{ tool: "bash", args: { command: "git status" } }, "I'll implement it next."])(["Add a flag"], cwd);
     const asked = await printer(["Two."])(["What is one plus one?"], cwd);
-    expect(asked.error).toContain("Completed.\n");
-    for (const { error } of [read, asked]) expect(error).not.toContain("verified");
+    for (const { error } of [read, ran, asked]) {
+      expect(error).toContain("Completed; no file changed.\n");
+      expect(error).not.toContain("verified");
+    }
+  });
+
+  test("a follow-up that changes nothing says so, not the standing of the run before it (#536)", async () => {
+    const cwd = repository();
+    const print = printer([{ tool: "write", args: { path: "notes.txt", content: "" } }, "Created notes.txt.", "It is empty."]);
+    expect((await print(["Create an empty file named notes.txt"], cwd)).error).toContain("Completed, unverified");
+    const [file] = sessionsOf(cwd);
+    if (file === undefined) throw new Error("No session was written");
+    const followUp = await print(["--resume", basename(file, ".jsonl"), "What does notes.txt hold?"], cwd);
+    expect(followUp.error).toContain("Completed; no file changed.\n");
+    expect(followUp.error).not.toContain("unverified");
   });
 });
 

@@ -354,7 +354,8 @@ export interface Tally {
  * what the project lets it verify, and `waiting` while the agent works on
  * the operator's request, before anything settles. While a run settles it is proving,
  * testing or measuring contracts; it has `sent_back` failures while the
- * agent answers them, and is `settled` once the run ends with a receipt.
+ * agent answers them, and is `settled` once the run ends with a receipt, or
+ * `unchanged` once it ends having changed no file (#536).
  */
 export type GateStatus =
   | { readonly step: "ready"; readonly readiness: Readiness }
@@ -363,7 +364,8 @@ export type GateStatus =
   | { readonly step: "testing" | "measuring"; readonly startedAt: number; readonly tally: Tally }
   | { readonly step: "checking"; readonly path: string; readonly startedAt: number; readonly tally: Tally }
   | { readonly step: "sent_back"; readonly tally: Tally }
-  | { readonly step: "settled"; readonly receipt: Receipt };
+  | { readonly step: "settled"; readonly receipt: Receipt }
+  | { readonly step: "unchanged" };
 
 /** The round so far: the proofs judged, then whether every command passed, then how many contracts are weak. */
 function tally(proofs: Receipt["proofs"], tests?: Receipt["tests"], contracts?: readonly ContractStrength[]): Tally {
@@ -407,6 +409,9 @@ export class GateProgress {
     const receipt = at > request && entry !== undefined ? entryReceipt(entry) : undefined;
     if (isReceipt(receipt)) this.publish({ step: "settled", receipt });
   }
+
+  /** A run that settled having changed no file (#536): nothing to verify, and the operator can see so. */
+  unchanged(): void { this.publish({ step: "unchanged" }); }
 
   /** Back to ready, as on the operator's next request. */
   reset(): void { this.publish({ step: "ready", readiness: this.#readiness }); }
@@ -533,7 +538,12 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
   });
   // A run that ends before verification leaves no step running, and says why if it may have changed files.
   pi.on("agent_before_settle", async (event, ctx) => {
-    if (!mayHaveChanged) { progress.reset(); return undefined; }
+    if (!mayHaveChanged) {
+      // Only a completed run says it changed no file; a stopped or failed one already says how it ended.
+      if (event.outcome === "completed") progress.unchanged();
+      else progress.reset();
+      return undefined;
+    }
     await loadChecks();
     requestJudgments = [];
     const request = recorded?.();
@@ -768,7 +778,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     // A folder with no snapshot, or a repository Git could not read, is not verified; it is listed once it may have changed.
     const plain = workspace && mayHaveChanged ? [...units.filter(({ folder }) => !bases.has(folder)),
       ...measurable.filter((_, k) => read[k] === undefined)] : [];
-    if (changed.length === 0 && plain.length === 0) { progress.reset(); return undefined; }
+    if (changed.length === 0 && plain.length === 0) { progress.unchanged(); return undefined; }
     const proofs = yield* prove(changed);
     const allProofs = [...proofs.values()].flat();
     const proofsSent = proofsBack(proofs, unresolvedQuestion !== undefined);

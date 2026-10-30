@@ -6,7 +6,6 @@ import { provideHost } from "../../../src/host.ts";
 import { entryReceipt, isReceipt, type Receipt, receiptStanding, standingWords, unverifiedWhy } from "../../../src/receipt.ts";
 import tesota from "../../../src/tesota.ts";
 import { fileCredentialStore } from "./credentials.ts";
-import { branchOf } from "./branch.ts";
 import { providerError } from "./provider-error.ts";
 import { anyHooks, type Hooks, joinHooks } from "./hooks.ts";
 import type { McpServers } from "./mcp.ts";
@@ -128,13 +127,16 @@ function trustedStandards(cwd: string, settingsPath: string, write: PrintOutput)
 /** How the run ended and where its verification stands, from the receipt it settled with, and what Tesota's floor refused (#622). */
 function ending(outcome: string | undefined, file: string): string {
   const { entries } = peekSessionFile(file);
-  const receipt = branchOf(entries).map(entryReceipt).findLast((found) => found !== undefined);
+  // The last request's own receipt: a follow-up never claims the standing of the run before it (#536).
+  const run = entries.findLast((entry) => entry.type === "request")?.run;
+  const receipt = entries.filter((entry) => "run" in entry && entry.run === run).map(entryReceipt).findLast((found) => found !== undefined);
   const standing = isReceipt(receipt) ? receiptStanding(receipt) : undefined;
-  // A run that changed nothing claims no standing (#668); one that changed something unverified says why.
+  // A run that changed nothing claims no standing (#668), and a completed one with no receipt changed no file (#536);
+  // one that changed something unverified says why.
   const end = entries.findLast((entry) => entry.type === "run_end");
   const reason = outcome === "error" && end?.type === "run_end" && end.reason !== undefined ? `${providerError(end.reason)}\n` : "";
   return reason + `${outcome === "completed" ? "Completed" : `Ended ${outcome ?? "without a run"}`}`
-    + `${standing === undefined ? "" : standing === "unchanged" ? ` (${standingWords[standing]})`
+    + `${standing === undefined ? outcome === "completed" ? "; no file changed" : "" : standing === "unchanged" ? ` (${standingWords[standing]})`
       : `, ${standingWords[standing]}${standing === "unverified" ? `: ${unverifiedWhy(receipt as Receipt)}` : ""}; tesota receipt writes it for a pull request`}.\n`
     + (lastFloorNotice(entries) ?? "")
     // A run that ended on its question says how to answer it (#651).
