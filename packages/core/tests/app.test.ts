@@ -501,10 +501,11 @@ describe("tesota-core", () => {
 
   test("a settings key Tesota does not read is named once at startup, with the file (#714)", async () => {
     const { terminal, settingsPath, running } = await app([], { settingsFile: { tlcPath: "/tools/tla2tools.jar", hooks: {} } });
-    await terminal.until("did nothing: tlcPath.");
-    const screen = (await terminal.screen()).join("\n");
-    expect(screen.split("did nothing").length).toBe(2);
-    expect(screen.replace(/\s+/gu, "")).toContain(settingsPath.replace(/\s+/gu, ""));
+    // The note wraps where the path's length puts it, so it is read with the line breaks taken out; the link, last, never breaks.
+    await terminal.until("configuration.md#settingsjson");
+    const screen = (await terminal.screen()).join("").replace(/\s+/gu, "");
+    expect(screen.split("didnothing:tlcPath.").length).toBe(2);
+    expect(screen).toContain(`in${settingsPath.replace(/\s+/gu, "")},`);
     send(terminal, "/quit");
     await running;
   });
