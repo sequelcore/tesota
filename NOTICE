@@ -77,7 +77,7 @@ except where noted.
 - is-glob 4.0.3: Copyright (c) 2014-2017, Jon Schlinkert.
 - json-bigint 1.0.0: Copyright (c) 2013 Andrey Sidorov
 - jwa 2.0.1 and jws 4.0.1: Copyright (c) 2013 Brian J. Brennan
-- lemmascript 0.6.4 (https://github.com/midspiral/LemmaScript) and
+- lemmascript 0.6.5 (https://github.com/midspiral/LemmaScript) and
   lemmascript-claimcheck 0.2.0: Copyright (c) 2026 midspiral
 - marked 18.0.11: Copyright (c) 2018+, MarkedJS (https://github.com/markedjs/)
   Copyright (c) 2011-2018, Christopher Jeffrey (https://github.com/chjj/)

@@ -27,7 +27,7 @@
   "dependencies": {
     "cytoscape": "3.33.1",
     "effect": "4.0.5",
-    "lemmascript": "0.6.4",
+    "lemmascript": "0.6.5",
     "ts-morph": "25.0.1",
     "web-tree-sitter": "0.27.0"
   },

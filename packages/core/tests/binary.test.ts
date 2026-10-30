@@ -56,7 +56,8 @@ test("the engine's binary starts, and runs LemmaScript it embeds", () => {
   const binary = join(folder("tesota-core-binary-"), executable("tesota"));
   build(binary);
   const project = folder("tesota-core-binary-project-");
-  const run = (...args: string[]) => spawnSync(binary, args, { cwd: project, encoding: "utf8" });
+  // As the verifier runs it: with LemmaScript's run log off, which inside a binary would read a package.json that isn't there.
+  const run = (...args: string[]) => spawnSync(binary, args, { cwd: project, encoding: "utf8", env: { ...process.env, LSC_RUN_LOG: "false" } });
   expect(run("--version").stdout.trim()).toBe(manifest.version);
   writeFileSync(join(project, "clamp.ts"), clamp);
   const regen = run("__lsc", "regen", "--no-verify", "--backend=dafny", "clamp.ts");
