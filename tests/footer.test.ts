@@ -187,6 +187,13 @@ it("says there was nothing to verify when the change was comments alone, and onl
   expect(words({ step: "settled", receipt: emptyReceipt })).toBe("○ receipt · nothing to verify, nothing changed");
 });
 
+it("says a run that settled without changing any file changed none, quietly, since a question changes none either (#536)", () => {
+  expect(words({ step: "unchanged" })).toBe("○ no file changed");
+  expect(words({ step: "unchanged" }, "short")).toBe("○ no change");
+  expect(words({ step: "unchanged" }, "glyphs")).toBe("○ none");
+  expect(evidenceParts({ step: "unchanged" }).map(({ color }) => color)).toEqual(["muted"]);
+});
+
 it("drops the folder first, then the model, then shortens the evidence, and drops the context % last, never the statuses", () => {
   // Widths: evidence 40, 30 or 10; context 6; folder 40; model 15; statuses 11 ("full access"); three spaces between the right's items.
   expect(footerLayout(130, 40, 30, 10, 6, 40, 15, 11)).toEqual({ level: "full", context: true, model: true, place: true });
