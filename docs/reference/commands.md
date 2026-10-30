@@ -41,8 +41,8 @@ repair command from [Installation](installation.md#repair-commands). Git,
 Dafny, Java with TLC and a model provider are **core**; Quint and each
 single provider are **optional**. JSON has the same report:
 `capabilities` (`id`, `requirement`, `status`, `path`, `version`, `smoke`,
-`consequence`, `repair`, and `entryPoint` for LemmaScript and TLC) and
-`exitCode`.
+`consequence`, `repair`, and `entryPoint` for LemmaScript and TLC),
+`warnings` and `exitCode`.
 
 - **available:** the version, help or sign-in probe passed.
 - **unavailable:** not found, no provider available, or Quint on Windows,

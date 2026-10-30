@@ -82,11 +82,15 @@ const checks: { readonly [Name in keyof Settings]-?: (value: unknown) => boolean
   subagentBranchGuard: (value) => guardSettings.has(value as string),
 };
 
-/** The settings read back, and the names of those that were invalid and left out. */
+/** The settings read back, the names of those that were invalid and left out, and the keys Tesota does not read (#714). */
 export interface ReadSettings {
   readonly settings: Settings;
   readonly invalid: readonly string[];
+  readonly unknown: readonly string[];
 }
+
+/** Every key Tesota reads in the file: the settings, and the hooks `hooks.ts` reads from it apart. */
+const known: readonly string[] = [...Object.keys(checks), "hooks"];
 
 /**
  * The operator's settings (#443) in `~/.tesota/settings.json` unless given
@@ -104,7 +108,41 @@ export function readSettings(path: string = join(tesotaHome(), "settings.json"))
     if (check(value)) settings[name] = value;
     else invalid.push(name);
   }
-  return { settings: settings as Settings, invalid };
+  return { settings: settings as Settings, invalid, unknown: Object.keys(parsed).filter((key) => !known.includes(key)) };
+}
+
+/**
+ * What to tell the operator about keys Tesota does not read (#714), once, so
+ * a typo or an invented setting doesn't look like it worked; none when there
+ * are none. A key within two edits of a real one, ignoring case, names it.
+ */
+export function unknownSettingsNote(unknown: readonly string[], path: string): string | undefined {
+  if (unknown.length === 0) return undefined;
+  const named = unknown.map((key) => {
+    const near = known.find((name) => edits(key.toLowerCase(), name.toLowerCase()) <= 2);
+    return near === undefined ? key : `${key} (did you mean ${near}?)`;
+  });
+  return `Settings Tesota does not know, in ${path}, did nothing: ${named.join(", ")}. `
+    + "See https://github.com/sequelcore/tesota/blob/main/docs/reference/configuration.md#settingsjson";
+}
+
+/** What the shell tells the operator about the settings it read: values left out as invalid, and keys it does not read. */
+export function settingsNotes(read: ReadSettings, path: string): string[] {
+  const unknown = unknownSettingsNote(read.unknown, path);
+  return [...read.invalid.length > 0 ? [`Settings left out as invalid: ${read.invalid.join(", ")}.`] : [], ...unknown === undefined ? [] : [unknown]];
+}
+
+/** The fewest insertions, deletions and substitutions that turn `a` into `b`. */
+function edits(a: string, b: string): number {
+  let row = Array.from({ length: b.length + 1 }, (_, column) => column);
+  for (const [line, char] of [...a].entries()) {
+    const next = [line + 1];
+    for (const [column, other] of [...b].entries()) {
+      next.push(Math.min((row[column + 1] ?? 0) + 1, (next[column] ?? 0) + 1, (row[column] ?? 0) + (char === other ? 0 : 1)));
+    }
+    row = next;
+  }
+  return row[b.length] ?? 0;
 }
 
 /** The settings file's object as written, hooks and keys Tesota leaves out included; none when it does not exist. */

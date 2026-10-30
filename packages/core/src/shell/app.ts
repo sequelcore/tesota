@@ -26,7 +26,7 @@ import { anyHooks, type Hooks, joinHooks } from "../hooks.ts";
 import { lastFloorNotice, peekSessionFile } from "../session-file.ts";
 import { readStandards } from "../standards.ts";
 import { chartTrust, trust, trusted } from "../trust.ts";
-import { readSettings, type Settings, updateSettings } from "../settings.ts";
+import { readSettings, type Settings, settingsNotes, updateSettings } from "../settings.ts";
 import { pendingUsage, readUsage, type UsageSources } from "../usage.ts";
 import { usageSources } from "../usage-sources.ts";
 import { Dashboard, type SessionRow } from "./dashboard.ts";
@@ -736,7 +736,7 @@ export async function runApp(options: AppOptions): Promise<void> {
   // The first frame is drawn: the rest of the catalog loads now, while the shell starts its hooks and servers (#743).
   // A failure stays for the uses that wait on it, where it is reported, not as an unhandled rejection here.
   rest().catch(() => undefined);
-  if (read.invalid.length > 0) shell.note(`Settings left out as invalid: ${read.invalid.join(", ")}.`, "warning");
+  for (const text of settingsNotes(read, settingsPath)) shell.note(text, "warning");
   providers = (await credentials.list()).length;
   if (typeof standards.ownHooks === "string") shell.note(`Your hooks were left out: ${standards.ownHooks}`, "error");
   await trustProjectHooks();

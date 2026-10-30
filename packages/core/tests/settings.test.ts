@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { deviceId, readSettings, updateSettings, writeSettings } from "../src/settings.ts";
+import { deviceId, readSettings, unknownSettingsNote, updateSettings, writeSettings } from "../src/settings.ts";
 
 /** The operator's settings (#443), always in a temporary folder. */
 const fileIn = (): string => join(mkdtempSync(join(tmpdir(), "tesota-core-settings-")), "settings.json");
@@ -13,11 +13,11 @@ describe("the settings file", () => {
     const accounts = [{ name: "b", provider: "claude-code", folder: join(tmpdir(), "claude-b") },
       { name: "work", provider: "openai-codex" }] as const;
     writeFileSync(path, JSON.stringify({ accounts }));
-    expect(readSettings(path)).toEqual({ settings: { accounts }, invalid: [] });
+    expect(readSettings(path)).toEqual({ settings: { accounts }, invalid: [], unknown: [] });
     for (const bad of [[{ name: "a/b", provider: "openai-codex" }], [{ name: "b", provider: "claude-code" }],
       [{ name: "b", provider: "other" }], [accounts[1], accounts[1]], [{ name: "b", provider: "claude-code", folder: "relative" }]]) {
       writeFileSync(path, JSON.stringify({ accounts: bad }));
-      expect(readSettings(path)).toEqual({ settings: {}, invalid: ["accounts"] });
+      expect(readSettings(path)).toEqual({ settings: {}, invalid: ["accounts"], unknown: [] });
     }
   });
 
@@ -25,37 +25,50 @@ describe("the settings file", () => {
     const path = fileIn();
     for (const openCasesModel of ["openrouter/vendor/model", "off"]) {
       writeFileSync(path, JSON.stringify({ openCasesModel, claimcheckModel: "anthropic/claude-sonnet-5-5" }));
-      expect(readSettings(path)).toEqual({ settings: { openCasesModel, claimcheckModel: "anthropic/claude-sonnet-5-5" }, invalid: [] });
+      expect(readSettings(path)).toEqual({ settings: { openCasesModel, claimcheckModel: "anthropic/claude-sonnet-5-5" }, invalid: [], unknown: [] });
     }
     for (const invalid of ["", "no-slash", "provider/", "provider/has space", 42, null]) {
       writeFileSync(path, JSON.stringify({ openCasesModel: invalid, claimcheckModel: invalid }));
-      expect(readSettings(path)).toEqual({ settings: {}, invalid: ["openCasesModel", "claimcheckModel"] });
+      expect(readSettings(path)).toEqual({ settings: {}, invalid: ["openCasesModel", "claimcheckModel"], unknown: [] });
     }
     writeFileSync(path, JSON.stringify({ claimcheckModel: "off" }));
-    expect(readSettings(path)).toEqual({ settings: {}, invalid: ["claimcheckModel"] });
+    expect(readSettings(path)).toEqual({ settings: {}, invalid: ["claimcheckModel"], unknown: [] });
   });
 
   test("no file means no settings", () => {
-    expect(readSettings(fileIn())).toEqual({ settings: {}, invalid: [] });
+    expect(readSettings(fileIn())).toEqual({ settings: {}, invalid: [], unknown: [] });
   });
 
   test("the model, thinking level and terminal mode survive a re-read", () => {
     const path = fileIn();
     writeSettings({ model: "anthropic/claude-sonnet-5-5", thinkingLevel: "high", tuiMode: "inline" }, path);
     expect(readSettings(path)).toEqual({ settings: { model: "anthropic/claude-sonnet-5-5", thinkingLevel: "high", tuiMode: "inline" },
-      invalid: [] });
+      invalid: [], unknown: [] });
   });
 
   test("an invalid value is left out and named, and the rest still reads", () => {
     const path = fileIn();
     writeFileSync(path, JSON.stringify({ model: "no-slash", thinkingLevel: "loud", tuiMode: "fullscreen", agentLimit: 17, other: 1 }));
-    expect(readSettings(path)).toEqual({ settings: { tuiMode: "fullscreen" }, invalid: ["model", "thinkingLevel", "agentLimit"] });
+    expect(readSettings(path)).toEqual({ settings: { tuiMode: "fullscreen" }, invalid: ["model", "thinkingLevel", "agentLimit"], unknown: ["other"] });
+  });
+
+  test("a key Tesota does not read is named, and hooks, which it reads apart, are not (#714)", () => {
+    const path = fileIn();
+    writeFileSync(path, JSON.stringify({ tlcPath: "C:/tools/tla2tools.jar", hooks: {}, Model: "openai/gpt-6-sol", tuiMode: "inline" }));
+    expect(readSettings(path)).toEqual({ settings: { tuiMode: "inline" }, invalid: [], unknown: ["tlcPath", "Model"] });
+  });
+
+  test("unknown keys are named once with the file and the reference, and a near miss gets a suggestion (#714)", () => {
+    expect(unknownSettingsNote([], "/home/settings.json")).toBeUndefined();
+    expect(unknownSettingsNote(["tlcPath", "Model", "agentLimt"], "/home/settings.json")).toBe(
+      "Settings Tesota does not know, in /home/settings.json, did nothing: tlcPath, Model (did you mean model?), agentLimt (did you mean agentLimit?). "
+      + "See https://github.com/sequelcore/tesota/blob/main/docs/reference/configuration.md#settingsjson");
   });
 
   test("a file that begins with a byte-order mark, as Windows PowerShell 5.1 writes one, reads as any other (#470)", () => {
     const path = fileIn();
     writeFileSync(path, `\uFEFF${JSON.stringify({ model: "openai/gpt-6-sol", permissionMode: "full" })}`);
-    expect(readSettings(path)).toEqual({ settings: { model: "openai/gpt-6-sol", permissionMode: "full" }, invalid: [] });
+    expect(readSettings(path)).toEqual({ settings: { model: "openai/gpt-6-sol", permissionMode: "full" }, invalid: [], unknown: [] });
   });
 
   test("a file that is not JSON is a failure, never read as empty", () => {

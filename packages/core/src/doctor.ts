@@ -7,7 +7,9 @@ import { tlaToolsJar } from "../../../src/model-check.ts";
 import { lscCommand } from "../../../src/verification/lemmascript-verifier.ts";
 import { fileCredentialStore } from "./credentials.ts";
 import { engineModels } from "./model-access.ts";
-import { readSettings } from "./settings.ts";
+import { readSettings, unknownSettingsNote } from "./settings.ts";
+import { tesotaHome } from "../../../src/home.ts";
+import { join } from "node:path";
 import { claudeCodeExecutable } from "./providers/claude-code.ts";
 import install from "../../../docs/reference/installation.md" with { type: "text" };
 
@@ -77,8 +79,11 @@ async function claudeDiagnosis(id: string): Promise<Diagnosis> {
   return { ...version, smoke: { ...version.smoke, output: `${version.smoke.output}\nSign-in not checked (version-only probe).` } };
 }
 
-/** Collect sequential local probes. Project tests are deliberately not run: they may write or download. */
-export async function doctorReport(): Promise<{ capabilities: Diagnosis[]; exitCode: number }> {
+/**
+ * Collect sequential local probes. Project tests are deliberately not run: they may write or download.
+ * Warnings, such as settings Tesota does not read (#714), never change the exit code.
+ */
+export async function doctorReport(): Promise<{ capabilities: Diagnosis[]; warnings: string[]; exitCode: number }> {
   const capabilities: Diagnosis[] = [];
   for (const spec of [
     { id: "dafny", requirement: "core" as const, executable: "dafny", args: ["--version"], consequence: proofLoss, accepts: /(?:^|\s)4\./u },
@@ -110,7 +115,9 @@ export async function doctorReport(): Promise<{ capabilities: Diagnosis[]; exitC
     capabilities.push({ ...tlc, entryPoint: jar });
   }
   const providers: Diagnosis[] = [await claudeDiagnosis("claude-code")];
-  const accounts = readSettings().settings.accounts ?? [];
+  const settingsPath = join(tesotaHome(), "settings.json");
+  const settings = readSettings(settingsPath);
+  const accounts = settings.settings.accounts ?? [];
   for (const account of accounts) {
     if (account.provider !== "claude-code") continue;
     providers.push(await claudeDiagnosis(`claude-code@${account.name}`));
@@ -141,7 +148,8 @@ export async function doctorReport(): Promise<{ capabilities: Diagnosis[]; exitC
         : "No provider row is available." },
     consequence: "Not verified: no run can start without a model provider.",
     repair: `${repairCommand("provider")} (then /login); Models guide: https://github.com/sequelcore/tesota/blob/main/docs/guides/models.md` });
-  return { capabilities, exitCode: doctorExitCode(capabilities.some(({ status }) => status === "failed"),
+  const unknown = unknownSettingsNote(settings.unknown, settingsPath);
+  return { capabilities, warnings: unknown === undefined ? [] : [unknown], exitCode: doctorExitCode(capabilities.some(({ status }) => status === "failed"),
     capabilities.some(({ status, requirement }) => status === "unavailable" && requirement === "core")) };
 }
 
@@ -149,7 +157,7 @@ export async function doctorReport(): Promise<{ capabilities: Diagnosis[]; exitC
 export async function doctorCommand(args: readonly string[], output: { out(text: string): void; error(text: string): void }): Promise<number> {
   if (args.length > 1 || (args.length === 1 && args[0] !== "--json")) {
     const help = args.length === 1 && (args[0] === "--help" || args[0] === "-h");
-    (help ? output.out : output.error)("Use: tesota doctor [--json]\nRead-only local probes, five seconds each. Core: Git, Dafny with lsc, Java with TLC, model provider (at least one provider row available). Optional: Quint and individual provider rows, including Claude Code accounts.\nExit: 0 no failures or unavailable core capabilities, 1 any failed tool/provider (including optional), 2 core capability unavailable without failures, 3 usage error. Unavailable optional tools do not affect the exit code.\n");
+    (help ? output.out : output.error)("Use: tesota doctor [--json]\nRead-only local probes, five seconds each. Core: Git, Dafny with lsc, Java with TLC, model provider (at least one provider row available). Optional: Quint and individual provider rows, including Claude Code accounts.\nExit: 0 no failures or unavailable core capabilities, 1 any failed tool/provider (including optional), 2 core capability unavailable without failures, 3 usage error. Unavailable optional tools do not affect the exit code, nor do warnings such as unknown settings keys.\n");
     return help ? 0 : 3;
   }
   const report = await doctorReport();
@@ -163,5 +171,6 @@ export function formatDoctorReport(report: Awaited<ReturnType<typeof doctorRepor
     : `Tesota doctor - read-only local checks (5 s per probe)\n${report.capabilities.map((item) =>
       `\n${item.id}: ${item.status} (${item.requirement})\n  Path: ${item.path ?? "not applicable / not found"}\n  Version: ${item.version ?? "unknown"}\n` +
       `${item.entryPoint === undefined ? "" : `  Entry point: ${item.entryPoint}\n`}  Smoke: ${item.smoke.ended}, exit ${item.smoke.exitCode ?? "none"}: ${item.smoke.output.replace(/\s+/gu, " ")}\n` +
-      `  Without it: ${item.consequence}\n  Repair: ${item.repair}\n`).join("")}\nExit code: ${report.exitCode}\n`;
+      `  Without it: ${item.consequence}\n  Repair: ${item.repair}\n`).join("")}${report.warnings.map((warning) => `\nWarning: ${warning}\n`).join("")}`
+      + `\nExit code: ${report.exitCode}\n`;
 }
