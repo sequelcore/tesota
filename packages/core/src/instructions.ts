@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
@@ -140,7 +140,10 @@ export function skillsIn(folder: string): Skill[] {
   let entries;
   try { entries = readdirSync(folder, { withFileTypes: true }); } catch { return found; }
   for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
+    if (!entry.isDirectory()) {
+      if (!entry.isSymbolicLink()) continue;
+      try { if (!statSync(join(folder, entry.name)).isDirectory()) continue; } catch { continue; }
+    }
     const path = join(folder, entry.name, "SKILL.md");
     const content = readText(path);
     const metadata = content === undefined ? undefined : skillMetadata(content);

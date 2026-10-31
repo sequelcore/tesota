@@ -165,6 +165,50 @@ test("skills combine all locations with Tesota, project and nearest-folder prece
   }
 });
 
+test("skills discover linked directories in every skill location", () => {
+  const temp = mkdtempSync(join(tmpdir(), "tesota-instructions-"));
+  try {
+    const homes = { user: join(temp, "user"), tesota: join(temp, "tesota") };
+    const cwd = join(temp, "project");
+    const target = join(temp, "shared-skill");
+    put(join(target, "SKILL.md"), "---\nname: linked\ndescription: A shared skill\n---\nInstructions");
+    for (const folder of [join(homes.user, ".agents", "skills"), join(homes.tesota, "skills"),
+      join(cwd, ".agents", "skills")]) {
+      mkdirSync(folder, { recursive: true });
+      const link = join(folder, "linked");
+      symlinkSync(target, link, process.platform === "win32" ? "junction" : "dir");
+      const path = join(link, "SKILL.md");
+      expect(skills(cwd, homes)).toEqual([{ name: "linked", description: "A shared skill", path }]);
+      expect(startedSkill("/linked", skills(cwd, homes))?.instructions)
+        .toBe(`Base directory for this skill: ${link}\n\nInstructions`);
+      rmSync(link, { recursive: true });
+    }
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test("skills ignore broken links and links to files without losing valid skills", () => {
+  const temp = mkdtempSync(join(tmpdir(), "tesota-instructions-"));
+  try {
+    const folder = join(temp, "skills");
+    const target = join(temp, "shared-skill");
+    put(join(target, "SKILL.md"), "---\ndescription: A shared skill\n---");
+    mkdirSync(folder);
+    const type = process.platform === "win32" ? "junction" : "dir";
+    symlinkSync(target, join(folder, "a-broken"), type);
+    rmSync(target, { recursive: true });
+    const file = join(temp, "ordinary-file");
+    put(file, "not a skill directory");
+    symlinkSync(file, join(folder, "b-file"), process.platform === "win32" ? "junction" : "file");
+    const path = join(folder, "valid", "SKILL.md");
+    put(path, "---\ndescription: Still discoverable\n---");
+    expect(skillsIn(folder)).toEqual([{ name: "valid", description: "Still discoverable", path }]);
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
+});
+
 test("frontmatter accepts quoted and folded descriptions, defaults names, and requires a description", () => {
   const temp = mkdtempSync(join(tmpdir(), "tesota-instructions-"));
   try {
@@ -304,6 +348,9 @@ test("a session sends the project's AGENTS.md and its skills to the model, after
   mkdirSync(join(cwd, ".git"));
   put(join(cwd, "AGENTS.md"), "Keep each change small.");
   put(join(cwd, ".agents", "skills", "release", "SKILL.md"), "---\nname: release\ndescription: Cut a release.\n---\nSteps.");
+  const shared = mkdtempSync(join(tmpdir(), "tesota-core-shared-skill-"));
+  put(join(shared, "SKILL.md"), "---\nname: shared\ndescription: A linked skill.\n---\nShared steps.");
+  symlinkSync(shared, join(cwd, ".agents", "skills", "shared"), process.platform === "win32" ? "junction" : "dir");
   const faux = fauxProvider();
   let prompt = "";
   faux.setResponses([scriptedReply({ seen: (context) => { prompt = context.systemPrompt ?? JSON.stringify(context.messages[0]); }, reply: "ok" })]);
@@ -318,6 +365,7 @@ test("a session sends the project's AGENTS.md and its skills to the model, after
   }
   expect(prompt).toContain("Keep each change small.");
   expect(prompt).toContain("release: Cut a release.");
+  expect(prompt).toContain("shared: A linked skill.");
   expect(prompt.indexOf("You are a coding agent")).toBeLessThan(prompt.indexOf("Keep each change small."));
 });
 
