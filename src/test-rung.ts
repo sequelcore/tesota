@@ -73,7 +73,7 @@ export interface CommandRun {
   readonly evidence: Evidence;
   /** The failing tests' names, sorted, from the JUnit reports the run wrote; undefined when it wrote none. */
   readonly failingTests?: readonly string[] | undefined;
-  /** For a command that failed or timed out on the change, whether it does on the base too (#726). */
+  /** Why a command failed, or why its cause is unknown when it did not finish (#726, #784). */
   readonly origin?: CommandOrigin;
 }
 
@@ -101,12 +101,13 @@ function bytes(root: string, path: string): Buffer | undefined {
  * Run the commands of the projects that own the changed files at `root`, one
  * evidence each, bound to the changed files' content as it was when the
  * commands started. Given a base to compare `against`, each command that
- * failed or timed out runs there too, and carries why it fails (`originsOnBase`).
+ * failed runs there too, and carries why it fails (`originsOnBase`). A timed-out
+ * check did not finish: its cause stays unknown and it is never rerun on the base.
  */
 export async function runCommands(root: string, projects: readonly ProjectChecks[], changed: readonly string[],
   signal: AbortSignal, ops: OperationSink = noOperations, env?: Environment, against?: Against): Promise<CommandRun[]> {
   const ran = await commandRuns(root, projects, changed, signal, ops, env);
-  const failing = ran.filter(({ outcome }) => outcome === "failed" || outcome === "timed_out");
+  const failing = ran.filter(({ outcome }) => outcome === "failed");
   if (against === undefined || failing.length === 0) return ran.map(({ run }) => run);
   const origins = new Map((await originsOnBase(root, against, failing, changed, signal, ops, env)).map((origin, k) => [failing[k], origin]));
   return ran.map((each) => { const origin = origins.get(each); return origin === undefined ? each.run : { ...each.run, origin }; });
@@ -137,7 +138,10 @@ async function commandRuns(root: string, projects: readonly ProjectChecks[], cha
       const results = readTestResults(root, reportsWritten(root, folder, started));
       const failingTests = results === undefined ? undefined
         : [...results.tests].filter(([, status]) => status === "failed").map(([name]) => name).sort();
-      runs.push({ folder, outcome, results, run: { command, failingTests, evidence: { verifier: "command",
+      runs.push({ folder, outcome, results, run: { command, failingTests,
+        ...outcome === "timed_out" ? { origin: { cause: "unknown" as const,
+          reason: "the check did not finish within its time limit; it was not rerun on the base" } } : {},
+        evidence: { verifier: "command",
         claim: `\`${command}\` passes with these changes.`, limits, outcome, output, durationMs: Date.now() - started, files: changed,
         contentHash: hash } } });
     }

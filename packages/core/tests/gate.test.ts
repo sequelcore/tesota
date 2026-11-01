@@ -13,6 +13,7 @@ import { shellHost } from "../src/shell/surface.ts";
 import type { ScriptStep } from "./engine.ts";
 import type { QuestionSubmit } from "../src/questions.ts";
 import { scriptedReply } from "./scripted.ts";
+import { startMcp } from "../src/mcp.ts";
 
 /** The proofs the gate runs, scripted per file in order: the gate's decisions on the engine are under test, not LemmaScript. */
 const proofs = new Map<string, ProofOutcome[]>();
@@ -44,6 +45,42 @@ type Receipt = import("../../../src/receipt.ts").Receipt;
  * an extension that tries to silence it.
  */
 const open: EngineSession[] = [];
+
+test.each(["echo", "fails", "read.only"])("records an MCP %s call even with no file change (#751)", async (name) => {
+  const cwd = repository();
+  const servers = startMcp([{ name: "editor", source: "test", enabled: true, timeout: 10,
+    transport: "stdio", command: process.execPath, args: [join(import.meta.dir, "mcp-server.mjs")], cwd, env: {} }], { cwd });
+  const session = gated(cwd, [{ tool: `mcp__editor__${name.replaceAll(".", "_")}`, args: name === "echo" ? { text: "private argument" } : {} }, "done"],
+    { mcp: () => servers });
+  try {
+    await session.prompt("Use the editor tool.");
+    const receipt = receiptOf(session);
+    expect(receipt).toBeDefined();
+    expect(receipt).toMatchObject({ changed: [], externalEffects: [{ server: "editor", tool: name,
+      argumentsHash: expect.stringMatching(/^[a-f0-9]{64}$/u), startedAt: expect.any(String),
+      outcome: name === "fails" ? "error" : "returned" }] });
+    expect(receiptStanding(receipt!)).toBe("incomplete");
+    expect(renderReceipt(receipt!)).toContain("External effect not verified");
+    expect(JSON.stringify(receipt)).not.toContain("private argument");
+    await session.dispose();
+    const reopened = openSession(session.file, scriptless());
+    open.push(reopened);
+    expect(receiptOf(reopened)).toEqual(receipt);
+  } finally { await servers.close(); }
+});
+
+test("only an explicit MCP read-only declaration excludes a call from external effects (#751)", async () => {
+  const cwd = repository();
+  const servers = startMcp([{ name: "docs", source: "test", enabled: true, timeout: 10, readOnlyTools: ["echo"],
+    transport: "stdio", command: process.execPath, args: [join(import.meta.dir, "mcp-server.mjs")], cwd, env: {} }], { cwd });
+  try {
+    const session = gated(cwd, [{ tool: "mcp__docs__echo", args: { text: "read" } }, "done"], { mcp: () => servers });
+    await session.prompt("Read docs.");
+    expect(session.ledger()[0]?.externalEffects).toEqual([]);
+    expect(receiptOf(session)).toBeUndefined();
+    expect(session.messages().find((message) => message.role === "toolResult")?.isError).toBe(false);
+  } finally { await servers.close(); }
+});
 
 test("persistent verification roles use the real settings reader without affecting completion (#709)", async () => {
   const path = join(mkdtempSync(join(tmpdir(), "tesota-role-settings-")), "settings.json");

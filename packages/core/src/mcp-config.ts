@@ -33,6 +33,8 @@ interface Common {
   readonly enabled: boolean;
   /** Seconds a request may take; progress the server reports restarts it. */
   readonly timeout: number;
+  /** Exact server-side tool names the operator declares read-only for receipt classification. */
+  readonly readOnlyTools?: readonly string[];
 }
 
 export type McpServerConfig = Common & (
@@ -73,6 +75,13 @@ function texts(value: unknown, what: string): readonly string[] {
   if (value === undefined) return [];
   if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) throw new Error(`${what} must be a list of text`);
   return value;
+}
+
+function readOnlyTools(value: unknown): Pick<Common, "readOnlyTools"> {
+  if (value === undefined) return {};
+  const tools = texts(value, "readOnlyTools");
+  if (tools.some((tool) => tool.trim() === "")) throw new Error("readOnlyTools must contain nonempty tool names");
+  return { readOnlyTools: tools };
 }
 
 function textRecord(value: unknown, what: string, env: NodeJS.ProcessEnv): Record<string, string> {
@@ -119,12 +128,12 @@ function entry(name: string, value: unknown, source: string, cwd: string, env: N
   if (type === undefined && command === undefined && url === undefined) return { name, source, enabled };
   const timeout = value["timeout"] ?? defaultTimeoutSeconds;
   if (typeof timeout !== "number" || !(timeout > 0)) throw new Error("timeout must be seconds");
-  const common = { name, source, enabled, timeout };
+  const common = { name, source, enabled, timeout, ...readOnlyTools(value["readOnlyTools"]) };
   if (command !== undefined && url !== undefined) throw new Error("a server has a command or a url, not both");
   return type === "stdio" || (type === undefined && command !== undefined) ? local(common, value, cwd, env) : remote(common, value, env);
 }
 
-type Shared = Pick<McpServerConfig, "name" | "source" | "enabled" | "timeout">;
+type Shared = Pick<McpServerConfig, "name" | "source" | "enabled" | "timeout" | "readOnlyTools">;
 
 /** A local server: the program to run, its arguments, environment and folder. */
 function local(common: Shared, value: Record<string, unknown>, cwd: string, env: NodeJS.ProcessEnv): McpServerConfig {

@@ -11,7 +11,7 @@ export const noEffect = 3;
  * (`repaired[i]`). A call with a result or a repair gets nothing, so no
  * result is replaced and recovery run again adds nothing. Every other call
  * gets exactly one repair: "no effect" when its intent was recorded and
- * its declared access only reads (`readOnly[i]`), "outcome unknown" for
+ * the gate's rule says it cannot change files (`readOnly[i]`), "outcome unknown" for
  * other intended calls, and "not run" when it never started. No repair
  * claims the call succeeded, and none runs it again.
  */

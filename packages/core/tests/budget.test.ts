@@ -1,7 +1,20 @@
 import { expect, test } from "bun:test";
 import { type Measurements, median, overBudget } from "../scripts/budget.ts";
+import budgets from "../budgets.json" with { type: "json" };
 
-const measured = (values: Partial<Measurements>): Measurements => ({ startupMs: 0, binaryBytes: 0, loopMs: 0, loopRssBytes: 0, baseMs: 0, syncMs: 0, syncCount: 0, settleMs: 0, resumeMs: 0, sessionBytes: 0, firstFrameMs: 0, firstFrameRatio: 0, firstFrameResumeRatio: 0, shellRssBytes: 0, ...values });
+const measured = (values: Partial<Measurements>): Measurements => ({ startupMs: 0, binaryBytes: 0, loopMs: 0, loopResumeRatio: 0, loopRssBytes: 0, baseMs: 0, syncMs: 0, syncCount: 0, settleMs: 0, resumeMs: 0, sessionBytes: 0, firstFrameMs: 0, firstFrameRatio: 0, firstFrameResumeRatio: 0, shellRssBytes: 0, ...values });
+
+test("Linux loop noise passes while a fifty-percent loop-only regression fails (#783)", () => {
+  // First attempts of CI runs 41137648288 and 41131604704: unchanged measured path, two failures each.
+  for (const [first, second, resumeFirst, resumeSecond] of [[124.7, 124.5, 10.2, 10.1], [147.7, 154.8, 12.5, 11.9]] as const) {
+    const attempt = (loopMs: number, resumeMs: number) => measured({ loopMs, resumeMs, loopResumeRatio: loopMs / resumeMs });
+    expect(overBudget(attempt(first, resumeFirst), budgets.linux, attempt(second, resumeSecond))).toEqual([]);
+    expect(overBudget(attempt(first * 1.5, resumeFirst), budgets.linux, attempt(second * 1.5, resumeSecond)))
+      .toContainEqual(expect.stringContaining("loopResumeRatio"));
+  }
+  expect(overBudget(measured({ loopMs: 241, loopResumeRatio: 10 }), budgets.linux))
+    .toContainEqual(expect.stringContaining("loopMs"));
+});
 
 test("the median is the middle sample, whatever order the samples came in", () => {
   expect(median([30, 10, 20])).toBe(20);

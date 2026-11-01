@@ -63,6 +63,10 @@ test("the engine's binary starts, and runs LemmaScript it embeds", () => {
   const regen = run("__lsc", "regen", "--no-verify", "--backend=dafny", "clamp.ts");
   expect(regen.stderr).toBe("");
   expect(regen.stdout).toContain("clamp.dfy.gen");
+  const info = run("__lsc", "info", "--typed", "clamp.ts");
+  expect(info.status).toBe(0);
+  expect(info.stderr).toBe("");
+  expect(JSON.parse(info.stdout)).toMatchObject({ schema: 1, functions: [{ name: "clamp" }] });
 }, 120_000);
 
 test("the binary doctor embeds repairs and probes LemmaScript without writing outside the checkout", () => {
@@ -102,10 +106,14 @@ test("in a binary, the verifier reads TypeScript, Python and Go, and proves a co
   writeFileSync(join(project, "clamp.ts"), clamp);
   const run = spawnSync(binary, [project], { cwd: project, encoding: "utf8" });
   expect(run.stderr).toBe("");
-  const read = JSON.parse(run.stdout) as { typescript: number[]; python: number[]; go: number[]; proof: { outcome: string; files: string[] } };
+  const read = JSON.parse(run.stdout) as { typescript: number[]; python: number[]; go: number[];
+    proof: { outcome: string; files: string[]; proofInfo?: { status: string; semanticGap?: string } } };
   expect(read).toMatchObject({ typescript: [1], python: [1], go: [1] });
   expect(read).toMatchObject({ search: { isError: false, text: "clamp.ts:3:export function clamp(value: number, low: number, high: number): number {" } });
   expect(existsSync(join(process.env["TESOTA_ISOLATED"] ?? "", ".tesota", "ripgrep"))).toBe(true);
   expect(readdirSync(join(process.env["TESOTA_ISOLATED"] ?? "", ".tesota", "ripgrep"))).toHaveLength(1);
-  if (dafny) expect(read.proof).toEqual({ outcome: "passed", files: ["clamp.ts", "clamp.dfy"] });
+  if (dafny) {
+    expect(read.proof).toMatchObject({ outcome: "passed", files: ["clamp.ts", "clamp.dfy"], proofInfo: { status: "read" } });
+    expect(read.proof.proofInfo).not.toHaveProperty("semanticGap");
+  }
 }, 300_000);

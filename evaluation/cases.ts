@@ -493,9 +493,9 @@ export const FRESH: Readonly<Record<string, { readonly request: string; readonly
  * proof, the new contract rules the bug out; undefined when the function is
  * gone from either.
  */
-export function withBuggyBody(base: string, after: string, path: string, name: string): string | undefined {
-  const contract = contracts(path, after).find((item) => item.name === name);
-  const original = contracts(path, base).find((item) => item.name === name);
+export async function withBuggyBody(base: string, after: string, path: string, name: string): Promise<string | undefined> {
+  const contract = (await contracts(path, after)).find((item) => item.name === name);
+  const original = (await contracts(path, base)).find((item) => item.name === name);
   if (contract === undefined || original === undefined) return undefined;
   const lines = base.split("\n");
   const body = lines.slice(original.endLine - 1, original.bodyEnd).join("\n");

@@ -79,6 +79,8 @@ except where noted.
 - jwa 2.0.1 and jws 4.0.1: Copyright (c) 2013 Brian J. Brennan
 - lemmascript 0.6.5 (https://github.com/midspiral/LemmaScript) and
   lemmascript-claimcheck 0.2.0: Copyright (c) 2026 midspiral
+  Tesota patches LemmaScript's CLI to import its package version so compiled
+  metadata commands can read it; the MIT license below applies unchanged.
 - marked 18.0.11: Copyright (c) 2018+, MarkedJS (https://github.com/markedjs/)
   Copyright (c) 2011-2018, Christopher Jeffrey (https://github.com/chjj/)
   marked also includes Markdown, under the BSD license below.

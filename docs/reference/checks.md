@@ -35,12 +35,10 @@ A failure goes back unless the same one already did, compared by proof
 output, failing test names, surviving changes or counterexamples. A
 command without test reports gets one repair attempt.
 
-A failing project command runs again in a worktree of the starting commit.
-It stays from the agent only when the base fails the same way and both
-runs' test reports show each failing test failing there too; the receipt
-records it as failing before the change. Without reports, a base that
-can't run, or a request that didn't start from it, the failure goes back
-with that reason. The engine allows 32 automatic continuations per run.
+A failed project command runs on the starting commit too. A failure stays
+from the agent only when both test reports show every failing test failing
+there. Otherwise it returns with the attribution gap; the engine allows
+32 automatic continuations. A timeout stays unknown and never runs on the base.
 
 ## Proofs
 
@@ -52,7 +50,13 @@ sources, or under `proof-dir` in `lemmascript.json`; a changed `.dfy` or
 
 A proof is conditional on `//@ assume`, `//@ extern`, `//@ skip`, selective
 `//@ verify` and hand-written Dafny axioms, and is shown with those
-qualifications. It holds in LemmaScript's model of TypeScript:
+qualifications.
+
+Selection and attachment come from LemmaScript's metadata;
+[dropped specifications and abstraction limits](../receipt-v2.md#evidence)
+are gaps. Tesota's parser supplies positions only.
+
+A proof holds in LemmaScript's model of TypeScript:
 
 - Numbers are mathematical integers, or exact reals for non-integer
   literals: `0.1 + 0.2 == 0.3` proves. No 53-bit bound, no `NaN`,

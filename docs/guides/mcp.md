@@ -35,6 +35,7 @@ servers, local or remote, and gives the agent their tools and resources.
 | `oauth` | A remote server's sign-in, when it needs a registered client: `clientId`, `clientSecret`, `callbackPort` or `callbackUrl`, `scope`, `clientName` |
 | `timeout` | Seconds a request may take; 60 by default, renewed while the server reports progress |
 | `enabled` | `false` keeps the entry without starting it |
+| `readOnlyTools` | Exact server-side tool names you declare read-only for receipts, such as `["fetch", "search"]`; no wildcard matching |
 
 - `${NAME}` in `env`, `headers` and `oauth.clientSecret` reads the
   environment variable `NAME`; a leading `~/` names your home folder.
@@ -51,6 +52,13 @@ A server's tools reach the agent as `mcp__<server>__<tool>`, alongside
 Tesota's own. Each one is a call that [runs something](permissions.md):
 asked about in ask mode, refused in read only, whatever the server says of
 it. [Hooks](hooks.md) see them by the same name.
+
+The receipt records each potentially writing call as an unverified external
+effect: its server, tool, argument digest, start time and returned, error or
+unknown outcome. A return does not show that a change persisted. Such a run
+stands `incomplete`, or keeps an established failure, even with no file change.
+Only your `readOnlyTools` declarations exclude server tools; annotations such
+as `readOnlyHint` do not. Declarations do not change permission decisions.
 
 When a server offers resources, the agent also gets
 `list_mcp_resources`, `list_mcp_resource_templates` and

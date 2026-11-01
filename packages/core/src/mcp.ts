@@ -216,6 +216,7 @@ export function startMcp(configs: readonly McpServerConfig[], options: McpOption
     const names = toolNames(offered.map(({ server, tool }) => ({ server: server.config.name, tool: tool.name })));
     return offered.map(({ server, tool }, index) => ({
       name: names[index] ?? tool.name,
+      mcp: { server: server.config.name, tool: tool.name, readOnly: server.config.readOnlyTools?.includes(tool.name) === true },
       description: tool.description ?? tool.title ?? tool.name,
       // Providers ask for an object schema, and some for one with `properties`.
       parameters: Type.Unsafe({ ...tool.inputSchema, type: "object", properties: tool.inputSchema["properties"] ?? {} }),

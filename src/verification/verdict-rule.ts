@@ -11,6 +11,14 @@ import type { ProofOutcome } from "./proof-outcome-rule.js";
  */
 export type Standing = "decide" | "gap" | "holds" | "opinion";
 
+/** Unverified external effects prevent an overall verified or unchanged claim, preserving a known failure (#751). */
+//@ ensures effects > 0 && standing !== "failed" ==> \result === "incomplete"
+//@ ensures effects <= 0 || standing === "failed" ==> \result === standing
+export function externalStanding(standing: "verified" | "incomplete" | "failed" | "unverified" | "unchanged", effects: number):
+  "verified" | "incomplete" | "failed" | "unverified" | "unchanged" {
+  return effects > 0 && standing !== "failed" ? "incomplete" : standing;
+}
+
 /**
  * How many findings need the operator: only those the checks established,
  * so a model's opinion never counts, however it reads. The receipt is clean

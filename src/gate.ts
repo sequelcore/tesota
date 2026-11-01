@@ -15,7 +15,7 @@ import { roleModel } from "./verification/role-model-rule.js";
 import { type AttemptEnd, GateOperations, type OperationSink, type OperationSpec } from "./operations.js";
 import type { ContractStrength } from "./proof-guarantees.js";
 import type { JudgmentContext } from "./pi-claimcheck.js";
-import type { RequestJudgment } from "./receipt.js";
+import type { ExternalEffect, RequestJudgment } from "./receipt.js";
 import { inFolder, owningProjects, suggestChecks } from "./projects.js";
 import { proofReport } from "./prove-tool.js";
 import { entryReceipt, type FloorRefusal, inUnit, isReceipt, type ModelResult, noEvidence, type Receipt, type ReceiptChild, receiptEntry, receiptGraphEntry,
@@ -229,21 +229,22 @@ function comparedWith(unit: ChangedUnit, attributable: boolean): Against {
 async function provedSources(root: string, base: string | null, proofs: Receipt["proofs"]): Promise<ProvedSource[]> {
   return Promise.all(proofs.filter(({ verdict }) => verdict === "proved").map(async ({ path, evidence }) => ({ path,
     checked: evidence.files, source: await readIfPresent(join(root, path)) ?? "",
+    ...evidence.proofInfo === undefined ? {} : { proofInfo: evidence.proofInfo },
     baseSource: base === null ? undefined : await git(root, ["show", `${base}:./${path}`]) })));
 }
 
 type ProvedSource = { readonly path: string; readonly checked: readonly string[]; readonly source: string;
-  readonly baseSource: string | undefined };
+  readonly baseSource: string | undefined; readonly proofInfo?: NonNullable<Evidence["proofInfo"]> };
 
 /** The changed lines of each TypeScript file that proved that no contract's proof covers (`uncoveredLines`). */
-function uncovered(sources: readonly ProvedSource[], changes: Awaited<ReturnType<typeof fileChanges>>,
-  weakened: Receipt["weakened"]): Receipt["uncovered"] {
+async function uncovered(sources: readonly ProvedSource[], changes: Awaited<ReturnType<typeof fileChanges>>,
+  weakened: Receipt["weakened"], signal: AbortSignal): Promise<Receipt["uncovered"]> {
   if (typeof changes === "string" || typeof weakened === "string") return [];
   const byPath = new Map(changes.map((change) => [change.path, change]));
-  return sources.flatMap(({ path, checked, source, baseSource }) => {
+  return (await Promise.all(sources.map(async ({ path, checked, source, baseSource, proofInfo }) => {
     const change = byPath.get(path);
-    return change === undefined || !path.endsWith(".ts") ? [] : [checks().uncoveredLines(change, checked, source, baseSource, weakened)];
-  });
+    return change === undefined || !path.endsWith(".ts") ? [] : [await checks().uncoveredLines(change, checked, source, baseSource, weakened, proofInfo, signal)];
+  }))).flat();
 }
 
 /**
@@ -487,6 +488,11 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
   /** The subagents the request started (#525), as the ledger recorded their ends. */
   let children: readonly ReceiptChild[] = [];
   let floorRefusals: readonly FloorRefusal[] = [];
+  let externalEffects: readonly ExternalEffect[] = [];
+  const ledgerDetails = (): Pick<Receipt, "clarifications" | "children" | "floorRefusals" | "externalEffects"> => ({
+    ...clarifications.length === 0 ? {} : { clarifications }, ...children.length === 0 ? {} : { children },
+    ...floorRefusals.length === 0 ? {} : { floorRefusals }, ...externalEffects.length === 0 ? {} : { externalEffects },
+  });
   /** The request's units and bases, recorded before the agent can run anything; a run no operator input started takes them as it settles. */
   let start: Promise<Start> | undefined;
   let startedAt: string | undefined;
@@ -507,6 +513,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     clarifications = [];
     children = [];
     floorRefusals = [];
+    externalEffects = [];
     start = undefined;
     // A request that continues one that ended on its question (#651) is measured from that one's start: what it changed is its own.
     const restored = restoredStart(recorded?.()?.continues?.start);
@@ -554,10 +561,10 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
       clarifications = request.inputs.flatMap((input) => input.kind === "clarification" ? [input.clarification] : []);
       children = request.children ?? [];
       floorRefusals = request.refusals ?? [];
+      externalEffects = request.externalEffects ?? [];
       startedAt = request.at;
       start = Promise.resolve(recordedStart(request.base));
-    }
-    if (request === undefined) judgingRequests = [{ run: requestNumber, text: requests }];
+    } else judgingRequests = [{ run: requestNumber, text: requests }];
     // One pass over the request: it closes as returned to the agent, settled or stopped, whatever it published.
     progress.operations.beginAttempt();
     let closed: AttemptEnd = "stopped";
@@ -614,13 +621,12 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
       base: workspace ? null : begun?.bases.get("") ?? null, startedAt: at,
       settledAt: new Date().toISOString(), engine: await engineName(), ...sessionModel(ctx), ...noEvidence,
       ...inventory, stopped: reason,
-      ...clarifications.length === 0 ? {} : { clarifications }, ...children.length === 0 ? {} : { children },
-      ...floorRefusals.length === 0 ? {} : { floorRefusals } };
+      ...ledgerDetails() };
     progress.publish({ step: "settled", receipt });
     return { entries: [receiptEntry(ctx.mode, receipt)] };
   };
   /** Outside Git nothing tells which files changed: a request that may have changed some settles saying none was verified. */
-  const outsideGit = (ctx: ExtensionContext, run: Pick<Receipt, "base" | "startedAt" | "engine" | "model" | "clarifications" | "children" | "floorRefusals">,
+  const outsideGit = (ctx: ExtensionContext, run: Pick<Receipt, "base" | "startedAt" | "engine" | "model" | "clarifications" | "children" | "floorRefusals" | "externalEffects">,
     reason: string | undefined): SettleResult | undefined => {
     if (!mayHaveChanged) return undefined;
     const receipt: Receipt = { version: 2, repository: false, ...run, settledAt: new Date().toISOString(), ...noEvidence,
@@ -765,20 +771,24 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     const workspace = units.some(({ folder }) => folder !== "");
     const run = { base: workspace ? null : bases.get("") ?? null, startedAt, engine, ...sessionModel(ctx),
       ...question,
-      ...clarifications.length === 0 ? {} : { clarifications }, ...children.length === 0 ? {} : { children },
-      ...floorRefusals.length === 0 ? {} : { floorRefusals } };
+      ...ledgerDetails() };
     // Each repository and each folder Tesota snapshotted, measured from its base.
     const measurable = units.filter(({ folder }) => bases.has(folder));
     const initial = yield* step(async () => fingerprints);
-    const read = yield* step(() => Promise.all(measurable.map(({ folder, repository }) =>
+    const read = yield* step((signal) => Promise.all(measurable.map(({ folder, repository }) =>
       changedUnit(ctx.cwd, folder, bases.get(folder) ?? null, repository ? undefined : tooLarge.get(folder) ?? [], initial?.get(folder), run.startedAt,
-        refs.get(folder)))));
+        refs.get(folder), signal))));
     if (!workspace && read[0] === undefined) return outsideGit(ctx, run, refused.get(""));
     const changed = read.filter((unit): unit is ChangedUnit => typeof unit === "object");
     // A folder with no snapshot, or a repository Git could not read, is not verified; it is listed once it may have changed.
     const plain = workspace && mayHaveChanged ? [...units.filter(({ folder }) => !bases.has(folder)),
       ...measurable.filter((_, k) => read[k] === undefined)] : [];
-    if (changed.length === 0 && plain.length === 0) { progress.unchanged(); return undefined; }
+    if (changed.length === 0 && plain.length === 0) {
+      if (externalEffects.length === 0) { progress.unchanged(); return undefined; }
+      const receipt: Receipt = { version: 2, repository: true, ...run, ...noEvidence, settledAt: new Date().toISOString() };
+      progress.publish({ step: "settled", receipt });
+      return { entries: [receiptEntry(ctx.mode, receipt)] };
+    }
     const proofs = yield* prove(changed);
     const allProofs = [...proofs.values()].flat();
     const proofsSent = proofsBack(proofs, unresolvedQuestion !== undefined);
@@ -805,9 +815,9 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     const modelsSent = modelsBack(modelRungs, tally(allProofs, allTests, contracts), unresolvedQuestion !== undefined);
     if (modelsSent !== undefined) return modelsSent;
     const open = yield* listOpen(ctx);
-    const evidence = yield* step(() => progress.operations.run(
+    const evidence = yield* step((signal) => progress.operations.run(
       { method: "receipt", unit: "", target: "receipt" }, () => Promise.all(changed.map((unit) =>
-        unitEvidence(unit, proofs.get(unit.folder) ?? [], rungs.get(unit.folder), measured.get(unit.folder), modelRungs.get(unit.folder)))),
+        unitEvidence(unit, proofs.get(unit.folder) ?? [], rungs.get(unit.folder), measured.get(unit.folder), modelRungs.get(unit.folder), signal))),
       () => "done"));
     const settledAt = new Date().toISOString();
     const only = workspace ? undefined : evidence[0];
@@ -855,6 +865,7 @@ export interface RecordedRequest {
   readonly children?: readonly ReceiptChild[];
   /** The calls Tesota's floor refused in the run (#622). */
   readonly refusals?: readonly FloorRefusal[];
+  readonly externalEffects?: readonly ExternalEffect[];
   readonly base: { readonly units: readonly RecordedUnit[] };
   /** The earlier request this one continues (#651), and what the gate saved as it ended on its question (`savedStart`). */
   readonly continues?: { readonly run: number; readonly start?: unknown };
@@ -1077,7 +1088,7 @@ async function fingerprintedUnit(root: string, base: string | null, start: Finge
  * changed nothing, and nothing when Git cannot read it.
  */
 async function changedUnit(cwd: string, folder: string, base: string | null, tooLarge: readonly string[] | undefined,
-  fingerprint: Fingerprint | undefined, startedAt: string, refs: readonly string[] | undefined):
+  fingerprint: Fingerprint | undefined, startedAt: string, refs: readonly string[] | undefined, signal: AbortSignal):
   Promise<ChangedUnit | "unchanged" | undefined> {
   const root = join(cwd, folder);
   const captured = fingerprint === undefined ? undefined : await fingerprintedUnit(root, base, fingerprint, startedAt, refs);
@@ -1088,7 +1099,7 @@ async function changedUnit(cwd: string, folder: string, base: string | null, too
   const changed = (attribution.changed ?? whole?.paths ?? [])
     .filter((path) => !attribution.unmeasured.some((item) => item.path === path));
   const full = whole?.changes ?? "unreadable";
-  const weakened = typeof full === "string" ? full : checks().weakenedEvidence(full);
+  const weakened = typeof full === "string" ? full : await checks().weakenedEvidence(full, signal);
   const changes = typeof full === "string" ? full : full.filter(({ path }) => changed.includes(path));
   return fingerprint === undefined && changed.length === 0 && Array.isArray(weakened) && weakened.length === 0 ? "unchanged"
     : { folder, root, base, changed, changes, weakened, unreadable: whole === undefined,
@@ -1147,7 +1158,7 @@ async function leftIn(unit: ChangedUnit, proofs: Receipt["proofs"]): Promise<str
 
 /** One repository's evidence for the receipt, in its own terms. */
 async function unitEvidence(unit: ChangedUnit, proofs: Receipt["proofs"], rung: Pick<Receipt, "tests" | "exercises"> | undefined,
-  measured: Measured | undefined, models: ModelRung | undefined): Promise<UnitEvidence> {
+  measured: Measured | undefined, models: ModelRung | undefined, signal: AbortSignal): Promise<UnitEvidence> {
   const settledProofs = await Promise.all(proofs.map((proof) => settledCheck(unit.root, proof)));
   const tests = await Promise.all((rung?.tests ?? []).map((test) => settledCheck(unit.root, test)));
   const settledModels = models === undefined ? undefined : { ...models,
@@ -1164,7 +1175,7 @@ async function unitEvidence(unit: ChangedUnit, proofs: Receipt["proofs"], rung: 
     ...unit.startState === undefined ? {} : { startState: unit.startState },
     ...unit.endState === undefined ? {} : { endState: unit.endState },
     tests, exercises: rung?.exercises ?? [], weakened: unit.weakened,
-    ...unprovedFiles(unit.changes, unit.changed, covered), uncovered: uncovered(sources, unit.changes, unit.weakened),
+    ...unprovedFiles(unit.changes, unit.changed, covered), uncovered: await uncovered(sources, unit.changes, unit.weakened, signal),
     changed: unit.unreadable ? "unreadable" : await recordedChanges(unit.root, left),
     lines: unit.unreadable ? "unreadable" : await checks().changeLines(unit.root, unit.base, left) };
 }

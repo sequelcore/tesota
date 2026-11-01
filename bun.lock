@@ -29,7 +29,7 @@
     },
     "packages/core": {
       "name": "@tesota/core",
-      "version": "0.1.0-alpha.8",
+      "version": "0.1.0-alpha.9",
       "bin": {
         "tesota": "src/main.ts",
       },
@@ -48,6 +48,9 @@
         "typescript": "7.0.2",
       },
     },
+  },
+  "patchedDependencies": {
+    "lemmascript@0.6.5": "patches/lemmascript@0.6.5.patch",
   },
   "packages": {
     "@anthropic-ai/bedrock-sdk": ["@anthropic-ai/bedrock-sdk@0.12.6", "", { "dependencies": { "@anthropic-ai/sdk": ">=0.36 <1", "@aws-crypto/sha256-js": "^4.0.0", "@aws-sdk/client-bedrock-runtime": "^3.797.0", "@aws-sdk/credential-providers": "^3.796.0", "@smithy/eventstream-serde-node": "^2.0.10", "@smithy/fetch-http-handler": "^2.2.1", "@smithy/protocol-http": "^3.0.6", "@smithy/signature-v4": "^3.1.1", "@smithy/smithy-client": "^2.1.9", "@smithy/types": "^2.3.4", "@smithy/util-base64": "^2.0.0" } }, "sha512-g9tmm6zXf3+2P5Se+c2zi7jmZ6+t+qtfu8NhoNYxetPxn6ez1aeNQ+YfqzSMm/ZWye8hy3hcDhbRhWaHC2Wbwg=="],

@@ -19,7 +19,7 @@ else if (command !== undefined) {
     typescript: [...commentOnlyLines("a.ts", "// note\nconst a = 1;\n")],
     python: [...await grammarCommentLines("a.py", "# note\na = 1\n")],
     go: [...await grammarCommentLines("a.go", "// note\npackage a\n")],
-    proof: { outcome: proof.outcome, files: proof.files },
+    proof: { outcome: proof.outcome, files: proof.files, proofInfo: proof.proofInfo },
     search: await grepTool(command).execute({ pattern: "export function", glob: "*.ts" }, new AbortController().signal, "search"),
   }));
 }

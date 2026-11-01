@@ -15,7 +15,7 @@ import type { Weakening } from "./verification-changes.js";
 import { attributionResolved, type StartState, type UnmeasuredPath } from "./request-fingerprint.js";
 import type { GateVerdict } from "./verification/gate-rule.js";
 import { clock } from "./operations.js";
-import { checkEnd, decisions, methodStanding, partlyHolds, pathCovered, runStanding, type Standing, verdictTone } from "./verification/verdict-rule.js";
+import { checkEnd, decisions, externalStanding, methodStanding, partlyHolds, pathCovered, runStanding, type Standing, verdictTone } from "./verification/verdict-rule.js";
 
 /** The operator requests actually supplied to one model judgment; omissions are explicit, never silent. */
 export interface RequestJudgment {
@@ -138,6 +138,18 @@ export interface Receipt {
   readonly children?: readonly ReceiptChild[];
   /** The calls Tesota's floor refused in the request (#622): what didn't run, neither evidence nor a verdict. */
   readonly floorRefusals?: readonly FloorRefusal[];
+  /** Potential external writes, recorded before invocation and never claimed as persisted or verified. */
+  readonly externalEffects?: readonly ExternalEffect[];
+}
+
+/** A potentially writing MCP invocation. Arguments are represented only by their SHA-256 digest. */
+export interface ExternalEffect {
+  readonly server: string;
+  readonly tool: string;
+  readonly callId: string;
+  readonly argumentsHash: string;
+  readonly startedAt: string;
+  readonly outcome: "returned" | "error" | "unknown";
 }
 
 /**
@@ -289,12 +301,12 @@ export function allEvidence(receipt: Receipt): UnitEvidence {
  */
 export function unitReceipt(receipt: Receipt, folder: string): Receipt | undefined {
   const unit = receipt.units?.find((candidate) => candidate.folder === folder && candidate.repository);
-  const { version, startedAt, settledAt, engine, model, clarifications, requestJudgments, openCases, unresolvedQuestion, stopped } = receipt;
+  const { version, startedAt, settledAt, engine, model, clarifications, requestJudgments, openCases, unresolvedQuestion, stopped, externalEffects } = receipt;
   return unit === undefined ? undefined : { ...unit, version, startedAt, settledAt, engine, ...model === undefined ? {} : { model },
     ...clarifications === undefined ? {} : { clarifications }, ...requestJudgments === undefined ? {} : { requestJudgments: requestJudgments.filter((judgment) =>
       judgment.method === "open_cases" || judgment.folder === folder) },
     ...stopped === undefined ? {} : { stopped }, ...openCases === undefined ? {} : { openCases },
-    ...unresolvedQuestion === undefined ? {} : { unresolvedQuestion } };
+    ...unresolvedQuestion === undefined ? {} : { unresolvedQuestion }, ...externalEffects === undefined ? {} : { externalEffects } };
 }
 
 /** How a folder in no repository is named: the folder the session runs in holds only its own files there. */
@@ -432,6 +444,10 @@ function claimcheckLines(run: ClaimCheckRun | undefined, contracts: readonly Con
  * (Dafny Reference Manual, `{:axiom}`).
  */
 export function trustedWords({ annotation, function: trusted }: { readonly annotation: string; readonly function?: string }): string {
+  if (annotation === "//@ pure") return `assumes ${trusted ?? "the function"} is pure`;
+  if (annotation === "//@ autohavoc") return `models unsupported expressions in ${trusted ?? "the function"} as arbitrary values`;
+  if (annotation === "havoc in translated body") return `uses arbitrary values in ${trusted ?? "the function"}'s translated body`;
+  if (annotation === "impure function") return `models mutable state in ${trusted ?? "the function"}`;
   const named = trusted ?? /\{:axiom\}\s*([\w'?$]+)/u.exec(annotation)?.[1];
   if (named !== undefined) return `trusts ${named} without proving it`;
   if (/^\/\/@\s*extern\b/u.test(annotation)) return "trusts a function without proving it";
@@ -889,16 +905,24 @@ const shortReason = (reason: string): string =>
  * it asks of the operator. A model's judgment is an `opinion`: shown, never
  * counted (`decisions`).
  */
+function externalFindings(effects: readonly ExternalEffect[]): Finding[] {
+  return effects.map((call) => ({ standing: "gap", check: "coverage",
+    label: "External effect not verified", subject: `${call.server}/${call.tool}`,
+    detail: `${call.outcome === "returned" ? "the call returned" : call.outcome === "error" ? "the call returned an error" : "the call's outcome is unknown"}; persistence was not checked`,
+    more: [`Started ${call.startedAt} · call ${call.callId}`, `Arguments sha256 ${call.argumentsHash}`] }));
+}
+
 export function receiptFindings(receipt: Receipt): Finding[] {
+  const external = externalFindings(receipt.externalEffects ?? []);
   if (receipt.stopped !== undefined) {
     return [{ standing: "decide", check: "coverage", label: "Not verified", subject: "this request's changes",
-      detail: receipt.stopped, more: [] }];
+      detail: receipt.stopped, more: [] }, ...external];
   }
   return [...receipt.unresolvedQuestion === undefined ? [] : [{ standing: "decide" as const, check: "request" as const,
     label: "Incomplete", subject: "unresolved question", detail: receipt.unresolvedQuestion, more: [] }],
   ...receipt.units === undefined ? unitFindings(receipt) : receipt.units.flatMap((unit) => verified(unit)
     ? unitFindings(fromFolder(unit), unit.folder) : [{ standing: "decide" as const, check: "coverage" as const, label: "Not verified",
-      subject: plainName(unit.folder), detail: plainReason(unit), more: [] }]), ...openCaseFindings(receipt.openCases)];
+      subject: plainName(unit.folder), detail: plainReason(unit), more: [] }]), ...external, ...openCaseFindings(receipt.openCases)];
 }
 
 /** One unit's findings, from the folder Pi runs in; each unit's tests decide how its unproved files are worded. */
@@ -914,6 +938,16 @@ function unitFindings(receipt: UnitEvidence, folder = ""): Finding[] {
   const found: Finding[] = [
     ...fingerprintFindings(receipt, folder),
     ...receipt.proofs.map((proof) => proofFinding(proof, addedAssumptions(proof.evidence.files, receipt.weakened))),
+    ...receipt.proofs.flatMap(({ path, evidence }): Finding[] => [
+      ...(evidence.unreadSpecifications ?? []).map(({ line, text }): Finding => ({ standing: "gap", check: "proof",
+        label: "Specification not attached", subject: `${path}:${line}`, detail: text, more: ["LemmaScript did not attach this specification; the proof does not establish it."] })),
+      ...evidence.proofInfo?.status === "unavailable" || evidence.proofInfo?.status === "read" && evidence.proofInfo.semanticGap !== undefined
+        ? [{ standing: "gap" as const, check: "proof" as const, label: "Proof scope unavailable", subject: path,
+          detail: evidence.proofInfo.status === "unavailable" ? evidence.proofInfo.reason : evidence.proofInfo.semanticGap ?? "", more: [] }] : [],
+      ...evidence.proofInfo?.status !== "read" ? [] : evidence.proofInfo.trusted.map(({ name, annotation }): Finding =>
+        ({ standing: "gap", check: "proof", label: "Proof abstraction", subject: `${path}#${name}`,
+          detail: trustedWords({ annotation, function: name }), more: [annotation] })),
+    ]),
     ...receipt.tests.map(commandFinding),
     ...modelFindings(receipt.models ?? [], receipt.unheaded ?? []),
     ...typeof receipt.weakened === "string"
@@ -1099,9 +1133,9 @@ export function receiptStanding(receipt: Receipt): ReceiptStanding {
   const unreadable = units.filter(({ changed }) => changed === "unreadable").length + (evidence.changed === "unreadable" ? 1 : 0);
   const gaps = receiptFindings(withoutUnproved(receipt)).filter(({ standing }) => standing === "gap").length + unreadable;
   // A change of comments alone changed lines, whatever paths the receipt names.
-  return runStanding(evidence.changed === "unreadable" || paths.length > 0 || evidence.commentsOnly === true, receipt.stopped !== undefined,
+  return externalStanding(runStanding(evidence.changed === "unreadable" || paths.length > 0 || evidence.commentsOnly === true, receipt.stopped !== undefined,
     receiptDecisions(receipt), failed, passed, gaps, paths.map(({ proved }) => proved), paths.map(({ tested }) => tested),
-    paths.map(({ exercised }) => exercised));
+    paths.map(({ exercised }) => exercised)), receipt.externalEffects?.length ?? 0);
 }
 
 /** One row of the summary that names a method (#591): what it ran on and how each run ended, never more. */
@@ -1397,7 +1431,7 @@ function leftLines(receipt: Receipt): string[] {
  * session opens again need not be what the run left.
  */
 export function interruptedReceipt(run: Pick<Receipt, "repository" | "base" | "startedAt" | "settledAt" | "engine" |
-  "clarifications" | "children" | "floorRefusals">): Receipt {
+  "clarifications" | "children" | "floorRefusals" | "externalEffects">): Receipt {
   return { version: 2, ...run, ...noEvidence, changed: "unreadable", lines: "unreadable",
     stopped: "the session ended before Tesota verified this run, so no check ran; change attribution is unknown, "
       + "and the files on disk now may not be what the run left. A new request verifies the current content",
@@ -1406,12 +1440,15 @@ export function interruptedReceipt(run: Pick<Receipt, "repository" | "base" | "s
 
 /** Shared evidence wording for terminal text and chat Markdown. */
 function receiptLines(receipt: Receipt): string[] {
-  if (receipt.stopped !== undefined) return [`  not verified  this request's changes: ${receipt.stopped}`, ...leftLines(receipt)];
+  const external = externalFindings(receipt.externalEffects ?? []).flatMap(({ label, subject, detail, more }) =>
+    [`  not verified  ${label}: ${subject}: ${detail}`, ...more.map((line) => `                ${line}`)]);
+  if (receipt.stopped !== undefined) return [`  not verified  this request's changes: ${receipt.stopped}`, ...leftLines(receipt), ...external];
   return [...receipt.unresolvedQuestion === undefined ? [] : [`  incomplete    ${receipt.unresolvedQuestion}`],
   ...receipt.units === undefined ? unitLines(receipt) : receipt.units.flatMap((unit) => verified(unit)
     ? unitLines(fromFolder(unit)) : [`  not verified  ${plainName(unit.folder)}: ${plainReason(unit)}`]),
   // One row for the whole change, every repository's lines together, last: it sums up the diff, not the evidence.
   ...linesRow(allEvidence(receipt).lines),
+  ...external,
   ...openCaseLines(receipt.openCases)];
 }
 

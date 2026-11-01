@@ -22,6 +22,8 @@ export interface EngineTool<Parameters extends TSchema = TSchema> {
   readonly promptSnippet?: string;
   /** What a call does, for permissions (#449): only reads, writes or edits files, or runs something; runs when not said. */
   readonly access?: "read" | "write" | "run";
+  /** MCP identity and the operator's receipt declaration; server annotations confer no authority. */
+  readonly mcp?: { readonly server: string; readonly tool: string; readonly readOnly: boolean };
   /** Its rules for the system prompt while it is active; a function is read on every request (#779). */
   readonly promptGuidelines?: readonly string[] | (() => readonly string[]);
   /** A command as this shell's own parser reads it, for the floor (#697); nothing when it can't read it. */

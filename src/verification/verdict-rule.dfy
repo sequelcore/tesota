@@ -2,9 +2,23 @@
 
 datatype Standing = decide | gap | holds | opinion
 
-datatype ProofOutcome = passed | failed | vacuous | timed_out | cancelled | not_started
+datatype ProofOutcome = failed | passed | vacuous | timed_out | cancelled | not_started
 
 datatype ModelRun = passed | vacuous | timed_out | cancelled | not_started | assumption_failed | deadlocked | violated | malformed
+
+function externalStanding(standing: string, effects: int): string
+{
+  if ((effects > 0) && (standing != "failed")) then
+    "incomplete"
+  else
+    standing
+}
+
+lemma externalStanding_ensures(standing: string, effects: int)
+  ensures ((effects > 0) ==> (standing != "failed") ==> (externalStanding(standing, effects) == "incomplete"))
+  ensures (((effects <= 0) || (standing == "failed")) ==> (externalStanding(standing, effects) == standing))
+{
+}
 
 function verdictTone(decisions: int, failed: bool, gaps: int): string
   requires (decisions >= 0)

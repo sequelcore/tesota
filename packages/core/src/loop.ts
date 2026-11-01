@@ -8,7 +8,7 @@ import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { isAbsolute, relative } from "node:path";
 import { mkdirSync } from "node:fs";
@@ -913,7 +913,11 @@ export function createLoop(options: LoopOptions): LoopSession {
     const nativeQuestion = selected !== undefined && isNativeAskTool(selected);
     const readOnly = options.permissions?.mode() === "read";
     writer.append({ type: "call_intent", run, callId: call.id, access: selected?.access ?? "run",
-      tool: { name: call.name, nativeQuestion, readOnly } });
+      tool: { name: call.name, nativeQuestion, readOnly },
+      ...selected?.mcp === undefined || selected.mcp.readOnly ? {} : { externalEffect: {
+        server: selected.mcp.server, tool: selected.mcp.tool, callId: call.id,
+        argumentsHash: createHash("sha256").update(JSON.stringify(call.arguments)).digest("hex"), startedAt: new Date().toISOString(),
+      } } });
     writer.sync();
     emit({ type: "call", call });
     await host.toolStart({ type: "tool_execution_start", toolCallId: call.id, toolName: call.name, args: call.arguments, nativeQuestion,

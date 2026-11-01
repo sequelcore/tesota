@@ -1,5 +1,12 @@
 import { expect, it } from "vitest";
-import { decisions, methodStanding, partlyHolds, runStanding, verdictTone } from "../src/verification/verdict-rule.js";
+import { decisions, externalStanding, methodStanding, partlyHolds, runStanding, verdictTone } from "../src/verification/verdict-rule.js";
+
+it("unverified external effects prevent a verified or unchanged standing and preserve failures (#751)", () => {
+  for (const standing of ["verified", "incomplete", "failed", "unverified", "unchanged"] as const) {
+    expect(externalStanding(standing, 0)).toBe(standing);
+    expect(externalStanding(standing, 1)).toBe(standing === "failed" ? "failed" : "incomplete");
+  }
+});
 
 it("counts only what the checks established, never a model's opinion", () => {
   expect(decisions([])).toBe(0);
