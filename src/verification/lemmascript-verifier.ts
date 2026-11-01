@@ -8,7 +8,6 @@ import { type ProcessRun, runProcess } from "../process.js";
 import { inBinary } from "../binary.js";
 import { parseJson } from "../json.js";
 import { type ProofOutcome, proofOutcome } from "./proof-outcome-rule.js";
-import { typescript } from "../typescript-source.js";
 import type { ts as TypeScript } from "ts-morph";
 
 const timeoutMs = 5 * 60_000;
@@ -153,6 +152,8 @@ function functionRanges(ts: typeof TypeScript, file: TypeScript.SourceFile, sour
 /** Specification lines absent from LemmaScript's attached clauses. The parser supplies positions, not selection. */
 export async function unreadSpecifications(source: string, inspected?: ProofInfo): Promise<{ line: number; text: string }[]> {
   const info = inspected ?? await sourceInfo("source.ts", source);
+  // This module loads with prove's definition; keep the parser out of the shell's first-frame chunk.
+  const { typescript } = await import("../typescript-source.js");
   const ts = typescript();
   const file = ts.createSourceFile("source.ts", source, ts.ScriptTarget.Latest, true);
   const scanner = ts.createScanner(ts.ScriptTarget.Latest, false, ts.LanguageVariant.Standard, source);
