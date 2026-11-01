@@ -2,9 +2,11 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterEach, expect, it } from "vitest";
+import { setTimeout as realTimeout } from "node:timers/promises";
+import { afterEach, expect, it, vi } from "vitest";
 import { owningProjects, suggestChecks } from "../src/projects.js";
-import { exerciseTests, runShell } from "../src/test-rung.js";
+import { exerciseTests, runCommands, runShell } from "../src/test-rung.js";
+import { noOperations } from "../src/operations.js";
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -336,4 +338,34 @@ it("stops every process a command started when it runs past its time limit", asy
   expect(run.outcome).toBe("timed_out");
   const pid = Number(readFileSync(join(root, "pid"), "utf8"));
   expect(await until(() => !alive(pid), 5_000)).toBe(true);
+});
+
+it("reports a check that prints results and hangs after one timeout, without running it on the base (#784)", async () => {
+  const { root, base } = noTests();
+  const controller = new AbortController();
+  const operations: string[] = [];
+  const ops = { ...noOperations, run: async <T>(spec: Parameters<typeof noOperations.run>[0], work: () => Promise<T>) => {
+    operations.push(spec.method);
+    // Bound the regression's second run too, without waiting a second fifteen minutes.
+    if (spec.method === "base_command") controller.abort();
+    return work();
+  } };
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  const running = runCommands(root, [{ folder: "", commands: [
+    "node -e \"console.log('146 passing (3s)'); require('fs').writeFileSync('pid', String(process.pid)); setInterval(() => {}, 1000)\"",
+  ] }], ["math.ts"], controller.signal, ops, undefined, { base });
+  try {
+    for (let n = 0; n < 500 && !existsSync(join(root, "pid")); n++) await realTimeout(10);
+    expect(existsSync(join(root, "pid"))).toBe(true);
+    await vi.advanceTimersByTimeAsync(15 * 60_000);
+    const [run] = await running;
+    expect(run?.evidence).toMatchObject({ outcome: "timed_out", output: expect.stringContaining("146 passing") });
+    expect(operations).toEqual(["command"]);
+    expect(run?.origin).toEqual({ cause: "unknown", reason: expect.stringContaining("did not finish") });
+    expect(alive(Number(readFileSync(join(root, "pid"), "utf8")))).toBe(false);
+  } finally {
+    controller.abort();
+    vi.useRealTimers();
+    await running;
+  }
 });

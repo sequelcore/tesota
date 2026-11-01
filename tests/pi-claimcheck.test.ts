@@ -15,7 +15,7 @@ const source = [
   "//@ ensures \\result >= 0",
   "function double(n: number): number { return n * 2; }",
 ].join("\n");
-const items = contracts("src/policy.ts", source);
+const items = (await contracts("src/policy.ts", source));
 const requests = ["Denied paths must always win over allowed ones."];
 const models = { restatedBy: "p/r", comparedBy: "p/c" };
 const justified = (fn: number): Comparison => ({ function: fn, verdict: "justified", explanation: "Matches." });

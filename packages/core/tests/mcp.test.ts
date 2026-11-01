@@ -47,6 +47,13 @@ describe("reading mcp.json", () => {
   };
   const cwd = join(tmpdir(), "project");
 
+  test("read-only receipt declarations use exact server tool names and reject malformed lists (#751)", () => {
+    const own = write({ mcpServers: { docs: { command: "docs", readOnlyTools: ["fetch", "search"] } } });
+    expect(readMcpConfig(own, undefined, cwd, {}).servers).toMatchObject([{ readOnlyTools: ["fetch", "search"] }]);
+    const invalid = write({ mcpServers: { docs: { command: "docs", readOnlyTools: "*" } } });
+    expect(readMcpConfig(invalid, undefined, cwd, {})).toMatchObject({ servers: [], errors: [expect.stringContaining("readOnlyTools")] });
+  });
+
   test("a file that begins with a byte-order mark reads as any other (#470)", () => {
     const own = write(`\uFEFF${JSON.stringify({ mcpServers: { files: { command: "files" } } })}`);
     expect(readMcpConfig(own, undefined, cwd, {})).toMatchObject({ servers: [{ name: "files", command: "files" }], errors: [] });

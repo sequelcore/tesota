@@ -19,6 +19,7 @@ import { build } from "./build.ts";
  * closely, since a slow runner there slows both; its first frame keeps a looser limit, for a regression that
  * slows startup and the first frame together (#556). Linux limits the first frame divided by the same attempt's median
  * resume instead, which tracks it there more closely than startup, with the same kind of looser limit in milliseconds.
+ * Linux's loop uses the same resume control (#783), with an absolute backstop for a slowdown shared by both.
  * `--report` prints them all without failing, to set or revise a limit.
  */
 
@@ -26,6 +27,7 @@ export interface Measurements {
   readonly startupMs: number;
   readonly binaryBytes: number;
   readonly loopMs: number;
+  readonly loopResumeRatio: number;
   readonly loopRssBytes: number;
   readonly baseMs: number;
   readonly syncMs: number;
@@ -92,10 +94,12 @@ function measure(): Measurements {
     const startupMs = Math.round(median(times) * 10) / 10;
     const firstFrameMs = median(shells.map((shell) => shell.firstFrameMs));
     const resumeMs = median(resumes.map((resume) => resume.resumeMs));
+    const loopMs = median(loops.map((loop) => loop.loopMs));
     return {
       startupMs,
       binaryBytes: statSync(binary).size,
-      loopMs: median(loops.map((loop) => loop.loopMs)),
+      loopMs,
+      loopResumeRatio: Math.round(loopMs / resumeMs * 100) / 100,
       loopRssBytes: Math.max(...loops.map((loop) => loop.loopRssBytes)),
       baseMs: median(loops.map((loop) => loop.baseMs)),
       syncMs: median(loops.map((loop) => loop.syncMs)),
@@ -116,7 +120,7 @@ function measure(): Measurements {
 
 function printReport(measured: Measurements): void {
   console.log(`Budget on ${process.platform}: startup ${measured.startupMs} ms (median of ${samples}), binary ${measured.binaryBytes} bytes, `
-    + `loop ${measured.loopMs} ms (median of ${loopRuns}), loop memory ${measured.loopRssBytes} bytes, `
+    + `loop ${measured.loopMs} ms (median of ${loopRuns}, ${measured.loopResumeRatio} times resume), loop memory ${measured.loopRssBytes} bytes, `
     + `base ${measured.baseMs} ms (median of ${loopRuns}), sync ${measured.syncMs} ms (median), syncs ${measured.syncCount}, settle ${measured.settleMs} ms (median of ${loopRuns}), `
     + `resume ${measured.resumeMs} ms (median of ${loopRuns}), session ${measured.sessionBytes} bytes, `
     + `first frame ${measured.firstFrameMs} ms (median of ${loopRuns}, ${measured.firstFrameRatio} times startup, ${measured.firstFrameResumeRatio} times resume), shell memory ${measured.shellRssBytes} bytes (median of ${loopRuns})`);

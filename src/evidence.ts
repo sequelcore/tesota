@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ProofOutcome } from "./verification/proof-outcome-rule.js";
+import type { ProofInfo } from "./verification/lemmascript-verifier.js";
 
 /**
  * What one verifier run checked, how it ended and what it printed, bound to
@@ -24,10 +25,20 @@ export interface Evidence {
   /** The files the run checked, relative to the project root, in the order `contentHash` covers them. */
   readonly files: readonly string[];
   readonly contentHash: string;
+  /** What LemmaScript actually selected and attached, tied to the same checked source hash. */
+  readonly proofInfo?: ProofInfo;
+  readonly unreadSpecifications?: readonly { readonly line: number; readonly text: string }[];
 }
 
 /** Why evidence invalidated at settlement cannot establish the current content. */
 export const staleEvidenceWords = "Evidence is stale: checked content changed before the receipt settled; current content was not checked.";
+
+function passedWords(evidence: Evidence): string {
+  const info = evidence.proofInfo;
+  if (info?.status === "unavailable" || info?.status === "read" && info.semanticGap !== undefined) return "the proof passed, but its scope could not be fully read";
+  if ((evidence.unreadSpecifications?.length ?? 0) > 0) return "some //@ specifications were not attached";
+  return info?.status === "read" && info.trusted.length > 0 ? "contracts hold within the recorded abstraction limits" : "every contract holds";
+}
 
 /**
  * A proof's run in a few words for people: how it ended, Dafny's first error
@@ -38,7 +49,9 @@ export function proofSummary(evidence: Evidence): { readonly words: string; read
   if (evidence.invalidated === "content_changed") return { words: staleEvidenceWords };
   const tally = /finished with (\d+ verified, \d+ errors?)/u.exec(evidence.output)?.[1];
   const counted = tally === undefined ? {} : { tally };
-  if (evidence.outcome === "passed") return { words: "every contract holds", ...counted };
+  if (evidence.outcome === "passed") {
+    return { words: passedWords(evidence), ...counted };
+  }
   if (evidence.outcome === "vacuous") return { words: "Dafny verified nothing, so no contract was proved", ...counted };
   if (evidence.outcome === "timed_out") return { words: "the proof ran past its time limit" };
   if (evidence.outcome === "cancelled") return { words: "the proof was stopped" };

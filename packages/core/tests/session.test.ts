@@ -288,6 +288,32 @@ test("an empty interrupted call does not recover an earlier long output with the
 });
 
 describe("recovery after the process was killed", () => {
+  test("an interrupted MCP call retains an unknown external effect in its recovery receipt (#751)", () => {
+    const effect = { server: "editor", tool: "save", callId: "c1", argumentsHash: "a".repeat(64), startedAt: new Date(0).toISOString() };
+    const entries = [
+      { type: "request", run: 1, text: "save", origin: "interactive", at: new Date(0).toISOString(),
+        base: { units: [{ folder: "", kind: "commit", commit: "0".repeat(40) }] } },
+      { type: "assistant", run: 1, message: { role: "assistant", content: [{ type: "toolCall", id: "c1", name: "mcp__editor__save", arguments: {} }] } },
+      { type: "call_intent", run: 1, callId: "c1", access: "run", tool: { name: "mcp__editor__save", nativeQuestion: false, readOnly: false },
+        externalEffect: effect },
+    ] as unknown as SessionEntry[];
+    const recovered = recovery(entries, () => undefined);
+    expect(recovered.flatMap((entry) => entryReceipt(entry) ?? [])).toMatchObject([{ externalEffects: [{ ...effect, outcome: "unknown" }] }]);
+  });
+
+  test("a declared-read custom call has an unknown effect in both its repair and receipt (#647)", () => {
+    const entries = [
+      { type: "request", run: 1, text: "go", origin: "interactive", at: new Date(0).toISOString(),
+        base: { units: [{ folder: "", kind: "commit", commit: "0".repeat(40) }] } },
+      { type: "assistant", run: 1, message: { role: "assistant", content: [{ type: "toolCall", id: "c1", name: "custom", arguments: {} }] } },
+      { type: "call_intent", run: 1, callId: "c1", access: "read", tool: { name: "custom", nativeQuestion: false, readOnly: false } },
+    ] as unknown as SessionEntry[];
+    const recovered = recovery(entries, () => undefined);
+    expect(recovered.find((entry) => entry.type === "reconciliation")).toMatchObject({ repair: "outcome_unknown" });
+    expect(recovered.flatMap((entry) => entryReceipt(entry) ?? [])).toHaveLength(1);
+    expect(recovery([...entries, ...recovered], () => undefined)).toEqual([]);
+  });
+
   test("a shell repair keeps what it printed and its file, and recovering twice adds nothing", async () => {
     const cwd = folder();
     const sessions = folder("tesota-core-sessions-");
@@ -333,8 +359,8 @@ describe("recovery after the process was killed", () => {
       expect(resumed.outcome()).toBe("interrupted");
       const results = resumed.messages().filter((message) => message.role === "toolResult");
       expect(results.map((result) => [result.toolName, result.isError])).toEqual([["wait", true], ["write", true]]);
-      expect(results[0]?.text).toContain(mode === "read" ? "Interrupted" : "Outcome unknown");
-      if (mode === "read") expect(results[0]?.text).toContain("It only reads, so it changed nothing");
+      // `wait` is a custom tool: declaring read access is no guarantee of no effect (#647).
+      expect(results[0]?.text).toContain("Outcome unknown");
       expect(results[1]?.text).toContain("Not run");
       expect(existsSync(join(cwd, "never.txt"))).toBe(false);
       expect(resumed.ledger()).toMatchObject([{ run: 1, text: "go" }]);

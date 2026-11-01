@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, realpathSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
-import { entryReceipt, type FloorRefusal, interruptedReceipt, isReceipt, type ReceiptChild, receiptEntry } from "../../../src/receipt.ts";
+import { entryReceipt, type ExternalEffect, type FloorRefusal, interruptedReceipt, isReceipt, type ReceiptChild, receiptEntry } from "../../../src/receipt.ts";
 import { toolMayChangeFiles } from "../../../src/verification/gate-rule.ts";
 import manifest from "../package.json" with { type: "json" };
 import type { Base } from "./base.ts";
@@ -58,6 +58,7 @@ export interface LedgerRequest {
   readonly children: readonly ReceiptChild[];
   /** The calls Tesota's floor refused in the run (#622), in order. */
   readonly refusals: readonly FloorRefusal[];
+  readonly externalEffects?: readonly ExternalEffect[];
   /**
    * The earlier run this one continues (#651), and what the verifier saved as
    * that run ended on its question (`requestStartType`), for it to restore.
@@ -221,7 +222,8 @@ interface Reply {
   readonly run: number;
   readonly index: number;
   readonly calls: readonly ToolCall[];
-  readonly intended: Map<string, "read" | "write" | "run">;
+  /** Whether the recorded tool is a reader under the gate's rule, never its declared access. */
+  readonly intended: Map<string, boolean>;
   readonly seen: Set<string>;
   readonly repaired: Set<string>;
   readonly clarifications: Map<string, Clarification>;
@@ -242,7 +244,8 @@ function repliesOf(entries: readonly SessionEntry[]): Reply[] {
       replies.push(reply);
       latest.set(entry.run, reply);
       byIndex.set(`${entry.run}:${index}`, reply);
-    } else if (entry.type === "call_intent") latest.get(entry.run)?.intended.set(entry.callId, entry.access);
+    } else if (entry.type === "call_intent") latest.get(entry.run)?.intended.set(entry.callId,
+      entry.tool !== undefined && !toolMayChangeFiles(entry.tool.name, entry.tool.nativeQuestion, entry.tool.readOnly));
     else if (entry.type === "tool_result") latest.get(entry.run)?.seen.add(entry.message.toolCallId);
     else if (entry.type === "clarification") byIndex.get(`${entry.run}:${entry.clarification.reply}`)?.clarifications.set(entry.clarification.callId,
       entry.clarification);
@@ -269,7 +272,7 @@ export function recovery(entries: readonly SessionEntry[], output: (callId: stri
       reply.seen.add(call.id);
     }
     const kinds = repairs(reply.calls.map((call) => reply.seen.has(call.id)), reply.calls.map((call) => reply.intended.has(call.id)),
-      reply.calls.map((call) => reply.repaired.has(call.id)), reply.calls.map((call) => reply.intended.get(call.id) === "read"));
+      reply.calls.map((call) => reply.repaired.has(call.id)), reply.calls.map((call) => reply.intended.get(call.id) === true));
     reply.calls.forEach((call, at) => {
       const kind = kinds[at];
       if (kind !== outcomeUnknown && kind !== notRun && kind !== noEffect) return;
@@ -317,6 +320,7 @@ function unsettledReceipt(entries: readonly SessionEntry[], run: number): Sessio
     base: only === undefined || only.kind === "refused" ? null : only.commit, startedAt: request.at, settledAt: new Date().toISOString(),
     engine: manifest.version, ...clarifications.length === 0 ? {} : { clarifications },
     ...request.children.length === 0 ? {} : { children: request.children },
+    ...request.externalEffects === undefined || request.externalEffects.length === 0 ? {} : { externalEffects: request.externalEffects },
     ...request.refusals.length === 0 ? {} : { floorRefusals: request.refusals } });
   return { run, ...receiptEntry(undefined, receipt) };
 }
@@ -432,15 +436,18 @@ function conversation(entries: readonly SessionEntry[]): Pick<LoopState, "histor
 function ledgerOf(entries: readonly SessionEntry[]): LedgerRequest[] {
   const ledger = ownLedgerOf(entries);
   const inputs = new Map<number, readonly RequestInput[]>();
+  const externalEffects = new Map<number, readonly ExternalEffect[]>();
   // A completed answer without a receipt verified no changes. A stopped receipt is only an inventory.
   const verified = verifiedRequests(entries);
   const merged: LedgerRequest[] = [];
   for (const request of ledger) {
     const all = [...request.continues === undefined ? [] : inputs.get(request.continues.run) ?? [], ...request.inputs];
     inputs.set(request.run, all);
+    const effects = [...request.continues === undefined ? [] : externalEffects.get(request.continues.run) ?? [], ...request.externalEffects ?? []];
+    externalEffects.set(request.run, effects);
     const earlier = merged.slice(unverifiedFrom(merged.map(({ run }) => verified.has(run))));
     const continued = new Set([...earlier, request].flatMap(({ continues }) => continues === undefined ? [] : [continues.run]));
-    merged.push({ ...request, inputs: all, unverifiedRequests: earlier.filter(({ run }) => !continued.has(run))
+    merged.push({ ...request, inputs: all, externalEffects: effects, unverifiedRequests: earlier.filter(({ run }) => !continued.has(run))
       .map(({ run, text, inputs: given }) => ({ run, text, inputs: given })) });
   }
   return merged;
@@ -477,8 +484,17 @@ function ownLedgerOf(entries: readonly SessionEntry[]): Omit<LedgerRequest, "unv
           : input.type === "custom" ? continuedFrom(input).map(({ clarification }): RequestInput => ({ kind: "clarification", clarification })) : []),
     children: entries.flatMap((ended) => ended.type === "job_end" && ended.run === entry.run ? childOf(ended.details) : []),
     refusals: floorRefusals(entries, entry.run),
+    externalEffects: externalEffectsOf(entries, entry.run),
     ...continuesOf(entries, entry.run),
   }]);
+}
+
+/** Every potentially writing MCP call recorded before execution, including calls with no recorded result. */
+function externalEffectsOf(entries: readonly SessionEntry[], run: number): ExternalEffect[] {
+  const results = new Map(entries.flatMap((entry) => entry.type === "tool_result" && entry.run === run
+    ? [[entry.message.toolCallId, entry.message.isError ? "error" as const : "returned" as const] as const] : []));
+  return entries.flatMap((entry) => entry.type === "call_intent" && entry.run === run && entry.externalEffect !== undefined
+    ? [{ ...entry.externalEffect, outcome: results.get(entry.callId) ?? "unknown" }] : []);
 }
 
 /**

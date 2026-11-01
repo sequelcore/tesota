@@ -10,6 +10,8 @@ import tesota from "../src/tesota.js";
 import { shellTheme } from "../src/theme.js";
 import { hasContracts, proveTool } from "../src/prove-tool.js";
 import type { OnTrust } from "../src/verification-changes.js";
+import { receiptStanding, renderReceipt } from "../src/receipt.js";
+import { emptyReceipt } from "./receipts.js";
 
 let theme: Theme;
 beforeAll(async () => {
@@ -63,6 +65,27 @@ async function session(root: string, { dafny: onPath = false } = {}): Promise<{
 }
 
 const contract = "//@ ensures \\result >= 0\nexport function f(): number { return 0; }\n";
+
+it.runIf(dafny).each([
+  "//@ ensures \\result > 9\nconst n = 1;\nexport function f(): number { return n; }\n",
+  "//@ ensures \\result > 9\nexport const f = (): number => { return 1; };\n",
+  "//@ ensure \\result > 9\nexport function f(): number { return 1; }\n",
+])("warns when another function proves but f's specification was dropped (#772)", async (dropped) => {
+  const root = folder();
+  writeFileSync(join(root, "dropped.ts"), `${contract.replace("function f", "function g")}\n${dropped}`);
+  const result = await run(root, "dropped.ts");
+  const text = result.content.map((part) => part.text).join("\n");
+  expect(result.details?.evidence.outcome).toBe("passed");
+  expect(result.isError).toBe(true);
+  expect(text).toContain("//@");
+  expect(text).toContain("result > 9");
+  expect(text).not.toContain("Proved: every //@ contract");
+  if (result.details === undefined) throw new Error("No proof details");
+  const receipt = { ...emptyReceipt, changed: [{ path: "dropped.ts", blob: "checked" }],
+    proofs: [{ path: "dropped.ts", verdict: "proved" as const, evidence: result.details.evidence }] };
+  expect(receiptStanding(receipt)).toBe("incomplete");
+  expect(renderReceipt(receipt)).toContain("Specification not attached");
+}, 120_000);
 
 it("offers prove from the start where Dafny is on the PATH, and its rules once the agent writes a contract (#779)", async () => {
   expect(proveTool.defaultActive).toBe(false);

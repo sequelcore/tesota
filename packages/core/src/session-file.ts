@@ -1,4 +1,5 @@
 import type { AssistantMessage, SystemMessage, ToolResultMessage } from "@earendil-works/pi-ai";
+import type { ExternalEffect } from "../../../src/receipt.ts";
 import { closeSync, fsyncSync, ftruncateSync, openSync, readFileSync, renameSync, writeSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Base } from "./base.ts";
@@ -82,7 +83,8 @@ export type SessionEntry =
    * rule, whether it may have changed files (#599); an older file has none.
    */
   | { readonly type: "call_intent"; readonly run: number; readonly callId: string; readonly access: "read" | "write" | "run";
-    readonly tool?: { readonly name: string; readonly nativeQuestion: boolean; readonly readOnly: boolean } }
+    readonly tool?: { readonly name: string; readonly nativeQuestion: boolean; readonly readOnly: boolean };
+    readonly externalEffect?: Omit<ExternalEffect, "outcome"> }
   /** A call's result: the one the model saw, of a call that ran or was refused. */
   | { readonly type: "tool_result"; readonly run: number; readonly message: ToolResultMessage }
   /** Recovery's repair of call `callId` of reply `reply` (counted from 0 in its run), which has no result. */
@@ -181,7 +183,11 @@ const shapes: Record<SessionEntry["type"], (entry: Record<string, unknown>) => b
   assistant: (entry) => isObject(entry["message"]) && entry["message"]["role"] === "assistant" && Array.isArray(entry["message"]["content"]),
   call_intent: (entry) => isText(entry["callId"]) && ["read", "write", "run"].includes(entry["access"] as string)
     && (entry["tool"] === undefined || isObject(entry["tool"]) && isText(entry["tool"]["name"]) && isFlag(entry["tool"]["nativeQuestion"])
-      && isFlag(entry["tool"]["readOnly"])),
+      && isFlag(entry["tool"]["readOnly"]))
+    && (entry["externalEffect"] === undefined || isObject(entry["externalEffect"])
+      && isText(entry["externalEffect"]["server"]) && isText(entry["externalEffect"]["tool"])
+      && entry["externalEffect"]["callId"] === entry["callId"] && isText(entry["externalEffect"]["startedAt"])
+      && typeof entry["externalEffect"]["argumentsHash"] === "string" && /^[a-f0-9]{64}$/u.test(entry["externalEffect"]["argumentsHash"])),
   tool_result: (entry) => isObject(entry["message"]) && entry["message"]["role"] === "toolResult",
   reconciliation: (entry) => Number.isInteger(entry["reply"]) && isText(entry["callId"]) && isText(entry["toolName"])
     && ["outcome_unknown", "not_run", "no_effect"].includes(entry["repair"] as string)

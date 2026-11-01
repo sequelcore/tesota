@@ -105,6 +105,9 @@ attempt's startup, and on Linux to its resume, with a looser limit in
 milliseconds behind both. New limits come from measurements and need the
 owner's approval.
 
+Linux's loop uses the same resume control; its
+[limits and evidence](../packages/core/budgets.md) live beside the budget.
+
 ## Binaries
 
 [build.ts](../packages/core/scripts/build.ts) is the one build;

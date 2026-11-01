@@ -8,37 +8,172 @@ import { type ProcessRun, runProcess } from "../process.js";
 import { inBinary } from "../binary.js";
 import { parseJson } from "../json.js";
 import { type ProofOutcome, proofOutcome } from "./proof-outcome-rule.js";
+import { typescript } from "../typescript-source.js";
+import type { ts as TypeScript } from "ts-morph";
 
 const timeoutMs = 5 * 60_000;
 const limits = "Proves only the annotated properties of the translated functions, within LemmaScript's supported " +
   "TypeScript subset. It says nothing about unannotated code, or whether the properties are what was asked.";
+
+/** Dependency-owned clauses and selection, with source text from extract and semantic facts from info --typed (#772). */
+export type ProofInfo = { readonly status: "unavailable"; readonly reason: string } | {
+  readonly status: "read";
+  readonly functions: readonly { readonly name: string; readonly clauses: readonly string[]; readonly bodyClauses: readonly string[] }[];
+  readonly trusted: readonly { readonly name: string; readonly annotation: string }[];
+  readonly semanticGap?: string;
+};
+
+const object = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
+const strings = (value: unknown): value is string[] => Array.isArray(value) && value.every((item) => typeof item === "string");
+
+/** Read complete stdout up to 8 MiB; runProcess's human-readable tail is not a machine document. */
+async function infoJson(root: string, path: string, typed: boolean, signal: AbortSignal): Promise<unknown> {
+  const command = lscCommand();
+  const chunks: Buffer[] = [];
+  let bytes = 0;
+  let overflow = false;
+  const ran = await runProcess(command.executable, [...command.args, ...typed ? ["info", "--typed"] : ["extract"], path],
+    root, signal, timeoutMs, undefined, { env: { ...process.env, LSC_RUN_LOG: "false" }, onStdout: (chunk) => {
+      bytes += chunk.length;
+      if (bytes > 8 * 1024 * 1024) overflow = true;
+      if (!overflow) chunks.push(chunk);
+    } });
+  if (overflow || ran.ended !== "exited" || ran.exitCode !== 0) throw new Error(overflow ? "LemmaScript metadata exceeds 8 MiB" : ran.output || ran.ended);
+  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
+
+function clauses(fn: Record<string, unknown>): string[] {
+  const result: string[] = [];
+  for (const key of ["requires", "ensures", "contract"]) {
+    const lines = fn[key] ?? [];
+    if (!strings(lines)) throw new Error(`LemmaScript's ${key} metadata is not a list of clauses`);
+    result.push(...lines.map((text) => `//@ ${key} ${text.trim()}`));
+  }
+  if (typeof fn["decreases"] === "string") result.push(`//@ decreases ${fn["decreases"].trim()}`);
+  return result;
+}
+
+/** Body specifications are read from the dependency's raw IR, never reconstructed from extraction rules. */
+function bodyClauses(value: unknown): string[] {
+  if (Array.isArray(value)) return value.flatMap(bodyClauses);
+  if (!object(value)) return [];
+  const found = Object.values(value).flatMap(bodyClauses);
+  if (strings(value["invariants"])) found.push(...value["invariants"].map((text) => `//@ invariant ${text.trim()}`));
+  if (typeof value["decreases"] === "string") found.push(`//@ decreases ${value["decreases"].trim()}`);
+  if (value["kind"] === "assert" && typeof value["expr"] === "string") found.push(`//@ ${value["assumed"] === true ? "assume" : "assert"} ${value["expr"].trim()}`);
+  return found;
+}
+
+/** Top-level functions and qualified class methods as the dependency reports them. */
+function reportedFunctions(module: Record<string, unknown>): unknown[] {
+  if (!Array.isArray(module["functions"]) || !Array.isArray(module["classes"])) throw new Error("Invalid LemmaScript function inventory");
+  return [...module["functions"], ...module["classes"].flatMap((cls: unknown) => {
+    if (!object(cls) || typeof cls["name"] !== "string" || !Array.isArray(cls["methods"])) throw new Error("Invalid LemmaScript class inventory");
+    return cls["methods"].map((method: unknown) => {
+      if (!object(method) || typeof method["name"] !== "string") throw new Error("Invalid LemmaScript method inventory");
+      return { ...method, name: `${cls["name"]}.${method["name"]}` };
+    });
+  })];
+}
+
+/** Inspect the actual project file without writing any output beside it. */
+export async function fileInfo(root: string, path: string, signal: AbortSignal): Promise<ProofInfo> {
+  try {
+    const raw = await infoJson(root, path, false, signal);
+    if (!object(raw) || !Array.isArray(raw["functions"]) || !Array.isArray(raw["externs"])) throw new Error("Invalid LemmaScript extraction metadata");
+    const functions = [...reportedFunctions(raw), ...raw["externs"]].map((fn: unknown) => {
+      if (!object(fn)) throw new Error("Invalid LemmaScript function metadata");
+      const name = fn["name"] ?? fn["qualified"];
+      if (typeof name !== "string") throw new Error("LemmaScript function metadata has no name");
+      return { name, clauses: clauses(fn), bodyClauses: bodyClauses(fn["body"]) };
+    });
+    try {
+      const typed = await infoJson(root, path, true, signal);
+      if (!object(typed) || typed["schema"] !== 1 || !Array.isArray(typed["functions"])) throw new Error("Unsupported LemmaScript typed-info schema");
+      const trusted = reportedFunctions(typed).flatMap((fn: unknown) => {
+        if (!object(fn) || typeof fn["name"] !== "string" || !strings(fn["bodyKinds"])) throw new Error("Invalid LemmaScript semantic metadata");
+        const annotations = [...fn["autohavoc"] === true ? ["//@ autohavoc"] : [], ...fn["forcePure"] === true ? ["//@ pure"] : [],
+          ...fn["bodyKinds"].includes("havoc") ? ["havoc in translated body"] : [],
+          ...fn["isPure"] === false ? ["impure function"] : []];
+        return annotations.map((annotation) => ({ name: fn["name"] as string, annotation }));
+      });
+      return { status: "read", functions, trusted };
+    } catch (error) {
+      return { status: "read", functions, trusted: [], semanticGap: error instanceof Error ? error.message : String(error) };
+    }
+  } catch (error) { return { status: "unavailable", reason: error instanceof Error ? error.message : String(error) }; }
+}
+
+// Standalone historical sources and mutation fixtures have no project to inspect. Cache only successful, immutable
+// source inspections, bounded to 32 entries; actual project inspections always read their current configuration.
+const sourceInfos = new Map<string, ProofInfo>();
+export async function sourceInfo(path: string, source: string, signal: AbortSignal = new AbortController().signal): Promise<ProofInfo> {
+  const key = contentHash([{ path, content: source }]);
+  const cached = sourceInfos.get(key);
+  if (cached !== undefined && !signal.aborted) return cached;
+  const directory = await mkdtemp(join(tmpdir(), "tesota-proof-info-"));
+  try {
+    const name = basename(path);
+    await writeFile(join(directory, name), source);
+    const info = await fileInfo(directory, name, signal);
+    if (info.status === "read" && info.semanticGap === undefined && !signal.aborted) {
+      if (sourceInfos.size >= 32) sourceInfos.delete(sourceInfos.keys().next().value ?? "");
+      sourceInfos.set(key, info);
+    }
+    return info;
+  } finally { await rm(directory, { recursive: true, force: true }); }
+}
 
 /** The `//@` annotation lines of a LemmaScript source, as written. */
 export function annotations(source: string): string[] {
   return source.split(/\r?\n/u).map((line) => line.trim()).filter((line) => line.startsWith("//@"));
 }
 
-/** The specification keywords LemmaScript 0.6.5 reads with an expression (`parseAnnotations` in its `extract.js`). */
-const specificationWord = "(?:requires|ensures|contract|invariant|decreases|done_with|type)";
-const specificationLine = new RegExp(String.raw`^//@\s*${specificationWord}\b`, "u");
-const readSpecification = new RegExp(String.raw`^//@ ${specificationWord} +\S`, "u");
-
-/**
- * Whether LemmaScript skips a `//@` specification line without a word: one
- * that names a keyword it reads with an expression, such as `ensures`, but
- * not as `//@ <keyword> <expression>`, with a single space after `//@` and a
- * space after the keyword. `//@   ensures x`, `//@ensures x` and an
- * `//@ ensures` with nothing after it are all left out of the proof, which
- * then checks less than the file says. A misspelled keyword is not caught.
- */
-export function unreadSpecification(line: string): boolean {
-  const text = line.trim();
-  return specificationLine.test(text) && !readSpecification.test(text);
+function functionRanges(ts: typeof TypeScript, file: TypeScript.SourceFile, source: string):
+  { start: number; end: number; name: string; skipped: boolean }[] {
+  const ranges: { start: number; end: number; name: string; skipped: boolean }[] = [];
+  const leading = (start: number): boolean => (ts.getLeadingCommentRanges(source, start) ?? [])
+    .some(({ pos, end }) => source.slice(pos, end).trim() === "//@ skip");
+  for (const statement of file.statements) {
+    if (ts.isFunctionDeclaration(statement) && statement.name !== undefined) ranges.push({ start: statement.pos, end: statement.end,
+      name: statement.name.text, skipped: leading(statement.pos) });
+    if (ts.isVariableStatement(statement)) for (const declaration of statement.declarationList.declarations) {
+      if (ts.isIdentifier(declaration.name) && declaration.initializer !== undefined && ts.isArrowFunction(declaration.initializer)) {
+        ranges.push({ start: statement.pos, end: statement.end, name: declaration.name.text, skipped: leading(statement.pos) });
+      }
+    }
+    if (ts.isClassDeclaration(statement) && statement.name !== undefined) {
+      for (const method of statement.members) if (ts.isMethodDeclaration(method)) ranges.push({ start: method.pos, end: method.end,
+        name: `${statement.name.text}.${method.name.getText(file)}`, skipped: leading(statement.pos) || leading(method.pos) });
+    }
+  }
+  return ranges;
 }
 
-/** The specification lines of `source` LemmaScript skips (`unreadSpecification`), with their line numbers. */
-export function unreadSpecifications(source: string): { line: number; text: string }[] {
-  return source.split(/\r?\n/u).flatMap((text, k) => unreadSpecification(text) ? [{ line: k + 1, text: text.trim() }] : []);
+/** Specification lines absent from LemmaScript's attached clauses. The parser supplies positions, not selection. */
+export async function unreadSpecifications(source: string, inspected?: ProofInfo): Promise<{ line: number; text: string }[]> {
+  const info = inspected ?? await sourceInfo("source.ts", source);
+  const ts = typescript();
+  const file = ts.createSourceFile("source.ts", source, ts.ScriptTarget.Latest, true);
+  const scanner = ts.createScanner(ts.ScriptTarget.Latest, false, ts.LanguageVariant.Standard, source);
+  const ranges = functionRanges(ts, file, source);
+  const attached = new Map(info.status === "read" ? info.functions.map((fn) => [fn.name, [...fn.clauses, ...fn.bodyClauses]]) : []);
+  const unread: { line: number; text: string }[] = [];
+  for (let token = scanner.scan(); token !== ts.SyntaxKind.EndOfFileToken; token = scanner.scan()) {
+    if (token !== ts.SyntaxKind.SingleLineCommentTrivia) continue;
+    const text = scanner.getTokenText().trim();
+    if (!text.startsWith("//@") || /^\/\/@ (?:verify|skip|extern|pure|impure|autohavoc|backend|option|lean-module|type)(?:\s|$)/u.test(text)) continue;
+    const position = scanner.getTokenPos();
+    const owner = ranges.find(({ start, end }) => position >= start && position < end);
+    // Deliberately omitted functions are already named as trust/selection limits, not silent attachment failures.
+    if (owner?.skipped === true || owner !== undefined && info.status === "read" && !attached.has(owner.name)) continue;
+    const clauses = owner === undefined ? [] : attached.get(owner.name) ?? [];
+    const normalized = text.replace(/^(\/\/@ \w+) +/u, "$1 ");
+    const at = clauses.indexOf(normalized);
+    if (at >= 0) clauses.splice(at, 1);
+    else unread.push({ line: file.getLineAndCharacterOfPosition(position).line + 1, text });
+  }
+  return unread;
 }
 
 /**
@@ -206,13 +341,16 @@ export async function proofSources(root: string, proof: string, signal: AbortSig
 export async function proveFile(root: string, path: string, signal: AbortSignal): Promise<Evidence> {
   const started = Date.now();
   const source = await readIfPresent(join(root, path));
-  const claim = `LemmaScript and Dafny prove these annotations of ${path}:\n` +
+  let proofInfo: ProofInfo | undefined;
+  let unread: readonly { line: number; text: string }[] = [];
+  let claim = `LemmaScript and Dafny prove these annotations of ${path}:\n` +
     annotations(source ?? "").map((line) => `  ${line}`).join("\n");
   const evidence = async (outcome: ProofOutcome, output: string, proof: string): Promise<Evidence> => {
     const files = [path, proof];
     const content = await Promise.all(files.map(async (file) => ({ path: file, content: await readIfPresent(join(root, file)) })));
     return { verifier: "lemmascript", claim, limits, outcome, output, durationMs: Date.now() - started, files,
-      contentHash: contentHash(content) };
+      contentHash: contentHash(content), ...proofInfo === undefined ? {} : { proofInfo },
+      ...unread.length === 0 ? {} : { unreadSpecifications: unread } };
   };
   if (!await dafnyInstalled(signal)) {
     return evidence(proofOutcome(signal.aborted, false, false, false, -1, 0), "Dafny is not installed, so nothing was proved.",
@@ -220,6 +358,13 @@ export async function proveFile(root: string, path: string, signal: AbortSignal)
   }
   const [regen, check] = await regenThenCheck(root, path, signal);
   const outcome = outcomeOf(regen, check, signal);
+  if ((outcome === "passed" || outcome === "vacuous") && !signal.aborted) {
+    proofInfo = await fileInfo(root, path, signal);
+    if (outcome === "passed") unread = await unreadSpecifications(source ?? "", proofInfo);
+    claim = proofInfo.status === "unavailable" ? `Proof scope for ${path} is unavailable: ${proofInfo.reason}`
+      : `LemmaScript and Dafny checked these attached clauses of ${path}, within the recorded trust limits:\n` +
+        proofInfo.functions.flatMap((fn) => [...fn.clauses, ...fn.bodyClauses].map((line) => `  ${fn.name}: ${line}`)).join("\n");
+  }
   const printed = (check ?? regen).output.trimEnd();
   const output = outcome === "vacuous"
     ? `${printed}\nLemmaScript verified nothing in this file, so nothing was proved.` : printed;

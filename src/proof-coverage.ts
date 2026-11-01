@@ -3,6 +3,7 @@ import { addedAssumptions } from "./receipt.js";
 import { commentLines, type FileChange, type Weakening } from "./verification-changes.js";
 import { proofCovered } from "./verification/proof-cover-rule.js";
 import { ranges } from "./verification/range-rule.js";
+import type { ProofInfo } from "./verification/lemmascript-verifier.js";
 
 /** The changed lines of a file that proved that no contract's proof covers, as inclusive ranges in the file as changed. */
 export interface UncoveredLines {
@@ -12,8 +13,8 @@ export interface UncoveredLines {
 
 
 /** Each contract's function with its lines, from its first annotation to the line where it ends. */
-function spans(path: string, source: string): { name: string; start: number; end: number }[] {
-  return contracts(path, source).map(({ name, line, bodyEnd }) => ({ name, start: line, end: bodyEnd }));
+async function spans(path: string, source: string, info?: ProofInfo, signal?: AbortSignal): Promise<{ name: string; start: number; end: number }[]> {
+  return (await contracts(path, source, info, signal)).map(({ name, line, bodyEnd }) => ({ name, start: line, end: bodyEnd }));
 }
 
 function holds(source: string, start: number, end: number, annotation: string): boolean {
@@ -26,11 +27,11 @@ function holds(source: string, start: number, end: number, annotation: string): 
  * base's function of the same name. An assumption added to the file's proof
  * (`proof`, its `.dfy`) may serve any of them, so it narrows them all.
  */
-function narrowedContracts(path: string, proof: readonly string[], source: string, baseSource: string | undefined,
-  weakened: readonly Weakening[]): boolean[] {
-  const current = spans(path, source);
+async function narrowedContracts(path: string, proof: readonly string[], source: string, baseSource: string | undefined,
+  weakened: readonly Weakening[], info?: ProofInfo, signal?: AbortSignal): Promise<boolean[]> {
+  const current = await spans(path, source, info, signal);
   if (addedAssumptions(proof, weakened) > 0) return current.map(() => true);
-  const base = new Map(spans(path, baseSource ?? "").map((span) => [span.name, span]));
+  const base = new Map((await spans(path, baseSource ?? "", undefined, signal)).map((span) => [span.name, span]));
   return current.map(({ name, start, end }) => weakened.some((change) => {
     if (change.path !== path || !("annotation" in change)) return false;
     if (change.kind !== "removed_contract") return holds(source, start, end, change.annotation);
@@ -48,19 +49,19 @@ function narrowedContracts(path: string, proof: readonly string[], source: strin
  * contract line is not a comment. `checked` are the files the proof checked:
  * the source and its `.dfy`, wherever LemmaScript keeps it.
  */
-export function uncoveredLines(change: FileChange, checked: readonly string[], source: string, baseSource: string | undefined,
-  weakened: readonly Weakening[]): UncoveredLines {
+export async function uncoveredLines(change: FileChange, checked: readonly string[], source: string, baseSource: string | undefined,
+  weakened: readonly Weakening[], info?: ProofInfo, signal?: AbortSignal): Promise<UncoveredLines> {
   const count = source.split(/\r?\n/u).length;
   const comments = commentLines({ ...change, content: source, baseContent: baseSource });
   const changed = [...new Set([...change.added.filter((line) => line.text.trim() !== "" && !comments.added(line)),
     ...change.removed.filter((line) => line.text.trim() !== "" && !comments.removed(line))]
     .map(({ number }) => Math.min(number, count)))].sort((a, b) => a - b);
-  const current = spans(change.path, source);
+  const current = await spans(change.path, source, info, signal);
   const starts = current.map(({ start }) => start);
   const ends = current.map(({ end }) => end);
   const proved = current.map(() => true);
   const proof = checked.filter((file) => file !== change.path);
-  const narrowed = narrowedContracts(change.path, proof, source, baseSource, weakened);
+  const narrowed = await narrowedContracts(change.path, proof, source, baseSource, weakened, info, signal);
   return { path: change.path,
     lines: ranges(changed.filter((line) => !proofCovered(line, starts, ends, proved, narrowed))).map(({ start, end }) => [start, end] as [number, number]) };
 }
