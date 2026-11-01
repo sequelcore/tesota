@@ -54,7 +54,8 @@ check, a live observation and a person's acceptance are different claims.
 | `evaluation` | Measurements of Tesota's defaults on live models (`engine-session.ts`) |
 | `themes`, `terminal-schemes`, `grammars` | The themes, the terminal color schemes, and the tree-sitter grammars coverage reads |
 
-`lemmascript` and `web-tree-sitter` are runtime dependencies. The grammars
+`lemmascript` (with a [compiled-version patch](../patches/README.md)) and
+`web-tree-sitter` are runtime dependencies. The grammars
 are pinned development dependencies kept as `.wasm` in `grammars/`; a test
 fails when one differs from its package.
 

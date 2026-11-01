@@ -48,5 +48,8 @@
   },
   "workspaces": [
     "packages/*"
-  ]
+  ],
+  "patchedDependencies": {
+    "lemmascript@0.6.5": "patches/lemmascript@0.6.5.patch"
+  }
 }

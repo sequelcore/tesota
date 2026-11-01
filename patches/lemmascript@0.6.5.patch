@@ -1,0 +1,18 @@
+diff --git a/tools/dist/lsc.js b/tools/dist/lsc.js
+index 7143c2c22a42a2916fbcd7529eee5b3efffb9dfb..c1f68fbfb0a27f488cabd4458e0025277d2c612d 100644
+--- a/tools/dist/lsc.js
++++ b/tools/dist/lsc.js
+@@ -23,11 +23,11 @@ import { runInfo, runTypedInfo } from "./info-command.js";
+ import { RunLog, resolveLogDir, runLogEnabled } from "./run-log.js";
+ import { runRuns } from "./runs-command.js";
+ import { findUp, loadConfigOptions, parseFileOptions, resolveDafnyArtifactDir, resolveOptions, } from "./config.js";
++import manifest from "../../package.json" with { type: "json" };
+ /** Version of the lemmascript package — the root package.json sits two levels
+  *  above this module from both tools/src/ (tsx) and tools/dist/ (installed). */
+ function lscVersion() {
+-    const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
+-    return pkg.version;
++    return manifest.version;
+ }
+ function main() {
+     const args = process.argv.slice(2);
