@@ -52,6 +52,9 @@ Tesota looks in:
 | `~/.tesota/skills` | Tesota's own |
 | `<project>/.agents/skills` | The project's, from the session's folder up to the repository's root |
 
+Skill folders may be directory symlinks or Windows junctions. Broken links
+are left out.
+
 The agent sees each skill's name and description, and reads its `SKILL.md`
 when it needs it. A project's skill wins over yours of the same name. A
 skill without a `description` is left out.
