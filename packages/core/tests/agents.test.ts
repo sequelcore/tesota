@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { noEvidence, type Receipt, receiptEntry } from "../../../src/receipt.ts";
+import { noEvidence, noRequestReview, type Receipt, receiptEntry } from "../../../src/receipt.ts";
 import { agentTypes, agentTypesIn, unusedModels } from "../src/agents.ts";
 import { engineModels } from "../src/model-access.ts";
 import { childLimits } from "../src/children.ts";
@@ -236,8 +236,8 @@ describe("the agent tool", () => {
 
   test("a writing child works in a worktree of its own and its branch and receipt reach the parent", async () => {
     const cwd = repository();
-    const receipt: Receipt = { version: 2, repository: true, base: null, startedAt: "2026-10-21T00:00:00.000Z",
-      settledAt: "2026-10-21T00:00:01.000Z", engine: "test", ...noEvidence };
+    const receipt: Receipt = { version: 3, repository: true, base: null, startedAt: "2026-10-21T00:00:00.000Z",
+      settledAt: "2026-10-21T00:00:01.000Z", engine: "test", ...noEvidence, requestContext: { requests: [] }, requestReview: noRequestReview };
     const verifier: SessionOptions["verifier"] = (pi, request) => {
       pi.on("agent_before_settle", (_event, ctx) => request()?.text === "write b.txt" ? { entries: [receiptEntry(ctx.mode, receipt)] } : undefined);
     };
@@ -517,7 +517,7 @@ describe("recovery", () => {
       expect(entries(file).filter((entry) => entry.type === "job_end")).toMatchObject([{ job: job.job, outcome: "unknown" }]);
       // A subagent may change files, as the gate decides it (`toolMayChangeFiles`), so the run gets a receipt that verified nothing (#599).
       expect(resumed.history().slice(-2)).toMatchObject([{ role: "custom", customType: "tesota.job" },
-        { role: "custom", customType: "tesota-receipt", details: { changed: "unreadable", proofs: [], tests: [] } }]);
+        { role: "custom", customType: "tesota-receipt", details: { changed: "unreadable", codeEvidence: { proofs: [], tests: [] } } }]);
       expect(entries(job.session).at(-1)).toMatchObject({ type: "run_end", outcome: "interrupted" });
       const once = [readFileSync(file, "utf8"), readFileSync(job.session, "utf8")];
       await resumed.dispose();

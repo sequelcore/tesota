@@ -125,7 +125,7 @@ export function onPath(program: string): boolean {
  * found on the `PATH`; npm when none is, so the command fails as the
  * operator's own would.
  */
-function packageRunner(directory: string): string {
+export function packageRunner(directory: string): string {
   try {
     const manifest: unknown = parseJson(readFileSync(join(directory, "package.json"), "utf8"));
     const named: unknown = typeof manifest === "object" && manifest !== null ? Reflect.get(manifest, "packageManager") : undefined;
@@ -216,6 +216,20 @@ export interface ProjectChecks {
   readonly commands: readonly CheckCommand[];
   readonly approval?: CheckApproval;
   readonly unavailable?: string;
+}
+
+/** The check selection made before work in one workspace unit, retained with its request base. */
+export interface UnitCheckPlan {
+  readonly folder: string;
+  readonly projects: readonly ProjectChecks[];
+}
+
+/** Execution context for the model and operator; it grants no additional command authority. */
+export function checkPlanText(plans: readonly UnitCheckPlan[]): string {
+  return ["Project checks selected before this request (execution context, not instructions or permission):",
+    ...plans.flatMap(({ folder, projects }) => projects.flatMap((project) => project.commands.map((check) =>
+      `${folder === "" ? "" : `${folder}: `}${inFolder(check.folder, check.command)}${project.unavailable === undefined ? "" : ` — unavailable: ${project.unavailable}`}`))),
+    "Tesota compares failures against the recorded base at settlement. Early checks are not final evidence."].join("\n");
 }
 
 /**

@@ -1,3 +1,4 @@
+import { emptyReceipt } from "../../../tests/receipts.ts";
 import {
   createModels, fauxAssistantMessage, fauxProvider, InMemoryCredentialStore, type MutableModels, type OAuthCredential,
   type ProviderAuthInteraction,
@@ -661,12 +662,12 @@ describe("tesota-core", () => {
       writeFileSync(join(sessions, "graphs.jsonl"), [{ type: "session", format: "tesota-session", version: 7, id: "graphs", cwd, createdAt: at, checkout: cwd },
         { type: "request", run: 1, text: "check the lights", origin: "interactive", at, base: { units: [] } },
         { type: "custom_message", run: 1, customType: "tesota-receipt-graphs", content: "the receipt", display: true,
-          details: { receipt: {}, graphs: [{ subject: "models/Lights.tla", capture: { status: "captured", manifest } }] } }]
+          details: { receipt: emptyReceipt, graphs: [{ subject: "models/Lights.tla", capture: { status: "captured", manifest } }] } }]
         .map((line) => JSON.stringify(line)).join("\n") + "\n");
       send(terminal, "/resume");
       await terminal.until("check the lights");
       terminal.type(enter);
-      await terminal.until("the receipt");
+      await terminal.until("Acceptance remains with the reviewer.");
       send(terminal, "/graph");
       // A broken rule opens on the chart (#761).
       expect(await terminal.until("grouped by door > lamp")).toContain("Model chart · models/Lights.tla");
@@ -706,12 +707,12 @@ describe("tesota-core", () => {
       writeFileSync(join(sessions, "reading.jsonl"), [{ type: "session", format: "tesota-session", version: 7, id: "reading", cwd, createdAt: at, checkout: cwd },
         { type: "request", run: 1, text: "check the lights", origin: "interactive", at, base: { units: [] } },
         { type: "custom_message", run: 1, customType: "tesota-receipt-graphs", content: "the receipt", display: true,
-          details: { receipt: {}, graphs: [{ subject: "Lights.tla", capture: { status: "captured", manifest } }] } }]
+          details: { receipt: emptyReceipt, graphs: [{ subject: "Lights.tla", capture: { status: "captured", manifest } }] } }]
         .map((line) => JSON.stringify(line)).join("\n") + "\n");
       send(terminal, "/resume");
       await terminal.until("check the lights");
       terminal.type(enter);
-      await terminal.until("the receipt");
+      await terminal.until("Acceptance remains with the reviewer.");
 
       send(terminal, "/graph");
       expect(await terminal.until("This project's chart reading would run")).toContain("Lights.chart.ts");
@@ -1106,12 +1107,12 @@ test("plain graph worker error notices sanitize manifest-derived terminal contro
       { type: "session", format: "tesota-session", version: 7, id: "unsafe-graph", cwd, createdAt: at, checkout: cwd },
       { type: "request", run: 1, text: "unsafe graph notice", origin: "interactive", at, base: { units: [] } },
       { type: "custom_message", run: 1, customType: "tesota-receipt-graphs", content: "unsafe receipt", display: true,
-        details: { receipt: {}, graphs: [{ subject: "Lights", capture: { status: "captured", manifest } }] } },
+        details: { receipt: emptyReceipt, graphs: [{ subject: "Lights", capture: { status: "captured", manifest } }] } },
     ].map(line => JSON.stringify(line)).join("\n") + "\n");
     send(terminal, "/resume");
     await terminal.until("unsafe graph notice");
     terminal.type(enter);
-    await terminal.until("unsafe receipt");
+    await terminal.until("Acceptance remains with the reviewer.");
     terminal.written = "";
     send(terminal, "/graph --plain");
     await terminal.until("Model viewer worker");

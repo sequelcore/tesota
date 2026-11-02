@@ -21,7 +21,7 @@ Run `bun run formal:check` to check the full list.
 | File | What it decides | Re-prove |
 | --- | --- | --- |
 | [`src/verification/role-model-rule.ts`](../../src/verification/role-model-rule.ts) | Which verification model wins: nonempty flag, then setting, then session | `lsc check --backend=dafny src/verification/role-model-rule.ts` |
-| [`src/verification/check-origin-rule.ts`](../../src/verification/check-origin-rule.ts) | Failure attribution and whether a runner's counts account for reported failures | `lsc check --backend=dafny src/verification/check-origin-rule.ts` |
+| [`src/verification/check-origin-rule.ts`](../../src/verification/check-origin-rule.ts) | Failure attribution, observed fixes, source assertions and report completeness | `lsc check --backend=dafny src/verification/check-origin-rule.ts` |
 | [`src/verification/comment-line-rule.ts`](../../src/verification/comment-line-rule.ts) | Whether a parsed line contains only a comment | `lsc check --backend=dafny src/verification/comment-line-rule.ts` |
 | [`src/verification/proof-cover-rule.ts`](../../src/verification/proof-cover-rule.ts) | Whether a changed line lies within a proved, unnarrowed contract | `lsc check --backend=dafny src/verification/proof-cover-rule.ts` |
 | [`src/verification/range-rule.ts`](../../src/verification/range-rule.ts) | How sorted line numbers form consecutive ranges | `lsc check --backend=dafny src/verification/range-rule.ts` |
@@ -33,7 +33,7 @@ Run `bun run formal:check` to check the full list.
 | [`src/verification/mutation-rule.ts`](../../src/verification/mutation-rule.ts) | Whether a mutation is rejected, survives or is proved equivalent | `lsc check --backend=dafny src/verification/mutation-rule.ts` |
 | [`src/verification/footer-rule.ts`](../../src/verification/footer-rule.ts) | What verification is available and how elapsed time and footer layout are shown | `lsc check --backend=dafny src/verification/footer-rule.ts` |
 | [`src/verification/test-weakening-rule.ts`](../../src/verification/test-weakening-rule.ts) | Whether test edits remove checks, loosen assertions or only extend safe lists | `lsc check --backend=dafny src/verification/test-weakening-rule.ts` |
-| [`src/verification/verdict-rule.ts`](../../src/verification/verdict-rule.ts) | How findings, path coverage, external effects and evidence determine receipt standing and color | `lsc check --backend=dafny src/verification/verdict-rule.ts` |
+| [`src/verification/verdict-rule.ts`](../../src/verification/verdict-rule.ts) | Path-specific source credit, model-review completeness and mechanical receipt standing | `lsc check --backend=dafny src/verification/verdict-rule.ts` |
 | [`src/verification/change-category-rule.ts`](../../src/verification/change-category-rule.ts) | Whether changed lines count as implementation, tests or other | `lsc check --backend=dafny src/verification/change-category-rule.ts` |
 | [`src/verification/model-rule.ts`](../../src/verification/model-rule.ts) | How design model runs, planted faults, reuse and staleness are classified | `lsc check --backend=dafny src/verification/model-rule.ts` |
 | [`src/verification/group-count-rule.ts`](../../src/verification/group-count-rule.ts) | Whether model graph grouping preserves state, violation and edge totals | `lsc check --backend=dafny src/verification/group-count-rule.ts` |

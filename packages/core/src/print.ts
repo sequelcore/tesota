@@ -141,7 +141,8 @@ function ending(outcome: string | undefined, file: string): string {
   const end = entries.findLast((entry) => entry.type === "run_end");
   const reason = outcome === "error" && end?.type === "run_end" && end.reason !== undefined ? `${providerError(end.reason)}\n` : "";
   return reason + `${outcome === "completed" ? "Completed" : `Ended ${outcome ?? "without a run"}`}`
-    + `${standing === undefined ? outcome === "completed" ? "; no file changed" : "" : standing === "unchanged" ? ` (${standingWords[standing]})`
+    + `${standing === undefined ? receipt !== undefined ? "; unsupported receipt format; this Tesota reads receipt v3 only"
+      : outcome === "completed" ? "; no file changed" : "" : standing === "unchanged" ? ` (${standingWords[standing]})`
       : `, ${standingWords[standing]}${standing === "unverified" ? `: ${unverifiedWhy(receipt as Receipt)}` : ""}; tesota receipt writes it for a pull request`}.\n`
     + (lastFloorNotice(entries) ?? "")
     // A run that ended on its question says how to answer it (#651).

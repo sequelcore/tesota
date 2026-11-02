@@ -69,8 +69,8 @@ test.each([true, false])("open cases receive the actual saved issue read or an e
   expect(prompts).toHaveLength(1);
   expect(prompts[0]?.includes("ISSUE_637_GATE")).toBe(read);
   expect(prompts[0]).toContain(read ? "third-party data" : "no complete supported GitHub CLI issue read");
-  expect(receiptOf(session)?.openCases?.status).toBe("listed");
-  expect(receiptOf(session)?.requestJudgments?.[0]?.references).toMatchObject([{ status: read ? "read" : "unavailable" }]);
+  expect(receiptOf(session)?.requestReview.openCases?.status).toBe("listed");
+  expect(receiptOf(session)?.requestReview.context.find(({ stage }) => stage === "open_cases")?.references).toMatchObject([{ status: read ? "read" : "unavailable" }]);
   expect(renderReceipt(receiptOf(session)!)).toContain(read ? "third-party context" : "reference unavailable");
 });
 
@@ -89,9 +89,11 @@ test("a project without a recognized manifest gains verified command and exercis
   const session = gated(cwd, [{ tool: "write", args: { path: "rule.cjs", content: "exports.value = 2;\n" } },
     { tool: "write", args: { path: "rule.test.cjs", content: "const {test}=require('node:test'); const assert=require('node:assert/strict'); const {value}=require('./rule.cjs'); test('rule',()=>assert.equal(value,2));\n" } }, "done"]);
   await session.prompt("Change the rule to two and add its regression test.");
-  expect(receiptOf(session)?.tests[0]?.evidence.outcome).toBe("passed");
-  expect(receiptOf(session)?.exercises[0]?.sensitivity).toBe("fails_then_passes");
-  expect(receiptStanding(receiptOf(session)!)).toBe("verified");
+  expect(receiptOf(session)?.codeEvidence.tests[0]?.evidence.outcome).toBe("passed");
+  expect(receiptOf(session)?.codeEvidence.exercises[0]?.sensitivity).toBe("fails_then_passes");
+  expect(receiptStanding(receiptOf(session)!)).toBe("incomplete");
+  // Declared composite checks establish test sensitivity, not per-source assertion credit.
+  expect(receiptOf(session)?.codeEvidence.exercises[0]?.sources ?? []).toEqual([]);
 });
 
 test("duplicate command strings keep each declared invocation's repair history separate (#753)", async () => {
@@ -166,16 +168,16 @@ test("persistent verification roles use the real settings reader without affecti
     ], { flags: {} });
     await session.prompt("Make the function return zero.");
     expect(session.outcome()).toBe("completed");
-    expect(receiptOf(session)?.openCases).toEqual({ status: "not_listed", reason: "unknown/lister isn't a model Tesota knows (provider/id)" });
-    expect(receiptOf(session)?.claimcheck).toMatchObject({ status: "not_judged",
+    expect(receiptOf(session)?.requestReview.openCases).toEqual({ status: "not_run", model: "unknown/lister", reason: "unknown/lister isn't a model Tesota knows (provider/id)" });
+    expect(receiptOf(session)?.requestReview.contractComparison).toMatchObject({ status: "not_run",
       reason: "its restating model unknown/restater isn't a model Tesota knows (provider/id)" });
     expect(renderReceipt(receiptOf(session)!)).toContain("unknown/lister");
     expect(renderReceipt(receiptOf(session)!)).toContain("unknown/restater");
     writeFileSync(path, JSON.stringify({ openCasesModel: "off", claimcheckModel: "unknown/changed" }));
     await session.prompt("Rename the function, still returning zero.");
     expect(session.outcome()).toBe("completed");
-    expect(receiptOf(session)?.openCases).toBeUndefined();
-    expect(receiptOf(session)?.claimcheck).toMatchObject({ status: "not_judged",
+    expect(receiptOf(session)?.requestReview.openCases).toMatchObject({ status: "disabled" });
+    expect(receiptOf(session)?.requestReview.contractComparison).toMatchObject({ status: "not_run",
       reason: "its restating model unknown/changed isn't a model Tesota knows (provider/id)" });
   } finally {
     provideHost(shellHost());
@@ -198,7 +200,7 @@ test("the native question's saved answer reaches the mandatory gate and its rece
   await session.prompt("Choose the behavior and write it.");
   expect(session.outcome()).toBe("completed");
   expect(released).toBe(1);
-  expect(receiptOf(session)?.clarifications).toMatchObject([{ reply: 0, questions,
+  expect(receiptOf(session)?.requestContext.clarifications).toMatchObject([{ reply: 0, questions,
     answers: [{ selected: [0], text: "Keep this qualifier exactly." }] }]);
   expect(session.ledger()[0]?.inputs).toMatchObject([{ kind: "clarification",
     clarification: { answers: [{ selected: [0], text: "Keep this qualifier exactly." }] } }]);
@@ -241,7 +243,7 @@ test.each(["headless", "used repair", "fourth question"] as const)("an unresolve
   expect(readFileSync(join(cwd, "notes.txt"), "utf8")).toBe("hi");
   const receipt = receiptOf(session);
   expect(receipt).toBeDefined();
-  expect(receipt?.tests).toMatchObject([{ evidence: { outcome: "failed" } }]);
+  expect(receipt?.codeEvidence.tests).toMatchObject([{ evidence: { outcome: "failed" } }]);
   expect(JSON.stringify(receipt)).toContain("Which option should I use?");
   expect(receiptDetailLines(receipt!).join("\n")).toContain("Which option should I use?");
   expect(receiptDetailLines(receipt!).join("\n")).not.toContain("after its failure went back");
@@ -260,7 +262,7 @@ test("an unresolved question still verifies and remains named if an ordinary set
     mode: "print", extensions: [(pi) => { pi.on("agent_before_settle", () => { throw new Error("settlement failed"); }); }],
   });
   await session.prompt("Edit, then ask.");
-  expect(receiptOf(session)?.proofs).toMatchObject([{ evidence: { outcome: "passed" } }]);
+  expect(receiptOf(session)?.codeEvidence.proofs).toMatchObject([{ evidence: { outcome: "passed" } }]);
   expect(JSON.stringify(receiptOf(session))).toContain("Which option should I use?");
   expect(entriesOf(session.file).find((entry) => entry.type === "run_end")).toMatchObject({ outcome: "incomplete",
     reason: expect.stringContaining("Which option should I use?"),
@@ -351,8 +353,7 @@ describe("the gate on @tesota/core", () => {
     const session = gated(cwd, [{ tool: "write", args: { path: "new.txt", content: "new\n" } }, "done"], { mode });
     await session.prompt("write new.txt");
     expect(session.outcome()).toBe("completed");
-    expect(receiptOf(session)).toMatchObject({ inherited: ["src/rule.ts"], proofs: [],
-      changed: [{ path: "new.txt", blob: expect.any(String) }] });
+    expect(receiptOf(session)).toMatchObject({ inherited: ["src/rule.ts"], changed: [{ path: "new.txt", blob: expect.any(String) }], codeEvidence: { proofs: [] } });
   });
 
   test.each(["commit", "delete", "stash", "switch"] as const)("a %s is eligible on the engine", async (action) => {
@@ -391,8 +392,7 @@ describe("the gate on @tesota/core", () => {
     await session.dispose();
     const next = gated(cwd, [{ tool: "write", args: { path: "new.txt", content: "new\n" } }, "done"]);
     await next.prompt("add a note");
-    expect(receiptOf(next)).toMatchObject({ inherited: ["old.test.js"], exercises: [],
-      changed: [{ path: "new.txt", blob: expect.any(String) }], weakened: [{ path: "old.test.js", kind: "edited_test" }] });
+    expect(receiptOf(next)).toMatchObject({ inherited: ["old.test.js"], changed: [{ path: "new.txt", blob: expect.any(String) }], codeEvidence: { exercises: [] }, specificationEvidence: { weakened: [{ path: "old.test.js", kind: "edited_test" }] } });
   });
 
   test("limits stay unmeasured and do not write objects, refs or the index", async () => {
@@ -424,8 +424,7 @@ describe("the gate on @tesota/core", () => {
     await session.prompt("add note in b");
     expect(session.outcome()).toBe("completed");
     expect(receiptOf(session)?.units).toHaveLength(1);
-    expect(receiptOf(session)?.units?.[0]).toMatchObject({ folder: "b", inherited: ["src/rule.ts"], proofs: [],
-      changed: [{ path: "new.txt", blob: expect.any(String) }] });
+    expect(receiptOf(session)?.units?.[0]).toMatchObject({ folder: "b", inherited: ["src/rule.ts"], changed: [{ path: "new.txt", blob: expect.any(String) }], codeEvidence: { proofs: [] } });
   });
 
   test.each(["tui", "print"] as const)("a greeting and file exploration in %s mode leave external changes unverified", async (mode) => {
@@ -449,7 +448,7 @@ describe("the gate on @tesota/core", () => {
   test("a new request after a write does not inherit eligibility from the ledger refresh", async () => {
     const session = gated(repository(), [edit(changed), "done", "hi"]);
     await session.prompt("change f");
-    expect(receiptOf(session)?.proofs).toMatchObject([{ verdict: "proved" }]);
+    expect(receiptOf(session)?.codeEvidence.proofs).toMatchObject([{ verdict: "proved" }]);
     const receipts = () => entriesOf(session.file).filter((entry) => entryReceipt(entry) !== undefined);
     expect(receipts()).toHaveLength(1);
     await session.prompt("hi");
@@ -464,7 +463,7 @@ describe("the gate on @tesota/core", () => {
     const session = gated(repository(), [edit(changed), "done", "also done"], { extensions: [amendment] });
     await session.prompt("change f");
     expect(session.outcome()).toBe("completed");
-    expect(receiptOf(session)?.proofs).toMatchObject([{ path: "src/rule.ts", verdict: "proved" }]);
+    expect(receiptOf(session)?.codeEvidence.proofs).toMatchObject([{ path: "src/rule.ts", verdict: "proved" }]);
     expect(session.ledger()[0]?.amendments).toMatchObject([{ behavior: streamingBehavior, text: "keep the change" }]);
   });
 
@@ -485,7 +484,7 @@ describe("the gate on @tesota/core", () => {
     expect(session.messages().map((message) => message.customType ?? message.role)).toEqual(
       ["user", "assistant", "toolResult", "assistant", "tesota-gate", "assistant", "toolResult", "assistant"]);
     expect(session.outcome()).toBe("completed");
-    expect(receiptOf(session)?.proofs).toMatchObject([{ path: "src/rule.ts", verdict: "proved" }]);
+    expect(receiptOf(session)?.codeEvidence.proofs).toMatchObject([{ path: "src/rule.ts", verdict: "proved" }]);
   });
 
   test("a failure the agent repeats is reported, not sent back again, and the run completes with it in the receipt", async () => {
@@ -494,7 +493,7 @@ describe("the gate on @tesota/core", () => {
     await session.prompt("change f");
     expect(session.messages().filter((message) => message.customType === "tesota-gate")).toHaveLength(1);
     expect(session.outcome()).toBe("completed");
-    expect(receiptOf(session)?.proofs).toMatchObject([{ path: "src/rule.ts", verdict: "no_progress" }]);
+    expect(receiptOf(session)?.codeEvidence.proofs).toMatchObject([{ path: "src/rule.ts", verdict: "no_progress" }]);
   });
 
   test("with no shell the receipt stays outside the conversation, and in the shell's mode it is a message in it", async () => {
@@ -517,7 +516,7 @@ describe("the gate on @tesota/core", () => {
       { extensions: [silencer] });
     await session.prompt("change f");
     expect(session.messages().some((message) => message.customType === "tesota-gate")).toBe(true);
-    expect(receiptOf(session)?.proofs).toMatchObject([{ verdict: "proved" }]);
+    expect(receiptOf(session)?.codeEvidence.proofs).toMatchObject([{ verdict: "proved" }]);
   });
 
   test("two sessions in one checkout work in their own trees at once, and each receipt shows only its own change (#453)", async () => {
@@ -714,7 +713,7 @@ describe("a request that follows an unverified one (#627)", () => {
       scriptedReply(edit(contracted)), scriptedReply("done"),
       answers("record_informalizations", { informalizations: [{ function: 1, preconditions: "none",
         postcondition: "the result is between 0 and 1", strength: "strong" }] }, []),
-      answers("record_comparisons", { comparisons: [{ function: 1, verdict: "justified", explanation: "as asked" }] }, compared),
+      answers("record_comparisons", { comparisons: [{ function: 1, verdict: "no_mismatch_identified", explanation: "as asked" }] }, compared),
       answers("record_open_cases", listed, lister),
     ]);
     const models = createModels();
@@ -724,12 +723,13 @@ describe("a request that follows an unverified one (#627)", () => {
     expect(session.outcome()).toBe(first);
     await session.prompt("continue");
     expect(session.outcome()).toBe("completed");
-    expect(receiptOf(session)?.contracts).toMatchObject([{ name: "f", judgment: { verdict: "justified" } }]);
+    expect(receiptOf(session)?.requestReview.contractComparison.contracts).toMatchObject([{ name: "f", assessment: { verdict: "no_mismatch_identified" } }]);
     expect(compared).toHaveLength(1);
     expect(lister).toHaveLength(1);
-    expect(receiptOf(session)?.requestJudgments).toEqual([
-      { method: "claimcheck", folder: "", requests: [...first === "error" ? [{ run: 1, text: [asked] }] : [], { run: 2, text: ["continue"] }], omitted: [] },
-      { method: "open_cases", folder: "", requests: [...first === "error" ? [{ run: 1, text: [asked] }] : [], { run: 2, text: ["continue"] }], omitted: [] },
+    expect(receiptOf(session)?.requestReview.context).toEqual([
+      { method: "claimcheck", stage: "restatement", model: expect.any(String), folder: "", requests: [], omitted: [] },
+      { method: "claimcheck", stage: "comparison", model: expect.any(String), folder: "", requests: [...first === "error" ? [{ run: 1, text: [asked] }] : [], { run: 2, text: ["continue"] }], omitted: [] },
+      { method: "open_cases", stage: "open_cases", model: expect.any(String), folder: "", requests: [...first === "error" ? [{ run: 1, text: [asked] }] : [], { run: 2, text: ["continue"] }], omitted: [] },
     ]);
     // ClaimCheck compares the contracts with each request it was given, numbered; open cases lists them in the same order.
     const requests = compared[0]?.slice(compared[0].indexOf("## The user's requests, verbatim"), compared[0].indexOf("## Contracts"));
@@ -766,7 +766,7 @@ describe("a request that follows an unverified one (#627)", () => {
     expect(resumed.ledger()[1]?.unverifiedRequests.map(({ run }) => run)).toEqual([1]);
   });
 
-  test("a local session without judged-request metadata still opens and renders", async () => {
+  test("a local session with an old receipt opens without treating it as current evidence", async () => {
     const session = gated(repository(), [edit(changed), "done"]);
     await session.prompt("change f");
     open.splice(open.indexOf(session), 1);
@@ -774,13 +774,13 @@ describe("a request that follows an unverified one (#627)", () => {
     const lines = readFileSync(session.file, "utf8").trimEnd().split("\n").map((line) => {
       const entry = JSON.parse(line);
       const receipt = entryReceipt(entry);
-      if (isReceipt(receipt)) Reflect.deleteProperty(receipt, "requestJudgments");
+      if (isReceipt(receipt)) Reflect.set(receipt, "version", 2);
       return JSON.stringify(entry);
     });
     writeFileSync(session.file, `${lines.join("\n")}\n`);
     const resumed = openSession(session.file, scriptless());
     open.push(resumed);
-    expect(() => renderReceipt(receiptOf(resumed)!)).not.toThrow();
+    expect(receiptOf(resumed)).toBeUndefined();
     expect(resumed.outcome()).toBe("completed");
   });
 
@@ -822,7 +822,7 @@ describe("a run that ends before the gate verifies it", () => {
     const session = gated(repository(), [edit(changed), { error: "quota exhausted" }]);
     await session.prompt("change f");
     expect(session.outcome()).toBe("error");
-    expect(receiptOf(session)).toMatchObject({ stopped: "quota exhausted", proofs: [] });
+    expect(receiptOf(session)).toMatchObject({ stopped: "quota exhausted", codeEvidence: { proofs: [] } });
   });
 
   test("the operator's stop after a write does the same", async () => {
@@ -855,8 +855,7 @@ describe("a run that ends before the gate verifies it", () => {
     await session.abort();
     await run;
     expect(session.outcome()).toBe("aborted");
-    expect(receiptOf(session)).toMatchObject({ stopped: expect.stringMatching(/^the operator stopped the run while Tesota verified it; interrupted: /u),
-      tests: [] });
+    expect(receiptOf(session)).toMatchObject({ stopped: expect.stringMatching(/^the operator stopped the run while Tesota verified it; interrupted: /u), codeEvidence: { tests: [] } });
     // Stopped processes are gone within moments, not the minute they wait: Linux reaps a killed orphan on its own time.
     const alive = (pid: number): boolean => { try { process.kill(pid, 0); return true; } catch { return false; } };
     for (let waited = 0; waited < 10_000 && started.some(alive); waited += 100) await new Promise((resolve) => setTimeout(resolve, 100));
@@ -878,9 +877,8 @@ describe("a run that ends before the gate verifies it", () => {
     await session.prompt("change f and add a note");
     expect(session.outcome()).toBe("aborted");
     const receipt = receiptOf(session)!;
-    expect(receipt).toMatchObject({ stopped: "the operator stopped the run", proofs: [], tests: [],
-      changed: [{ path: "gone.txt", blob: null }, { path: "new.txt", blob: git(cwd, "hash-object", "new.txt") },
-        { path: "src/rule.ts", blob: git(cwd, "hash-object", "src/rule.ts") }] });
+    expect(receipt).toMatchObject({ stopped: "the operator stopped the run", changed: [{ path: "gone.txt", blob: null }, { path: "new.txt", blob: git(cwd, "hash-object", "new.txt") },
+        { path: "src/rule.ts", blob: git(cwd, "hash-object", "src/rule.ts") }], codeEvidence: { proofs: [], tests: [] } });
     expect(receiptStanding(receipt)).toBe("incomplete");
     const text = renderReceipt(receipt);
     for (const path of ["gone.txt (deleted)", "new.txt", "src/rule.ts"]) expect(text).toContain(path);
@@ -910,7 +908,7 @@ describe("a run that ends before the gate verifies it", () => {
     expect(receipt.stopped).toBeDefined();
     expect(receiptStanding(receipt)).toBe("incomplete");
     expect(receipt.changed).toEqual([{ path: "new.txt", blob: git(cwd, "hash-object", "new.txt") }]);
-    expect(receipt.clarifications?.map(({ answers }) => answers[0]?.text))
+    expect(receipt.requestContext.clarifications?.map(({ answers }) => answers[0]?.text))
       .toEqual(first === "answer" ? ["Committed answer."] : undefined);
     expect(JSON.stringify(entriesOf(session.file))).not.toContain("Late draft.");
   });
@@ -943,8 +941,7 @@ describe("a run that ends before the gate verifies it", () => {
     expect(receipts).toHaveLength(1);
     if (when === "after its receipt") return;
     const [receipt] = receipts;
-    expect(receipt).toMatchObject({ changed: "unreadable", proofs: [], tests: [],
-      stopped: expect.stringContaining("change attribution is unknown") });
+    expect(receipt).toMatchObject({ changed: "unreadable", stopped: expect.stringContaining("change attribution is unknown"), codeEvidence: { proofs: [], tests: [] } });
     expect(receiptStanding(receipt!)).toBe("incomplete");
     expect(JSON.stringify(receipt)).not.toContain("later.txt");
   });
@@ -965,7 +962,7 @@ describe("a run that ends before the gate verifies it", () => {
     await new Promise((resolve) => setTimeout(resolve, 1000));
     expect(readFileSync(counted, "utf8")).toBe("ran\n");
     const receipt = receiptOf(session)!;
-    expect(receipt.tests).toEqual([]);
+    expect(receipt.codeEvidence.tests).toEqual([]);
     expect(receipt.stopped).toMatch(/^the operator stopped the run while Tesota verified it; interrupted: project check .*test/u);
     expect(receipt.changed).toEqual([{ path: "notes.md", blob: git(cwd, "hash-object", "notes.md") }]);
     expect(receiptStanding(receipt)).toBe("incomplete");

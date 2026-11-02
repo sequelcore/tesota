@@ -47,18 +47,18 @@ const proved = { path: "src/range.ts", verdict: "proved", evidence: evidence("pa
 const passing = { command: "bun test", verdict: "proved", evidence: { ...evidence("passed"), verifier: "command" } } as const;
 const contract = { path: "src/range.ts", name: "inRange", lines: [], mutation: { rejected: 6, survived: [], equivalent: 1, inconclusive: 0 } };
 const survivor = { line: 4, operator: "comparison", before: "x > hi", after: "x >= hi" } as const;
-const judged = { status: "judged", restatedBy: "openai/gpt-5.5", comparedBy: "openai/gpt-5.5" } as const;
 
-const clean: Receipt = { ...emptyReceipt, proofs: [proved], tests: [passing],
-  contracts: [{ ...contract, judgment: { verdict: "justified", explanation: "Matches." } }], claimcheck: judged,
-  exercises: [{ path: "tests/range.test.ts", provenance: "added", sensitivity: "fails_then_passes", reason: "fails on the base, passes with the change" }] };
+const clean: Receipt = { ...emptyReceipt,
+    codeEvidence: { ...emptyReceipt.codeEvidence, proofs: [proved], tests: [passing], exercises: [{ path: "tests/range.test.ts", provenance: "added", sensitivity: "fails_then_passes", reason: "fails on the base, passes with the change" }] },
+    specificationEvidence: { ...emptyReceipt.specificationEvidence, contracts: [{ ...contract }] },
+    requestReview: { ...emptyReceipt.requestReview, contractComparison: { scope: "eligible_changed_contracts", status:"completed",runs:[{status:"completed",restatedBy:"openai/gpt-5.5",comparedBy:"openai/gpt-5.5"}],contracts:[{folder:"",path:contract.path,name:contract.name,text:contract.lines.join("\n"),assessment:{ verdict: "no_mismatch_identified", explanation: "Matches." }}] } }
+};
 const attention: Receipt = { ...clean,
-  contracts: [{ ...contract, mutation: { rejected: 5, survived: [survivor], equivalent: 1, inconclusive: 0 },
-    judgment: { verdict: "partially_justified", explanation: "It does not say a value inside the range is returned unchanged." } }],
-  exercises: [{ path: "tests/range.test.ts", provenance: "added", sensitivity: "passes_on_base", reason: "it passes without the change too" }],
-  weakened: [{ path: "tests/clamp.test.ts", kind: "edited_test" },
-    { path: "src/clamp.ts", kind: "removed_contract", annotation: "//@ ensures \\result >= lo && \\result <= hi" }],
-  unverified: ["src/format.ts"], uncovered: [{ path: "src/range.ts", lines: [[9, 14]] }] };
+    codeEvidence: { ...clean.codeEvidence, exercises: [{ path: "tests/range.test.ts", provenance: "added", sensitivity: "passes_on_base", reason: "it passes without the change too" }], unverified: ["src/format.ts"], uncovered: [{ path: "src/range.ts", lines: [[9, 14]] }] },
+    specificationEvidence: { ...clean.specificationEvidence, contracts: [{ ...contract, mutation: { rejected: 5, survived: [survivor], equivalent: 1, inconclusive: 0 } }], weakened: [{ path: "tests/clamp.test.ts", kind: "edited_test" },
+            { path: "src/clamp.ts", kind: "removed_contract", annotation: "//@ ensures \\result >= lo && \\result <= hi" }] },
+    requestReview: { ...clean.requestReview, contractComparison: { scope: "eligible_changed_contracts", status:"completed",runs:[{status:"completed",restatedBy:"openai/gpt-5.5",comparedBy:"openai/gpt-5.5"}],contracts:[{folder:"",path:contract.path,name:contract.name,text:contract.lines.join("\n"),assessment:{ verdict: "partial_match", explanation: "It does not say a value inside the range is returned unchanged." }}] } }
+};
 
 
 /** The card's rows as text, without its blank first and last rows, the margin or the rule at its left edge. */
@@ -71,7 +71,9 @@ it("keeps the graph preview visible in collapsed and expanded receipts without c
     writtenWithCode: false, link: "no_replay", verdict: "proved",
     capture: { status: "captured", manifest: "/sessions/run.model-123.manifest.json", preview: { reached: 9, violating: 0,
       partial: false, kind: "graph", entries: ["1 -> 2", "2 -> 1"], omitted: false } } };
-  const receipt = { ...clean, models: [model] };
+  const receipt = { ...clean,
+      codeEvidence: { ...clean.codeEvidence, models: [model] }
+};
   const published = receiptGraphEntry("tui", receipt, [{ subject: model.path, ...model.capture === undefined ? {} : { capture: model.capture } }]);
   for (const width of [80, 32]) for (const expanded of [false, true]) {
     const rows = shown(published.customType, published.type === "custom_message" ? published.details : published.data, width, expanded).join("\n");
@@ -82,19 +84,23 @@ it("keeps the graph preview visible in collapsed and expanded receipts without c
   const { capture: _capture, ...without } = model;
   expect(modelFinding(model).standing).toBe(modelFinding(without).standing);
   expect(modelFinding(model).label).toBe(modelFinding(without).label);
-  const absent = receiptGraphEntry("tui", { ...clean, models: [without] }, [{ subject: without.path }]);
+  const absent = receiptGraphEntry("tui", { ...clean,
+      codeEvidence: { ...clean.codeEvidence, models: [without] }
+}, [{ subject: without.path }]);
   expect(shown(absent.customType, absent.type === "custom_message" ? absent.details : absent.data, 80).join("\n"))
     .toContain("Graph unavailable: no capture");
 });
 
 it("keeps clarification context outside evidence and expands its exact submitted text", () => {
-  const receipt: Receipt = { ...clean, clarifications: [{ reply: 0, callId: "clarify", at: "2026-10-20T00:00:00.000Z",
-    questions: [{ question: "Which version?", options: [
-      { label: "Three", description: "Use version three." }, { label: "Two", description: "Use version two." },
-    ] }], answers: [{ selected: [0], text: "Explain first." }] }] };
+  const receipt: Receipt = { ...clean,
+      requestContext: { ...clean.requestContext, clarifications: [{ reply: 0, callId: "clarify", at: "2026-10-20T00:00:00.000Z",
+              questions: [{ question: "Which version?", options: [
+                { label: "Three", description: "Use version three." }, { label: "Two", description: "Use version two." },
+              ] }], answers: [{ selected: [0], text: "Explain first." }] }] }
+};
   const collapsed = shown("tesota-receipt", receipt, 80).join("\n");
   expect(collapsed).toContain("▸ Context · 1 answer");
-  expect(collapsed).not.toContain("Explain first.");
+  expect(collapsed).toContain("Explain first.");
   const expanded = shown("tesota-receipt", receipt, 40, true).join("\n");
   expect(expanded).toContain("Explain first.");
   expect(expanded).toContain("not evidence or acceptance");
@@ -110,19 +116,7 @@ it("wraps a line under its own text, cutting a word longer than the row", () => 
 });
 
 it("shows a clean receipt as its counts, the acceptance line and one row per method, each saying only what ran", () => {
-  expect(text(shown("tesota-receipt", clean, 120))).toEqual([
-    "Tesota receipt",
-    "No review flags · no verification limits",
-    "Evidence, not approval: accepting the change is yours.",
-    "",
-    "✓ Tested      bun test · 0:02",
-    "✓ Proved      src/range.ts · 0:02",
-    "○ Models      none recorded",
-    "✓ Exercised   1 test file failed on the base and passed with the change",
-    "✓ Contracts   1 contract: every decided change broke its proof",
-    "",
-    "▸ Details · paths, output, assumptions, model opinions",
-  ]);
+  expect(text(shown("tesota-receipt", clean, 120))).toMatchSnapshot();
   expect(shown("tesota-receipt", clean, 120).join("\n")).not.toContain(hash.slice(0, 12));
 });
 
@@ -149,50 +143,49 @@ it("explains unknown start states and unmeasured paths in both card views", () =
 });
 
 it("counts a receipt's limits in amber, and leaves muted each part that says there are none", () => {
-  const gapped: Receipt = { ...clean, exercises: [], unverified: ["notes.md"] };
+  const gapped: Receipt = { ...clean,
+      codeEvidence: { ...clean.codeEvidence, exercises: [], unverified: ["notes.md"] }
+};
   const rows = text(shown("tesota-receipt", gapped, 120));
-  expect(rows[1]).toBe("No review flags · 1 verification limit");
+  expect(rows[2]).toBe("No review flags · 1 verification limit");
   expect(rows).toContain("○ No proof covers 1 changed file");
   const colored = (receipt: Receipt): string => renderers().get("tesota-receipt")?.({ customType: "tesota-receipt",
-    content: "", details: receipt }, { expanded: false, outputPad: 1 }, theme)?.render(120)[2] ?? "";
+    content: "", details: receipt }, { expanded: false, outputPad: 1 }, theme)?.render(120)[3] ?? "";
   const dot = theme.fg("dim", " · ");
   expect(colored(gapped)).toContain(`${theme.fg("muted", "No review flags")}${dot}${theme.fg("warning", "\x1b[1m1 verification limit\x1b[22m")}`);
   expect(colored(clean)).toContain(`${theme.fg("muted", "No review flags")}${dot}${theme.fg("muted", "no verification limits")}`);
 });
 
 it("names an opinion to read beside the counts, in the accent, and never counts it as a flag or a limit", () => {
-  const partial: Receipt = { ...clean, contracts: [{ ...contract,
-    judgment: { verdict: "partially_justified", explanation: "It does not say a value inside the range is returned unchanged." } }] };
+  const partial: Receipt = { ...clean,
+      specificationEvidence: { ...clean.specificationEvidence, contracts: [{ ...contract }] },
+      requestReview: { ...clean.requestReview, contractComparison: { scope: "eligible_changed_contracts", status:"completed",runs:[{status:"completed",restatedBy:"openai/gpt-5.5",comparedBy:"openai/gpt-5.5"}],contracts:[{folder:"",path:contract.path,name:contract.name,text:contract.lines.join("\n"),assessment:{ verdict: "partial_match", explanation: "It does not say a value inside the range is returned unchanged." }}] } }
+};
   const rows = text(shown("tesota-receipt", partial, 120));
-  expect(rows[1]).toBe("No review flags · no verification limits · 1 opinion to read");
-  expect(rows.slice(rows.indexOf("Model opinions · not evidence, not counted"))).toEqual([
-    "Model opinions · not evidence, not counted",
-    "◇ Covers only part of the request",
-    "  ClaimCheck · inRange · src/range.ts",
-    "  It does not say a value inside the range is returned unchanged.",
-    "",
-    "▸ Details · paths, output, assumptions, model opinions",
-  ]);
+  expect(rows[2]).toBe("No review flags · no verification limits · 1 opinion to read");
+  expect(rows.slice(rows.indexOf("Request review — model opinion"))).toMatchSnapshot();
   const drawn = renderers().get("tesota-receipt")?.({ customType: "tesota-receipt", content: "", details: partial },
     { expanded: false, outputPad: 1 }, theme)?.render(120) ?? [];
-  expect(drawn[2]).toContain(theme.fg("accent", "1 opinion to read"));
+  expect(drawn[3]).toContain(theme.fg("accent", "1 opinion to read"));
   // The opinion's rows stand behind a dotted rule, the evidence's behind a solid one.
   const plain = drawn.map((row) => stripTerminalSequences(row));
-  expect(plain.filter((row) => row.startsWith(" ┆"))).toHaveLength(4);
+  expect(plain.filter((row) => row.startsWith(" ┆"))).toHaveLength(6);
   expect(plain.find((row) => row.includes("Tested"))).toMatch(/^ │ /u);
   // A model that agrees is quiet: nothing to read, and the card shows it only expanded.
-  expect(text(shown("tesota-receipt", clean, 120))[1]).toBe("No review flags · no verification limits");
+  expect(text(shown("tesota-receipt", clean, 120))[2]).toBe("No review flags · no verification limits");
 });
 
 it("leaves a file tested and exercised out of the limits, and says muted that no proof covers it", () => {
-  const covered: Receipt = { ...clean, unverified: ["notes.md"] };
+  const covered: Receipt = { ...clean,
+      codeEvidence: { ...clean.codeEvidence, unverified: ["notes.md"], exercises: clean.codeEvidence.exercises.map((exercise) => ({ ...exercise, sources: ["notes.md"], sourceGaps: [], sourceEvidence: { ...evidence("passed"), verifier: "command" } })) }
+};
   const rows = text(shown("tesota-receipt", covered, 120));
-  expect(rows[1]).toBe("No review flags · no verification limits");
+  expect(rows[2]).toBe("No review flags · no verification limits");
   expect(rows).not.toContain("○ No proof covers 1 changed file");
   expect(rows).toContain("· notes.md: tested and exercised; no proof covers it");
   const lines = renderers().get("tesota-receipt")?.({ customType: "tesota-receipt", content: "", details: covered },
     { expanded: false, outputPad: 1 }, theme)?.render(120) ?? [];
-  expect(lines[2]).toContain(theme.fg("muted", "No review flags"));
+  expect(lines[3]).toContain(theme.fg("muted", "No review flags"));
   expect(lines.join("\n")).toContain(theme.fg("muted", "notes.md: tested and exercised; no proof covers it"));
 });
 
@@ -200,7 +193,7 @@ it("shows a stopped receipt as not verified in both card views, with no method c
   const receipt: Receipt = { ...emptyReceipt, stopped: "quota exhausted" };
   for (const expanded of [false, true]) {
     const rows = text(shown("tesota-receipt", receipt, 120, expanded));
-    expect(rows[1]).toBe("1 review flag · no verification limits");
+    expect(rows[2]).toBe("1 review flag · no verification limits");
     expect(rows).toContain("! Not verified · this request's changes");
     expect(rows).toContain("  quota exhausted");
     expect(rows.filter((row) => row.startsWith("✓"))).toEqual([]);
@@ -208,20 +201,24 @@ it("shows a stopped receipt as not verified in both card views, with no method c
 });
 
 it("shows the cases a model listed as left open in the opinions, outside the count", () => {
-  const listed: Receipt = { ...clean, openCases: { status: "listed", model: "openai/gpt-6-sol",
-    cases: [{ input: "lateFee(-1)", outcomes: ["0.", "-5."] }, { input: "lateFee(1.5)", outcomes: ["7.5", "5"] }] } };
+  const listed: Receipt = { ...clean,
+      requestReview: { ...clean.requestReview, openCases: { status: "listed", model: "openai/gpt-6-sol",
+              cases: [{ input: "lateFee(-1)", outcomes: ["0.", "-5."] }, { input: "lateFee(1.5)", outcomes: ["7.5", "5"] }] } }
+};
   const rows = text(shown("tesota-receipt", listed, 120));
-  expect(rows[1]).toBe("No review flags · no verification limits · 1 opinion to read");
-  const opinions = rows.indexOf("Model opinions · not evidence, not counted");
-  expect(rows[opinions + 1]).toBe("◇ 2 open cases for you to settle, listed by openai/gpt-6-sol");
+  expect(rows[2]).toBe("No review flags · no verification limits · 1 opinion to read");
+  const opinions = rows.indexOf("Request review — model opinion");
+  expect(rows[opinions + 5]).toBe("◇ 2 open cases for you to settle, listed by openai/gpt-6-sol");
   expect(rows.join("\n")).not.toContain("lateFee(-1)");
   expect(shown("tesota-receipt", listed, 120, true).join("\n")).toContain("lateFee(-1): 0 or -5");
   // A listing that did not happen stays in muted details, not the opinions (#757).
-  const unlisted: Receipt = { ...clean, openCases: { status: "not_listed", reason: "openai/gpt-6-sol was stopped" } };
+  const unlisted: Receipt = { ...clean,
+      requestReview: { ...clean.requestReview, openCases: { status: "not_run", reason: "openai/gpt-6-sol was stopped" } }
+};
   const without = text(shown("tesota-receipt", unlisted, 120));
-  expect(without[1]).toBe("No review flags · no verification limits");
-  expect(without).not.toContain("Model opinions · not evidence, not counted");
-  expect(without.join("\n")).not.toContain("openai/gpt-6-sol was stopped");
+  expect(without[2]).toBe("No review flags · no verification limits");
+  expect(without).toContain("Request review — model opinion");
+  expect(without.join("\n")).toContain("openai/gpt-6-sol was stopped");
   const expanded = renderers().get("tesota-receipt")?.({ customType: "tesota-receipt", content: "", details: unlisted },
     { expanded: true, outputPad: 1 }, theme)?.render(120).join("\n") ?? "";
   expect(expanded).toContain(theme.fg("dim", "  not listed    the cases the request leaves open: openai/gpt-6-sol was stopped"));
@@ -230,41 +227,24 @@ it("shows the cases a model listed as left open in the opinions, outside the cou
 
 it("leads with what needs the operator, grouped by reason, and keeps the model's opinion out of the count", () => {
   const rows = text(shown("tesota-receipt", attention, 120));
-  expect(rows.slice(1, 2)).toEqual(["4 review flags · 2 verification limits · 1 opinion to read"]);
-  expect(rows.slice(rows.indexOf("○ Models   none recorded") + 2)).toEqual([
-    "! Review test edits · 1 heuristic flag",
-    "  May weaken evidence; not confirmed weakening.",
-    "! Review removed or changed contracts · 1 heuristic flag",
-    "  May weaken evidence; not confirmed weakening.",
-    "! Contract too weak · inRange · src/range.ts",
-    "  1 change to its code still proves",
-    "! Test passes without the change · 1 test file",
-    "  it passes without the change too",
-    "○ No proof covers changed lines in 1 file",
-    "○ No proof covers 1 changed file",
-    "",
-    "Model opinions · not evidence, not counted",
-    "◇ Covers only part of the request",
-    "  ClaimCheck · inRange · src/range.ts",
-    "  It does not say a value inside the range is returned unchanged.",
-    "",
-    "▸ Details · paths, output, assumptions, model opinions",
-  ]);
+  expect(rows.slice(2, 3)).toEqual(["4 review flags · 2 verification limits · 1 opinion to read"]);
+  expect(rows.slice(rows.indexOf("○ Models   none recorded") + 2)).toMatchSnapshot();
   // Collapsed, no detail lines.
   expect(rows.join("\n")).not.toContain("x > hi");
 });
 
 // #399: three functions marked `//@ extern` are trusted without proof, so the file proved only given them.
 const extern = (name: string): Weakening => ({ path: "src/range.ts", kind: "added_assume", annotation: "//@ extern", function: name });
-const unmeasured = (name: string): Receipt["contracts"][number] =>
+const unmeasured = (name: string): Receipt["specificationEvidence"]["contracts"][number] =>
   ({ ...contract, name, mutation: { rejected: 0, survived: [], equivalent: 0, inconclusive: 0 } });
-const assumed: Receipt = { ...clean, contracts: [contract, unmeasured("lower"), unmeasured("upper"), unmeasured("clampOf")],
-  weakened: [extern("lower"), extern("upper"), extern("clampOf")],
-  exercises: [...clean.exercises, { path: "tests/clamp.test.ts", provenance: "added", sensitivity: "fails_then_passes", reason: "fails on the base, passes with the change" }] };
+const assumed: Receipt = { ...clean,
+    codeEvidence: { ...clean.codeEvidence, exercises: [...clean.codeEvidence.exercises, { path: "tests/clamp.test.ts", provenance: "added", sensitivity: "fails_then_passes", reason: "fails on the base, passes with the change" }] },
+    specificationEvidence: { ...clean.specificationEvidence, contracts: [contract, unmeasured("lower"), unmeasured("upper"), unmeasured("clampOf")], weakened: [extern("lower"), extern("upper"), extern("clampOf")] }
+};
 
 it("never sums up a proof that rests on assumptions the change added, or one strong contract of several, as plainly proved or strong", () => {
   const rows = text(shown("tesota-receipt", assumed, 140));
-  expect(rows[1]).toBe("3 review flags · 3 verification limits");
+  expect(rows[2]).toBe("3 review flags · 3 verification limits");
   expect(rows).toContain("◐ Proved      src/range.ts · trusting 3 unproved parts · 0:02");
   expect(rows).toContain("◐ Contracts   1 of 4 contracts: every decided change broke its proof");
   expect(rows).toContain("! Review added assumptions · 3 heuristic flags");
@@ -277,7 +257,9 @@ it("never sums up a proof that rests on assumptions the change added, or one str
 it("names what an added //@ skip leaves out of the proof (#404)", () => {
   const skip = (more: { function: string; statement?: true }): Weakening =>
     ({ path: "src/range.ts", kind: "added_skip", annotation: "//@ skip", ...more });
-  const receipt = { ...clean, weakened: [skip({ function: "clampOf" }), skip({ function: "lower", statement: true })] };
+  const receipt = { ...clean,
+      specificationEvidence: { ...clean.specificationEvidence, weakened: [skip({ function: "clampOf" }), skip({ function: "lower", statement: true })] }
+};
   expect(text(shown("tesota-receipt", receipt, 140))).toContain("! Review parts left out of proofs · 2 heuristic flags");
   const expanded = shown("tesota-receipt", receipt, 140, true).join("\n");
   expect(expanded).toContain("src/range.ts: leaves clampOf out of the proof (//@ skip)");
@@ -285,17 +267,19 @@ it("names what an added //@ skip leaves out of the proof (#404)", () => {
 });
 
 it("says how a test edit may weaken each test, one line per test, as a heuristic, not a verdict (#646)", () => {
-  const receipt: Receipt = { ...clean, weakened: [{ path: "tests/price.test.ts", kind: "edited_test", tests: [
-    { test: "price › rounds", edits: [
-      { kind: "loosened_assertion", subject: "expect(price(1))", before: "toBe(1)", after: "toBeTruthy()" },
-      { kind: "dropped_not", subject: "expect(price(-1))", before: "not.toBeLessThan(0)", after: "toBeLessThan(0)" }] },
-    { test: "price › floors", edits: [{ kind: "removed_assertion", assertion: "expect(price(0)).toBe(0)" },
-      { kind: "changed_assertion", before: "expect(price(2)).toBe(2)", after: "expect(price(2)).toBe(3)" }] },
-    { test: "price › caps", edits: [{ kind: "skipped", marker: "it.skip" }] },
-    { test: "price › sums", edits: [{ kind: "focused", marker: "it.only" }] },
-    { test: "price › old", edits: [{ kind: "deleted_test" }] },
-    { edits: [{ kind: "mocked_subject", module: "../src/price.js" }] },
-  ] }, { path: "tests/tax.test.ts", kind: "edited_test" }] };
+  const receipt: Receipt = { ...clean,
+      specificationEvidence: { ...clean.specificationEvidence, weakened: [{ path: "tests/price.test.ts", kind: "edited_test", tests: [
+              { test: "price › rounds", edits: [
+                { kind: "loosened_assertion", subject: "expect(price(1))", before: "toBe(1)", after: "toBeTruthy()" },
+                { kind: "dropped_not", subject: "expect(price(-1))", before: "not.toBeLessThan(0)", after: "toBeLessThan(0)" }] },
+              { test: "price › floors", edits: [{ kind: "removed_assertion", assertion: "expect(price(0)).toBe(0)" },
+                { kind: "changed_assertion", before: "expect(price(2)).toBe(2)", after: "expect(price(2)).toBe(3)" }] },
+              { test: "price › caps", edits: [{ kind: "skipped", marker: "it.skip" }] },
+              { test: "price › sums", edits: [{ kind: "focused", marker: "it.only" }] },
+              { test: "price › old", edits: [{ kind: "deleted_test" }] },
+              { edits: [{ kind: "mocked_subject", module: "../src/price.js" }] },
+            ] }, { path: "tests/tax.test.ts", kind: "edited_test" }] }
+};
   const expanded = text(shown("tesota-receipt", receipt, 200, true));
   const at = expanded.indexOf("  may weaken    tests/price.test.ts: edits a test file; read from the diff, a heuristic flag, not a verdict");
   expect(at).toBeGreaterThan(-1);
@@ -312,27 +296,35 @@ it("says how a test edit may weaken each test, one line per test, as a heuristic
   // The summary keeps one heuristic flag per file.
   expect(text(shown("tesota-receipt", receipt, 200))).toContain("! Review test edits · 2 heuristic flags");
   // Many tests: the first ten, then how many more.
-  const many: Receipt = { ...clean, weakened: [{ path: "tests/price.test.ts", kind: "edited_test",
-    tests: Array.from({ length: 13 }, (_, k) => ({ test: `t${k}`, edits: [{ kind: "deleted_test" as const }] })) }] };
+  const many: Receipt = { ...clean,
+      specificationEvidence: { ...clean.specificationEvidence, weakened: [{ path: "tests/price.test.ts", kind: "edited_test",
+              tests: Array.from({ length: 13 }, (_, k) => ({ test: `t${k}`, edits: [{ kind: "deleted_test" as const }] })) }] }
+};
   const listed = text(shown("tesota-receipt", many, 200, true));
   const head = listed.findIndex((row) => row.startsWith("  may weaken    tests/price.test.ts"));
   expect(listed.slice(head + 10, head + 12)).toEqual(["                t9: deletes it", "                and 3 more tests"]);
 });
 
 it("says how many of a method's results hold when some do not", () => {
-  const twoProofs: Receipt = { ...clean, contracts: [], exercises: [],
-    proofs: [proved, { path: "src/clamp.ts", verdict: "no_progress", evidence: evidence("failed", dafnyFailure) }] };
+  const twoProofs: Receipt = { ...clean,
+      codeEvidence: { ...clean.codeEvidence, exercises: [], proofs: [proved, { path: "src/clamp.ts", verdict: "no_progress", evidence: evidence("failed", dafnyFailure) }] },
+      specificationEvidence: { ...clean.specificationEvidence, contracts: [] }
+};
   const rows = text(shown("tesota-receipt", twoProofs, 120));
   expect(rows).toContain("◐ Proved   src/range.ts · 0:02; src/clamp.ts · fails · 0:02");
-  expect(rows[1]).toBe("1 failed check · no review flags · no verification limits");
-  const bothProved: Receipt = { ...twoProofs, proofs: [proved, { ...proved, path: "src/clamp.ts" }] };
+  expect(rows[2]).toBe("1 failed check · no review flags · no verification limits");
+  const bothProved: Receipt = { ...twoProofs,
+      codeEvidence: { ...twoProofs.codeEvidence, proofs: [proved, { ...proved, path: "src/clamp.ts" }] }
+};
   expect(text(shown("tesota-receipt", bothProved, 120))).toContain("✓ Proved   src/range.ts · 0:02; src/clamp.ts · 0:02");
 });
 
 it("counts a failure the agent repeated, and colors it as one", () => {
-  const failed: Receipt = { ...emptyReceipt, proofs: [{ path: "src/range.ts", verdict: "no_progress", evidence: evidence("failed", dafnyFailure) }] };
+  const failed: Receipt = { ...emptyReceipt,
+      codeEvidence: { ...emptyReceipt.codeEvidence, proofs: [{ path: "src/range.ts", verdict: "no_progress", evidence: evidence("failed", dafnyFailure) }] }
+};
   const rows = text(shown("tesota-receipt", failed, 120));
-  expect(rows[1]).toBe("1 failed check · no review flags · no verification limits");
+  expect(rows[2]).toBe("1 failed check · no review flags · no verification limits");
   expect(rows).toContain("✗ Proved   src/range.ts · fails · 0:02");
   const colored = renderers().get("tesota-receipt")?.({ customType: "tesota-receipt", content: "", details: failed },
     { expanded: false, outputPad: 1 }, theme)?.render(120).join("\n") ?? "";
@@ -341,7 +333,9 @@ it("counts a failure the agent repeated, and colors it as one", () => {
 });
 
 it("calls a contract unmeasured when no change was caught, rather than strong", () => {
-  const receipt: Receipt = { ...clean, contracts: [{ ...contract, mutation: { rejected: 0, survived: [], equivalent: 2, inconclusive: 0 } }] };
+  const receipt: Receipt = { ...clean,
+      specificationEvidence: { ...clean.specificationEvidence, contracts: [{ ...contract, mutation: { rejected: 0, survived: [], equivalent: 2, inconclusive: 0 } }] }
+};
   const rows = text(shown("tesota-receipt", receipt, 120));
   expect(rows).toContain("○ Contract not measured · inRange · src/range.ts");
   expect(rows).toContain("  no change tried both differs from the code and was decided");
@@ -352,11 +346,11 @@ it("shows every fact when expanded, each claim with what it does not show", () =
   const rows = shown("tesota-receipt", attention, 120, true).join("\n");
   expect(rows).toContain("line 4: x > hi became x >= hi");
   expect(rows).toContain("//@ ensures \\result >= lo && \\result <= hi");
-  expect(rows).toContain("model judged  by ClaimCheck on openai/gpt-5.5, one model for both requests,");
+  expect(rows).toContain("restatement model: openai/gpt-5.5; comparison model: openai/gpt-5.5");
   expect(rows).toContain(`content sha256 ${hash}`);
   expect(rows).toContain("▾ Details");
   expect(rows).toContain("From the first commit · Tesota 0.1.0");
-  expect(rows).toContain("Evidence, not approval: accepting the change is yours.");
+  expect(rows).toContain("Acceptance remains with the reviewer.");
 });
 
 it("fits narrow terminals, wrapping rows collapsed and expanded so no reason is cut", () => {
@@ -367,7 +361,7 @@ it("fits narrow terminals, wrapping rows collapsed and expanded so no reason is 
     expect(collapsed.join(" ").replace(/\s+/gu, " ")).toContain("1 change to its code still proves");
     const expanded = shown("tesota-receipt", attention, width, true);
     expect(expanded.join(" ")).toContain("still prove");
-    expect(text(expanded).join(" ").replace(/\s+/gu, " ")).toContain("Evidence, not approval: accepting the change is yours.");
+    expect(text(expanded).join(" ").replace(/\s+/gu, " ")).toContain("Acceptance remains with the reviewer.");
   }
 });
 

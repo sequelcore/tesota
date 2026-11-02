@@ -1,391 +1,365 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`receipts beyond the four > as a pull request's Markdown, bound to its commit, with the receipt fenced so nothing in it renders 1`] = `
-"## Tesota receipt
-
-Commit \`6734e933830e\`, changes from \`700f9a9d4a0b\`; Tesota 0.1.0-alpha.1, model \`openai/gpt-6.1-sol\`; session \`session-584\`, 2026-10-22T22:13:49.609Z to 2026-10-22T22:50:14.441Z.
-
-The receipt records observed differences. Its attribution limits and measurements are stated below; comparisons keep the request's admission base.
-
-\`\`\`text
-Tesota receipt
-2 review flags · 7 verification limits
-Evidence, not approval: accepting the change is yours.
-
-✓ Tested   bun run check · 5:58
-○ Proved   none recorded
-○ Models   none recorded
-
-! Review test edits · 2 heuristic flags
-  May weaken evidence; not confirmed weakening.
-○ Change sensitivity unknown · 3 test files
-  Base fails too; no per-test failure report.
-○ Attribution unresolved
-  history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish request attribution. Changes are compared with the request's start, not attributed to this request
-○ No proof covers 3 changed files
-
-Details
-  passed        bun run check
-  not checked   packages/core/tests/interface.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
-  not checked   tests/welcome-header.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
-  not checked   tests/working-orb.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
-  may weaken    packages/core/tests/interface.test.ts: edits a test file
-  may weaken    tests/welcome-header.test.ts: edits a test file
-  not proved    NOTICE: no proof covers it; the project's commands pass with it
-  not proved    src/tesota.ts: no proof covers it; the project's commands pass with it
-  not proved    src/welcome-header.ts: no proof covers it; the project's commands pass with it
-  changed lines implementation +99 -18 · tests +75 -25 · other +7 -0
-  model listed  no case the request leaves open, by openai/gpt-6-sol; a model's opinion, not a check
-From 700f9a9d4a0b · Tesota 0.1.0-alpha.1 · openai/gpt-6.1-sol
-
-Request clarification (operator input, not evidence or acceptance)
-Agent question: Issue #584 requires real-terminal dark/light screenshots or a recording in the PR. Can you provide that visual evidence? I can run automated terminal tests here, but cannot inspect a real terminal window.
-Operator selected: Open PR with gap noted — Open the PR with real-terminal visual acceptance explicitly pending.
-
-Subagents (each one's receipt covers its own branch, not this change)
-- Review orb acceptance and wiring: completed, read only · openai/gpt-5.6-sol
-\`\`\`
-
-This is check evidence, not a reviewer's acceptance."
-`;
-
-exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a card > collapsed 40 1`] = `
+exports[`current multi-unit receipt > fits 40 columns in both themes without cutting reasons > collapsed 40 1`] = `
 "
 Tesota receipt
-3 review flags · 7 verification
-limits
-Evidence, not approval: accepting the
-change is yours.
+Evidence standing: incomplete
+1 review flag · 2 verification limits
 
-✓ Tested   cd api && bun run check ·
-           5:58
-○ Proved   none recorded
-○ Models   none recorded
+Request context
+No request messages recorded.
 
-! Review test edits · 2 heuristic
-  flags
-  May weaken evidence; not confirmed
-  weakening.
+Code evidence
+✓ Tested      cd api && bun test ·
+              0:01
+○ Proved      none recorded
+○ Models      none recorded
+
 ! Not verified · notes
   it is in no Git repository, so
   Tesota cannot tell what changed
-○ Change sensitivity unknown · 3 test
-  files
+○ Change sensitivity unknown · 1 test
+  file
   Base fails too; no per-test failure
   report.
-○ Attribution unresolved · api
-  api: history moved, could not be
-  read, or was not captured; recorded
-  exercise and contract measurements
-  do not establish request
-  attribution. Changes are compared
-  with the request's start, not
-  attributed to this request
-○ No proof covers 3 changed files
+○ No proof covers 1 changed file
+
+Specification evidence
+  contract      total in
+    api/src/total.ts: all 1 decided
+    changes to its code fail the
+    proof
+✓ Contracts   1 contract: every
+              decided change broke
+              its proof
+
+Request review — model opinion
+Contract comparison: not_run; no
+  eligible changed contract
+Open cases: not_run; request review
+  was not run
 
 ▸ Details · paths, output,
   assumptions, model opinions
+
+Acceptance remains with the reviewer.
 "
 `;
 
-exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a card > collapsed 80 1`] = `
+exports[`current multi-unit receipt > fits 40 columns in both themes without cutting reasons > expanded 40 1`] = `
 "
 Tesota receipt
-3 review flags · 7 verification limits
-Evidence, not approval: accepting the change is yours.
+Evidence standing: incomplete
+1 review flag · 2 verification limits
 
-✓ Tested   cd api && bun run check · 5:58
-○ Proved   none recorded
-○ Models   none recorded
+Request context
+No request messages recorded.
 
-! Review test edits · 2 heuristic flags
-  May weaken evidence; not confirmed weakening.
-! Not verified · notes
-  it is in no Git repository, so Tesota cannot tell what changed
-○ Change sensitivity unknown · 3 test files
-  Base fails too; no per-test failure report.
-○ Attribution unresolved · api
-  api: history moved, could not be read, or was not captured; recorded
-  exercise and contract measurements do not establish request attribution.
-  Changes are compared with the request's start, not attributed to this
-  request
-○ No proof covers 3 changed files
+Code evidence
+✓ Tested      cd api && bun test ·
+              0:01
+○ Proved      none recorded
+○ Models      none recorded
 
-▸ Details · paths, output, assumptions, model opinions
-"
-`;
-
-exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a card > collapsed 120 1`] = `
-"
-Tesota receipt
-3 review flags · 7 verification limits
-Evidence, not approval: accepting the change is yours.
-
-✓ Tested   cd api && bun run check · 5:58
-○ Proved   none recorded
-○ Models   none recorded
-
-! Review test edits · 2 heuristic flags
-  May weaken evidence; not confirmed weakening.
-! Not verified · notes
-  it is in no Git repository, so Tesota cannot tell what changed
-○ Change sensitivity unknown · 3 test files
-  Base fails too; no per-test failure report.
-○ Attribution unresolved · api
-  api: history moved, could not be read, or was not captured; recorded exercise and contract measurements do not
-  establish request attribution. Changes are compared with the request's start, not attributed to this request
-○ No proof covers 3 changed files
-
-▸ Details · paths, output, assumptions, model opinions
-"
-`;
-
-exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a card > expanded 40 1`] = `
-"
-Tesota receipt
-3 review flags · 7 verification
-limits
-Evidence, not approval: accepting the
-change is yours.
-
-✓ Tested   cd api && bun run check ·
-           5:58
-○ Proved   none recorded
-○ Models   none recorded
-
-! Review test edits · 2 heuristic
-  flags
-  May weaken evidence; not confirmed
-  weakening.
 ! Not verified · notes
   it is in no Git repository, so
   Tesota cannot tell what changed
-○ Change sensitivity unknown · 3 test
-  files
+○ Change sensitivity unknown · 1 test
+  file
   Base fails too; no per-test failure
   report.
-○ Attribution unresolved · api
-  api: history moved, could not be
-  read, or was not captured; recorded
-  exercise and contract measurements
-  do not establish request
-  attribution. Changes are compared
-  with the request's start, not
-  attributed to this request
-○ No proof covers 3 changed files
+○ No proof covers 1 changed file
+
+Specification evidence
+  contract      total in
+    api/src/total.ts: all 1 decided
+    changes to its code fail the
+    proof
+✓ Contracts   1 contract: every
+              decided change broke
+              its proof
+
+Request review — model opinion
+Contract comparison: not_run; no
+  eligible changed contract
+Open cases: not_run; request review
+  was not run
 
 ▾ Details
-  passed        cd api && bun run
-    check
+  contract      total in
+    api/src/total.ts: all 1 decided
+    changes to its code fail the
+    proof
+  passed        cd api && bun test
   not checked
-    api/packages/core/tests/interface
-    .test.ts: on the base it failed,
-    but so does the base without it,
-    and no test report says which
-    tests fail; contribution
-    unresolved
-  not checked
-    api/tests/welcome-header.test.ts:
-    on the base it failed, but so
-    does the base without it, and no
-    test report says which tests
-    fail; contribution unresolved
-  not checked
-    api/tests/working-orb.test.ts: on
-    the base it failed, but so does
-    the base without it, and no test
-    report says which tests fail;
-    contribution unresolved
-  may weaken
-    api/packages/core/tests/interface
-    .test.ts: edits a test file
-  may weaken
-    api/tests/welcome-header.test.ts:
-    edits a test file
-  not proved    api/NOTICE: no proof
-    covers it; the project's commands
-    pass with it
-  not proved    api/src/tesota.ts: no
-    proof covers it; the project's
-    commands pass with it
-  not proved
-    api/src/welcome-header.ts: no
+    api/tests/total.test.ts: Base
+    fails too; no per-test failure
+    report.; added in this request
+  not proved    api/src/total.ts: no
     proof covers it; the project's
     commands pass with it
   not verified  notes: it is in no
     Git repository, so Tesota cannot
     tell what changed
-  changed lines implementation +99
-    -18 · tests +75 -25 · other +7 -0
-From api 700f9a9d4a0b · Tesota 0.1.0
+  not listed    the cases the request
+    leaves open: request review was
+    not run
+From api its first commit · Tesota
+  0.1.0
+
+Acceptance remains with the reviewer.
 "
 `;
 
-exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a card > expanded 80 1`] = `
+exports[`current multi-unit receipt > fits 80 columns in both themes without cutting reasons > collapsed 80 1`] = `
 "
 Tesota receipt
-3 review flags · 7 verification limits
-Evidence, not approval: accepting the change is yours.
+Evidence standing: incomplete
+1 review flag · 2 verification limits
 
-✓ Tested   cd api && bun run check · 5:58
-○ Proved   none recorded
-○ Models   none recorded
+Request context
+No request messages recorded.
 
-! Review test edits · 2 heuristic flags
-  May weaken evidence; not confirmed weakening.
+Code evidence
+✓ Tested      cd api && bun test · 0:01
+○ Proved      none recorded
+○ Models      none recorded
+
 ! Not verified · notes
   it is in no Git repository, so Tesota cannot tell what changed
-○ Change sensitivity unknown · 3 test files
+○ Change sensitivity unknown · 1 test file
   Base fails too; no per-test failure report.
-○ Attribution unresolved · api
-  api: history moved, could not be read, or was not captured; recorded
-  exercise and contract measurements do not establish request attribution.
-  Changes are compared with the request's start, not attributed to this
-  request
-○ No proof covers 3 changed files
+○ No proof covers 1 changed file
+
+Specification evidence
+  contract      total in api/src/total.ts: all 1 decided changes to its code
+    fail the proof
+✓ Contracts   1 contract: every decided change broke its proof
+
+Request review — model opinion
+Contract comparison: not_run; no eligible changed contract
+Open cases: not_run; request review was not run
+
+▸ Details · paths, output, assumptions, model opinions
+
+Acceptance remains with the reviewer.
+"
+`;
+
+exports[`current multi-unit receipt > fits 80 columns in both themes without cutting reasons > expanded 80 1`] = `
+"
+Tesota receipt
+Evidence standing: incomplete
+1 review flag · 2 verification limits
+
+Request context
+No request messages recorded.
+
+Code evidence
+✓ Tested      cd api && bun test · 0:01
+○ Proved      none recorded
+○ Models      none recorded
+
+! Not verified · notes
+  it is in no Git repository, so Tesota cannot tell what changed
+○ Change sensitivity unknown · 1 test file
+  Base fails too; no per-test failure report.
+○ No proof covers 1 changed file
+
+Specification evidence
+  contract      total in api/src/total.ts: all 1 decided changes to its code
+    fail the proof
+✓ Contracts   1 contract: every decided change broke its proof
+
+Request review — model opinion
+Contract comparison: not_run; no eligible changed contract
+Open cases: not_run; request review was not run
 
 ▾ Details
-  passed        cd api && bun run check
-  not checked   api/packages/core/tests/interface.test.ts: on the base it
-    failed, but so does the base without it, and no test report says which
-    tests fail; contribution unresolved
-  not checked   api/tests/welcome-header.test.ts: on the base it failed, but
-    so does the base without it, and no test report says which tests fail;
-    contribution unresolved
-  not checked   api/tests/working-orb.test.ts: on the base it failed, but so
-    does the base without it, and no test report says which tests fail;
-    contribution unresolved
-  may weaken    api/packages/core/tests/interface.test.ts: edits a test file
-  may weaken    api/tests/welcome-header.test.ts: edits a test file
-  not proved    api/NOTICE: no proof covers it; the project's commands pass
-    with it
-  not proved    api/src/tesota.ts: no proof covers it; the project's commands
+  contract      total in api/src/total.ts: all 1 decided changes to its code
+    fail the proof
+  passed        cd api && bun test
+  not checked   api/tests/total.test.ts: Base fails too; no per-test failure
+    report.; added in this request
+  not proved    api/src/total.ts: no proof covers it; the project's commands
     pass with it
-  not proved    api/src/welcome-header.ts: no proof covers it; the project's
-    commands pass with it
   not verified  notes: it is in no Git repository, so Tesota cannot tell what
     changed
-  changed lines implementation +99 -18 · tests +75 -25 · other +7 -0
-From api 700f9a9d4a0b · Tesota 0.1.0
+  not listed    the cases the request leaves open: request review was not run
+From api its first commit · Tesota 0.1.0
+
+Acceptance remains with the reviewer.
 "
 `;
 
-exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a card > expanded 120 1`] = `
+exports[`current multi-unit receipt > fits 120 columns in both themes without cutting reasons > collapsed 120 1`] = `
 "
 Tesota receipt
-3 review flags · 7 verification limits
-Evidence, not approval: accepting the change is yours.
+Evidence standing: incomplete
+1 review flag · 2 verification limits
 
-✓ Tested   cd api && bun run check · 5:58
-○ Proved   none recorded
-○ Models   none recorded
+Request context
+No request messages recorded.
 
-! Review test edits · 2 heuristic flags
-  May weaken evidence; not confirmed weakening.
+Code evidence
+✓ Tested      cd api && bun test · 0:01
+○ Proved      none recorded
+○ Models      none recorded
+
 ! Not verified · notes
   it is in no Git repository, so Tesota cannot tell what changed
-○ Change sensitivity unknown · 3 test files
+○ Change sensitivity unknown · 1 test file
   Base fails too; no per-test failure report.
-○ Attribution unresolved · api
-  api: history moved, could not be read, or was not captured; recorded exercise and contract measurements do not
-  establish request attribution. Changes are compared with the request's start, not attributed to this request
-○ No proof covers 3 changed files
+○ No proof covers 1 changed file
 
-▾ Details
-  passed        cd api && bun run check
-  not checked   api/packages/core/tests/interface.test.ts: on the base it failed, but so does the base without it,
-    and no test report says which tests fail; contribution unresolved
-  not checked   api/tests/welcome-header.test.ts: on the base it failed, but so does the base without it, and no test
-    report says which tests fail; contribution unresolved
-  not checked   api/tests/working-orb.test.ts: on the base it failed, but so does the base without it, and no test
-    report says which tests fail; contribution unresolved
-  may weaken    api/packages/core/tests/interface.test.ts: edits a test file
-  may weaken    api/tests/welcome-header.test.ts: edits a test file
-  not proved    api/NOTICE: no proof covers it; the project's commands pass with it
-  not proved    api/src/tesota.ts: no proof covers it; the project's commands pass with it
-  not proved    api/src/welcome-header.ts: no proof covers it; the project's commands pass with it
-  not verified  notes: it is in no Git repository, so Tesota cannot tell what changed
-  changed lines implementation +99 -18 · tests +75 -25 · other +7 -0
-From api 700f9a9d4a0b · Tesota 0.1.0
+Specification evidence
+  contract      total in api/src/total.ts: all 1 decided changes to its code fail the proof
+✓ Contracts   1 contract: every decided change broke its proof
+
+Request review — model opinion
+Contract comparison: not_run; no eligible changed contract
+Open cases: not_run; request review was not run
+
+▸ Details · paths, output, assumptions, model opinions
+
+Acceptance remains with the reviewer.
 "
 `;
 
-exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a card > markdown 1`] = `
+exports[`current multi-unit receipt > fits 120 columns in both themes without cutting reasons > expanded 120 1`] = `
+"
+Tesota receipt
+Evidence standing: incomplete
+1 review flag · 2 verification limits
+
+Request context
+No request messages recorded.
+
+Code evidence
+✓ Tested      cd api && bun test · 0:01
+○ Proved      none recorded
+○ Models      none recorded
+
+! Not verified · notes
+  it is in no Git repository, so Tesota cannot tell what changed
+○ Change sensitivity unknown · 1 test file
+  Base fails too; no per-test failure report.
+○ No proof covers 1 changed file
+
+Specification evidence
+  contract      total in api/src/total.ts: all 1 decided changes to its code fail the proof
+✓ Contracts   1 contract: every decided change broke its proof
+
+Request review — model opinion
+Contract comparison: not_run; no eligible changed contract
+Open cases: not_run; request review was not run
+
+▾ Details
+  contract      total in api/src/total.ts: all 1 decided changes to its code fail the proof
+  passed        cd api && bun test
+  not checked   api/tests/total.test.ts: Base fails too; no per-test failure report.; added in this request
+  not proved    api/src/total.ts: no proof covers it; the project's commands pass with it
+  not verified  notes: it is in no Git repository, so Tesota cannot tell what changed
+  not listed    the cases the request leaves open: request review was not run
+From api its first commit · Tesota 0.1.0
+
+Acceptance remains with the reviewer.
+"
+`;
+
+exports[`current multi-unit receipt > renders plain text and Markdown > markdown 1`] = `
 "## Tesota receipt
 
-**3 review flags · 7 verification limits**  
-Evidence, not approval: accepting the change is yours.
+Evidence standing: incomplete
 
-- ✓ **Tested** — cd api && bun run check · 5:58
+**1 review flag · 2 verification limits**
+
+> Request context
+> No request messages recorded.
+
+**Code evidence**
+
+- ✓ **Tested** — cd api && bun test · 0:01
 - ○ **Proved** — none recorded
 - ○ **Models** — none recorded
 
-- ! Review test edits · 2 heuristic flags — May weaken evidence; not confirmed weakening.
 - ! Not verified · notes — it is in no Git repository, so Tesota cannot tell what changed
-- ○ Change sensitivity unknown · 3 test files — Base fails too; no per\\-test failure report.
-- ○ Attribution unresolved · api — api: history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish request attribution. Changes are compared with the request's start, not attributed to this request
-- ○ No proof covers 3 changed files
+- ○ Change sensitivity unknown · 1 test file — Base fails too; no per\\-test failure report.
+- ○ No proof covers 1 changed file
+
+> Specification evidence
+>   contract      total in api/src/total.ts: all 1 decided changes to its code fail the proof
+
+**Request review — model opinion**
+
+Contract comparison: not\\_run; no eligible changed contract
+Open cases: not\\_run; request review was not run
+
 
 **Details**
 
 \`\`\`text
-  passed        cd api && bun run check
-  not checked   api/packages/core/tests/interface.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
-  not checked   api/tests/welcome-header.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
-  not checked   api/tests/working-orb.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
-  may weaken    api/packages/core/tests/interface.test.ts: edits a test file
-  may weaken    api/tests/welcome-header.test.ts: edits a test file
-  not proved    api/NOTICE: no proof covers it; the project's commands pass with it
-  not proved    api/src/tesota.ts: no proof covers it; the project's commands pass with it
-  not proved    api/src/welcome-header.ts: no proof covers it; the project's commands pass with it
+  contract      total in api/src/total.ts: all 1 decided changes to its code fail the proof
+  passed        cd api && bun test
+  not checked   api/tests/total.test.ts: Base fails too; no per-test failure report.; added in this request
+  not proved    api/src/total.ts: no proof covers it; the project's commands pass with it
   not verified  notes: it is in no Git repository, so Tesota cannot tell what changed
-  changed lines implementation +99 -18 · tests +75 -25 · other +7 -0
-From api 700f9a9d4a0b · Tesota 0.1.0
-\`\`\`"
+  not listed    the cases the request leaves open: request review was not run
+From api its first commit · Tesota 0.1.0
+\`\`\`
+
+Acceptance remains with the reviewer."
 `;
 
-exports[`receipts beyond the four > multi-unit, as plain text, Markdown and a card > plain 1`] = `
+exports[`current multi-unit receipt > renders plain text and Markdown > plain 1`] = `
 "Tesota receipt
-3 review flags · 7 verification limits
-Evidence, not approval: accepting the change is yours.
+Evidence standing: incomplete
+1 review flag · 2 verification limits
 
-✓ Tested   cd api && bun run check · 5:58
-○ Proved   none recorded
-○ Models   none recorded
+Request context
+No request messages recorded.
 
-! Review test edits · 2 heuristic flags
-  May weaken evidence; not confirmed weakening.
+Code evidence
+✓ Tested      cd api && bun test · 0:01
+○ Proved      none recorded
+○ Models      none recorded
+
 ! Not verified · notes
   it is in no Git repository, so Tesota cannot tell what changed
-○ Change sensitivity unknown · 3 test files
+○ Change sensitivity unknown · 1 test file
   Base fails too; no per-test failure report.
-○ Attribution unresolved · api
-  api: history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish request attribution. Changes are compared with the request's start, not attributed to this request
-○ No proof covers 3 changed files
+○ No proof covers 1 changed file
+
+Specification evidence
+  contract      total in api/src/total.ts: all 1 decided changes to its code fail the proof
+
+Request review — model opinion
+Contract comparison: not_run; no eligible changed contract
+Open cases: not_run; request review was not run
 
 Details
-  passed        cd api && bun run check
-  not checked   api/packages/core/tests/interface.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
-  not checked   api/tests/welcome-header.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
-  not checked   api/tests/working-orb.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
-  may weaken    api/packages/core/tests/interface.test.ts: edits a test file
-  may weaken    api/tests/welcome-header.test.ts: edits a test file
-  not proved    api/NOTICE: no proof covers it; the project's commands pass with it
-  not proved    api/src/tesota.ts: no proof covers it; the project's commands pass with it
-  not proved    api/src/welcome-header.ts: no proof covers it; the project's commands pass with it
+  contract      total in api/src/total.ts: all 1 decided changes to its code fail the proof
+  passed        cd api && bun test
+  not checked   api/tests/total.test.ts: Base fails too; no per-test failure report.; added in this request
+  not proved    api/src/total.ts: no proof covers it; the project's commands pass with it
   not verified  notes: it is in no Git repository, so Tesota cannot tell what changed
-  changed lines implementation +99 -18 · tests +75 -25 · other +7 -0
-From api 700f9a9d4a0b · Tesota 0.1.0"
+  not listed    the cases the request leaves open: request review was not run
+From api its first commit · Tesota 0.1.0
+
+Acceptance remains with the reviewer."
 `;
 
-exports[`receipts beyond the four > outside Git, as plain text, Markdown and a card > collapsed 40 1`] = `
+exports[`current outside Git receipt > fits 40 columns in both themes without cutting reasons > collapsed 40 1`] = `
 "
 Tesota receipt
+Evidence standing: incomplete
 1 review flag · no verification
 limits
-Evidence, not approval: accepting the
-change is yours.
 
+Request context
+No request messages recorded.
+
+Code evidence
 ○ Tested   none recorded
 ○ Proved   none recorded
 ○ Models   none recorded
@@ -395,55 +369,33 @@ change is yours.
   the project has no Git repository,
   so Tesota cannot tell which files
   changed
+
+Specification evidence
+
+Request review — model opinion
+Contract comparison: not_run; no
+  eligible changed contract
+Open cases: not_run; request review
+  was not run
 
 ▸ Details · paths, output,
   assumptions, model opinions
+
+Acceptance remains with the reviewer.
 "
 `;
 
-exports[`receipts beyond the four > outside Git, as plain text, Markdown and a card > collapsed 80 1`] = `
+exports[`current outside Git receipt > fits 40 columns in both themes without cutting reasons > expanded 40 1`] = `
 "
 Tesota receipt
-1 review flag · no verification limits
-Evidence, not approval: accepting the change is yours.
-
-○ Tested   none recorded
-○ Proved   none recorded
-○ Models   none recorded
-
-! Not verified · this request's changes
-  the project has no Git repository, so Tesota cannot tell which files
-  changed
-
-▸ Details · paths, output, assumptions, model opinions
-"
-`;
-
-exports[`receipts beyond the four > outside Git, as plain text, Markdown and a card > collapsed 120 1`] = `
-"
-Tesota receipt
-1 review flag · no verification limits
-Evidence, not approval: accepting the change is yours.
-
-○ Tested   none recorded
-○ Proved   none recorded
-○ Models   none recorded
-
-! Not verified · this request's changes
-  the project has no Git repository, so Tesota cannot tell which files changed
-
-▸ Details · paths, output, assumptions, model opinions
-"
-`;
-
-exports[`receipts beyond the four > outside Git, as plain text, Markdown and a card > expanded 40 1`] = `
-"
-Tesota receipt
+Evidence standing: incomplete
 1 review flag · no verification
 limits
-Evidence, not approval: accepting the
-change is yours.
 
+Request context
+No request messages recorded.
+
+Code evidence
 ○ Tested   none recorded
 ○ Proved   none recorded
 ○ Models   none recorded
@@ -453,22 +405,39 @@ change is yours.
   the project has no Git repository,
   so Tesota cannot tell which files
   changed
+
+Specification evidence
+
+Request review — model opinion
+Contract comparison: not_run; no
+  eligible changed contract
+Open cases: not_run; request review
+  was not run
 
 ▾ Details
   not verified  this request's
     changes: the project has no Git
     repository, so Tesota cannot tell
     which files changed
+  not listed    the cases the request
+    leaves open: request review was
+    not run
 From the first commit · Tesota 0.1.0
+
+Acceptance remains with the reviewer.
 "
 `;
 
-exports[`receipts beyond the four > outside Git, as plain text, Markdown and a card > expanded 80 1`] = `
+exports[`current outside Git receipt > fits 80 columns in both themes without cutting reasons > collapsed 80 1`] = `
 "
 Tesota receipt
+Evidence standing: incomplete
 1 review flag · no verification limits
-Evidence, not approval: accepting the change is yours.
 
+Request context
+No request messages recorded.
+
+Code evidence
 ○ Tested   none recorded
 ○ Proved   none recorded
 ○ Models   none recorded
@@ -477,19 +446,62 @@ Evidence, not approval: accepting the change is yours.
   the project has no Git repository, so Tesota cannot tell which files
   changed
 
-▾ Details
-  not verified  this request's changes: the project has no Git repository, so
-    Tesota cannot tell which files changed
-From the first commit · Tesota 0.1.0
+Specification evidence
+
+Request review — model opinion
+Contract comparison: not_run; no eligible changed contract
+Open cases: not_run; request review was not run
+
+▸ Details · paths, output, assumptions, model opinions
+
+Acceptance remains with the reviewer.
 "
 `;
 
-exports[`receipts beyond the four > outside Git, as plain text, Markdown and a card > expanded 120 1`] = `
+exports[`current outside Git receipt > fits 80 columns in both themes without cutting reasons > expanded 80 1`] = `
 "
 Tesota receipt
+Evidence standing: incomplete
 1 review flag · no verification limits
-Evidence, not approval: accepting the change is yours.
 
+Request context
+No request messages recorded.
+
+Code evidence
+○ Tested   none recorded
+○ Proved   none recorded
+○ Models   none recorded
+
+! Not verified · this request's changes
+  the project has no Git repository, so Tesota cannot tell which files
+  changed
+
+Specification evidence
+
+Request review — model opinion
+Contract comparison: not_run; no eligible changed contract
+Open cases: not_run; request review was not run
+
+▾ Details
+  not verified  this request's changes: the project has no Git repository, so
+    Tesota cannot tell which files changed
+  not listed    the cases the request leaves open: request review was not run
+From the first commit · Tesota 0.1.0
+
+Acceptance remains with the reviewer.
+"
+`;
+
+exports[`current outside Git receipt > fits 120 columns in both themes without cutting reasons > collapsed 120 1`] = `
+"
+Tesota receipt
+Evidence standing: incomplete
+1 review flag · no verification limits
+
+Request context
+No request messages recorded.
+
+Code evidence
 ○ Tested   none recorded
 ○ Proved   none recorded
 ○ Models   none recorded
@@ -497,17 +509,61 @@ Evidence, not approval: accepting the change is yours.
 ! Not verified · this request's changes
   the project has no Git repository, so Tesota cannot tell which files changed
 
-▾ Details
-  not verified  this request's changes: the project has no Git repository, so Tesota cannot tell which files changed
-From the first commit · Tesota 0.1.0
+Specification evidence
+
+Request review — model opinion
+Contract comparison: not_run; no eligible changed contract
+Open cases: not_run; request review was not run
+
+▸ Details · paths, output, assumptions, model opinions
+
+Acceptance remains with the reviewer.
 "
 `;
 
-exports[`receipts beyond the four > outside Git, as plain text, Markdown and a card > markdown 1`] = `
+exports[`current outside Git receipt > fits 120 columns in both themes without cutting reasons > expanded 120 1`] = `
+"
+Tesota receipt
+Evidence standing: incomplete
+1 review flag · no verification limits
+
+Request context
+No request messages recorded.
+
+Code evidence
+○ Tested   none recorded
+○ Proved   none recorded
+○ Models   none recorded
+
+! Not verified · this request's changes
+  the project has no Git repository, so Tesota cannot tell which files changed
+
+Specification evidence
+
+Request review — model opinion
+Contract comparison: not_run; no eligible changed contract
+Open cases: not_run; request review was not run
+
+▾ Details
+  not verified  this request's changes: the project has no Git repository, so Tesota cannot tell which files changed
+  not listed    the cases the request leaves open: request review was not run
+From the first commit · Tesota 0.1.0
+
+Acceptance remains with the reviewer.
+"
+`;
+
+exports[`current outside Git receipt > renders plain text and Markdown > markdown 1`] = `
 "## Tesota receipt
 
-**1 review flag · no verification limits**  
-Evidence, not approval: accepting the change is yours.
+Evidence standing: incomplete
+
+**1 review flag · no verification limits**
+
+> Request context
+> No request messages recorded.
+
+**Code evidence**
 
 - ○ **Tested** — none recorded
 - ○ **Proved** — none recorded
@@ -515,19 +571,34 @@ Evidence, not approval: accepting the change is yours.
 
 - ! Not verified · this request's changes — the project has no Git repository, so Tesota cannot tell which files changed
 
+> Specification evidence
+
+**Request review — model opinion**
+
+Contract comparison: not\\_run; no eligible changed contract
+Open cases: not\\_run; request review was not run
+
+
 **Details**
 
 \`\`\`text
   not verified  this request's changes: the project has no Git repository, so Tesota cannot tell which files changed
+  not listed    the cases the request leaves open: request review was not run
 From the first commit · Tesota 0.1.0
-\`\`\`"
+\`\`\`
+
+Acceptance remains with the reviewer."
 `;
 
-exports[`receipts beyond the four > outside Git, as plain text, Markdown and a card > plain 1`] = `
+exports[`current outside Git receipt > renders plain text and Markdown > plain 1`] = `
 "Tesota receipt
+Evidence standing: incomplete
 1 review flag · no verification limits
-Evidence, not approval: accepting the change is yours.
 
+Request context
+No request messages recorded.
+
+Code evidence
 ○ Tested   none recorded
 ○ Proved   none recorded
 ○ Models   none recorded
@@ -535,19 +606,31 @@ Evidence, not approval: accepting the change is yours.
 ! Not verified · this request's changes
   the project has no Git repository, so Tesota cannot tell which files changed
 
+Specification evidence
+
+Request review — model opinion
+Contract comparison: not_run; no eligible changed contract
+Open cases: not_run; request review was not run
+
 Details
   not verified  this request's changes: the project has no Git repository, so Tesota cannot tell which files changed
-From the first commit · Tesota 0.1.0"
+  not listed    the cases the request leaves open: request review was not run
+From the first commit · Tesota 0.1.0
+
+Acceptance remains with the reviewer."
 `;
 
-exports[`receipts beyond the four > stopped, as plain text, Markdown and a card > collapsed 40 1`] = `
+exports[`current stopped receipt > fits 40 columns in both themes without cutting reasons > collapsed 40 1`] = `
 "
 Tesota receipt
+Evidence standing: incomplete
 1 review flag · no verification
 limits
-Evidence, not approval: accepting the
-change is yours.
 
+Request context
+No request messages recorded.
+
+Code evidence
 ○ Tested   none recorded
 ○ Proved   none recorded
 ○ Models   none recorded
@@ -556,54 +639,33 @@ change is yours.
   changes
   the operator stopped the run while
   Tesota verified it
+
+Specification evidence
+
+Request review — model opinion
+Contract comparison: not_run; no
+  eligible changed contract
+Open cases: not_run; request review
+  was not run
 
 ▸ Details · paths, output,
   assumptions, model opinions
+
+Acceptance remains with the reviewer.
 "
 `;
 
-exports[`receipts beyond the four > stopped, as plain text, Markdown and a card > collapsed 80 1`] = `
+exports[`current stopped receipt > fits 40 columns in both themes without cutting reasons > expanded 40 1`] = `
 "
 Tesota receipt
-1 review flag · no verification limits
-Evidence, not approval: accepting the change is yours.
-
-○ Tested   none recorded
-○ Proved   none recorded
-○ Models   none recorded
-
-! Not verified · this request's changes
-  the operator stopped the run while Tesota verified it
-
-▸ Details · paths, output, assumptions, model opinions
-"
-`;
-
-exports[`receipts beyond the four > stopped, as plain text, Markdown and a card > collapsed 120 1`] = `
-"
-Tesota receipt
-1 review flag · no verification limits
-Evidence, not approval: accepting the change is yours.
-
-○ Tested   none recorded
-○ Proved   none recorded
-○ Models   none recorded
-
-! Not verified · this request's changes
-  the operator stopped the run while Tesota verified it
-
-▸ Details · paths, output, assumptions, model opinions
-"
-`;
-
-exports[`receipts beyond the four > stopped, as plain text, Markdown and a card > expanded 40 1`] = `
-"
-Tesota receipt
+Evidence standing: incomplete
 1 review flag · no verification
 limits
-Evidence, not approval: accepting the
-change is yours.
 
+Request context
+No request messages recorded.
+
+Code evidence
 ○ Tested   none recorded
 ○ Proved   none recorded
 ○ Models   none recorded
@@ -612,41 +674,96 @@ change is yours.
   changes
   the operator stopped the run while
   Tesota verified it
+
+Specification evidence
+
+Request review — model opinion
+Contract comparison: not_run; no
+  eligible changed contract
+Open cases: not_run; request review
+  was not run
 
 ▾ Details
   not verified  this request's
     changes: the operator stopped the
     run while Tesota verified it
 From the first commit · Tesota 0.1.0
+
+Acceptance remains with the reviewer.
 "
 `;
 
-exports[`receipts beyond the four > stopped, as plain text, Markdown and a card > expanded 80 1`] = `
+exports[`current stopped receipt > fits 80 columns in both themes without cutting reasons > collapsed 80 1`] = `
 "
 Tesota receipt
+Evidence standing: incomplete
 1 review flag · no verification limits
-Evidence, not approval: accepting the change is yours.
 
+Request context
+No request messages recorded.
+
+Code evidence
 ○ Tested   none recorded
 ○ Proved   none recorded
 ○ Models   none recorded
 
 ! Not verified · this request's changes
   the operator stopped the run while Tesota verified it
+
+Specification evidence
+
+Request review — model opinion
+Contract comparison: not_run; no eligible changed contract
+Open cases: not_run; request review was not run
+
+▸ Details · paths, output, assumptions, model opinions
+
+Acceptance remains with the reviewer.
+"
+`;
+
+exports[`current stopped receipt > fits 80 columns in both themes without cutting reasons > expanded 80 1`] = `
+"
+Tesota receipt
+Evidence standing: incomplete
+1 review flag · no verification limits
+
+Request context
+No request messages recorded.
+
+Code evidence
+○ Tested   none recorded
+○ Proved   none recorded
+○ Models   none recorded
+
+! Not verified · this request's changes
+  the operator stopped the run while Tesota verified it
+
+Specification evidence
+
+Request review — model opinion
+Contract comparison: not_run; no eligible changed contract
+Open cases: not_run; request review was not run
 
 ▾ Details
   not verified  this request's changes: the operator stopped the run while
     Tesota verified it
 From the first commit · Tesota 0.1.0
+
+Acceptance remains with the reviewer.
 "
 `;
 
-exports[`receipts beyond the four > stopped, as plain text, Markdown and a card > expanded 120 1`] = `
+exports[`current stopped receipt > fits 120 columns in both themes without cutting reasons > collapsed 120 1`] = `
 "
 Tesota receipt
+Evidence standing: incomplete
 1 review flag · no verification limits
-Evidence, not approval: accepting the change is yours.
 
+Request context
+No request messages recorded.
+
+Code evidence
 ○ Tested   none recorded
 ○ Proved   none recorded
 ○ Models   none recorded
@@ -654,17 +771,60 @@ Evidence, not approval: accepting the change is yours.
 ! Not verified · this request's changes
   the operator stopped the run while Tesota verified it
 
-▾ Details
-  not verified  this request's changes: the operator stopped the run while Tesota verified it
-From the first commit · Tesota 0.1.0
+Specification evidence
+
+Request review — model opinion
+Contract comparison: not_run; no eligible changed contract
+Open cases: not_run; request review was not run
+
+▸ Details · paths, output, assumptions, model opinions
+
+Acceptance remains with the reviewer.
 "
 `;
 
-exports[`receipts beyond the four > stopped, as plain text, Markdown and a card > markdown 1`] = `
+exports[`current stopped receipt > fits 120 columns in both themes without cutting reasons > expanded 120 1`] = `
+"
+Tesota receipt
+Evidence standing: incomplete
+1 review flag · no verification limits
+
+Request context
+No request messages recorded.
+
+Code evidence
+○ Tested   none recorded
+○ Proved   none recorded
+○ Models   none recorded
+
+! Not verified · this request's changes
+  the operator stopped the run while Tesota verified it
+
+Specification evidence
+
+Request review — model opinion
+Contract comparison: not_run; no eligible changed contract
+Open cases: not_run; request review was not run
+
+▾ Details
+  not verified  this request's changes: the operator stopped the run while Tesota verified it
+From the first commit · Tesota 0.1.0
+
+Acceptance remains with the reviewer.
+"
+`;
+
+exports[`current stopped receipt > renders plain text and Markdown > markdown 1`] = `
 "## Tesota receipt
 
-**1 review flag · no verification limits**  
-Evidence, not approval: accepting the change is yours.
+Evidence standing: incomplete
+
+**1 review flag · no verification limits**
+
+> Request context
+> No request messages recorded.
+
+**Code evidence**
 
 - ○ **Tested** — none recorded
 - ○ **Proved** — none recorded
@@ -672,19 +832,33 @@ Evidence, not approval: accepting the change is yours.
 
 - ! Not verified · this request's changes — the operator stopped the run while Tesota verified it
 
+> Specification evidence
+
+**Request review — model opinion**
+
+Contract comparison: not\\_run; no eligible changed contract
+Open cases: not\\_run; request review was not run
+
+
 **Details**
 
 \`\`\`text
   not verified  this request's changes: the operator stopped the run while Tesota verified it
 From the first commit · Tesota 0.1.0
-\`\`\`"
+\`\`\`
+
+Acceptance remains with the reviewer."
 `;
 
-exports[`receipts beyond the four > stopped, as plain text, Markdown and a card > plain 1`] = `
+exports[`current stopped receipt > renders plain text and Markdown > plain 1`] = `
 "Tesota receipt
+Evidence standing: incomplete
 1 review flag · no verification limits
-Evidence, not approval: accepting the change is yours.
 
+Request context
+No request messages recorded.
+
+Code evidence
 ○ Tested   none recorded
 ○ Proved   none recorded
 ○ Models   none recorded
@@ -692,1551 +866,450 @@ Evidence, not approval: accepting the change is yours.
 ! Not verified · this request's changes
   the operator stopped the run while Tesota verified it
 
+Specification evidence
+
+Request review — model opinion
+Contract comparison: not_run; no eligible changed contract
+Open cases: not_run; request review was not run
+
 Details
   not verified  this request's changes: the operator stopped the run while Tesota verified it
-From the first commit · Tesota 0.1.0"
+From the first commit · Tesota 0.1.0
+
+Acceptance remains with the reviewer."
 `;
 
-exports[`the real receipt of #574 > as a card 40 columns wide, the same words in both themes > collapsed 40 1`] = `
+exports[`current synthetic receipt > fits 40 columns in both themes without cutting reasons > collapsed 40 1`] = `
 "
 Tesota receipt
-1 review flag · 4 verification limits
-Evidence, not approval: accepting the
-change is yours.
+Evidence standing: incomplete
+No review flags · 2 verification
+limits · 2 opinions to read
 
-✓ Tested   bun run check · 7:41
-○ Proved   none recorded
-○ Models   none recorded
+Request context
+Request 1
+Keep amounts below 100 unchanged.
 
-! Review test edits · 1 heuristic
-  flag
-  May weaken evidence; not confirmed
-  weakening.
-○ Change sensitivity unknown · 2 test
-  files
-  Base fails too; no per-test failure
-  report.
-○ Attribution unresolved
-  history moved, could not be read,
-  or was not captured; recorded
-  exercise and contract measurements
-  do not establish request
-  attribution. Changes are compared
-  with the request's start, not
-  attributed to this request
-○ No proof covers 1 changed file
-
-▸ Details · paths, output,
-  assumptions, model opinions
-"
-`;
-
-exports[`the real receipt of #574 > as a card 40 columns wide, the same words in both themes > expanded 40 1`] = `
-"
-Tesota receipt
-1 review flag · 4 verification limits
-Evidence, not approval: accepting the
-change is yours.
-
-✓ Tested   bun run check · 7:41
-○ Proved   none recorded
-○ Models   none recorded
-
-! Review test edits · 1 heuristic
-  flag
-  May weaken evidence; not confirmed
-  weakening.
-○ Change sensitivity unknown · 2 test
-  files
-  Base fails too; no per-test failure
-  report.
-○ Attribution unresolved
-  history moved, could not be read,
-  or was not captured; recorded
-  exercise and contract measurements
-  do not establish request
-  attribution. Changes are compared
-  with the request's start, not
-  attributed to this request
-○ No proof covers 1 changed file
-
-▾ Details
-  passed        bun run check
-  not checked
-    packages/core/tests/shell.test.ts
-    : on the base it failed, but so
-    does the base without it, and no
-    test report says which tests
-    fail; contribution unresolved
-  not checked
-    packages/core/tests/virtual-termi
-    nal.ts: on the base it failed,
-    but so does the base without it,
-    and no test report says which
-    tests fail; contribution
-    unresolved
-  may weaken
-    packages/core/tests/shell.test.ts
-    : edits a test file
-  not proved
-    packages/core/src/shell/shell.ts:
-    no proof covers it; the project's
-    commands pass with it
-  changed lines implementation +3 -3
-    · tests +31 -2
-  model listed  no case the request
-    leaves open, by openai/gpt-6-sol;
-    a model's opinion, not a check
-From 39d91577bad9 · Tesota
-  0.1.0-alpha.1 ·
-  claude-code/claude-opus-5-5
-"
-`;
-
-exports[`the real receipt of #574 > as a card 80 columns wide, the same words in both themes > collapsed 80 1`] = `
-"
-Tesota receipt
-1 review flag · 4 verification limits
-Evidence, not approval: accepting the change is yours.
-
-✓ Tested   bun run check · 7:41
-○ Proved   none recorded
-○ Models   none recorded
-
-! Review test edits · 1 heuristic flag
-  May weaken evidence; not confirmed weakening.
-○ Change sensitivity unknown · 2 test files
-  Base fails too; no per-test failure report.
-○ Attribution unresolved
-  history moved, could not be read, or was not captured; recorded exercise
-  and contract measurements do not establish request attribution. Changes are
-  compared with the request's start, not attributed to this request
-○ No proof covers 1 changed file
-
-▸ Details · paths, output, assumptions, model opinions
-"
-`;
-
-exports[`the real receipt of #574 > as a card 80 columns wide, the same words in both themes > expanded 80 1`] = `
-"
-Tesota receipt
-1 review flag · 4 verification limits
-Evidence, not approval: accepting the change is yours.
-
-✓ Tested   bun run check · 7:41
-○ Proved   none recorded
-○ Models   none recorded
-
-! Review test edits · 1 heuristic flag
-  May weaken evidence; not confirmed weakening.
-○ Change sensitivity unknown · 2 test files
-  Base fails too; no per-test failure report.
-○ Attribution unresolved
-  history moved, could not be read, or was not captured; recorded exercise
-  and contract measurements do not establish request attribution. Changes are
-  compared with the request's start, not attributed to this request
-○ No proof covers 1 changed file
-
-▾ Details
-  passed        bun run check
-  not checked   packages/core/tests/shell.test.ts: on the base it failed, but
-    so does the base without it, and no test report says which tests fail;
-    contribution unresolved
-  not checked   packages/core/tests/virtual-terminal.ts: on the base it
-    failed, but so does the base without it, and no test report says which
-    tests fail; contribution unresolved
-  may weaken    packages/core/tests/shell.test.ts: edits a test file
-  not proved    packages/core/src/shell/shell.ts: no proof covers it; the
-    project's commands pass with it
-  changed lines implementation +3 -3 · tests +31 -2
-  model listed  no case the request leaves open, by openai/gpt-6-sol; a
-    model's opinion, not a check
-From 39d91577bad9 · Tesota 0.1.0-alpha.1 · claude-code/claude-opus-5-5
-"
-`;
-
-exports[`the real receipt of #574 > as a card 120 columns wide, the same words in both themes > collapsed 120 1`] = `
-"
-Tesota receipt
-1 review flag · 4 verification limits
-Evidence, not approval: accepting the change is yours.
-
-✓ Tested   bun run check · 7:41
-○ Proved   none recorded
-○ Models   none recorded
-
-! Review test edits · 1 heuristic flag
-  May weaken evidence; not confirmed weakening.
-○ Change sensitivity unknown · 2 test files
-  Base fails too; no per-test failure report.
-○ Attribution unresolved
-  history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish
-  request attribution. Changes are compared with the request's start, not attributed to this request
-○ No proof covers 1 changed file
-
-▸ Details · paths, output, assumptions, model opinions
-"
-`;
-
-exports[`the real receipt of #574 > as a card 120 columns wide, the same words in both themes > expanded 120 1`] = `
-"
-Tesota receipt
-1 review flag · 4 verification limits
-Evidence, not approval: accepting the change is yours.
-
-✓ Tested   bun run check · 7:41
-○ Proved   none recorded
-○ Models   none recorded
-
-! Review test edits · 1 heuristic flag
-  May weaken evidence; not confirmed weakening.
-○ Change sensitivity unknown · 2 test files
-  Base fails too; no per-test failure report.
-○ Attribution unresolved
-  history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish
-  request attribution. Changes are compared with the request's start, not attributed to this request
-○ No proof covers 1 changed file
-
-▾ Details
-  passed        bun run check
-  not checked   packages/core/tests/shell.test.ts: on the base it failed, but so does the base without it, and no
-    test report says which tests fail; contribution unresolved
-  not checked   packages/core/tests/virtual-terminal.ts: on the base it failed, but so does the base without it, and
-    no test report says which tests fail; contribution unresolved
-  may weaken    packages/core/tests/shell.test.ts: edits a test file
-  not proved    packages/core/src/shell/shell.ts: no proof covers it; the project's commands pass with it
-  changed lines implementation +3 -3 · tests +31 -2
-  model listed  no case the request leaves open, by openai/gpt-6-sol; a model's opinion, not a check
-From 39d91577bad9 · Tesota 0.1.0-alpha.1 · claude-code/claude-opus-5-5
-"
-`;
-
-exports[`the real receipt of #574 > as plain text and as Markdown > markdown 1`] = `
-"## Tesota receipt
-
-**1 review flag · 4 verification limits**  
-Evidence, not approval: accepting the change is yours.
-
-- ✓ **Tested** — bun run check · 7:41
-- ○ **Proved** — none recorded
-- ○ **Models** — none recorded
-
-- ! Review test edits · 1 heuristic flag — May weaken evidence; not confirmed weakening.
-- ○ Change sensitivity unknown · 2 test files — Base fails too; no per\\-test failure report.
-- ○ Attribution unresolved — history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish request attribution. Changes are compared with the request's start, not attributed to this request
-- ○ No proof covers 1 changed file
-
-**Details**
-
-\`\`\`text
-  passed        bun run check
-  not checked   packages/core/tests/shell.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
-  not checked   packages/core/tests/virtual-terminal.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
-  may weaken    packages/core/tests/shell.test.ts: edits a test file
-  not proved    packages/core/src/shell/shell.ts: no proof covers it; the project's commands pass with it
-  changed lines implementation +3 -3 · tests +31 -2
-  model listed  no case the request leaves open, by openai/gpt-6-sol; a model's opinion, not a check
-From 39d91577bad9 · Tesota 0.1.0-alpha.1 · claude-code/claude-opus-5-5
-\`\`\`"
-`;
-
-exports[`the real receipt of #574 > as plain text and as Markdown > plain 1`] = `
-"Tesota receipt
-1 review flag · 4 verification limits
-Evidence, not approval: accepting the change is yours.
-
-✓ Tested   bun run check · 7:41
-○ Proved   none recorded
-○ Models   none recorded
-
-! Review test edits · 1 heuristic flag
-  May weaken evidence; not confirmed weakening.
-○ Change sensitivity unknown · 2 test files
-  Base fails too; no per-test failure report.
-○ Attribution unresolved
-  history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish request attribution. Changes are compared with the request's start, not attributed to this request
-○ No proof covers 1 changed file
-
-Details
-  passed        bun run check
-  not checked   packages/core/tests/shell.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
-  not checked   packages/core/tests/virtual-terminal.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
-  may weaken    packages/core/tests/shell.test.ts: edits a test file
-  not proved    packages/core/src/shell/shell.ts: no proof covers it; the project's commands pass with it
-  changed lines implementation +3 -3 · tests +31 -2
-  model listed  no case the request leaves open, by openai/gpt-6-sol; a model's opinion, not a check
-From 39d91577bad9 · Tesota 0.1.0-alpha.1 · claude-code/claude-opus-5-5"
-`;
-
-exports[`the real receipt of #574 > in each theme's colors > dark collapsed 80 1`] = `
-"[
- "",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;145;156;240m\\u001b[1mTesota receipt\\u001b[22m\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;224;168;79m\\u001b[1m1 review flag\\u001b[22m\\u001b[39m\\u001b[38;2;128;128;136m · \\u001b[39m\\u001b[38;2;224;168;79m\\u001b[1m4 verification limits\\u001b[22m\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;128;128;136mEvidence, not approval: accepting the change is yours.\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m ",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;161;161;168m✓\\u001b[39m \\u001b[38;2;237;237;237mTested   \\u001b[39m\\u001b[38;2;161;161;168mbun run check · 7:41\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;128;128;136m○ Proved   none recorded\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;128;128;136m○ Models   none recorded\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m ",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;224;168;79m!\\u001b[39m \\u001b[38;2;237;237;237mReview test edits · 1 heuristic flag\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;161;161;168m  May weaken evidence; not confirmed weakening.\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;161;161;168m○\\u001b[39m \\u001b[38;2;237;237;237mChange sensitivity unknown · 2 test files\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;161;161;168m  Base fails too; no per-test failure report.\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;161;161;168m○\\u001b[39m \\u001b[38;2;237;237;237mAttribution unresolved\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;161;161;168m  history moved, could not be read, or was not captured; recorded exercise",
- " \\u001b[38;2;66;66;74m│\\u001b[39m   \\u001b[38;2;161;161;168mand contract measurements do not establish request attribution. Changes are",
- " \\u001b[38;2;66;66;74m│\\u001b[39m   \\u001b[38;2;161;161;168m\\u001b[38;2;161;161;168mcompared with the request's start, not attributed to this request\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;161;161;168m○\\u001b[39m \\u001b[38;2;237;237;237mNo proof covers 1 changed file\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m ",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;128;128;136m▸ Details · paths, output, assumptions, model opinions\\u001b[39m",
- ""
-]"
-`;
-
-exports[`the real receipt of #574 > in each theme's colors > light collapsed 80 1`] = `
-"[
- "",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;74;85;192m\\u001b[1mTesota receipt\\u001b[22m\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;143;90;10m\\u001b[1m1 review flag\\u001b[22m\\u001b[39m\\u001b[38;2;107;107;115m · \\u001b[39m\\u001b[38;2;143;90;10m\\u001b[1m4 verification limits\\u001b[22m\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;107;107;115mEvidence, not approval: accepting the change is yours.\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m ",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;82;82;91m✓\\u001b[39m \\u001b[38;2;24;24;27mTested   \\u001b[39m\\u001b[38;2;82;82;91mbun run check · 7:41\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;107;107;115m○ Proved   none recorded\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;107;107;115m○ Models   none recorded\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m ",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;143;90;10m!\\u001b[39m \\u001b[38;2;24;24;27mReview test edits · 1 heuristic flag\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;82;82;91m  May weaken evidence; not confirmed weakening.\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;82;82;91m○\\u001b[39m \\u001b[38;2;24;24;27mChange sensitivity unknown · 2 test files\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;82;82;91m  Base fails too; no per-test failure report.\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;82;82;91m○\\u001b[39m \\u001b[38;2;24;24;27mAttribution unresolved\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;82;82;91m  history moved, could not be read, or was not captured; recorded exercise",
- " \\u001b[38;2;200;200;206m│\\u001b[39m   \\u001b[38;2;82;82;91mand contract measurements do not establish request attribution. Changes are",
- " \\u001b[38;2;200;200;206m│\\u001b[39m   \\u001b[38;2;82;82;91m\\u001b[38;2;82;82;91mcompared with the request's start, not attributed to this request\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;82;82;91m○\\u001b[39m \\u001b[38;2;24;24;27mNo proof covers 1 changed file\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m ",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;107;107;115m▸ Details · paths, output, assumptions, model opinions\\u001b[39m",
- ""
-]"
-`;
-
-exports[`the real receipt of #575 > as a card 40 columns wide, the same words in both themes > collapsed 40 1`] = `
-"
-Tesota receipt
-No review flags · 5 verification
-limits · 1 opinion to read
-Evidence, not approval: accepting the
-change is yours.
-
-✓ Tested   bun run check · 7:37
-○ Proved   none recorded
-○ Models   none recorded
+Code evidence
+✓ Tested      bun test · 0:01
+○ Proved      none recorded
+○ Models      none recorded
 
 ○ Change sensitivity unknown · 1 test
   file
   Base fails too; no per-test failure
   report.
-○ Attribution unresolved
-  history moved, could not be read,
-  or was not captured; recorded
-  exercise and contract measurements
-  do not establish request
-  attribution. Changes are compared
-  with the request's start, not
-  attributed to this request
-○ No proof covers 3 changed files
+○ No proof covers 1 changed file
 
-Model opinions · not evidence, not
-counted
+Specification evidence
+  contract      total in
+    src/total.ts: all 1 decided
+    changes to its code fail the
+    proof
+✓ Contracts   1 contract: every
+              decided change broke
+              its proof
+
+Request review — model opinion
+Contract comparison: completed
+Open cases: listed; 1 listed
+◇ Mismatch reported
+  ClaimCheck · total · src/total.ts
+  The contract permits changing
+  amounts below 100.
 ◇ 1 open case for you to settle,
-  listed by openai/gpt-6-sol
+  listed by test/lister
 
 ▸ Details · paths, output,
   assumptions, model opinions
 ▸ Context · 1 subagent
+
+Acceptance remains with the reviewer.
 "
 `;
 
-exports[`the real receipt of #575 > as a card 40 columns wide, the same words in both themes > expanded 40 1`] = `
+exports[`current synthetic receipt > fits 40 columns in both themes without cutting reasons > expanded 40 1`] = `
 "
 Tesota receipt
-No review flags · 5 verification
-limits · 1 opinion to read
-Evidence, not approval: accepting the
-change is yours.
+Evidence standing: incomplete
+No review flags · 2 verification
+limits · 2 opinions to read
 
-✓ Tested   bun run check · 7:37
-○ Proved   none recorded
-○ Models   none recorded
+Request context
+Request 1
+Keep amounts below 100 unchanged.
+
+Code evidence
+✓ Tested      bun test · 0:01
+○ Proved      none recorded
+○ Models      none recorded
 
 ○ Change sensitivity unknown · 1 test
   file
   Base fails too; no per-test failure
   report.
-○ Attribution unresolved
-  history moved, could not be read,
-  or was not captured; recorded
-  exercise and contract measurements
-  do not establish request
-  attribution. Changes are compared
-  with the request's start, not
-  attributed to this request
-○ No proof covers 3 changed files
+○ No proof covers 1 changed file
 
-Model opinions · not evidence, not
-counted
+Specification evidence
+  contract      total in
+    src/total.ts: all 1 decided
+    changes to its code fail the
+    proof
+✓ Contracts   1 contract: every
+              decided change broke
+              its proof
+
+Request review — model opinion
+Contract comparison: completed
+Open cases: listed; 1 listed
+◇ Mismatch reported
+  ClaimCheck · total · src/total.ts
+  The contract permits changing
+  amounts below 100.
 ◇ 1 open case for you to settle,
-  listed by openai/gpt-6-sol
+  listed by test/lister
 
 ▾ Details
-  passed        bun run check
-  not checked
-    tests/test-rung.test.ts: on the
-    base it failed, but so does the
-    base without it, and no test
-    report says which tests fail;
-    contribution unresolved
-  not proved
-    docs/concepts/verification.md: no
+  contract      total in
+    src/total.ts: all 1 decided
+    changes to its code fail the
+    proof
+  passed        bun test
+  not checked   tests/total.test.ts:
+    Base fails too; no per-test
+    failure report.; added in this
+    request
+  not proved    src/total.ts: no
     proof covers it; the project's
     commands pass with it
-  not proved    docs/receipt-v2.md:
-    no proof covers it; the project's
-    commands pass with it
-  not proved    src/test-rung.ts: no
-    proof covers it; the project's
-    commands pass with it
-  changed lines implementation +37 -7
-    · tests +37 -2 · other +6 -1
-  model listed  by openai/gpt-6-sol,
-    cases the request may leave open,
-    for you to settle; a model's
-    opinion, not a check:
-                The contents of issue
-                  #575 and its
-                  comments are not
-                  supplied here, and
-                  they describe a
-                  behavior with two
-                  plausible outcomes
-                  for the same valid
-                  input.: The
-                  behavior follows
-                  one interpretation
-                  of the issue and
-                  comments or The
-                  behavior follows
-                  the other
-                  interpretation of
-                  the issue and
-                  comments
-From c94a4614edbf · Tesota
-  0.1.0-alpha.1 ·
-  claude-code/claude-opus-5-5
+  model opinion Contract comparison
+    completed
+                restatement model:
+                  test/reader;
+                  comparison model:
+                  test/reviewer
+                total in
+                  src/total.ts,
+                  restated without
+                  the request:
+                  assumes None;
+                  guarantees Returns
+                  a nonnegative
+                  amount.
+                total in
+                  src/total.ts: the
+                  model identified a
+                  mismatch: The
+                  contract permits
+                  changing amounts
+                  below 100.
+  model listed  by test/lister, cases
+    the request may leave open, for
+    you to settle; a model's opinion,
+    not a check:
+                total(100): 100 or 90
+From the first commit · Tesota 0.1.0
+  · test/worker
 
 ▾ Context
 
 Subagents (each one's receipt covers
   its own branch, not this change)
-- design sound credit rule #575:
-  completed, read only ·
-  openai/gpt-6-astra
+- inspect total: completed, read only
+  · test/child
+
+Acceptance remains with the reviewer.
 "
 `;
 
-exports[`the real receipt of #575 > as a card 80 columns wide, the same words in both themes > collapsed 80 1`] = `
+exports[`current synthetic receipt > fits 80 columns in both themes without cutting reasons > collapsed 80 1`] = `
 "
 Tesota receipt
-No review flags · 5 verification limits · 1 opinion to read
-Evidence, not approval: accepting the change is yours.
+Evidence standing: incomplete
+No review flags · 2 verification limits · 2 opinions to read
 
-✓ Tested   bun run check · 7:37
-○ Proved   none recorded
-○ Models   none recorded
+Request context
+Request 1
+Keep amounts below 100 unchanged.
+
+Code evidence
+✓ Tested      bun test · 0:01
+○ Proved      none recorded
+○ Models      none recorded
 
 ○ Change sensitivity unknown · 1 test file
   Base fails too; no per-test failure report.
-○ Attribution unresolved
-  history moved, could not be read, or was not captured; recorded exercise
-  and contract measurements do not establish request attribution. Changes are
-  compared with the request's start, not attributed to this request
-○ No proof covers 3 changed files
+○ No proof covers 1 changed file
 
-Model opinions · not evidence, not counted
-◇ 1 open case for you to settle, listed by openai/gpt-6-sol
+Specification evidence
+  contract      total in src/total.ts: all 1 decided changes to its code fail
+    the proof
+✓ Contracts   1 contract: every decided change broke its proof
+
+Request review — model opinion
+Contract comparison: completed
+Open cases: listed; 1 listed
+◇ Mismatch reported
+  ClaimCheck · total · src/total.ts
+  The contract permits changing amounts below 100.
+◇ 1 open case for you to settle, listed by test/lister
 
 ▸ Details · paths, output, assumptions, model opinions
 ▸ Context · 1 subagent
+
+Acceptance remains with the reviewer.
 "
 `;
 
-exports[`the real receipt of #575 > as a card 80 columns wide, the same words in both themes > expanded 80 1`] = `
+exports[`current synthetic receipt > fits 80 columns in both themes without cutting reasons > expanded 80 1`] = `
 "
 Tesota receipt
-No review flags · 5 verification limits · 1 opinion to read
-Evidence, not approval: accepting the change is yours.
+Evidence standing: incomplete
+No review flags · 2 verification limits · 2 opinions to read
 
-✓ Tested   bun run check · 7:37
-○ Proved   none recorded
-○ Models   none recorded
+Request context
+Request 1
+Keep amounts below 100 unchanged.
+
+Code evidence
+✓ Tested      bun test · 0:01
+○ Proved      none recorded
+○ Models      none recorded
 
 ○ Change sensitivity unknown · 1 test file
   Base fails too; no per-test failure report.
-○ Attribution unresolved
-  history moved, could not be read, or was not captured; recorded exercise
-  and contract measurements do not establish request attribution. Changes are
-  compared with the request's start, not attributed to this request
-○ No proof covers 3 changed files
+○ No proof covers 1 changed file
 
-Model opinions · not evidence, not counted
-◇ 1 open case for you to settle, listed by openai/gpt-6-sol
+Specification evidence
+  contract      total in src/total.ts: all 1 decided changes to its code fail
+    the proof
+✓ Contracts   1 contract: every decided change broke its proof
+
+Request review — model opinion
+Contract comparison: completed
+Open cases: listed; 1 listed
+◇ Mismatch reported
+  ClaimCheck · total · src/total.ts
+  The contract permits changing amounts below 100.
+◇ 1 open case for you to settle, listed by test/lister
 
 ▾ Details
-  passed        bun run check
-  not checked   tests/test-rung.test.ts: on the base it failed, but so does
-    the base without it, and no test report says which tests fail;
-    contribution unresolved
-  not proved    docs/concepts/verification.md: no proof covers it; the
-    project's commands pass with it
-  not proved    docs/receipt-v2.md: no proof covers it; the project's
-    commands pass with it
-  not proved    src/test-rung.ts: no proof covers it; the project's commands
-    pass with it
-  changed lines implementation +37 -7 · tests +37 -2 · other +6 -1
-  model listed  by openai/gpt-6-sol, cases the request may leave open, for
-    you to settle; a model's opinion, not a check:
-                The contents of issue #575 and its comments are not supplied
-                  here, and they describe a behavior with two plausible
-                  outcomes for the same valid input.: The behavior follows
-                  one interpretation of the issue and comments or The
-                  behavior follows the other interpretation of the issue and
-                  comments
-From c94a4614edbf · Tesota 0.1.0-alpha.1 · claude-code/claude-opus-5-5
+  contract      total in src/total.ts: all 1 decided changes to its code fail
+    the proof
+  passed        bun test
+  not checked   tests/total.test.ts: Base fails too; no per-test failure
+    report.; added in this request
+  not proved    src/total.ts: no proof covers it; the project's commands pass
+    with it
+  model opinion Contract comparison completed
+                restatement model: test/reader; comparison model:
+                  test/reviewer
+                total in src/total.ts, restated without the request: assumes
+                  None; guarantees Returns a nonnegative amount.
+                total in src/total.ts: the model identified a mismatch: The
+                  contract permits changing amounts below 100.
+  model listed  by test/lister, cases the request may leave open, for you to
+    settle; a model's opinion, not a check:
+                total(100): 100 or 90
+From the first commit · Tesota 0.1.0 · test/worker
 
 ▾ Context
 
 Subagents (each one's receipt covers its own branch, not this change)
-- design sound credit rule #575: completed, read only · openai/gpt-6-astra
+- inspect total: completed, read only · test/child
+
+Acceptance remains with the reviewer.
 "
 `;
 
-exports[`the real receipt of #575 > as a card 120 columns wide, the same words in both themes > collapsed 120 1`] = `
+exports[`current synthetic receipt > fits 120 columns in both themes without cutting reasons > collapsed 120 1`] = `
 "
 Tesota receipt
-No review flags · 5 verification limits · 1 opinion to read
-Evidence, not approval: accepting the change is yours.
+Evidence standing: incomplete
+No review flags · 2 verification limits · 2 opinions to read
 
-✓ Tested   bun run check · 7:37
-○ Proved   none recorded
-○ Models   none recorded
+Request context
+Request 1
+Keep amounts below 100 unchanged.
+
+Code evidence
+✓ Tested      bun test · 0:01
+○ Proved      none recorded
+○ Models      none recorded
 
 ○ Change sensitivity unknown · 1 test file
   Base fails too; no per-test failure report.
-○ Attribution unresolved
-  history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish
-  request attribution. Changes are compared with the request's start, not attributed to this request
-○ No proof covers 3 changed files
+○ No proof covers 1 changed file
 
-Model opinions · not evidence, not counted
-◇ 1 open case for you to settle, listed by openai/gpt-6-sol
+Specification evidence
+  contract      total in src/total.ts: all 1 decided changes to its code fail the proof
+✓ Contracts   1 contract: every decided change broke its proof
+
+Request review — model opinion
+Contract comparison: completed
+Open cases: listed; 1 listed
+◇ Mismatch reported
+  ClaimCheck · total · src/total.ts
+  The contract permits changing amounts below 100.
+◇ 1 open case for you to settle, listed by test/lister
 
 ▸ Details · paths, output, assumptions, model opinions
 ▸ Context · 1 subagent
+
+Acceptance remains with the reviewer.
 "
 `;
 
-exports[`the real receipt of #575 > as a card 120 columns wide, the same words in both themes > expanded 120 1`] = `
+exports[`current synthetic receipt > fits 120 columns in both themes without cutting reasons > expanded 120 1`] = `
 "
 Tesota receipt
-No review flags · 5 verification limits · 1 opinion to read
-Evidence, not approval: accepting the change is yours.
+Evidence standing: incomplete
+No review flags · 2 verification limits · 2 opinions to read
 
-✓ Tested   bun run check · 7:37
-○ Proved   none recorded
-○ Models   none recorded
+Request context
+Request 1
+Keep amounts below 100 unchanged.
+
+Code evidence
+✓ Tested      bun test · 0:01
+○ Proved      none recorded
+○ Models      none recorded
 
 ○ Change sensitivity unknown · 1 test file
   Base fails too; no per-test failure report.
-○ Attribution unresolved
-  history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish
-  request attribution. Changes are compared with the request's start, not attributed to this request
-○ No proof covers 3 changed files
+○ No proof covers 1 changed file
 
-Model opinions · not evidence, not counted
-◇ 1 open case for you to settle, listed by openai/gpt-6-sol
+Specification evidence
+  contract      total in src/total.ts: all 1 decided changes to its code fail the proof
+✓ Contracts   1 contract: every decided change broke its proof
+
+Request review — model opinion
+Contract comparison: completed
+Open cases: listed; 1 listed
+◇ Mismatch reported
+  ClaimCheck · total · src/total.ts
+  The contract permits changing amounts below 100.
+◇ 1 open case for you to settle, listed by test/lister
 
 ▾ Details
-  passed        bun run check
-  not checked   tests/test-rung.test.ts: on the base it failed, but so does the base without it, and no test report
-    says which tests fail; contribution unresolved
-  not proved    docs/concepts/verification.md: no proof covers it; the project's commands pass with it
-  not proved    docs/receipt-v2.md: no proof covers it; the project's commands pass with it
-  not proved    src/test-rung.ts: no proof covers it; the project's commands pass with it
-  changed lines implementation +37 -7 · tests +37 -2 · other +6 -1
-  model listed  by openai/gpt-6-sol, cases the request may leave open, for you to settle; a model's opinion, not a
-    check:
-                The contents of issue #575 and its comments are not supplied here, and they describe a behavior with
-                  two plausible outcomes for the same valid input.: The behavior follows one interpretation of the
-                  issue and comments or The behavior follows the other interpretation of the issue and comments
-From c94a4614edbf · Tesota 0.1.0-alpha.1 · claude-code/claude-opus-5-5
+  contract      total in src/total.ts: all 1 decided changes to its code fail the proof
+  passed        bun test
+  not checked   tests/total.test.ts: Base fails too; no per-test failure report.; added in this request
+  not proved    src/total.ts: no proof covers it; the project's commands pass with it
+  model opinion Contract comparison completed
+                restatement model: test/reader; comparison model: test/reviewer
+                total in src/total.ts, restated without the request: assumes None; guarantees Returns a nonnegative
+                  amount.
+                total in src/total.ts: the model identified a mismatch: The contract permits changing amounts below
+                  100.
+  model listed  by test/lister, cases the request may leave open, for you to settle; a model's opinion, not a check:
+                total(100): 100 or 90
+From the first commit · Tesota 0.1.0 · test/worker
 
 ▾ Context
 
 Subagents (each one's receipt covers its own branch, not this change)
-- design sound credit rule #575: completed, read only · openai/gpt-6-astra
+- inspect total: completed, read only · test/child
+
+Acceptance remains with the reviewer.
 "
 `;
 
-exports[`the real receipt of #575 > as plain text and as Markdown > markdown 1`] = `
+exports[`current synthetic receipt > renders plain text and Markdown > markdown 1`] = `
 "## Tesota receipt
 
-**No review flags · 5 verification limits · 1 opinion to read**  
-Evidence, not approval: accepting the change is yours.
+Evidence standing: incomplete
 
-- ✓ **Tested** — bun run check · 7:37
+**No review flags · 2 verification limits · 2 opinions to read**
+
+> Request context
+> Request 1
+> Keep amounts below 100 unchanged.
+
+**Code evidence**
+
+- ✓ **Tested** — bun test · 0:01
 - ○ **Proved** — none recorded
 - ○ **Models** — none recorded
 
 - ○ Change sensitivity unknown · 1 test file — Base fails too; no per\\-test failure report.
-- ○ Attribution unresolved — history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish request attribution. Changes are compared with the request's start, not attributed to this request
-- ○ No proof covers 3 changed files
+- ○ No proof covers 1 changed file
 
-**Model opinions · not evidence, not counted**
+> Specification evidence
+>   contract      total in src/total.ts: all 1 decided changes to its code fail the proof
 
-- ◇ 1 open case for you to settle, listed by openai/gpt\\-6\\-sol
+**Request review — model opinion**
+
+Contract comparison: completed
+Open cases: listed; 1 listed
+- ◇ ClaimCheck: mismatch reported · total · src/total.ts — The contract permits changing amounts below 100.
+- ◇ 1 open case for you to settle, listed by test/lister
 
 **Details**
 
 \`\`\`text
-  passed        bun run check
-  not checked   tests/test-rung.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
-  not proved    docs/concepts/verification.md: no proof covers it; the project's commands pass with it
-  not proved    docs/receipt-v2.md: no proof covers it; the project's commands pass with it
-  not proved    src/test-rung.ts: no proof covers it; the project's commands pass with it
-  changed lines implementation +37 -7 · tests +37 -2 · other +6 -1
-  model listed  by openai/gpt-6-sol, cases the request may leave open, for you to settle; a model's opinion, not a check:
-                The contents of issue #575 and its comments are not supplied here, and they describe a behavior with two plausible outcomes for the same valid input.: The behavior follows one interpretation of the issue and comments or The behavior follows the other interpretation of the issue and comments
-From c94a4614edbf · Tesota 0.1.0-alpha.1 · claude-code/claude-opus-5-5
+  contract      total in src/total.ts: all 1 decided changes to its code fail the proof
+  passed        bun test
+  not checked   tests/total.test.ts: Base fails too; no per-test failure report.; added in this request
+  not proved    src/total.ts: no proof covers it; the project's commands pass with it
+  model opinion Contract comparison completed
+                restatement model: test/reader; comparison model: test/reviewer
+                total in src/total.ts, restated without the request: assumes None; guarantees Returns a nonnegative amount.
+                total in src/total.ts: the model identified a mismatch: The contract permits changing amounts below 100.
+  model listed  by test/lister, cases the request may leave open, for you to settle; a model's opinion, not a check:
+                total(100): 100 or 90
+From the first commit · Tesota 0.1.0 · test/worker
 \`\`\`
 
 Subagents \\(each one's receipt covers its own branch, not this change\\)
-- design sound credit rule \\#575: completed, read only · openai/gpt\\-6\\-astra"
+- inspect total: completed, read only · test/child
+
+Acceptance remains with the reviewer."
 `;
 
-exports[`the real receipt of #575 > as plain text and as Markdown > plain 1`] = `
+exports[`current synthetic receipt > renders plain text and Markdown > plain 1`] = `
 "Tesota receipt
-No review flags · 5 verification limits · 1 opinion to read
-Evidence, not approval: accepting the change is yours.
+Evidence standing: incomplete
+No review flags · 2 verification limits · 2 opinions to read
 
-✓ Tested   bun run check · 7:37
-○ Proved   none recorded
-○ Models   none recorded
+Request context
+Request 1
+Keep amounts below 100 unchanged.
+
+Code evidence
+✓ Tested      bun test · 0:01
+○ Proved      none recorded
+○ Models      none recorded
 
 ○ Change sensitivity unknown · 1 test file
   Base fails too; no per-test failure report.
-○ Attribution unresolved
-  history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish request attribution. Changes are compared with the request's start, not attributed to this request
-○ No proof covers 3 changed files
+○ No proof covers 1 changed file
 
-Model opinions · not evidence, not counted
-◇ 1 open case for you to settle, listed by openai/gpt-6-sol
+Specification evidence
+  contract      total in src/total.ts: all 1 decided changes to its code fail the proof
 
-Details
-  passed        bun run check
-  not checked   tests/test-rung.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
-  not proved    docs/concepts/verification.md: no proof covers it; the project's commands pass with it
-  not proved    docs/receipt-v2.md: no proof covers it; the project's commands pass with it
-  not proved    src/test-rung.ts: no proof covers it; the project's commands pass with it
-  changed lines implementation +37 -7 · tests +37 -2 · other +6 -1
-  model listed  by openai/gpt-6-sol, cases the request may leave open, for you to settle; a model's opinion, not a check:
-                The contents of issue #575 and its comments are not supplied here, and they describe a behavior with two plausible outcomes for the same valid input.: The behavior follows one interpretation of the issue and comments or The behavior follows the other interpretation of the issue and comments
-From c94a4614edbf · Tesota 0.1.0-alpha.1 · claude-code/claude-opus-5-5
-
-Subagents (each one's receipt covers its own branch, not this change)
-- design sound credit rule #575: completed, read only · openai/gpt-6-astra"
-`;
-
-exports[`the real receipt of #575 > in each theme's colors > dark collapsed 80 1`] = `
-"[
- "",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;145;156;240m\\u001b[1mTesota receipt\\u001b[22m\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;161;161;168mNo review flags\\u001b[39m\\u001b[38;2;128;128;136m · \\u001b[39m\\u001b[38;2;224;168;79m\\u001b[1m5 verification limits\\u001b[22m\\u001b[39m\\u001b[38;2;128;128;136m · \\u001b[39m\\u001b[38;2;145;156;240m1 opinion to read\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;128;128;136mEvidence, not approval: accepting the change is yours.\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m ",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;161;161;168m✓\\u001b[39m \\u001b[38;2;237;237;237mTested   \\u001b[39m\\u001b[38;2;161;161;168mbun run check · 7:37\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;128;128;136m○ Proved   none recorded\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;128;128;136m○ Models   none recorded\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m ",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;161;161;168m○\\u001b[39m \\u001b[38;2;237;237;237mChange sensitivity unknown · 1 test file\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;161;161;168m  Base fails too; no per-test failure report.\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;161;161;168m○\\u001b[39m \\u001b[38;2;237;237;237mAttribution unresolved\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;161;161;168m  history moved, could not be read, or was not captured; recorded exercise",
- " \\u001b[38;2;66;66;74m│\\u001b[39m   \\u001b[38;2;161;161;168mand contract measurements do not establish request attribution. Changes are",
- " \\u001b[38;2;66;66;74m│\\u001b[39m   \\u001b[38;2;161;161;168m\\u001b[38;2;161;161;168mcompared with the request's start, not attributed to this request\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;161;161;168m○\\u001b[39m \\u001b[38;2;237;237;237mNo proof covers 3 changed files\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m ",
- " \\u001b[38;2;66;66;74m┆\\u001b[39m \\u001b[38;2;128;128;136mModel opinions · not evidence, not counted\\u001b[39m",
- " \\u001b[38;2;66;66;74m┆\\u001b[39m \\u001b[38;2;145;156;240m◇\\u001b[39m \\u001b[38;2;237;237;237m\\u001b[1m1 open case for you to settle, listed by openai/gpt-6-sol\\u001b[22m\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m ",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;128;128;136m▸ Details · paths, output, assumptions, model opinions\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;128;128;136m▸ Context · 1 subagent\\u001b[39m",
- ""
-]"
-`;
-
-exports[`the real receipt of #575 > in each theme's colors > light collapsed 80 1`] = `
-"[
- "",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;74;85;192m\\u001b[1mTesota receipt\\u001b[22m\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;82;82;91mNo review flags\\u001b[39m\\u001b[38;2;107;107;115m · \\u001b[39m\\u001b[38;2;143;90;10m\\u001b[1m5 verification limits\\u001b[22m\\u001b[39m\\u001b[38;2;107;107;115m · \\u001b[39m\\u001b[38;2;74;85;192m1 opinion to read\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;107;107;115mEvidence, not approval: accepting the change is yours.\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m ",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;82;82;91m✓\\u001b[39m \\u001b[38;2;24;24;27mTested   \\u001b[39m\\u001b[38;2;82;82;91mbun run check · 7:37\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;107;107;115m○ Proved   none recorded\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;107;107;115m○ Models   none recorded\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m ",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;82;82;91m○\\u001b[39m \\u001b[38;2;24;24;27mChange sensitivity unknown · 1 test file\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;82;82;91m  Base fails too; no per-test failure report.\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;82;82;91m○\\u001b[39m \\u001b[38;2;24;24;27mAttribution unresolved\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;82;82;91m  history moved, could not be read, or was not captured; recorded exercise",
- " \\u001b[38;2;200;200;206m│\\u001b[39m   \\u001b[38;2;82;82;91mand contract measurements do not establish request attribution. Changes are",
- " \\u001b[38;2;200;200;206m│\\u001b[39m   \\u001b[38;2;82;82;91m\\u001b[38;2;82;82;91mcompared with the request's start, not attributed to this request\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;82;82;91m○\\u001b[39m \\u001b[38;2;24;24;27mNo proof covers 3 changed files\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m ",
- " \\u001b[38;2;200;200;206m┆\\u001b[39m \\u001b[38;2;107;107;115mModel opinions · not evidence, not counted\\u001b[39m",
- " \\u001b[38;2;200;200;206m┆\\u001b[39m \\u001b[38;2;74;85;192m◇\\u001b[39m \\u001b[38;2;24;24;27m\\u001b[1m1 open case for you to settle, listed by openai/gpt-6-sol\\u001b[22m\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m ",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;107;107;115m▸ Details · paths, output, assumptions, model opinions\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;107;107;115m▸ Context · 1 subagent\\u001b[39m",
- ""
-]"
-`;
-
-exports[`the real receipt of #577 > as a card 40 columns wide, the same words in both themes > collapsed 40 1`] = `
-"
-Tesota receipt
-2 review flags · 8 verification
-limits
-Evidence, not approval: accepting the
-change is yours.
-
-✓ Tested   bun run check · 6:17
-○ Proved   none recorded
-○ Models   none recorded
-
-! Review test edits · 2 heuristic
-  flags
-  May weaken evidence; not confirmed
-  weakening.
-○ Change sensitivity unknown · 2 test
-  files
-  Base fails too; no per-test failure
-  report.
-○ Attribution unresolved
-  history moved, could not be read,
-  or was not captured; recorded
-  exercise and contract measurements
-  do not establish request
-  attribution. Changes are compared
-  with the request's start, not
-  attributed to this request
-○ No proof covers 5 changed files
-
-▸ Details · paths, output,
-  assumptions, model opinions
-▸ Context · 2 subagents
-"
-`;
-
-exports[`the real receipt of #577 > as a card 40 columns wide, the same words in both themes > expanded 40 1`] = `
-"
-Tesota receipt
-2 review flags · 8 verification
-limits
-Evidence, not approval: accepting the
-change is yours.
-
-✓ Tested   bun run check · 6:17
-○ Proved   none recorded
-○ Models   none recorded
-
-! Review test edits · 2 heuristic
-  flags
-  May weaken evidence; not confirmed
-  weakening.
-○ Change sensitivity unknown · 2 test
-  files
-  Base fails too; no per-test failure
-  report.
-○ Attribution unresolved
-  history moved, could not be read,
-  or was not captured; recorded
-  exercise and contract measurements
-  do not establish request
-  attribution. Changes are compared
-  with the request's start, not
-  attributed to this request
-○ No proof covers 5 changed files
-
-▾ Details
-  passed        bun run check
-  not checked
-    packages/core/tests/claude-code.t
-    est.ts: on the base it failed,
-    but so does the base without it,
-    and no test report says which
-    tests fail; contribution
-    unresolved
-  not checked
-    packages/core/tests/compaction.te
-    st.ts: on the base it failed, but
-    so does the base without it, and
-    no test report says which tests
-    fail; contribution unresolved
-  may weaken
-    packages/core/tests/claude-code.t
-    est.ts: edits a test file
-  may weaken
-    packages/core/tests/compaction.te
-    st.ts: edits a test file
-  not proved
-    docs/guides/models.md: no proof
-    covers it; the project's commands
-    pass with it
-  not proved
-    packages/core/src/compaction.ts:
-    no proof covers it; the project's
-    commands pass with it
-  not proved
-    packages/core/src/extensions.ts:
-    no proof covers it; the project's
-    commands pass with it
-  not proved
-    packages/core/src/loop.ts: no
-    proof covers it; the project's
-    commands pass with it
-  not proved
-    packages/core/src/providers/claud
-    e-code.ts: no proof covers it;
-    the project's commands pass with
-    it
-  changed lines implementation +23
-    -11 · tests +65 -3 · other +4 -1
-  model listed  no case the request
-    leaves open, by openai/gpt-6-sol;
-    a model's opinion, not a check
-From 700f9a9d4a0b · Tesota
-  0.1.0-alpha.1 · openai/gpt-6.1-sol
-
-▾ Context
-
-Subagents (each one's receipt covers
-  its own branch, not this change)
-- check provider folder transport:
-  completed, read only ·
-  openai/gpt-5.6-terra
-- review session folder fix:
-  completed, incomplete, read only ·
-  openai/gpt-5.6-sol
-"
-`;
-
-exports[`the real receipt of #577 > as a card 80 columns wide, the same words in both themes > collapsed 80 1`] = `
-"
-Tesota receipt
-2 review flags · 8 verification limits
-Evidence, not approval: accepting the change is yours.
-
-✓ Tested   bun run check · 6:17
-○ Proved   none recorded
-○ Models   none recorded
-
-! Review test edits · 2 heuristic flags
-  May weaken evidence; not confirmed weakening.
-○ Change sensitivity unknown · 2 test files
-  Base fails too; no per-test failure report.
-○ Attribution unresolved
-  history moved, could not be read, or was not captured; recorded exercise
-  and contract measurements do not establish request attribution. Changes are
-  compared with the request's start, not attributed to this request
-○ No proof covers 5 changed files
-
-▸ Details · paths, output, assumptions, model opinions
-▸ Context · 2 subagents
-"
-`;
-
-exports[`the real receipt of #577 > as a card 80 columns wide, the same words in both themes > expanded 80 1`] = `
-"
-Tesota receipt
-2 review flags · 8 verification limits
-Evidence, not approval: accepting the change is yours.
-
-✓ Tested   bun run check · 6:17
-○ Proved   none recorded
-○ Models   none recorded
-
-! Review test edits · 2 heuristic flags
-  May weaken evidence; not confirmed weakening.
-○ Change sensitivity unknown · 2 test files
-  Base fails too; no per-test failure report.
-○ Attribution unresolved
-  history moved, could not be read, or was not captured; recorded exercise
-  and contract measurements do not establish request attribution. Changes are
-  compared with the request's start, not attributed to this request
-○ No proof covers 5 changed files
-
-▾ Details
-  passed        bun run check
-  not checked   packages/core/tests/claude-code.test.ts: on the base it
-    failed, but so does the base without it, and no test report says which
-    tests fail; contribution unresolved
-  not checked   packages/core/tests/compaction.test.ts: on the base it
-    failed, but so does the base without it, and no test report says which
-    tests fail; contribution unresolved
-  may weaken    packages/core/tests/claude-code.test.ts: edits a test file
-  may weaken    packages/core/tests/compaction.test.ts: edits a test file
-  not proved    docs/guides/models.md: no proof covers it; the project's
-    commands pass with it
-  not proved    packages/core/src/compaction.ts: no proof covers it; the
-    project's commands pass with it
-  not proved    packages/core/src/extensions.ts: no proof covers it; the
-    project's commands pass with it
-  not proved    packages/core/src/loop.ts: no proof covers it; the project's
-    commands pass with it
-  not proved    packages/core/src/providers/claude-code.ts: no proof covers
-    it; the project's commands pass with it
-  changed lines implementation +23 -11 · tests +65 -3 · other +4 -1
-  model listed  no case the request leaves open, by openai/gpt-6-sol; a
-    model's opinion, not a check
-From 700f9a9d4a0b · Tesota 0.1.0-alpha.1 · openai/gpt-6.1-sol
-
-▾ Context
-
-Subagents (each one's receipt covers its own branch, not this change)
-- check provider folder transport: completed, read only ·
-  openai/gpt-5.6-terra
-- review session folder fix: completed, incomplete, read only ·
-  openai/gpt-5.6-sol
-"
-`;
-
-exports[`the real receipt of #577 > as a card 120 columns wide, the same words in both themes > collapsed 120 1`] = `
-"
-Tesota receipt
-2 review flags · 8 verification limits
-Evidence, not approval: accepting the change is yours.
-
-✓ Tested   bun run check · 6:17
-○ Proved   none recorded
-○ Models   none recorded
-
-! Review test edits · 2 heuristic flags
-  May weaken evidence; not confirmed weakening.
-○ Change sensitivity unknown · 2 test files
-  Base fails too; no per-test failure report.
-○ Attribution unresolved
-  history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish
-  request attribution. Changes are compared with the request's start, not attributed to this request
-○ No proof covers 5 changed files
-
-▸ Details · paths, output, assumptions, model opinions
-▸ Context · 2 subagents
-"
-`;
-
-exports[`the real receipt of #577 > as a card 120 columns wide, the same words in both themes > expanded 120 1`] = `
-"
-Tesota receipt
-2 review flags · 8 verification limits
-Evidence, not approval: accepting the change is yours.
-
-✓ Tested   bun run check · 6:17
-○ Proved   none recorded
-○ Models   none recorded
-
-! Review test edits · 2 heuristic flags
-  May weaken evidence; not confirmed weakening.
-○ Change sensitivity unknown · 2 test files
-  Base fails too; no per-test failure report.
-○ Attribution unresolved
-  history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish
-  request attribution. Changes are compared with the request's start, not attributed to this request
-○ No proof covers 5 changed files
-
-▾ Details
-  passed        bun run check
-  not checked   packages/core/tests/claude-code.test.ts: on the base it failed, but so does the base without it, and
-    no test report says which tests fail; contribution unresolved
-  not checked   packages/core/tests/compaction.test.ts: on the base it failed, but so does the base without it, and
-    no test report says which tests fail; contribution unresolved
-  may weaken    packages/core/tests/claude-code.test.ts: edits a test file
-  may weaken    packages/core/tests/compaction.test.ts: edits a test file
-  not proved    docs/guides/models.md: no proof covers it; the project's commands pass with it
-  not proved    packages/core/src/compaction.ts: no proof covers it; the project's commands pass with it
-  not proved    packages/core/src/extensions.ts: no proof covers it; the project's commands pass with it
-  not proved    packages/core/src/loop.ts: no proof covers it; the project's commands pass with it
-  not proved    packages/core/src/providers/claude-code.ts: no proof covers it; the project's commands pass with it
-  changed lines implementation +23 -11 · tests +65 -3 · other +4 -1
-  model listed  no case the request leaves open, by openai/gpt-6-sol; a model's opinion, not a check
-From 700f9a9d4a0b · Tesota 0.1.0-alpha.1 · openai/gpt-6.1-sol
-
-▾ Context
-
-Subagents (each one's receipt covers its own branch, not this change)
-- check provider folder transport: completed, read only · openai/gpt-5.6-terra
-- review session folder fix: completed, incomplete, read only · openai/gpt-5.6-sol
-"
-`;
-
-exports[`the real receipt of #577 > as plain text and as Markdown > markdown 1`] = `
-"## Tesota receipt
-
-**2 review flags · 8 verification limits**  
-Evidence, not approval: accepting the change is yours.
-
-- ✓ **Tested** — bun run check · 6:17
-- ○ **Proved** — none recorded
-- ○ **Models** — none recorded
-
-- ! Review test edits · 2 heuristic flags — May weaken evidence; not confirmed weakening.
-- ○ Change sensitivity unknown · 2 test files — Base fails too; no per\\-test failure report.
-- ○ Attribution unresolved — history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish request attribution. Changes are compared with the request's start, not attributed to this request
-- ○ No proof covers 5 changed files
-
-**Details**
-
-\`\`\`text
-  passed        bun run check
-  not checked   packages/core/tests/claude-code.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
-  not checked   packages/core/tests/compaction.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
-  may weaken    packages/core/tests/claude-code.test.ts: edits a test file
-  may weaken    packages/core/tests/compaction.test.ts: edits a test file
-  not proved    docs/guides/models.md: no proof covers it; the project's commands pass with it
-  not proved    packages/core/src/compaction.ts: no proof covers it; the project's commands pass with it
-  not proved    packages/core/src/extensions.ts: no proof covers it; the project's commands pass with it
-  not proved    packages/core/src/loop.ts: no proof covers it; the project's commands pass with it
-  not proved    packages/core/src/providers/claude-code.ts: no proof covers it; the project's commands pass with it
-  changed lines implementation +23 -11 · tests +65 -3 · other +4 -1
-  model listed  no case the request leaves open, by openai/gpt-6-sol; a model's opinion, not a check
-From 700f9a9d4a0b · Tesota 0.1.0-alpha.1 · openai/gpt-6.1-sol
-\`\`\`
-
-Subagents \\(each one's receipt covers its own branch, not this change\\)
-- check provider folder transport: completed, read only · openai/gpt\\-5.6\\-terra
-- review session folder fix: completed, incomplete, read only · openai/gpt\\-5.6\\-sol"
-`;
-
-exports[`the real receipt of #577 > as plain text and as Markdown > plain 1`] = `
-"Tesota receipt
-2 review flags · 8 verification limits
-Evidence, not approval: accepting the change is yours.
-
-✓ Tested   bun run check · 6:17
-○ Proved   none recorded
-○ Models   none recorded
-
-! Review test edits · 2 heuristic flags
-  May weaken evidence; not confirmed weakening.
-○ Change sensitivity unknown · 2 test files
-  Base fails too; no per-test failure report.
-○ Attribution unresolved
-  history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish request attribution. Changes are compared with the request's start, not attributed to this request
-○ No proof covers 5 changed files
+Request review — model opinion
+Contract comparison: completed
+Open cases: listed; 1 listed
+◇ ClaimCheck: mismatch reported · total · src/total.ts
+  The contract permits changing amounts below 100.
+◇ 1 open case for you to settle, listed by test/lister
 
 Details
-  passed        bun run check
-  not checked   packages/core/tests/claude-code.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
-  not checked   packages/core/tests/compaction.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
-  may weaken    packages/core/tests/claude-code.test.ts: edits a test file
-  may weaken    packages/core/tests/compaction.test.ts: edits a test file
-  not proved    docs/guides/models.md: no proof covers it; the project's commands pass with it
-  not proved    packages/core/src/compaction.ts: no proof covers it; the project's commands pass with it
-  not proved    packages/core/src/extensions.ts: no proof covers it; the project's commands pass with it
-  not proved    packages/core/src/loop.ts: no proof covers it; the project's commands pass with it
-  not proved    packages/core/src/providers/claude-code.ts: no proof covers it; the project's commands pass with it
-  changed lines implementation +23 -11 · tests +65 -3 · other +4 -1
-  model listed  no case the request leaves open, by openai/gpt-6-sol; a model's opinion, not a check
-From 700f9a9d4a0b · Tesota 0.1.0-alpha.1 · openai/gpt-6.1-sol
+  contract      total in src/total.ts: all 1 decided changes to its code fail the proof
+  passed        bun test
+  not checked   tests/total.test.ts: Base fails too; no per-test failure report.; added in this request
+  not proved    src/total.ts: no proof covers it; the project's commands pass with it
+  model opinion Contract comparison completed
+                restatement model: test/reader; comparison model: test/reviewer
+                total in src/total.ts, restated without the request: assumes None; guarantees Returns a nonnegative amount.
+                total in src/total.ts: the model identified a mismatch: The contract permits changing amounts below 100.
+  model listed  by test/lister, cases the request may leave open, for you to settle; a model's opinion, not a check:
+                total(100): 100 or 90
+From the first commit · Tesota 0.1.0 · test/worker
 
 Subagents (each one's receipt covers its own branch, not this change)
-- check provider folder transport: completed, read only · openai/gpt-5.6-terra
-- review session folder fix: completed, incomplete, read only · openai/gpt-5.6-sol"
-`;
+- inspect total: completed, read only · test/child
 
-exports[`the real receipt of #577 > in each theme's colors > dark collapsed 80 1`] = `
-"[
- "",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;145;156;240m\\u001b[1mTesota receipt\\u001b[22m\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;224;168;79m\\u001b[1m2 review flags\\u001b[22m\\u001b[39m\\u001b[38;2;128;128;136m · \\u001b[39m\\u001b[38;2;224;168;79m\\u001b[1m8 verification limits\\u001b[22m\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;128;128;136mEvidence, not approval: accepting the change is yours.\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m ",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;161;161;168m✓\\u001b[39m \\u001b[38;2;237;237;237mTested   \\u001b[39m\\u001b[38;2;161;161;168mbun run check · 6:17\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;128;128;136m○ Proved   none recorded\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;128;128;136m○ Models   none recorded\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m ",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;224;168;79m!\\u001b[39m \\u001b[38;2;237;237;237mReview test edits · 2 heuristic flags\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;161;161;168m  May weaken evidence; not confirmed weakening.\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;161;161;168m○\\u001b[39m \\u001b[38;2;237;237;237mChange sensitivity unknown · 2 test files\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;161;161;168m  Base fails too; no per-test failure report.\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;161;161;168m○\\u001b[39m \\u001b[38;2;237;237;237mAttribution unresolved\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;161;161;168m  history moved, could not be read, or was not captured; recorded exercise",
- " \\u001b[38;2;66;66;74m│\\u001b[39m   \\u001b[38;2;161;161;168mand contract measurements do not establish request attribution. Changes are",
- " \\u001b[38;2;66;66;74m│\\u001b[39m   \\u001b[38;2;161;161;168m\\u001b[38;2;161;161;168mcompared with the request's start, not attributed to this request\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;161;161;168m○\\u001b[39m \\u001b[38;2;237;237;237mNo proof covers 5 changed files\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m ",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;128;128;136m▸ Details · paths, output, assumptions, model opinions\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;128;128;136m▸ Context · 2 subagents\\u001b[39m",
- ""
-]"
-`;
-
-exports[`the real receipt of #577 > in each theme's colors > light collapsed 80 1`] = `
-"[
- "",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;74;85;192m\\u001b[1mTesota receipt\\u001b[22m\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;143;90;10m\\u001b[1m2 review flags\\u001b[22m\\u001b[39m\\u001b[38;2;107;107;115m · \\u001b[39m\\u001b[38;2;143;90;10m\\u001b[1m8 verification limits\\u001b[22m\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;107;107;115mEvidence, not approval: accepting the change is yours.\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m ",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;82;82;91m✓\\u001b[39m \\u001b[38;2;24;24;27mTested   \\u001b[39m\\u001b[38;2;82;82;91mbun run check · 6:17\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;107;107;115m○ Proved   none recorded\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;107;107;115m○ Models   none recorded\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m ",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;143;90;10m!\\u001b[39m \\u001b[38;2;24;24;27mReview test edits · 2 heuristic flags\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;82;82;91m  May weaken evidence; not confirmed weakening.\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;82;82;91m○\\u001b[39m \\u001b[38;2;24;24;27mChange sensitivity unknown · 2 test files\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;82;82;91m  Base fails too; no per-test failure report.\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;82;82;91m○\\u001b[39m \\u001b[38;2;24;24;27mAttribution unresolved\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;82;82;91m  history moved, could not be read, or was not captured; recorded exercise",
- " \\u001b[38;2;200;200;206m│\\u001b[39m   \\u001b[38;2;82;82;91mand contract measurements do not establish request attribution. Changes are",
- " \\u001b[38;2;200;200;206m│\\u001b[39m   \\u001b[38;2;82;82;91m\\u001b[38;2;82;82;91mcompared with the request's start, not attributed to this request\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;82;82;91m○\\u001b[39m \\u001b[38;2;24;24;27mNo proof covers 5 changed files\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m ",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;107;107;115m▸ Details · paths, output, assumptions, model opinions\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;107;107;115m▸ Context · 2 subagents\\u001b[39m",
- ""
-]"
-`;
-
-exports[`the real receipt of #584 > as a card 40 columns wide, the same words in both themes > collapsed 40 1`] = `
-"
-Tesota receipt
-2 review flags · 7 verification
-limits
-Evidence, not approval: accepting the
-change is yours.
-
-✓ Tested   bun run check · 5:58
-○ Proved   none recorded
-○ Models   none recorded
-
-! Review test edits · 2 heuristic
-  flags
-  May weaken evidence; not confirmed
-  weakening.
-○ Change sensitivity unknown · 3 test
-  files
-  Base fails too; no per-test failure
-  report.
-○ Attribution unresolved
-  history moved, could not be read,
-  or was not captured; recorded
-  exercise and contract measurements
-  do not establish request
-  attribution. Changes are compared
-  with the request's start, not
-  attributed to this request
-○ No proof covers 3 changed files
-
-▸ Details · paths, output,
-  assumptions, model opinions
-▸ Context · 1 answer · 1 subagent
-"
-`;
-
-exports[`the real receipt of #584 > as a card 40 columns wide, the same words in both themes > expanded 40 1`] = `
-"
-Tesota receipt
-2 review flags · 7 verification
-limits
-Evidence, not approval: accepting the
-change is yours.
-
-✓ Tested   bun run check · 5:58
-○ Proved   none recorded
-○ Models   none recorded
-
-! Review test edits · 2 heuristic
-  flags
-  May weaken evidence; not confirmed
-  weakening.
-○ Change sensitivity unknown · 3 test
-  files
-  Base fails too; no per-test failure
-  report.
-○ Attribution unresolved
-  history moved, could not be read,
-  or was not captured; recorded
-  exercise and contract measurements
-  do not establish request
-  attribution. Changes are compared
-  with the request's start, not
-  attributed to this request
-○ No proof covers 3 changed files
-
-▾ Details
-  passed        bun run check
-  not checked
-    packages/core/tests/interface.tes
-    t.ts: on the base it failed, but
-    so does the base without it, and
-    no test report says which tests
-    fail; contribution unresolved
-  not checked
-    tests/welcome-header.test.ts: on
-    the base it failed, but so does
-    the base without it, and no test
-    report says which tests fail;
-    contribution unresolved
-  not checked
-    tests/working-orb.test.ts: on the
-    base it failed, but so does the
-    base without it, and no test
-    report says which tests fail;
-    contribution unresolved
-  may weaken
-    packages/core/tests/interface.tes
-    t.ts: edits a test file
-  may weaken
-    tests/welcome-header.test.ts:
-    edits a test file
-  not proved    NOTICE: no proof
-    covers it; the project's commands
-    pass with it
-  not proved    src/tesota.ts: no
-    proof covers it; the project's
-    commands pass with it
-  not proved
-    src/welcome-header.ts: no proof
-    covers it; the project's commands
-    pass with it
-  changed lines implementation +99
-    -18 · tests +75 -25 · other +7 -0
-  model listed  no case the request
-    leaves open, by openai/gpt-6-sol;
-    a model's opinion, not a check
-From 700f9a9d4a0b · Tesota
-  0.1.0-alpha.1 · openai/gpt-6.1-sol
-
-▾ Context
-
-Request clarification (operator
-  input, not evidence or acceptance)
-Agent question: Issue #584 requires
-  real-terminal dark/light
-  screenshots or a recording in the
-  PR. Can you provide that visual
-  evidence? I can run automated
-  terminal tests here, but cannot
-  inspect a real terminal window.
-Operator selected: Open PR with gap
-  noted — Open the PR with
-  real-terminal visual acceptance
-  explicitly pending.
-
-Subagents (each one's receipt covers
-  its own branch, not this change)
-- Review orb acceptance and wiring:
-  completed, read only ·
-  openai/gpt-5.6-sol
-"
-`;
-
-exports[`the real receipt of #584 > as a card 80 columns wide, the same words in both themes > collapsed 80 1`] = `
-"
-Tesota receipt
-2 review flags · 7 verification limits
-Evidence, not approval: accepting the change is yours.
-
-✓ Tested   bun run check · 5:58
-○ Proved   none recorded
-○ Models   none recorded
-
-! Review test edits · 2 heuristic flags
-  May weaken evidence; not confirmed weakening.
-○ Change sensitivity unknown · 3 test files
-  Base fails too; no per-test failure report.
-○ Attribution unresolved
-  history moved, could not be read, or was not captured; recorded exercise
-  and contract measurements do not establish request attribution. Changes are
-  compared with the request's start, not attributed to this request
-○ No proof covers 3 changed files
-
-▸ Details · paths, output, assumptions, model opinions
-▸ Context · 1 answer · 1 subagent
-"
-`;
-
-exports[`the real receipt of #584 > as a card 80 columns wide, the same words in both themes > expanded 80 1`] = `
-"
-Tesota receipt
-2 review flags · 7 verification limits
-Evidence, not approval: accepting the change is yours.
-
-✓ Tested   bun run check · 5:58
-○ Proved   none recorded
-○ Models   none recorded
-
-! Review test edits · 2 heuristic flags
-  May weaken evidence; not confirmed weakening.
-○ Change sensitivity unknown · 3 test files
-  Base fails too; no per-test failure report.
-○ Attribution unresolved
-  history moved, could not be read, or was not captured; recorded exercise
-  and contract measurements do not establish request attribution. Changes are
-  compared with the request's start, not attributed to this request
-○ No proof covers 3 changed files
-
-▾ Details
-  passed        bun run check
-  not checked   packages/core/tests/interface.test.ts: on the base it failed,
-    but so does the base without it, and no test report says which tests
-    fail; contribution unresolved
-  not checked   tests/welcome-header.test.ts: on the base it failed, but so
-    does the base without it, and no test report says which tests fail;
-    contribution unresolved
-  not checked   tests/working-orb.test.ts: on the base it failed, but so does
-    the base without it, and no test report says which tests fail;
-    contribution unresolved
-  may weaken    packages/core/tests/interface.test.ts: edits a test file
-  may weaken    tests/welcome-header.test.ts: edits a test file
-  not proved    NOTICE: no proof covers it; the project's commands pass with
-    it
-  not proved    src/tesota.ts: no proof covers it; the project's commands
-    pass with it
-  not proved    src/welcome-header.ts: no proof covers it; the project's
-    commands pass with it
-  changed lines implementation +99 -18 · tests +75 -25 · other +7 -0
-  model listed  no case the request leaves open, by openai/gpt-6-sol; a
-    model's opinion, not a check
-From 700f9a9d4a0b · Tesota 0.1.0-alpha.1 · openai/gpt-6.1-sol
-
-▾ Context
-
-Request clarification (operator input, not evidence or acceptance)
-Agent question: Issue #584 requires real-terminal dark/light screenshots or a
-  recording in the PR. Can you provide that visual evidence? I can run
-  automated terminal tests here, but cannot inspect a real terminal window.
-Operator selected: Open PR with gap noted — Open the PR with real-terminal
-  visual acceptance explicitly pending.
-
-Subagents (each one's receipt covers its own branch, not this change)
-- Review orb acceptance and wiring: completed, read only · openai/gpt-5.6-sol
-"
-`;
-
-exports[`the real receipt of #584 > as a card 120 columns wide, the same words in both themes > collapsed 120 1`] = `
-"
-Tesota receipt
-2 review flags · 7 verification limits
-Evidence, not approval: accepting the change is yours.
-
-✓ Tested   bun run check · 5:58
-○ Proved   none recorded
-○ Models   none recorded
-
-! Review test edits · 2 heuristic flags
-  May weaken evidence; not confirmed weakening.
-○ Change sensitivity unknown · 3 test files
-  Base fails too; no per-test failure report.
-○ Attribution unresolved
-  history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish
-  request attribution. Changes are compared with the request's start, not attributed to this request
-○ No proof covers 3 changed files
-
-▸ Details · paths, output, assumptions, model opinions
-▸ Context · 1 answer · 1 subagent
-"
-`;
-
-exports[`the real receipt of #584 > as a card 120 columns wide, the same words in both themes > expanded 120 1`] = `
-"
-Tesota receipt
-2 review flags · 7 verification limits
-Evidence, not approval: accepting the change is yours.
-
-✓ Tested   bun run check · 5:58
-○ Proved   none recorded
-○ Models   none recorded
-
-! Review test edits · 2 heuristic flags
-  May weaken evidence; not confirmed weakening.
-○ Change sensitivity unknown · 3 test files
-  Base fails too; no per-test failure report.
-○ Attribution unresolved
-  history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish
-  request attribution. Changes are compared with the request's start, not attributed to this request
-○ No proof covers 3 changed files
-
-▾ Details
-  passed        bun run check
-  not checked   packages/core/tests/interface.test.ts: on the base it failed, but so does the base without it, and no
-    test report says which tests fail; contribution unresolved
-  not checked   tests/welcome-header.test.ts: on the base it failed, but so does the base without it, and no test
-    report says which tests fail; contribution unresolved
-  not checked   tests/working-orb.test.ts: on the base it failed, but so does the base without it, and no test report
-    says which tests fail; contribution unresolved
-  may weaken    packages/core/tests/interface.test.ts: edits a test file
-  may weaken    tests/welcome-header.test.ts: edits a test file
-  not proved    NOTICE: no proof covers it; the project's commands pass with it
-  not proved    src/tesota.ts: no proof covers it; the project's commands pass with it
-  not proved    src/welcome-header.ts: no proof covers it; the project's commands pass with it
-  changed lines implementation +99 -18 · tests +75 -25 · other +7 -0
-  model listed  no case the request leaves open, by openai/gpt-6-sol; a model's opinion, not a check
-From 700f9a9d4a0b · Tesota 0.1.0-alpha.1 · openai/gpt-6.1-sol
-
-▾ Context
-
-Request clarification (operator input, not evidence or acceptance)
-Agent question: Issue #584 requires real-terminal dark/light screenshots or a recording in the PR. Can you provide
-  that visual evidence? I can run automated terminal tests here, but cannot inspect a real terminal window.
-Operator selected: Open PR with gap noted — Open the PR with real-terminal visual acceptance explicitly pending.
-
-Subagents (each one's receipt covers its own branch, not this change)
-- Review orb acceptance and wiring: completed, read only · openai/gpt-5.6-sol
-"
-`;
-
-exports[`the real receipt of #584 > as plain text and as Markdown > markdown 1`] = `
-"## Tesota receipt
-
-**2 review flags · 7 verification limits**  
-Evidence, not approval: accepting the change is yours.
-
-- ✓ **Tested** — bun run check · 5:58
-- ○ **Proved** — none recorded
-- ○ **Models** — none recorded
-
-- ! Review test edits · 2 heuristic flags — May weaken evidence; not confirmed weakening.
-- ○ Change sensitivity unknown · 3 test files — Base fails too; no per\\-test failure report.
-- ○ Attribution unresolved — history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish request attribution. Changes are compared with the request's start, not attributed to this request
-- ○ No proof covers 3 changed files
-
-**Details**
-
-\`\`\`text
-  passed        bun run check
-  not checked   packages/core/tests/interface.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
-  not checked   tests/welcome-header.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
-  not checked   tests/working-orb.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
-  may weaken    packages/core/tests/interface.test.ts: edits a test file
-  may weaken    tests/welcome-header.test.ts: edits a test file
-  not proved    NOTICE: no proof covers it; the project's commands pass with it
-  not proved    src/tesota.ts: no proof covers it; the project's commands pass with it
-  not proved    src/welcome-header.ts: no proof covers it; the project's commands pass with it
-  changed lines implementation +99 -18 · tests +75 -25 · other +7 -0
-  model listed  no case the request leaves open, by openai/gpt-6-sol; a model's opinion, not a check
-From 700f9a9d4a0b · Tesota 0.1.0-alpha.1 · openai/gpt-6.1-sol
-\`\`\`
-
-> 
-> Request clarification \\(operator input, not evidence or acceptance\\)
-> Agent question: Issue \\#584 requires real\\-terminal dark/light screenshots or a recording in the PR. Can you provide that visual evidence? I can run automated terminal tests here, but cannot inspect a real terminal window.
-> Operator selected: Open PR with gap noted — Open the PR with real\\-terminal visual acceptance explicitly pending.
-
-Subagents \\(each one's receipt covers its own branch, not this change\\)
-- Review orb acceptance and wiring: completed, read only · openai/gpt\\-5.6\\-sol"
-`;
-
-exports[`the real receipt of #584 > as plain text and as Markdown > plain 1`] = `
-"Tesota receipt
-2 review flags · 7 verification limits
-Evidence, not approval: accepting the change is yours.
-
-✓ Tested   bun run check · 5:58
-○ Proved   none recorded
-○ Models   none recorded
-
-! Review test edits · 2 heuristic flags
-  May weaken evidence; not confirmed weakening.
-○ Change sensitivity unknown · 3 test files
-  Base fails too; no per-test failure report.
-○ Attribution unresolved
-  history moved, could not be read, or was not captured; recorded exercise and contract measurements do not establish request attribution. Changes are compared with the request's start, not attributed to this request
-○ No proof covers 3 changed files
-
-Details
-  passed        bun run check
-  not checked   packages/core/tests/interface.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
-  not checked   tests/welcome-header.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
-  not checked   tests/working-orb.test.ts: on the base it failed, but so does the base without it, and no test report says which tests fail; contribution unresolved
-  may weaken    packages/core/tests/interface.test.ts: edits a test file
-  may weaken    tests/welcome-header.test.ts: edits a test file
-  not proved    NOTICE: no proof covers it; the project's commands pass with it
-  not proved    src/tesota.ts: no proof covers it; the project's commands pass with it
-  not proved    src/welcome-header.ts: no proof covers it; the project's commands pass with it
-  changed lines implementation +99 -18 · tests +75 -25 · other +7 -0
-  model listed  no case the request leaves open, by openai/gpt-6-sol; a model's opinion, not a check
-From 700f9a9d4a0b · Tesota 0.1.0-alpha.1 · openai/gpt-6.1-sol
-
-Request clarification (operator input, not evidence or acceptance)
-Agent question: Issue #584 requires real-terminal dark/light screenshots or a recording in the PR. Can you provide that visual evidence? I can run automated terminal tests here, but cannot inspect a real terminal window.
-Operator selected: Open PR with gap noted — Open the PR with real-terminal visual acceptance explicitly pending.
-
-Subagents (each one's receipt covers its own branch, not this change)
-- Review orb acceptance and wiring: completed, read only · openai/gpt-5.6-sol"
-`;
-
-exports[`the real receipt of #584 > in each theme's colors > dark collapsed 80 1`] = `
-"[
- "",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;145;156;240m\\u001b[1mTesota receipt\\u001b[22m\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;224;168;79m\\u001b[1m2 review flags\\u001b[22m\\u001b[39m\\u001b[38;2;128;128;136m · \\u001b[39m\\u001b[38;2;224;168;79m\\u001b[1m7 verification limits\\u001b[22m\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;128;128;136mEvidence, not approval: accepting the change is yours.\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m ",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;161;161;168m✓\\u001b[39m \\u001b[38;2;237;237;237mTested   \\u001b[39m\\u001b[38;2;161;161;168mbun run check · 5:58\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;128;128;136m○ Proved   none recorded\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;128;128;136m○ Models   none recorded\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m ",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;224;168;79m!\\u001b[39m \\u001b[38;2;237;237;237mReview test edits · 2 heuristic flags\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;161;161;168m  May weaken evidence; not confirmed weakening.\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;161;161;168m○\\u001b[39m \\u001b[38;2;237;237;237mChange sensitivity unknown · 3 test files\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;161;161;168m  Base fails too; no per-test failure report.\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;161;161;168m○\\u001b[39m \\u001b[38;2;237;237;237mAttribution unresolved\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;161;161;168m  history moved, could not be read, or was not captured; recorded exercise",
- " \\u001b[38;2;66;66;74m│\\u001b[39m   \\u001b[38;2;161;161;168mand contract measurements do not establish request attribution. Changes are",
- " \\u001b[38;2;66;66;74m│\\u001b[39m   \\u001b[38;2;161;161;168m\\u001b[38;2;161;161;168mcompared with the request's start, not attributed to this request\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;161;161;168m○\\u001b[39m \\u001b[38;2;237;237;237mNo proof covers 3 changed files\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m ",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;128;128;136m▸ Details · paths, output, assumptions, model opinions\\u001b[39m",
- " \\u001b[38;2;66;66;74m│\\u001b[39m \\u001b[38;2;128;128;136m▸ Context · 1 answer · 1 subagent\\u001b[39m",
- ""
-]"
-`;
-
-exports[`the real receipt of #584 > in each theme's colors > light collapsed 80 1`] = `
-"[
- "",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;74;85;192m\\u001b[1mTesota receipt\\u001b[22m\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;143;90;10m\\u001b[1m2 review flags\\u001b[22m\\u001b[39m\\u001b[38;2;107;107;115m · \\u001b[39m\\u001b[38;2;143;90;10m\\u001b[1m7 verification limits\\u001b[22m\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;107;107;115mEvidence, not approval: accepting the change is yours.\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m ",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;82;82;91m✓\\u001b[39m \\u001b[38;2;24;24;27mTested   \\u001b[39m\\u001b[38;2;82;82;91mbun run check · 5:58\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;107;107;115m○ Proved   none recorded\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;107;107;115m○ Models   none recorded\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m ",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;143;90;10m!\\u001b[39m \\u001b[38;2;24;24;27mReview test edits · 2 heuristic flags\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;82;82;91m  May weaken evidence; not confirmed weakening.\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;82;82;91m○\\u001b[39m \\u001b[38;2;24;24;27mChange sensitivity unknown · 3 test files\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;82;82;91m  Base fails too; no per-test failure report.\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;82;82;91m○\\u001b[39m \\u001b[38;2;24;24;27mAttribution unresolved\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;82;82;91m  history moved, could not be read, or was not captured; recorded exercise",
- " \\u001b[38;2;200;200;206m│\\u001b[39m   \\u001b[38;2;82;82;91mand contract measurements do not establish request attribution. Changes are",
- " \\u001b[38;2;200;200;206m│\\u001b[39m   \\u001b[38;2;82;82;91m\\u001b[38;2;82;82;91mcompared with the request's start, not attributed to this request\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;82;82;91m○\\u001b[39m \\u001b[38;2;24;24;27mNo proof covers 3 changed files\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m ",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;107;107;115m▸ Details · paths, output, assumptions, model opinions\\u001b[39m",
- " \\u001b[38;2;200;200;206m│\\u001b[39m \\u001b[38;2;107;107;115m▸ Context · 1 answer · 1 subagent\\u001b[39m",
- ""
-]"
+Acceptance remains with the reviewer."
 `;

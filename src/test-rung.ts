@@ -1,20 +1,22 @@
 import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { type Dirent, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, unlinkSync,
-  writeFileSync } from "node:fs";
+import { type Dirent, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, unlinkSync,
+  realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, posix, relative } from "node:path";
 import { promisify, stripVTControlCharacters } from "node:util";
 import { type Evidence, contentHash } from "./evidence.js";
 import { git as gitRead, gitEnvironment } from "./git.js";
-import { type CheckCommand, type ProjectChecks, findProjects, inFolder, nearestWorkspaceRoot, owningProjects, packageTest, suggestChecks } from "./projects.js";
+import { type CheckCommand, type ProjectChecks, findProjects, inFolder, nearestWorkspaceRoot, owningProjects, packageRunner, packageTest, suggestChecks } from "./projects.js";
+import { parseJson } from "./json.js";
 import { runProcess } from "./process.js";
-import { clearTestReports, failuresSeenOnBase, introducedTests, readTestResults, type TestResults } from "./test-report.js";
-import { type CheckOrigin, type CheckOutcome, checkOrigin, reportCoversFailures } from "./verification/check-origin-rule.js";
+import { clearTestReports, confinedPath, failuresSeenOnBase, introducedTests, readTestResults, type TestResults } from "./test-report.js";
+import { type CheckOrigin, type CheckOutcome, checkOrigin, fixedCheck, reportCoversFailures, sourceAssertion } from "./verification/check-origin-rule.js";
 import { host } from "./host.js";
 import { noOperations, type OperationResult, type OperationSink, type OperationSpec } from "./operations.js";
-import { checkApprovalProblem, checkFolderProblem, checksFile } from "./project-checks.js";
+import { checkApprovalProblem, checkFolderProblem, checksFile, readDeclaredChecks } from "./project-checks.js";
 import { checkoutRoot } from "./checkout-root.js";
+import { isSourcePath, isTestPath } from "./verification-changes.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -79,11 +81,13 @@ export interface CommandRun {
   readonly failingTests?: readonly string[] | undefined;
   /** Why a command failed, or why its cause is unknown when it did not finish (#726, #784). */
   readonly origin?: CommandOrigin;
+  /** The actual comparable base execution, including an explicit not-started comparison when unavailable. */
+  readonly baseline?: { readonly outcome: CommandOutcome; readonly output: string };
 }
 
 /** Whether the change, the base already, or neither run can tell, is why a command fails (`checkOrigin`), and what showed it. */
 export interface CommandOrigin {
-  readonly cause: CheckOrigin;
+  readonly cause: CheckOrigin | "fixed";
   readonly reason: string;
 }
 
@@ -111,10 +115,10 @@ function bytes(root: string, path: string): Buffer | undefined {
 export async function runCommands(root: string, projects: readonly ProjectChecks[], changed: readonly string[],
   signal: AbortSignal, ops: OperationSink = noOperations, env?: Environment, against?: Against): Promise<CommandRun[]> {
   const ran = await commandRuns(root, projects, changed, signal, ops, env);
-  const failing = ran.filter(({ outcome }) => outcome === "failed");
-  if (against === undefined || failing.length === 0) return ran.map(({ run }) => run);
-  const origins = new Map((await originsOnBase(root, against, failing, changed, signal, ops, env)).map((origin, k) => [failing[k], origin]));
-  return ran.map((each) => { const origin = origins.get(each); return origin === undefined ? each.run : { ...each.run, origin }; });
+  const compared = ran.filter(({ outcome }) => outcome === "failed" || outcome === "passed");
+  if (against === undefined || compared.length === 0) return ran.map(({ run }) => run);
+  const comparisons = new Map((await originsOnBase(root, against, compared, changed, signal, ops, env)).map((comparison, k) => [compared[k], comparison]));
+  return ran.map((each) => ({ ...each.run, ...comparisons.get(each) }));
 }
 
 /** A command's run on the change, with the owning folder and the reports it wrote. */
@@ -145,6 +149,8 @@ async function commandRuns(root: string, projects: readonly ProjectChecks[], cha
       // After a stop nothing is launched, so no start is published and the planned command closes as not started (#590).
       const id = planned[next++];
       const execute = async (): Promise<BaseRun> => {
+        const problem = admittedInvocationProblem(root, project, check);
+        if (problem !== undefined) return { outcome: "not_started", output: problem, results: undefined };
         if (probe !== undefined) return probeRun(probe, root, signal, env, check.timeoutMs);
         return runCheck(root, project, check, signal, env);
       };
@@ -167,6 +173,40 @@ async function commandRuns(root: string, projects: readonly ProjectChecks[], cha
   return runs;
 }
 
+/** A package-manager invocation must still resolve to its admitted script, never a replacement written during the request. */
+function admittedScriptProblem(root: string, check: CheckCommand): string | undefined {
+  if (check.script === undefined) return undefined;
+  const scriptName = /^(?:npm|bun|pnpm|yarn) run (check|typecheck|lint|test)$/u.exec(check.command)?.[1];
+  if (scriptName === undefined) return "the admitted package invocation cannot be identified";
+  if (`${packageRunner(join(root, check.folder))} ${scriptName}` !== check.command) return "the admitted package manager changed or is unavailable";
+  try {
+    const manifest: unknown = parseJson(readFileSync(join(root, check.folder, "package.json"), "utf8"));
+    const scripts: unknown = typeof manifest === "object" && manifest !== null ? Reflect.get(manifest, "scripts") : undefined;
+    if (typeof scripts === "object" && scripts !== null && Reflect.get(scripts, scriptName) === check.script) return undefined;
+  } catch { /* an unreadable manifest cannot retain the admitted invocation */ }
+  return `the admitted package script ${scriptName} changed or is unavailable; this is not the recorded check`;
+}
+
+/** Stored selection is data, not execution authority: revalidate its concrete invocation against the current owner. */
+function admittedInvocationProblem(root: string, project: ProjectChecks, check: CheckCommand): string | undefined {
+  const confinement = checkFolderProblem(executionRoot(root, project), check.folder);
+  if (confinement !== undefined) return confinement;
+  if (project.approval === undefined && project.folder !== check.folder) return "the admitted invocation does not belong to its project";
+  const { approval } = project;
+  if (approval !== undefined) {
+    if (approval.root !== checkoutRoot(root)) return "the admitted declaration belongs to another checkout";
+    const problem = checkApprovalProblem(approval);
+    if (problem !== undefined) return problem;
+    const declared = readDeclaredChecks(approval.root);
+    return declared.status === "read" && declared.checks.some((current) => JSON.stringify(current) === JSON.stringify(check))
+      ? undefined : "the admitted invocation does not match its approved declaration";
+  }
+  if (check.script !== undefined) return admittedScriptProblem(root, check);
+  const current = suggestChecks(root).find((selected) => selected.folder === project.folder && selected.approval === undefined);
+  return current?.commands.some((selected) => JSON.stringify(selected) === JSON.stringify(check)) === true
+    ? undefined : "the admitted invocation no longer matches a discovered project check";
+}
+
 /**
  * Each failing command run once more in a worktree of the base, and why it
  * fails (`commandOrigin`). Nothing is credited to the base where a run there
@@ -174,8 +214,10 @@ async function commandRuns(root: string, projects: readonly ProjectChecks[], cha
  * a change to what decides the dependencies the base borrows from the checkout.
  */
 async function originsOnBase(root: string, against: Against, failing: readonly Ran[], changed: readonly string[],
-  signal: AbortSignal, ops: OperationSink, env: Environment | undefined): Promise<CommandOrigin[]> {
-  const unknown = (reason: string): CommandOrigin[] => failing.map(() => ({ cause: "unknown", reason }));
+  signal: AbortSignal, ops: OperationSink, env: Environment | undefined): Promise<Pick<CommandRun, "origin" | "baseline">[]> {
+  const unknown = (reason: string): Pick<CommandRun, "origin" | "baseline">[] => failing.map(({ outcome }) => ({
+    ...outcome === "failed" ? { origin: { cause: "unknown" as const, reason } } : {},
+    baseline: { outcome: "not_started", output: reason } }));
   if ("unfaithful" in against) return unknown(against.unfaithful);
   const configurationProblem = await baseConfigurationProblem(root, against.base, changed, failing.map(({ project }) => project), signal);
   if (configurationProblem !== undefined) return unknown(configurationProblem);
@@ -183,12 +225,13 @@ async function originsOnBase(root: string, against: Against, failing: readonly R
   if (declarationProblem !== undefined) return unknown(declarationProblem);
   try {
     return await atBase(root, against.base, async (project) => {
-      const found: CommandOrigin[] = [];
+      const found: Pick<CommandRun, "origin" | "baseline">[] = [];
       for (const { project: selected, check, run, outcome, results, probe } of failing) {
         const base = await ops.run({ method: "base_command", unit: "", target: run.command },
           () => probe === undefined ? runCheck(project, selected, check, signal, env) : probeRun(probe, project, signal, env, check.timeoutMs),
           (ended) => ended.outcome);
-        found.push(commandOrigin(outcome, results, base));
+        const origin = commandOrigin(outcome, results, base);
+        found.push({ ...origin === undefined ? {} : { origin }, baseline: { outcome: base.outcome, output: base.output ?? "" } });
       }
       return found;
     });
@@ -204,7 +247,8 @@ async function originsOnBase(root: string, against: Against, failing: readonly R
  * already, only when the reports show each failing test failing there too;
  * otherwise unknown, with what kept it so.
  */
-function commandOrigin(outcome: CommandOutcome, results: TestResults | undefined, base: BaseRun): CommandOrigin {
+function commandOrigin(outcome: CommandOutcome, results: TestResults | undefined, base: BaseRun): CommandOrigin | undefined {
+  if (outcome === "passed") return fixedCheck(outcome, base.outcome) ? { cause: "fixed", reason: "the admitted check fails on the base and passes with the change" } : undefined;
   const introduced = introducedTests(results, base.results);
   const cause = checkOrigin(outcome, base.outcome, introduced.length, true, failuresSeenOnBase(results, base.results));
   if (cause === "introduced") {
@@ -235,11 +279,22 @@ export interface TestExercise {
   readonly provenance: "added" | "changed";
   readonly sensitivity: "fails_then_passes" | "passes_on_base" | "unknown";
   readonly reason: string;
+  /** Changed source paths whose isolated reversion produced a reported assertion failure in this test file. */
+  readonly sources?: readonly string[];
+  readonly sourceEvidence?: Evidence;
+  readonly sourceGaps?: readonly { readonly path: string; readonly reason: string }[];
 }
 
 async function git(cwd: string, args: readonly string[]): Promise<string> {
   const { stdout } = await execFileAsync("git", [...args], { cwd, env: gitEnvironment(cwd), windowsHide: true, maxBuffer: 16 * 1024 * 1024 });
   return stdout;
+}
+
+/** Bounded Git with awaited process-tree cancellation for counterfactual work. */
+async function sourceGit(cwd: string, args: readonly string[], signal: AbortSignal): Promise<string> {
+  const output = await gitRead(cwd, args, undefined, signal);
+  if (output === undefined) throw new Error(signal.aborted ? "source exercise was stopped or exhausted its budget" : "Git could not prepare source exercise");
+  return output;
 }
 
 /**
@@ -264,12 +319,13 @@ function linkDependencies(root: string, project: string): string[] {
  * links to the checkout's dependencies go first; when one cannot, the
  * worktree stays rather than risk a removal that follows it into the checkout.
  */
-async function atBase<T>(root: string, base: string, work: (project: string) => Promise<T>): Promise<T> {
-  const prefix = (await git(root, ["rev-parse", "--show-prefix"])).trim();
+async function atBase<T>(root: string, base: string, work: (project: string) => Promise<T>, signal?: AbortSignal): Promise<T> {
+  const runGit = (cwd: string, args: readonly string[]): Promise<string> => signal === undefined ? git(cwd, args) : sourceGit(cwd, args, signal);
+  const prefix = (await runGit(root, ["rev-parse", "--show-prefix"])).trim();
   const directory = mkdtempSync(join(tmpdir(), "tesota-base-"));
   let links: string[] = [];
   try {
-    await git(root, ["worktree", "add", "--detach", "--quiet", directory, base]);
+    await runGit(root, ["worktree", "add", "--detach", "--quiet", directory, base]);
     const project = join(directory, prefix);
     links = linkDependencies(checkoutRoot(root), checkoutRoot(project));
     return await work(project);
@@ -277,10 +333,10 @@ async function atBase<T>(root: string, base: string, work: (project: string) => 
     let unlinked = true;
     for (const link of links) { try { unlinkSync(link); } catch { unlinked = false; } }
     if (unlinked) {
-      try { await git(root, ["worktree", "remove", "--force", directory]); } catch { /* removed below */ }
+      try { await sourceGit(root, ["worktree", "remove", "--force", directory], AbortSignal.timeout(10_000)); } catch { /* removed below */ }
       rmSync(directory, { recursive: true, force: true });
     }
-    await git(root, ["worktree", "prune"]).catch(() => "");
+    await sourceGit(root, ["worktree", "prune"], AbortSignal.timeout(10_000)).catch(() => "");
   }
 }
 
@@ -301,11 +357,12 @@ function checkCommand(scope: string, project: ProjectChecks, check: CheckCommand
   return inFolder(folder, check.command);
 }
 
-async function declarationsAtBase(base: string, projects: readonly ProjectChecks[]): Promise<string | undefined> {
+async function declarationsAtBase(base: string, projects: readonly ProjectChecks[], signal?: AbortSignal): Promise<string | undefined> {
   const approvals = new Map(projects.flatMap(({ approval }) => approval === undefined ? [] : [[approval.root, approval] as const]));
   for (const approval of approvals.values()) {
     try {
-      const text = await git(approval.root, ["show", `${base}:${checksFile}`]);
+      const args = ["show", `${base}:${checksFile}`];
+      const text = signal === undefined ? await git(approval.root, args) : await sourceGit(approval.root, args, signal);
       if (createHash("sha256").update(text).digest("hex") === approval.hash) continue;
     } catch { /* no faithful declaration on the base */ }
     return "the check declarations differ from the base or could not be read there";
@@ -659,6 +716,136 @@ export async function exerciseTests(root: string, base: string, tests: readonly 
     const why = error instanceof Error ? error.message.trim().split("\n").at(-1) ?? "" : String(error);
     return unknown(`the base could not be checked out: ${why}`);
   }
+}
+
+export interface SourceExercise {
+  readonly sources: readonly string[];
+  readonly sourceGaps: readonly { readonly path: string; readonly reason: string }[];
+  readonly sourceEvidence?: Evidence;
+}
+
+/** Copy the candidate into disposable state; never follow a changed link or treat an unreadable file as deleted. */
+async function sourceCandidate(project: string, root: string, changed: readonly string[], signal: AbortSignal): Promise<void> {
+  await sourceGit(project, ["reset", "--quiet", "--hard"], signal);
+  await sourceGit(project, ["clean", "-qfdx", "-e", "node_modules"], signal);
+  for (const path of changed) {
+    if (signal.aborted) throw new Error("source exercise was stopped or exhausted its budget");
+    if (!confinedPath(project, path) || !confinedPath(root, path)) throw new Error(`source exercise cannot copy ${path} safely`);
+    const target = join(project, path);
+    if (!existsSync(join(root, path))) { rmSync(target, { force: true }); continue; }
+    if (!lstatSync(join(root, path)).isFile()) throw new Error(`source exercise cannot copy ${path} as a regular file`);
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, readFileSync(join(root, path)));
+  }
+}
+
+function candidateHash(root: string, changed: readonly string[]): string {
+  return contentHash(changed.map((path) => ({ path, content: read(root, path) })));
+}
+
+function sourceControlHeld(project: string, root: string, changed: readonly string[], hash: string, run: BaseRun): boolean {
+  return run.outcome === "passed" && candidateHash(project, changed) === hash && candidateHash(root, changed) === hash;
+}
+
+/** Newly failing assertions in a named test file, never import, setup or unclassified runtime failures. */
+function sourceNoticed(control: BaseRun, reverted: BaseRun, file: string): boolean {
+  const matching = [...reverted.results?.assertionFailures ?? []].filter((name) =>
+    name.startsWith(`${file} > `) && control.results?.tests.get(name) === "passed");
+  return sourceAssertion(control.outcome, reverted.outcome, matching.length);
+}
+
+/** Ignored local inputs are not copied, especially secrets; only the dependency directories actually borrowed are supported. */
+async function sourceLocalInputs(root: string, project: string, signal: AbortSignal): Promise<void> {
+  const original = checkoutRoot(root);
+  const candidate = checkoutRoot(project);
+  const ignored = (await sourceGit(original, ["ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"], signal))
+    .split("\0").filter(Boolean);
+  for (const path of ignored) {
+    const clean = path.replace(/\/$/u, "");
+    try {
+      if (clean.split("/").at(-1) === "node_modules" && lstatSync(join(candidate, clean)).isSymbolicLink()
+        && realpathSync(join(candidate, clean)) === realpathSync(join(original, clean))) continue;
+    } catch { /* an unavailable local input is not faithfully borrowed */ }
+    throw new Error("ignored local inputs cannot be faithfully materialized for source exercise");
+  }
+}
+
+/** Only a confirmed absent entry is removed; an unreadable blob must never masquerade as an added source. */
+async function restoreSource(project: string, base: string, source: string, signal: AbortSignal): Promise<void> {
+  const entry = await sourceGit(project, ["ls-tree", "-z", base, "--", `:(literal)${source}`], signal);
+  if (entry === "") { rmSync(join(project, source), { force: true }); return; }
+  if (!/^100(?:644|755) blob [a-f\d]+\t/u.test(entry)) throw new Error(`the base source ${source} is not a regular file`);
+  const before = await sourceGit(project, ["show", `${base}:./${source}`], signal);
+  writeFileSync(join(project, source), before);
+}
+
+/**
+ * Counterfactual per-source sensitivity (#669). Every probe starts with the full candidate and reverts exactly one source.
+ * The shared deadline includes setup and controls; process cleanup is awaited even after its measurement budget expires.
+ */
+export async function exerciseSourcePaths(root: string, base: string, tests: readonly string[], changed: readonly string[],
+  projects: readonly ProjectChecks[], signal: AbortSignal, ops: OperationSink = noOperations, env?: Environment,
+  deadline: number = performance.now() + 120_000): Promise<ReadonlyMap<string, SourceExercise>> {
+  const sources = changed.filter((path) => isSourcePath(path) && !isTestPath(path)).sort();
+  const found = new Map<string, SourceExercise>(tests.map((path) => [path, { sources: [], sourceGaps: [] }]));
+  if (sources.length === 0 || tests.length === 0) return found;
+  const unknown = (reason: string): ReadonlyMap<string, SourceExercise> => new Map(tests.map((path) => [path,
+    { sources: [], sourceGaps: sources.map((source) => ({ path: source, reason })) }]));
+  if (performance.now() >= deadline) return unknown("the shared source-exercise budget was exhausted");
+  const bounded = AbortSignal.any([signal, AbortSignal.timeout(Math.max(1, Math.ceil(deadline - performance.now())))]);
+  const problem = await baseConfigurationProblem(root, base, changed, projects, bounded) ?? await declarationsAtBase(base, projects, bounded);
+  if (problem !== undefined) return unknown(problem);
+  const hash = candidateHash(root, changed);
+  const started = performance.now();
+  try {
+    await atBase(root, base, async (project) => {
+      await sourceLocalInputs(root, project, bounded);
+      for (const selected of projects) {
+        const paths = tests.filter((path) => exerciseProject(root, projects, path).owning?.folder === selected.folder);
+        if (paths.length === 0) continue;
+        const selectedSources = sources.filter((path) => exerciseProject(root, projects, path).owning?.folder === selected.folder);
+        const probe = selected.approval === undefined ? testProbe(root, selected.folder, paths.map((path) => posix.relative(selected.folder, path))) : undefined;
+        if (probe === undefined) {
+          for (const path of paths) found.set(path, { sources: [], sourceGaps: selectedSources.map((source) =>
+            ({ path: source, reason: "no supported targeted runner can measure source sensitivity" })) });
+          continue;
+        }
+        await sourceCandidate(project, root, changed, bounded);
+        const control = await ops.run({ method: "source_exercise", unit: "", target: probe.command },
+          () => probeRun(probe, project, bounded, env), (ran) => ran.outcome);
+        if (!sourceControlHeld(project, root, changed, hash, control)) throw new Error("the candidate control did not pass unchanged in the source-exercise worktree");
+        const noticed = new Map(paths.map((path) => [path, [] as string[]]));
+        const gaps = new Map(paths.map((path) => [path, [] as { path: string; reason: string }[]]));
+        for (const source of selectedSources) {
+          if (bounded.aborted) {
+            for (const path of paths) gaps.get(path)?.push({ path: source, reason: "source exercise was stopped or exhausted its shared budget" });
+            continue;
+          }
+          await sourceCandidate(project, root, changed, bounded);
+          await restoreSource(project, base, source, bounded);
+          const reverted = await ops.run({ method: "source_exercise", unit: "", target: source },
+            () => probeRun(probe, project, bounded, env), (ran) => ran.outcome);
+          for (const path of paths) {
+            if (sourceNoticed(control, reverted, posix.relative(selected.folder, path))) noticed.get(path)?.push(source);
+            else gaps.get(path)?.push({ path: source, reason: "the isolated reversion produced no attributable assertion failure in this test file" });
+          }
+        }
+        // A fresh confirmation guards runner-written candidate changes and a failed final control; partial results are never promoted.
+        await sourceCandidate(project, root, changed, bounded);
+        const confirmed = await ops.run({ method: "source_exercise", unit: "", target: probe.command },
+          () => probeRun(probe, project, bounded, env), (ran) => ran.outcome);
+        if (!sourceControlHeld(project, root, changed, hash, confirmed)) {
+          throw new Error("the source-exercise confirmation did not pass on the unchanged candidate");
+        }
+        await sourceLocalInputs(root, project, bounded);
+        for (const path of paths) found.set(path, { sources: noticed.get(path) ?? [], sourceGaps: gaps.get(path) ?? [],
+          sourceEvidence: { verifier: "command", claim: "reported assertions notice the listed source reversions", limits:
+            "Only named assertion failures from isolated source reversions; this does not establish intended behavior or full coverage.",
+          outcome: "passed", output: `Control and confirmation: ${probe.command}`, durationMs: performance.now() - started, files: changed, contentHash: hash } });
+      }
+    }, bounded);
+    return found;
+  } catch (error) { return unknown(error instanceof Error ? error.message : String(error)); }
 }
 
 /** Whether the commit `base` holds a file at `path`, relative to `root`; a folder there is not the file. */

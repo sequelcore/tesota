@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { setTimeout as realTimeout } from "node:timers/promises";
 import { afterEach, expect, it, vi } from "vitest";
 import { owningProjects, suggestChecks } from "../src/projects.js";
-import { exerciseTests, runCommands, runShell } from "../src/test-rung.js";
+import { exerciseTests, exerciseSourcePaths, runCommands, runShell } from "../src/test-rung.js";
 import { noOperations } from "../src/operations.js";
 
 const roots: string[] = [];
@@ -49,6 +49,72 @@ function noTests(): { root: string; base: string } {
 const addTest = "import { expect, test } from \"bun:test\";\nimport { add } from \"./math\";\n\n" +
   "test(\"adds\", () => { expect(add(1, 2)).toBe(3); });\n";
 
+it("records only the changed source path each assertion notices (#669)", async () => {
+  const { root } = noTests();
+  writeFileSync(join(root, "math.ts"), "export const add = (a: number, b: number): number => a - b;\n");
+  execFileSync("git", ["add", "math.ts"], { cwd: root });
+  execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "--quiet", "-m", "wrong addition"], { cwd: root });
+  const base = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+  writeFileSync(join(root, "math.ts"), "export const add = (a: number, b: number): number => a + b;\n");
+  writeFileSync(join(root, "math.test.ts"), addTest);
+  writeFileSync(join(root, "other.ts"), "export const unused = 1;\n");
+  const changed = ["math.ts", "math.test.ts", "other.ts"];
+  const measured = await exerciseSourcePaths(root, base, ["math.test.ts"], changed, suggestChecks(root), new AbortController().signal);
+  expect(measured.get("math.test.ts")?.sources).toEqual(["math.ts"]);
+  expect(readFileSync(join(root, "math.ts"), "utf8")).toContain("a + b");
+});
+
+it("does not treat an unreadable oversized base source as an absent file (#669)", async () => {
+  const { root } = noTests();
+  const baseSource = `export const value = 0;\n/*${"x".repeat(17 * 1024 * 1024)}*/\n`;
+  writeFileSync(join(root, "large.ts"), baseSource);
+  execFileSync("git", ["add", "large.ts"], { cwd: root });
+  execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "--quiet", "-m", "large base"], { cwd: root });
+  const base = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+  writeFileSync(join(root, "large.ts"), baseSource.replace("value = 0", "value = 1"));
+  writeFileSync(join(root, "large.test.ts"), "import {test,expect} from 'bun:test'; import {existsSync} from 'node:fs'; test('exists',()=>expect(existsSync('large.ts')).toBe(true));\n");
+  const result = await exerciseSourcePaths(root, base, ["large.test.ts"], ["large.ts", "large.test.ts"], suggestChecks(root), new AbortController().signal);
+  expect(result.get("large.test.ts")?.sources).toEqual([]);
+  expect(result.get("large.test.ts")?.sourceGaps).toEqual([{ path: "large.ts", reason: expect.any(String) }]);
+});
+
+it("does not credit source sensitivity after omitting an ignored local input (#669)", async () => {
+  const { root } = noTests();
+  writeFileSync(join(root, ".gitignore"), ".env\n");
+  writeFileSync(join(root, "a.ts"), "export const a = 0;\n");
+  execFileSync("git", ["add", ".gitignore", "a.ts"], { cwd: root });
+  execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "--quiet", "-m", "local input"], { cwd: root });
+  const base = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+  writeFileSync(join(root, ".env"), "LOCAL=1\n");
+  writeFileSync(join(root, "a.ts"), "export const a = 1;\n");
+  writeFileSync(join(root, "a.test.ts"), "import {test,expect} from 'bun:test'; import {existsSync} from 'node:fs'; import {a} from './a'; test('either',()=>expect(a===1||existsSync('.env')).toBe(true));\n");
+  const result = await exerciseSourcePaths(root, base, ["a.test.ts"], ["a.ts", "a.test.ts"], suggestChecks(root), new AbortController().signal);
+  expect(result.get("a.test.ts")?.sources).toEqual([]);
+  expect(result.get("a.test.ts")?.sourceGaps).toEqual([{ path: "a.ts", reason: expect.stringContaining("ignored local inputs") }]);
+});
+
+it("does not credit a source reversion that breaks setup before an assertion (#669)", async () => {
+  const { root } = noTests();
+  symlinkSync(join(process.cwd(), "node_modules"), join(root, "node_modules"), "junction");
+  writeFileSync(join(root, "package.json"), JSON.stringify({ type: "module", packageManager: "bun@1.4.2", scripts: { test: "vitest run" } }));
+  writeFileSync(join(root, "state.ts"), "export const state: { ready: boolean } | null = null;\n");
+  execFileSync("git", ["add", "state.ts", "package.json"], { cwd: root });
+  execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "--quiet", "-m", "base state"], { cwd: root });
+  const base = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+  writeFileSync(join(root, "state.ts"), "export const state = { ready: true };\n");
+  writeFileSync(join(root, "state.test.ts"), 'import { beforeEach, expect, test } from "vitest";\nimport { state } from "./state";\nbeforeEach(() => { if (!state.ready) throw new Error("not ready"); });\ntest("unrelated arithmetic", () => expect(1 + 1).toBe(2));\n');
+  const measured = await exerciseSourcePaths(root, base, ["state.test.ts"], ["state.ts", "state.test.ts"], suggestChecks(root), new AbortController().signal);
+  expect(measured.get("state.test.ts")?.sources).toEqual([]);
+  expect(measured.get("state.test.ts")?.sourceGaps).toEqual([expect.objectContaining({ path: "state.ts" })]);
+});
+
+it("leaves every source uncredited when the shared source budget is exhausted (#669)", async () => {
+  const { root, base } = noTests();
+  const measured = await exerciseSourcePaths(root, base, ["math.test.ts"], ["math.ts", "math.test.ts"], suggestChecks(root),
+    new AbortController().signal, undefined, undefined, performance.now() - 1);
+  expect(measured.get("math.test.ts")).toMatchObject({ sources: [], sourceGaps: [{ path: "math.ts", reason: expect.stringContaining("budget") }] });
+});
+
 it("attributes a plain Bun script's unchanged failure to the base without project-authored reports (#728)", async () => {
   const { root } = noTests();
   writeFileSync(join(root, "package.json"), JSON.stringify({ packageManager: "bun@1.4.2", scripts: { test: "bun test" } }));
@@ -74,6 +140,33 @@ function failingRunner(runner: "bun test" | "vitest run"): { root: string; base:
   git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "--quiet", "-m", "legacy failure");
   return { root, base: git("rev-parse", "HEAD").trim(), from };
 }
+
+it("records a fixed admitted check only after observing its failing baseline (#727)", async () => {
+  const { root, base } = failingRunner("bun test");
+  writeFileSync(join(root, "math.test.ts"), 'import { expect, test } from "bun:test";\ntest("legacy", () => expect(1).toBe(1));\n');
+  const [run] = await runCommands(root, suggestChecks(root), ["math.test.ts"], new AbortController().signal, undefined, undefined, { base });
+  expect(run).toMatchObject({ evidence: { outcome: "passed" }, origin: { cause: "fixed" }, baseline: { outcome: "failed" } });
+});
+
+it("does not execute a stored package invocation outside its repository (#727)", async () => {
+  const parent = folder();
+  const root = join(parent, "repo");
+  mkdirSync(root);
+  const script = "node -e \"require('fs').writeFileSync('escaped', 'executed')\"";
+  writeFileSync(join(parent, "package.json"), JSON.stringify({ packageManager: "bun@1.4.2", scripts: { test: script } }));
+  const [run] = await runCommands(root, [{ folder: "..", commands: [{ folder: "..", command: "bun run test", script }] }],
+    ["math.ts"], new AbortController().signal);
+  expect(run?.evidence.outcome).toBe("not_started");
+  expect(existsSync(join(parent, "escaped"))).toBe(false);
+});
+
+it("does not execute an invented command from a stored check plan (#727)", async () => {
+  const { root } = noTests();
+  const [run] = await runCommands(root, [{ folder: "", commands: [{ folder: "",
+    command: "node -e \"require('fs').writeFileSync('invented', 'executed')\"" }] }], ["math.ts"], new AbortController().signal);
+  expect(run?.evidence.outcome).toBe("not_started");
+  expect(existsSync(join(root, "invented"))).toBe(false);
+});
 
 it.each(["bun test", "vitest run"] as const)("keeps new %s assertion failures attributable over an already failing base (#728)", async (runner) => {
   const { root, base, from } = failingRunner(runner);
@@ -393,7 +486,12 @@ it("stops every process a command started when it runs past its time limit", asy
 });
 
 it("reports a check that prints results and hangs after one timeout, without running it on the base (#784)", async () => {
-  const { root, base } = noTests();
+  const { root } = noTests();
+  const command = "node -e \"console.log('146 passing (3s)'); require('fs').writeFileSync('pid', String(process.pid)); setInterval(() => {}, 1000)\"";
+  writeFileSync(join(root, "package.json"), JSON.stringify({ packageManager: "bun@1.4.2", scripts: { check: command } }));
+  execFileSync("git", ["add", "package.json"], { cwd: root });
+  execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "--quiet", "-m", "hanging check"], { cwd: root });
+  const base = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
   const controller = new AbortController();
   const operations: string[] = [];
   const ops = { ...noOperations, run: async <T>(spec: Parameters<typeof noOperations.run>[0], work: () => Promise<T>) => {
@@ -403,9 +501,7 @@ it("reports a check that prints results and hangs after one timeout, without run
     return work();
   } };
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-  const running = runCommands(root, [{ folder: "", commands: [
-    { command: "node -e \"console.log('146 passing (3s)'); require('fs').writeFileSync('pid', String(process.pid)); setInterval(() => {}, 1000)\"", folder: "" },
-  ] }], ["math.ts"], controller.signal, ops, undefined, { base });
+  const running = runCommands(root, suggestChecks(root), ["math.ts"], controller.signal, ops, undefined, { base });
   try {
     for (let n = 0; n < 500 && !existsSync(join(root, "pid")); n++) await realTimeout(10);
     expect(existsSync(join(root, "pid"))).toBe(true);

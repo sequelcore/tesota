@@ -87,7 +87,7 @@ for (const engine of [tesotaEngine]) {
       expect(receipts).toHaveLength(1);
       const [receipt] = receipts;
       expect(isReceipt(receipt)).toBe(true);
-      expect(receipt).toMatchObject({ base, proofs: [{ path: "src/rule.ts", verdict: "proved" }] });
+      expect(receipt).toMatchObject({ base, codeEvidence: { proofs: [{ path: "src/rule.ts", verdict: "proved" }] } });
     });
   });
 }

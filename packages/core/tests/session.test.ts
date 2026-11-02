@@ -92,6 +92,23 @@ const git = (cwd: string, ...args: string[]): string => {
 };
 
 describe("the request ledger", () => {
+  test("records and shows the admitted checks before generation and restores them on resume (#727)", async () => {
+    const cwd = folder();
+    writeFileSync(join(cwd, "package.json"), JSON.stringify({ packageManager: "bun@1.4.2", scripts: { test: "node original.cjs" } }));
+    let supplied = "";
+    const created = session([{ seen: (context) => { supplied = JSON.stringify(context.messages); }, reply: "done" }], { cwd });
+    await created.prompt("inspect this project");
+    expect(supplied).toContain("bun run test");
+    expect(created.ledger()[0]?.base.checks?.[0]?.projects[0]?.commands[0]?.script).toBe("node original.cjs");
+    const file = created.file;
+    await created.dispose();
+    writeFileSync(join(cwd, "package.json"), JSON.stringify({ scripts: { check: "node replacement.cjs" } }));
+    const resumed = openSession(file, scripted([]));
+    open.push(resumed);
+    expect(resumed.messages().find((message) => message.customType === "tesota-check-plan")?.text).toContain("bun run test");
+    expect(resumed.ledger()[0]?.base.checks?.[0]?.projects[0]?.commands[0]?.script).toBe("node original.cjs");
+  });
+
   test("the request, its origin and its base are on disk before the first tool runs", async () => {
     let seen = "";
     const probe: EngineTool = {
@@ -395,7 +412,7 @@ describe("recovery after the process was killed", () => {
     // An entry without the call's tool can't be judged, so it counts as one that may have changed files.
     const mayChange = tool === undefined || toolMayChangeFiles(tool.name, tool.nativeQuestion, tool.readOnly);
     expect(receipts).toHaveLength(mayChange ? 1 : 0);
-    if (mayChange) expect(receipts[0]).toMatchObject({ changed: "unreadable", proofs: [], tests: [], stopped: expect.stringContaining("no check ran") });
+    if (mayChange) expect(receipts[0]).toMatchObject({ changed: "unreadable", stopped: expect.stringContaining("no check ran"), codeEvidence: { proofs: [], tests: [] } });
   });
 
   test("a reply cut off mid-stream leaves the request in the ledger and the run interrupted", async () => {

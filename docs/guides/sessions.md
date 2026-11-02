@@ -67,7 +67,7 @@ Merging that branch is yours. Outside Git, one session runs at a time.
 
 `/agents`, or Ctrl+T, lists every session: its request, its state (idle,
 working, verifying, waiting for you, ended), its last receipt's
-[standing](../receipt-v2.md#standing), its workspace and how long it has
+[standing](../receipt-v3.md#presentation-and-standing), its workspace and how long it has
 run. The footer counts the sessions waiting for you.
 
 Its keys are in [Commands and keys](../reference/commands.md#dashboard).

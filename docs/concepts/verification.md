@@ -6,6 +6,11 @@ new test on the starting code to see whether the test notices the change.
 The receipt keeps those apart: a passing test and a test that detects the
 change establish different things.
 
+Before work starts, the request retains the project's check plan. Baseline
+comparisons happen at settlement. Receipt v3 keeps code evidence,
+specification evidence and request review in separate groups. Model-review
+outcomes never change mechanical standing or human acceptance.
+
 Verification checks results; [permissions](../guides/permissions.md)
 control actions. The receipt records evidence and its limits; accepting
 the change is yours.
@@ -39,6 +44,7 @@ remain reach the receipt.
 | Proof | The contracts hold for every admitted input, in LemmaScript's model of TypeScript, checked with Dafny | The contract may omit what you wanted; the model isn't JavaScript's runtime |
 | Project checks | Your project's commands passed | A command establishes only what it checks |
 | Test exercise | A changed test fails on the starting code and passes with the change | The test's expected result may be wrong |
+| Source exercise | An assertion notices one changed source path's isolated reversion | Unsupported and unfinished measurements stay unverified; sensitivity does not establish intent |
 | Contract strength | Small changes to a function's body break its proof, apart from changes proved equivalent | Only the generated changes were tried |
 | Design model check | The declared properties hold in every reachable state, as configured | The model can leave out behavior the code has |
 
@@ -83,7 +89,7 @@ repair. A run gets at most 32 automatic continuations.
 
 A check that couldn't run, ran past its limit, checked nothing or is stale
 is a gap, never a failure. Coverage means a path proved, or was tested and
-exercised. [Receipt v2](../receipt-v2.md#standing) specifies the exact
+exercised. [Receipt v3](../receipt-v3.md#presentation-and-standing) specifies the exact
 interpretation, and [Proved rules](../reference/proved-rules.md) lists the
 decisions Tesota proves about itself.
 

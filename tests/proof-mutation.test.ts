@@ -117,7 +117,8 @@ it.runIf(dafny)("measures mayMoveMoney as strong only when its contract rules ou
   expect(weak.equivalent).toBe(0);
   expect(weak.survived).toEqual([{ line: 3, operator: "logical", before: "!alreadyCharged", after: "alreadyCharged" }]);
   const receipt = (mutation: typeof strong): string => renderReceipt({ ...emptyReceipt,
-    contracts: [{ path: "charge-policy.ts", name: "mayMoveMoney", lines: [], mutation }] });
+      specificationEvidence: { ...emptyReceipt.specificationEvidence, contracts: [{ path: "charge-policy.ts", name: "mayMoveMoney", lines: [], mutation }] }
+});
   expect(receipt(strong)).toContain("all 3 decided changes to its code fail the proof");
   expect(receipt(weak)).toContain("weak contract mayMoveMoney in charge-policy.ts");
 }, 600_000);
@@ -132,7 +133,9 @@ it("changes only the expression a one-line arrow function returns, never its sig
 it("calls a contract with surviving mutants weak in the receipt, and only counts those proved to behave the same", () => {
   const show = (mutation: { rejected: number; survived: { line: number; operator: "result"; before: string; after: string }[];
     inconclusive: number; equivalent: number }): string =>
-    renderReceipt({ ...emptyReceipt, contracts: [{ path: "src/clamp.ts", name: "clamp", lines: ["//@ ensures \\result >= 0"], mutation }] });
+    renderReceipt({ ...emptyReceipt,
+        specificationEvidence: { ...emptyReceipt.specificationEvidence, contracts: [{ path: "src/clamp.ts", name: "clamp", lines: ["//@ ensures \\result >= 0"], mutation }] }
+    });
   const strong = show({ rejected: 3, survived: [], inconclusive: 0, equivalent: 0 });
   expect(strong).toContain("  contract      clamp in src/clamp.ts: all 3 decided changes to its code fail the proof");
   expect(strong).not.toContain("behave the same");
@@ -238,7 +241,8 @@ it.runIf(dafny)("flags the registered weak-contract cases whose bodies it can ch
     const mutation = await mutateOnly(path, source);
     const [contract] = (await contracts(path, source));
     const receipt = renderReceipt({ ...emptyReceipt,
-      contracts: [{ path, name: contract?.name ?? "", lines: [], mutation }] });
+        specificationEvidence: { ...emptyReceipt.specificationEvidence, contracts: [{ path, name: contract?.name ?? "", lines: [], mutation }] }
+    });
     if (receipt.includes(`  weak contract ${contract?.name} in ${path}`)) flagged.push(path);
   }
   // maxQuantity's one mutant reads items[1], which its contract rules out; that its contract allows the first item is left to ClaimCheck.

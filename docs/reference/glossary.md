@@ -39,4 +39,4 @@ that writes the code is an LLM.
 
 A read-only run or a run with no observed change may end without a receipt.
 See [How verification works](../concepts/verification.md) for the process
-and [Receipt v2](../receipt-v2.md) for stored field names and types.
+and [Receipt v3](../receipt-v3.md) for stored field names and types.

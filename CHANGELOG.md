@@ -9,6 +9,12 @@ requests and issues in [sequelcore/tesota](https://github.com/sequelcore/tesota)
 
 ### Added
 
+- Receipt v3 separates code evidence, mechanical specification evidence and
+  request review. Current readers explicitly refuse older formats (#731).
+- Requests retain their admitted check plan and comparable baseline results;
+  recorded invocation data does not grant execution authority (#727).
+- Targeted source reversions record which changed source paths a test's
+  assertions notice, within a shared two-minute measurement budget (#669).
 - Trusted project check declarations for custom toolchains, with working
   folders, timeouts and JUnit reports (#753).
 - Issue text already read through supported GitHub CLI commands reaches

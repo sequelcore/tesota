@@ -30,7 +30,7 @@
 <text x="436.0" y="245" fill="#18181b" textLength="33.6" lengthAdjust="spacingAndGlyphs">▀▀▀▀</text>
 <text x="486.4" y="245" fill="#18181b" textLength="25.2" lengthAdjust="spacingAndGlyphs">▀▀▀</text>
 <text x="520.0" y="245" fill="#18181b" textLength="33.6" lengthAdjust="spacingAndGlyphs">▀▀▀▀</text>
-<text x="335.2" y="263" fill="#6b6b73" textLength="117.6" lengthAdjust="spacingAndGlyphs">v0.1.0-alpha.7</text>
+<text x="335.2" y="263" fill="#6b6b73" textLength="117.6" lengthAdjust="spacingAndGlyphs">v0.1.0-alpha.9</text>
 <text x="461.2" y="263" fill="#6b6b73" textLength="8.4" lengthAdjust="spacingAndGlyphs">·</text>
 <text x="478.0" y="263" fill="#52525b" textLength="50.4" lengthAdjust="spacingAndGlyphs">~\shop</text>
 <text x="335.2" y="299" fill="#52525b" textLength="33.6" lengthAdjust="spacingAndGlyphs">What</text>
@@ -55,7 +55,7 @@
 <text x="494.8" y="551" fill="#6b6b73" textLength="50.4" lengthAdjust="spacingAndGlyphs">(main)</text>
 <text x="570.4" y="551" fill="#6b6b73" textLength="84.0" lengthAdjust="spacingAndGlyphs">your-model</text>
 <text x="679.6" y="551" fill="#52525b" textLength="25.2" lengthAdjust="spacingAndGlyphs">ctx</text>
-<text x="713.2" y="551" fill="#52525b" textLength="16.8" lengthAdjust="spacingAndGlyphs">1%</text>
+<text x="713.2" y="551" fill="#52525b" textLength="16.8" lengthAdjust="spacingAndGlyphs">2%</text>
 <text x="755.2" y="551" fill="#52525b" textLength="33.6" lengthAdjust="spacingAndGlyphs">full</text>
 <text x="797.2" y="551" fill="#52525b" textLength="50.4" lengthAdjust="spacingAndGlyphs">access</text>
 </g>

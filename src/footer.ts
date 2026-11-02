@@ -54,12 +54,12 @@ function tallyParts({ proved, notProved, tests, weak }: Tally, assumed = 0): Evi
   ];
 }
 
-function lineCount(uncovered: Receipt["uncovered"]): number {
+function lineCount(uncovered: Receipt["codeEvidence"]["uncovered"]): number {
   return uncovered.reduce((sum, { lines }) => sum + lines.reduce((n, [start, end]) => n + end - start + 1, 0), 0);
 }
 
 /** The models' parts of the receipt's row: how many were model-checked, how many still fail, and how many may be stale. */
-function modelParts(models: NonNullable<Receipt["models"]>): EvidencePart[] {
+function modelParts(models: NonNullable<Receipt["codeEvidence"]["models"]>): EvidencePart[] {
   const checked = models.filter(({ verdict }) => verdict === "proved").length;
   // Only an observed violation fails (`modelEnd`); a model that couldn't be checked is one of the gaps counted as not checked.
   const fails = models.filter((model) => modelEnd(model) === "failed").length;

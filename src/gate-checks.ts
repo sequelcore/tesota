@@ -16,7 +16,7 @@ export const gateEffect: Pick<typeof Effect, "all" | "callback" | "die" | "gen" 
 
 export { changeLines } from "./change-lines.js";
 export { checkModel, modelFailure, modelReport, plannedModels, unheadedReport } from "./model-check.js";
-export { contractStrength } from "./proof-guarantees.js";
+export { combineComparisons, contractStrength } from "./proof-guarantees.js";
 export { uncoveredLines } from "./proof-coverage.js";
-export { exerciseTests, runCommands } from "./test-rung.js";
+export { exerciseTests, exerciseSourcePaths, runCommands } from "./test-rung.js";
 export { commentLines, isSourcePath, isTestPath, needsContent, weakenedEvidence, withGrammarComments } from "./verification-changes.js";

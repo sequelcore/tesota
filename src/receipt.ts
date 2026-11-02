@@ -1,10 +1,10 @@
 import { type Evidence, proofSummary, staleEvidenceWords } from "./evidence.js";
 import { clarificationText, type Clarification } from "./clarification.js";
 import type { OpenCases } from "./open-cases.js";
-import { inFolder } from "./projects.js";
+import { inFolder, type CheckCommand } from "./projects.js";
 import type { UncoveredLines } from "./proof-coverage.js";
 import type { Restatement } from "./pi-claimcheck.js";
-import type { ClaimCheckRun, ContractStrength } from "./proof-guarantees.js";
+import type { ClaimCheckRun, ContractStrength, ContractComparison, ContractReview } from "./proof-guarantees.js";
 import type { Counterexample, ModelCheck, ModelLink } from "./model-check.js";
 import { modelOwnFiles } from "./model-files.js";
 import type { GraphCapture } from "./model-graph.js";
@@ -16,11 +16,13 @@ import { attributionResolved, type StartState, type UnmeasuredPath } from "./req
 import type { GateVerdict } from "./verification/gate-rule.js";
 import { clock } from "./operations.js";
 import type { ReferenceProvenance } from "./request-references.js";
-import { checkEnd, decisions, externalStanding, methodStanding, partlyHolds, pathCovered, runStanding, type Standing, verdictTone } from "./verification/verdict-rule.js";
+import { checkEnd, decisions, externalStanding, methodStanding, partlyHolds, pathCovered, reviewStatus, runStanding, sourceCredit, type Standing, verdictTone } from "./verification/verdict-rule.js";
 
 /** The operator requests actually supplied to one model judgment; omissions are explicit, never silent. */
 export interface RequestJudgment {
   readonly method: "open_cases" | "claimcheck";
+  readonly stage: "restatement" | "comparison" | "open_cases";
+  readonly model?: string;
   /** The ClaimCheck unit, or the empty string for root/global context. */
   readonly folder: string;
   readonly requests: readonly { readonly run: number; readonly text: readonly string[] }[];
@@ -39,8 +41,8 @@ export interface RequestJudgment {
  * category. Attribution describes what changed during the request (by
  * anyone); weakening and exercise still use its admission commit.
  */
-export interface Receipt {
-  readonly version: 2;
+interface ReceiptFields {
+  readonly version: 3;
   /** False when the project has no Git repository, so nothing could tell which files changed or verify them. */
   readonly repository: boolean;
   /**
@@ -76,7 +78,7 @@ export interface Receipt {
   /** Each contract the request added or changed in a file that proved, with what mutation and ClaimCheck found. */
   readonly contracts: readonly ContractStrength[];
   /** Which model ClaimCheck asked, or why it judged nothing; absent when no contract was there to judge. */
-  readonly claimcheck?: ClaimCheckRun;
+
   readonly tests: readonly (CommandRun & { readonly verdict: GateVerdict })[];
   readonly exercises: readonly TestExercise[];
   /**
@@ -126,16 +128,6 @@ export interface Receipt {
    * verified. The fields above then hold nothing, and `base` is null.
    */
   readonly units?: readonly ReceiptUnit[];
-  /**
-   * The cases the operator's request leaves open, as a model listed them for
-   * the operator to settle (#397): a model's opinion, never evidence. Absent
-   * when the operator turned the list off.
-   */
-  readonly openCases?: OpenCases;
-  /** Submitted operator input that qualified the request; neither check evidence nor acceptance. */
-  readonly clarifications?: readonly Clarification[];
-  /** Context supplied to each model-judged step, with any requests left out for context capacity. */
-  readonly requestJudgments?: readonly RequestJudgment[];
   /** The subagents the run started (#525), who did what: each one's own receipt is evidence about its own branch only. */
   readonly children?: readonly ReceiptChild[];
   /** The calls Tesota's floor refused in the request (#622): what didn't run, neither evidence nor a verdict. */
@@ -143,6 +135,35 @@ export interface Receipt {
   /** Potential external writes, recorded before invocation and never claimed as persisted or verified. */
   readonly externalEffects?: readonly ExternalEffect[];
 }
+
+export interface ReceiptCheckPlan {
+  readonly folder: string;
+  readonly projects: readonly { readonly folder: string; readonly commands: readonly CheckCommand[]; readonly declaration?: { readonly hash: string }; readonly unavailable?: string }[];
+}
+export type CodeEvidence = Pick<ReceiptFields, "proofs" | "tests" | "exercises" | "models" | "unheaded" | "unverified" | "uncovered"> & {
+  readonly checksAtStart?: readonly ReceiptCheckPlan[];
+};
+export type SpecificationEvidence = Pick<ReceiptFields, "contracts" | "weakened">;
+export interface RequestReview {
+  readonly kind: "model_opinion";
+  readonly contractComparison: ContractComparison;
+  readonly openCases: OpenCases;
+  readonly context: readonly RequestJudgment[];
+}
+export interface RequestContext {
+  readonly requests: readonly { readonly run: number; readonly text: readonly string[] }[];
+  readonly clarifications?: readonly Clarification[];
+}
+type GroupedField = keyof CodeEvidence | keyof SpecificationEvidence;
+export type Receipt = Omit<ReceiptFields, GroupedField> & {
+  readonly codeEvidence: CodeEvidence;
+  readonly specificationEvidence: SpecificationEvidence;
+  readonly requestContext: RequestContext;
+  readonly requestReview: RequestReview;
+};
+export const noRequestReview: RequestReview = { kind: "model_opinion", contractComparison: { scope: "eligible_changed_contracts",
+  status: "not_run", reason: "no eligible changed contract", contracts: [], runs: [] },
+  openCases: { status: "not_run", reason: "request review was not run" }, context: [] };
 
 /** A potentially writing MCP invocation. Arguments are represented only by their SHA-256 digest. */
 export interface ExternalEffect {
@@ -189,9 +210,9 @@ export interface FloorRefusal {
 /** A model's check and the gate's verdict on it (`gateVerdict`). */
 export type ModelResult = ModelCheck & { readonly verdict: GateVerdict };
 
-/** What a receipt records for one repository or folder; the receipt itself is one, for the folder Pi runs in. */
-export type UnitEvidence = Pick<Receipt, "repository" | "snapshot" | "tooLarge" | "reason" | "base" | "proofs" | "contracts" |
-  "claimcheck" | "tests" | "exercises" | "models" | "unheaded" | "weakened" | "unverified" | "commentsOnly" | "uncovered" | "changed" |
+/** Mechanical facts used while measuring/summarizing a unit; stored ReceiptUnit groups code and specification evidence. */
+export type UnitEvidence = Pick<ReceiptFields, "repository" | "snapshot" | "tooLarge" | "reason" | "base" | "proofs" | "contracts" |
+  "tests" | "exercises" | "models" | "unheaded" | "weakened" | "unverified" | "commentsOnly" | "uncovered" | "changed" |
   "lines" | "inherited" | "unmeasured" | "startState" | "endState">;
 
 /** Whether anything verified a unit: it is a Git repository, or Tesota snapshotted it. */
@@ -212,7 +233,7 @@ export function addedAssumptions(files: readonly string[], weakened: UnitEvidenc
 }
 
 /** A unit's evidence and its folder, relative to the folder Pi runs in; empty for that folder's own files. */
-export type ReceiptUnit = UnitEvidence & { readonly folder: string };
+export type ReceiptUnit = Omit<UnitEvidence, GroupedField> & { readonly folder: string; readonly codeEvidence: CodeEvidence; readonly specificationEvidence: SpecificationEvidence };
 
 const none: LineCount = { added: 0, removed: 0 };
 
@@ -231,9 +252,9 @@ function linesTogether(each: readonly UnitEvidence["lines"][]): UnitEvidence["li
 }
 
 /** The evidence of a unit that verified nothing. */
-export const noEvidence: Omit<UnitEvidence, "repository" | "snapshot" | "tooLarge" | "reason" | "base" | "claimcheck" |
-  "commentsOnly" | "startState" | "endState"> = { proofs: [], contracts: [],
-  tests: [], exercises: [], weakened: [], unverified: [], uncovered: [], changed: [], lines: noLines, inherited: [], unmeasured: [] };
+export const noEvidence: Omit<ReceiptUnit, "folder" | "repository" | "snapshot" | "tooLarge" | "reason" | "base" | "commentsOnly" | "startState" | "endState"> = { codeEvidence: { proofs: [], tests: [], exercises: [], unverified: [], uncovered: [] },
+  specificationEvidence: { contracts: [], weakened: [] }, changed: [], lines: noLines, inherited: [], unmeasured: [] } satisfies
+  Omit<ReceiptUnit, "folder" | "repository" | "snapshot" | "tooLarge" | "reason" | "base" | "commentsOnly" | "startState" | "endState">;
 
 /** A unit's path as seen from the folder Pi runs in. */
 export function inUnit(folder: string, path: string): string {
@@ -246,21 +267,25 @@ export function inUnit(folder: string, path: string): string {
  */
 export function fromFolder(unit: ReceiptUnit): UnitEvidence {
   const { folder } = unit;
-  if (folder === "") return unit;
+  const flat = { ...unit, ...unit.codeEvidence, ...unit.specificationEvidence };
+  if (folder === "") return flat;
   const at = (path: string): string => inUnit(folder, path);
   const checked = (evidence: Evidence): Evidence => ({ ...evidence, files: evidence.files.map(at) });
   return { ...unit,
-    proofs: unit.proofs.map((proof) => ({ ...proof, path: at(proof.path), evidence: checked(proof.evidence) })),
-    contracts: unit.contracts.map((contract) => ({ ...contract, path: at(contract.path) })),
-    tests: unit.tests.map((run) => ({ ...run, command: inFolder(folder, run.command), evidence: checked(run.evidence) })),
-    exercises: unit.exercises.map((exercise) => ({ ...exercise, path: at(exercise.path) })),
-    ...unit.models === undefined ? {} : { models: unit.models.map((model) => ({ ...model, path: at(model.path), evidence: checked(model.evidence) })) },
-    ...unit.unheaded === undefined ? {} : { unheaded: unit.unheaded.map(at) },
-    weakened: typeof unit.weakened === "string" ? unit.weakened : unit.weakened.map((change) => ({ ...change, path: at(change.path) })),
-    unverified: unit.unverified.map(at),
+    proofs: flat.proofs.map((proof) => ({ ...proof, path: at(proof.path), evidence: checked(proof.evidence) })),
+    contracts: flat.contracts.map((contract) => ({ ...contract, path: at(contract.path) })),
+    tests: flat.tests.map((run) => ({ ...run, command: inFolder(folder, run.command), evidence: checked(run.evidence) })),
+    exercises: flat.exercises.map((exercise) => ({ ...exercise, path: at(exercise.path),
+      ...exercise.sources === undefined ? {} : { sources: exercise.sources.map(at) },
+      ...exercise.sourceEvidence === undefined ? {} : { sourceEvidence: checked(exercise.sourceEvidence) },
+      ...exercise.sourceGaps === undefined ? {} : { sourceGaps: exercise.sourceGaps.map((gap) => ({ ...gap, path: at(gap.path) })) } })),
+    ...flat.models === undefined ? {} : { models: flat.models.map((model) => ({ ...model, path: at(model.path), evidence: checked(model.evidence) })) },
+    ...flat.unheaded === undefined ? {} : { unheaded: flat.unheaded.map(at) },
+    weakened: typeof flat.weakened === "string" ? flat.weakened : flat.weakened.map((change) => ({ ...change, path: at(change.path) })),
+    unverified: flat.unverified.map(at),
     inherited: unit.inherited.map(at),
     unmeasured: unit.unmeasured.map((item) => ({ ...item, path: at(item.path) })),
-    uncovered: unit.uncovered.map((lines) => ({ ...lines, path: at(lines.path) })),
+    uncovered: flat.uncovered.map((lines) => ({ ...lines, path: at(lines.path) })),
     changed: typeof unit.changed === "string" ? unit.changed : unit.changed.map((file) => ({ ...file, path: at(file.path) })),
     lines: typeof unit.lines === "string" ? unit.lines : { ...unit.lines, binary: unit.lines.binary.map(at), generated: unit.lines.generated.map(at) },
     ...unit.tooLarge === undefined ? {} : { tooLarge: unit.tooLarge.map(at) } };
@@ -277,7 +302,7 @@ export function receiptUnits(receipt: Receipt): readonly ReceiptUnit[] {
  * whole, and only changes that are all comments are comments only.
  */
 export function allEvidence(receipt: Receipt): UnitEvidence {
-  if (receipt.units === undefined) return receipt;
+  if (receipt.units === undefined) return fromFolder({ ...receipt, folder: "" });
   const units = receipt.units.filter(verified).map(fromFolder);
   const unread = units.find(({ weakened }) => typeof weakened === "string")?.weakened;
   const changed = units.some((unit) => typeof unit.changed === "string") ? "unreadable" as const
@@ -303,12 +328,21 @@ export function allEvidence(receipt: Receipt): UnitEvidence {
  */
 export function unitReceipt(receipt: Receipt, folder: string): Receipt | undefined {
   const unit = receipt.units?.find((candidate) => candidate.folder === folder && candidate.repository);
-  const { version, startedAt, settledAt, engine, model, clarifications, requestJudgments, openCases, unresolvedQuestion, stopped, externalEffects } = receipt;
+  const { version, startedAt, settledAt, engine, model, requestContext, requestReview, unresolvedQuestion, stopped, externalEffects } = receipt;
+  const contracts = requestReview.contractComparison.contracts.filter((contract) => contract.folder === folder);
+  const runs = requestReview.contractComparison.runs.filter((run) => run.folder === folder);
+  const reasons = runs.flatMap(({ reason }) => reason === undefined ? [] : [reason]);
+  const contractComparison: ContractComparison = { scope: "eligible_changed_contracts",
+    status: reviewStatus(runs.length, runs.filter(({ status }) => status === "completed").length,
+      runs.filter(({ status }) => status === "partial").length, runs.filter(({ status }) => status === "disabled").length),
+    ...contracts.length === 0 ? { reason: "no eligible changed contract" } : reasons.length === 0 ? {} : { reason: reasons.join("; ") }, contracts, runs };
+  const checksAtStart = receipt.codeEvidence.checksAtStart?.filter((plan) => plan.folder === folder);
   return unit === undefined ? undefined : { ...unit, version, startedAt, settledAt, engine, ...model === undefined ? {} : { model },
-    ...clarifications === undefined ? {} : { clarifications }, ...requestJudgments === undefined ? {} : { requestJudgments: requestJudgments.filter((judgment) =>
-      judgment.method === "open_cases" || judgment.folder === folder) },
-    ...stopped === undefined ? {} : { stopped }, ...openCases === undefined ? {} : { openCases },
-    ...unresolvedQuestion === undefined ? {} : { unresolvedQuestion }, ...externalEffects === undefined ? {} : { externalEffects } };
+    codeEvidence: { ...unit.codeEvidence, ...checksAtStart === undefined ? {} : { checksAtStart } },
+    requestContext, requestReview: { ...requestReview, context: requestReview.context.filter((context) => context.method === "open_cases" || context.folder === folder),
+      contractComparison },
+    ...stopped === undefined ? {} : { stopped }, ...unresolvedQuestion === undefined ? {} : { unresolvedQuestion },
+    ...externalEffects === undefined ? {} : { externalEffects } };
 }
 
 /** How a folder in no repository is named: the folder the session runs in holds only its own files there. */
@@ -350,7 +384,7 @@ function line(path: string, verdict: GateVerdict, evidence: Evidence, assumed: n
 const again = (end: ReturnType<typeof checkEnd>): string =>
   end === "failed" ? ", repeating a failure already sent back" : ", still could not be checked after being sent back";
 
-function testLine({ command, declaration, verdict, evidence, failingTests, origin }: Receipt["tests"][number]): string {
+function testLine({ command, declaration, verdict, evidence, failingTests, origin }: UnitEvidence["tests"][number]): string {
   if (declaration !== undefined) command += ` [declared check ${declaration.index + 1}]`;
   if (evidence.invalidated === "content_changed") return `  stale         ${command}: ${staleEvidenceWords}`;
   if (verdict === "proved") return `  passed        ${command}`;
@@ -414,9 +448,9 @@ function mutationLines({ path, name, mutation }: ContractStrength): string[] {
   ...mutation.survived.map((mutant) => `                line ${mutant.line}: ${mutant.before} became ${mutant.after}`)];
 }
 
-const verdictText: Readonly<Record<NonNullable<ContractStrength["judgment"]>["verdict"], string>> = {
-  justified: "expresses what was asked", partially_justified: "covers only part of what was asked",
-  not_justified: "does not express what was asked", vacuous: "proves nothing beyond its assumptions",
+const verdictText: Readonly<Record<NonNullable<ContractReview["assessment"]>["verdict"], string>> = {
+  no_mismatch_identified: "the model identified no mismatch in the compared contract", partial_match: "the model identified a partial match",
+  mismatch: "the model identified a mismatch", suspected_vacuity: "the model suspects contract vacuity",
 };
 
 /** ClaimCheck's plain-words reading of a contract (#730), its precondition without a model's closing full stop. */
@@ -424,19 +458,13 @@ const restated = ({ preconditions, postcondition }: Restatement): string =>
   `assumes ${preconditions.trim().replace(/\.$/u, "")}; guarantees ${postcondition.trim()}`;
 
 /** ClaimCheck's view of the contracts, always labelled a model's judgment, each with its restatement when one was made. */
-function claimcheckLines(run: ClaimCheckRun | undefined, contracts: readonly ContractStrength[]): string[] {
-  if (run === undefined) return [];
-  if (run.status === "not_judged") {
-    return [`  not judged    whether the contracts express the request: ClaimCheck ${run.reason}`,
-      ...contracts.flatMap(({ path, name, restatement }) => restatement === undefined ? []
-        : [`                ${name} in ${path}, restated without the request: ${restated(restatement)}`])];
-  }
-  const models = run.restatedBy === run.comparedBy
-    ? `${run.comparedBy}, one model for both requests,` : `${run.restatedBy} restating and ${run.comparedBy} comparing,`;
-  return [`  model judged  by ClaimCheck on ${models} a model's judgment against the request, not a proof:`,
-    ...contracts.flatMap(({ path, name, judgment, restatement }) => judgment === undefined ? [] : [`                ${name} in ${path} ` +
-      `${verdictText[judgment.verdict]}${judgment.verdict === "justified" ? "" : `: ${judgment.explanation}`}`,
-    ...restatement === undefined ? [] : [`                  restated without the request: ${restated(restatement)}`]])];
+function claimcheckLines(run: ClaimCheckRun | undefined, contracts: readonly ContractReview[]): string[] {
+  return [...run === undefined ? [] : [`  model opinion Contract comparison${run.folder ? ` in ${run.folder}` : ""} ${run.status}${run.reason === undefined ? "" : `: ${run.reason}`}`,
+    `                restatement model: ${run.restatedBy ?? "not attempted"}; comparison model: ${run.comparedBy ?? "not attempted"}`,
+    ...run.failedStage === undefined ? [] : [`                failed stage: ${run.failedStage}`]],
+    ...contracts.flatMap(({ path, name, assessment, restatement }) => [
+      ...restatement === undefined ? [] : [`                ${name} in ${path}, restated without the request: ${restated(restatement)}`],
+      ...assessment === undefined ? [] : [`                ${name} in ${path}: ${verdictText[assessment.verdict]}: ${assessment.explanation}`]])];
 }
 
 /**
@@ -512,7 +540,7 @@ function weakening(change: Weakening): string[] {
 /** Whether a session entry's details hold a receipt this Tesota reads. */
 export function isReceipt(value: unknown): value is Receipt {
   // A receipt from before the engine named itself (#463) has `pi` in place of `engine`: an earlier Tesota's.
-  return typeof value === "object" && value !== null && Reflect.get(value, "version") === 2 && typeof Reflect.get(value, "engine") === "string";
+  return typeof value === "object" && value !== null && Reflect.get(value, "version") === 3 && typeof Reflect.get(value, "engine") === "string";
 }
 
 /** A session entry that may carry a receipt: a message, or a custom entry from print mode. */
@@ -668,7 +696,7 @@ export const modelEnd = ({ evidence, run, faults }: Pick<ModelResult, "evidence"
   checkEnd("model", evidence.invalidated !== undefined, evidence.outcome, run, faults.some(({ verdict }) => verdict === "passes"));
 
 /** A command's run as a finding: passed, still failing after it went back, or a gap because it did not run or is stale. */
-export function commandFinding({ command, declaration, verdict, evidence, failingTests, origin }: Pick<Receipt["tests"][number],
+export function commandFinding({ command, declaration, verdict, evidence, failingTests, origin }: Pick<UnitEvidence["tests"][number],
   "command" | "declaration" | "verdict" | "evidence" | "failingTests" | "origin">): Finding {
   const more = [`Ran in ${seconds(evidence.durationMs)} · sha256 ${evidence.contentHash.slice(0, 12)}`];
   if (declaration !== undefined) more.push(`Declared check ${declaration.index + 1} · configuration sha256 ${declaration.hash.slice(0, 12)}`);
@@ -810,7 +838,7 @@ function modelLines(model: ModelResult): string[] {
  * without proving them (`assumed`) says how many, so it never reads as
  * proved outright (#399).
  */
-export function proofFinding({ path, verdict, evidence }: Pick<Receipt["proofs"][number], "path" | "verdict" | "evidence">,
+export function proofFinding({ path, verdict, evidence }: Pick<UnitEvidence["proofs"][number], "path" | "verdict" | "evidence">,
   assumed = 0): Finding {
   const summary = proofSummary(evidence);
   if (verdict === "proved") {
@@ -827,29 +855,36 @@ export function proofFinding({ path, verdict, evidence }: Pick<Receipt["proofs"]
   return { standing: "decide", check: "proof", failed: true, label: "Proof fails", subject: path, detail: summary.words, more };
 }
 
-const judgmentWords: Readonly<Record<NonNullable<ContractStrength["judgment"]>["verdict"], string>> = {
-  justified: "matches the request", partially_justified: "covers only part of the request",
-  not_justified: "does not match the request", vacuous: "proves nothing beyond its assumptions",
+const judgmentWords: Readonly<Record<NonNullable<ContractReview["assessment"]>["verdict"], string>> = {
+  no_mismatch_identified: "no mismatch identified in the compared contracts", partial_match: "partial match reported",
+  mismatch: "mismatch reported", suspected_vacuity: "contract vacuity suspected",
 };
 
 /** ClaimCheck's view of each contract: a model's opinion, never evidence, and never one of the receipt's decisions. */
-function opinionFindings(run: ClaimCheckRun | undefined, contracts: readonly ContractStrength[]): Finding[] {
+function opinionFindings(run: ClaimCheckRun | undefined, contracts: readonly ContractReview[]): Finding[] {
   if (run === undefined) return [];
-  if (run.status === "not_judged") {
-    return [{ standing: "opinion", check: "request", label: "Not compared", subject: "the contracts with the request",
+  if (run.status === "not_run") {
+    return [{ standing: "opinion", check: "request", label: "Not compared", subject: `the contracts${run.folder ? ` in ${run.folder}` : ""} with the request`,
       detail: `ClaimCheck ${run.reason}`, more: [],
       group: { title: "ClaimCheck did not compare the contracts with the request", note: `ClaimCheck ${run.reason}` } }];
   }
   const by = run.restatedBy === run.comparedBy ? `${run.comparedBy} restated and compared`
     : `${run.restatedBy} restated, ${run.comparedBy} compared`;
   // A contract short of the request shows the model's reason under its verdict, so the card says why (#730).
-  return contracts.flatMap(({ path, name, judgment, restatement }): Finding[] => judgment === undefined ? [] : [{ standing: "opinion",
-    check: "request", label: judgment.verdict === "justified" ? "Model: matches" : "Model: partial match",
+  return contracts.flatMap(({ path, name, assessment: judgment, restatement }): Finding[] => judgment === undefined ? [] : [{ standing: "opinion",
+    check: "request", label: judgment.verdict === "no_mismatch_identified" ? "Model: no mismatch identified" : "Model: assessment",
     subject: `${name} · ${path}`, detail: judgmentWords[judgment.verdict],
     more: [judgment.explanation, ...restatement === undefined ? [] : [`Restated without the request: ${restated(restatement)}.`],
       `A model's opinion, not a proof: ${by}.`],
-    group: { title: `ClaimCheck: ${judgmentWords[judgment.verdict]}`, note: judgment.verdict === "justified" ? "" : judgment.explanation,
+    group: { title: `ClaimCheck: ${judgmentWords[judgment.verdict]}`, note: judgment.verdict === "no_mismatch_identified" ? "" : judgment.explanation,
       item: `${name} · ${path}`, source: "ClaimCheck" } }]);
+}
+
+/** Preserve each unit's attempted models and assessments when projecting a workspace review. */
+function comparisonParts(receipt: Receipt): readonly { readonly run: ClaimCheckRun; readonly contracts: readonly ContractReview[] }[] {
+  const comparison = receipt.requestReview.contractComparison;
+  return comparison.runs.map((run) => ({ run, contracts: comparison.contracts.filter((contract) => contract.folder === (run.folder ?? ""))
+    .map((contract) => ({ ...contract, path: receipt.units === undefined ? contract.path : inUnit(contract.folder, contract.path) })) }));
 }
 
 /** The results someone could expect from an open case, as one phrase: models end each with a full stop. */
@@ -860,7 +895,7 @@ function either(outcomes: readonly string[]): string {
 /** The cases a model listed as left open by the request, one opinion each, for the operator to settle. */
 function openCaseFindings(listed: OpenCases | undefined): Finding[] {
   // A refusal is not an opinion about the change; openCaseLines keeps its reason in the details.
-  if (listed === undefined || listed.status === "not_listed") return [];
+  if (listed === undefined || listed.status !== "listed") return [];
   return listed.cases.map(({ input, outcomes }) => ({ standing: "opinion", check: "request", label: "Model: open case", subject: input,
     detail: either(outcomes), more: [`A model's list for you to settle, not a check: ${listed.model}.`],
     group: { title: `% for you to settle, listed by ${listed.model}`, noun: ["open case", "open cases"], note: "",
@@ -870,7 +905,7 @@ function openCaseFindings(listed: OpenCases | undefined): Finding[] {
 /** The receipt's lines for the open cases a model listed, labelled a model's opinion. */
 function openCaseLines(listed: OpenCases | undefined): string[] {
   if (listed === undefined) return [];
-  if (listed.status === "not_listed") return [`  not listed    the cases the request leaves open: ${listed.reason}`];
+  if (listed.status !== "listed") return [`  not listed    the cases the request leaves open: ${listed.reason}`];
   if (listed.cases.length === 0) return [`  model listed  no case the request leaves open, by ${listed.model}; a model's opinion, not a check`];
   return [`  model listed  by ${listed.model}, cases the request may leave open, for you to settle; a model's opinion, not a check:`,
     ...listed.cases.map(({ input, outcomes }) => `                ${input}: ${either(outcomes)}`)];
@@ -924,9 +959,10 @@ export function receiptFindings(receipt: Receipt): Finding[] {
   }
   return [...receipt.unresolvedQuestion === undefined ? [] : [{ standing: "decide" as const, check: "request" as const,
     label: "Incomplete", subject: "unresolved question", detail: receipt.unresolvedQuestion, more: [] }],
-  ...receipt.units === undefined ? unitFindings(receipt) : receipt.units.flatMap((unit) => verified(unit)
+  ...receipt.units === undefined ? unitFindings(allEvidence(receipt)) : receipt.units.flatMap((unit) => verified(unit)
     ? unitFindings(fromFolder(unit), unit.folder) : [{ standing: "decide" as const, check: "coverage" as const, label: "Not verified",
-      subject: plainName(unit.folder), detail: plainReason(unit), more: [] }]), ...external, ...openCaseFindings(receipt.openCases)];
+      subject: plainName(unit.folder), detail: plainReason(unit), more: [] }]), ...external,
+    ...comparisonParts(receipt).flatMap(({ run, contracts }) => opinionFindings(run, contracts)), ...openCaseFindings(receipt.requestReview.openCases)];
 }
 
 /** One unit's findings, from the folder Pi runs in; each unit's tests decide how its unproved files are worded. */
@@ -979,7 +1015,6 @@ function unitFindings(receipt: UnitEvidence, folder = ""): Finding[] {
           : { standing: "gap", check: "exercise", label: "Test not checked", subject: path, detail, more: [],
             group: { title: "Change sensitivity unknown · %", noun: testFiles, note: shortReason(reason), item: path } };
     }),
-    ...opinionFindings(receipt.claimcheck, receipt.contracts),
     ...unread && receipt.proofs.length > 0
       ? [{ standing: "gap" as const, check: "coverage" as const, label: "Coverage not checked", subject: "the changed lines",
         detail: "for the same reason", more: [] }] : [],
@@ -1013,7 +1048,7 @@ function resolved(receipt: UnitEvidence): boolean {
 
 /** Attribution limits affect what is known, never the inherited paths' status or the checks' evidence. */
 function fingerprintFindings(receipt: UnitEvidence, folder = ""): Finding[] {
-  const measurements = receipt.exercises.length > 0 || receipt.contracts.length > 0 || receipt.claimcheck !== undefined
+  const measurements = receipt.exercises.length > 0 || receipt.contracts.length > 0
     ? "recorded exercise and contract measurements do not establish request attribution"
     : "test exercise, contract strength and ClaimCheck were not measured";
   return [...resolved(receipt) ? [] : [{ standing: "gap" as const, check: "coverage" as const,
@@ -1077,8 +1112,8 @@ export function unverifiedWhy(receipt: Receipt): string {
 
 /** The receipt with no unit listing an unproved file, so its findings hold every gap but those (`runStanding` weighs them per path). */
 function withoutUnproved(receipt: Receipt): Receipt {
-  return receipt.units === undefined ? { ...receipt, unverified: [] }
-    : { ...receipt, units: receipt.units.map((unit) => ({ ...unit, unverified: [] })) };
+  return receipt.units === undefined ? { ...receipt, codeEvidence: { ...receipt.codeEvidence, unverified: [] } }
+    : { ...receipt, units: receipt.units.map((unit) => ({ ...unit, codeEvidence: { ...unit.codeEvidence, unverified: [] } })) };
 }
 
 /** One changed path of a verified unit as `runStanding` weighs it. */
@@ -1094,14 +1129,14 @@ interface ChangedPath { readonly path: string; readonly proved: boolean; readonl
  */
 function changedPaths(unit: UnitEvidence): ChangedPath[] {
   const tested = unit.tests.length > 0 && unit.tests.every(({ verdict }) => verdict === "proved");
-  const noticed = unit.exercises.length > 0 && unit.exercises.every(({ sensitivity }) => sensitivity === "fails_then_passes");
   // Every path the receipt records as changed: the inventory, and each file it lists unproved, proved, with lines uncovered, or modeled.
   const changed = [...typeof unit.changed === "string" ? [] : unit.changed.map(({ path }) => path), ...unit.unverified,
     ...unit.proofs.map(({ path }) => path), ...unit.uncovered.map(({ path }) => path), ...(unit.models ?? []).map(({ path }) => path)];
   const uncheckedModelFiles = new Set((unit.models ?? []).filter(({ verdict, evidence }) =>
     verdict !== "proved" || evidence.invalidated !== undefined).flatMap(({ path, header }) => modelOwnFiles(path, header)));
   return [...new Set(changed)].map((path) => ({ path, proved: !unit.unverified.includes(path) && !uncheckedModelFiles.has(path), tested,
-    exercised: noticed && unit.unverified.length === 1 && unit.unverified[0] === path }));
+    exercised: unit.exercises.some((exercise) => sourceCredit(exercise.sources?.includes(path) === true,
+      exercise.sourceEvidence?.outcome === "passed", exercise.sourceEvidence !== undefined && exercise.sourceEvidence.invalidated === undefined)) }));
 }
 
 /** The unit's unproved files that are covered all the same (`pathCovered`, as the standing reads them): tested and exercised. */
@@ -1175,8 +1210,8 @@ export interface ReceiptSummary {
   readonly context: string;
 }
 
-export const ACCEPTANCE = "Evidence, not approval: accepting the change is yours.";
-export const OPINIONS = "Model opinions · not evidence, not counted";
+export const ACCEPTANCE = "Acceptance remains with the reviewer.";
+export const OPINIONS = "Request review \u2014 model opinion";
 export const DETAILS = "Details · paths, output, assumptions, model opinions";
 
 /** Within each group of the summary, what most changes whether the evidence can be trusted comes first. */
@@ -1263,7 +1298,7 @@ function grouped(findings: readonly Finding[]): SummaryGroup[] {
     const items = group === undefined ? members.map(({ subject }) => subject).filter((subject) => subject !== "")
       : members.flatMap((member) => member.group?.item === undefined ? [] : [member.group.item]);
     return { glyph: findingGlyph(first), title, note: group?.note ?? first.detail, items, ...group?.source === undefined ? {} : { source: group.source },
-      ...first.standing === "opinion" && first.label === "Model: matches" ? { quiet: true as const } : {} };
+      ...first.standing === "opinion" && first.label === "Model: no mismatch identified" ? { quiet: true as const } : {} };
   });
 }
 
@@ -1292,10 +1327,10 @@ export function receiptSummary(receipt: Receipt): ReceiptSummary {
       ...toRead === 0 ? [] : [plural(toRead, "opinion to read", "opinions to read")]].join(" · ")
       .replace(/^n/u, "N"),
     tone: summaryTone(receipt, findings),
-    methods: receipt.stopped === undefined ? methodRows(allEvidence(receipt)) : methodRows(noEvidence),
+    methods: receipt.stopped === undefined ? methodRows(allEvidence(receipt)) : methodRows({ ...noEvidence.codeEvidence, ...noEvidence.specificationEvidence }),
     notes: grouped(of("holds").filter(({ check }) => check === "coverage")),
     flags: grouped(of("decide")), limits: grouped(of("gap")), opinions,
-    context: [...(receipt.clarifications?.length ?? 0) === 0 ? [] : [plural(receipt.clarifications?.length ?? 0, "answer", "answers")],
+    context: [...(receipt.requestContext.clarifications?.length ?? 0) === 0 ? [] : [plural(receipt.requestContext.clarifications?.length ?? 0, "answer", "answers")],
       ...(receipt.children?.length ?? 0) === 0 ? [] : [plural(receipt.children?.length ?? 0, "subagent", "subagents")],
       ...(receipt.floorRefusals?.length ?? 0) === 0 ? [] : [`${plural(receipt.floorRefusals?.length ?? 0, "call", "calls")} the floor refused`],
       ...inherited === 0 ? [] : [`${plural(inherited, "file", "files")} already uncommitted, not this request's`]].join(" · "),
@@ -1310,7 +1345,7 @@ export function methodWidth(methods: readonly SummaryMethod[]): number {
 /** Every fact the receipt records, one per line, as its details show them: each method's runs, each path, each reason. */
 export function receiptDetailLines(receipt: Receipt): string[] {
   // Each unit's base: a commit, or Tesota's snapshot of a folder in no repository, which no one else can fetch.
-  const based = ({ snapshot, base }: UnitEvidence, first: string): string =>
+  const based = ({ snapshot, base }: Pick<UnitEvidence, "snapshot" | "base">, first: string): string =>
     `${snapshot === true ? "Tesota's snapshot " : ""}${base?.slice(0, 12) ?? first}`;
   const from = receipt.units === undefined ? based(receipt, "the first commit")
     : receipt.units.filter(verified).map((unit) => `${plainName(unit.folder)} ${based(unit, "its first commit")}`).join(", ");
@@ -1318,12 +1353,12 @@ export function receiptDetailLines(receipt: Receipt): string[] {
 }
 
 /** The judged request IDs, apart from check evidence and acceptance, including every capacity omission. */
-function requestJudgmentLines(receipt: Pick<Receipt, "requestJudgments">): string[] {
+function requestJudgmentLines(receipt: Pick<Receipt, "requestReview">): string[] {
   const ids = (runs: readonly number[]): string => runs.length < 2 ? runs.join("")
     : `${runs.slice(0, -1).join(", ")} and ${runs.at(-1)}`;
   const requests = (runs: readonly number[]): string => `${runs.length === 1 ? "request" : "requests"} ${ids(runs)}`;
-  return (receipt.requestJudgments ?? []).flatMap(({ method, folder, requests: given, omitted, references }) => {
-    const judge = method === "claimcheck" ? "ClaimCheck" : "Open cases";
+  return receipt.requestReview.context.flatMap(({ method, stage, folder, requests: given, omitted, references }) => {
+    const judge = stage === "restatement" ? "ClaimCheck blind restatement" : method === "claimcheck" ? "ClaimCheck" : "Open cases";
     const unit = folder === "" ? "" : ` · ${plainName(folder)}`;
     return [`${judge} context: ${given.length === 0 ? "no requests supplied" : requests(given.map(({ run }) => run))}${unit}`,
       ...omitted.length === 0 ? [] : [`${judge} left out ${requests(omitted)}: context capacity${unit}`],
@@ -1344,12 +1379,31 @@ export function renderReceipt(receipt: Receipt): string {
   const groups = (list: readonly SummaryGroup[]): string[] =>
     list.flatMap(({ glyph, title, note }) => [`${glyph} ${title}`, ...note === "" ? [] : [`  ${note}`]]);
   const found = groups([...summary.notes, ...summary.flags, ...summary.limits]);
-  return ["Tesota receipt", summary.counts, ACCEPTANCE, "",
-    ...summary.methods.map(({ glyph, method, text }) => `${glyph} ${method.padEnd(width)}${text}`),
+  return ["Tesota receipt", `Evidence standing: ${receiptStanding(receipt)}`, summary.counts, "",
+    ...receiptRequestContextLines(receipt), "", "Code evidence",
+    ...summary.methods.filter(({ method }) => method !== "Contracts").map(({ glyph, method, text }) => `${glyph} ${method.padEnd(width)}${text}`),
     ...found.length === 0 ? [] : ["", ...found],
-    ...summary.opinions.length === 0 ? [] : ["", OPINIONS, ...groups(summary.opinions)],
-    "", "Details", ...receiptDetailLines(receipt), ...receiptClarificationLines(receipt), ...receiptChildLines(receipt),
-    ...receiptRefusalLines(receipt)].join("\n");
+    "", ...receiptSpecificationLines(receipt),
+    "", OPINIONS, ...requestReviewLines(receipt), ...groups(summary.opinions),
+    "", "Details", ...receiptDetailLines(receipt), ...receiptChildLines(receipt),
+    ...receiptRefusalLines(receipt), "", ACCEPTANCE].join("\n");
+}
+
+export function requestReviewLines(receipt: Pick<Receipt, "requestReview">): string[] {
+  const { contractComparison, openCases } = receipt.requestReview;
+  return [`Contract comparison: ${contractComparison.status}${contractComparison.reason === undefined ? "" : `; ${contractComparison.reason}`}`,
+    `Open cases: ${openCases.status}; ${"reason" in openCases ? openCases.reason : `${openCases.cases.length} listed`}`];
+}
+
+export function receiptRequestContextLines(receipt: Pick<Receipt, "requestContext">): string[] {
+  return ["Request context", ...receipt.requestContext.requests.length === 0 ? ["No request messages recorded."] : [], ...receipt.requestContext.requests.flatMap(({ run, text }) =>
+    [`Request ${run}`, ...text]), ...receiptClarificationLines(receipt)];
+}
+
+export function receiptSpecificationLines(receipt: Receipt, expanded = true): string[] {
+  const evidence = allEvidence(receipt);
+  return ["Specification evidence", ...evidence.contracts.flatMap((contract) => expanded ? mutationLines(contract) : mutationLines(contract).slice(0, 1)),
+    ...typeof evidence.weakened === "string" ? [`Weakening not checked: ${evidence.weakened}`] : evidence.weakened.flatMap(weakening)];
 }
 
 /** Each subagent the run started (#525), in one line; their ends are neither this receipt's evidence nor acceptance. */
@@ -1384,8 +1438,8 @@ export function receiptChildLines(receipt: Pick<Receipt, "children">): string[] 
 }
 
 /** Request context is separate from findings, so it cannot affect evidence counts or verdicts. */
-export function receiptClarificationLines(receipt: Pick<Receipt, "clarifications">): string[] {
-  return (receipt.clarifications ?? []).flatMap((clarification) => ["",
+export function receiptClarificationLines(receipt: Pick<Receipt, "requestContext">): string[] {
+  return (receipt.requestContext.clarifications ?? []).flatMap((clarification) => ["",
     "Request clarification (operator input, not evidence or acceptance)", ...clarificationText(clarification).split("\n")]);
 }
 
@@ -1405,17 +1459,19 @@ export function renderReceiptMessage(receipt: Receipt): string {
   const found = [...summary.notes, ...summary.flags, ...summary.limits];
   const details = receiptDetailLines(receipt).join("\n");
   const fence = "`".repeat(Math.max(3, ...[...details.matchAll(/`+/gu)].map(([run]) => run.length + 1)));
-  const clarifications = receiptClarificationLines(receipt);
+  const clarifications = receiptRequestContextLines(receipt);
   const children = childLines(receipt);
   const refusals = refusalLines(receipt);
-  return ["## Tesota receipt", `**${inline(summary.counts)}**  \n${ACCEPTANCE}`,
-    summary.methods.map(({ glyph, method, text }) => `- ${glyph} **${method}** — ${inline(text)}`).join("\n"),
+  return ["## Tesota receipt", `Evidence standing: ${receiptStanding(receipt)}\n\n**${inline(summary.counts)}**`,
+    clarifications.map((line) => `> ${markdownText(line)}`).join("\n"), "**Code evidence**",
+    summary.methods.filter(({ method }) => method !== "Contracts").map(({ glyph, method, text }) => `- ${glyph} **${method}** — ${inline(text)}`).join("\n"),
     ...found.length === 0 ? [] : [groups(found)],
-    ...summary.opinions.length === 0 ? [] : [`**${OPINIONS}**\n\n${groups(summary.opinions)}`],
+    receiptSpecificationLines(receipt).map((line) => `> ${markdownText(line)}`).join("\n"),
+    `**${OPINIONS}**\n\n${requestReviewLines(receipt).map(inline).join("\n")}\n${groups(summary.opinions)}`,
     `**Details**\n\n${fence}text\n${details}\n${fence}`,
-    ...clarifications.length === 0 ? [] : [clarifications.map((line) => `> ${markdownText(line)}`).join("\n")],
     ...children.length === 0 ? [] : [[markdownText(childrenHeading), ...children.map((line) => `- ${markdownText(line)}`)].join("\n")],
     ...refusals.length === 0 ? [] : [[markdownText(refusalsHeading), ...refusals.map((line) => `- ${markdownText(line)}`)].join("\n")],
+    ACCEPTANCE,
   ].join("\n\n");
 }
 
@@ -1438,8 +1494,8 @@ function leftLines(receipt: Receipt): string[] {
  * session opens again need not be what the run left.
  */
 export function interruptedReceipt(run: Pick<Receipt, "repository" | "base" | "startedAt" | "settledAt" | "engine" |
-  "clarifications" | "children" | "floorRefusals" | "externalEffects">): Receipt {
-  return { version: 2, ...run, ...noEvidence, changed: "unreadable", lines: "unreadable",
+  "requestContext" | "children" | "floorRefusals" | "externalEffects">): Receipt {
+  return { version: 3, ...run, requestReview: noRequestReview, ...noEvidence, changed: "unreadable", lines: "unreadable",
     stopped: "the session ended before Tesota verified this run, so no check ran; change attribution is unknown, "
       + "and the files on disk now may not be what the run left. A new request verifies the current content",
     reason: "no inventory of what the run left was saved before its process ended" };
@@ -1451,12 +1507,13 @@ function receiptLines(receipt: Receipt): string[] {
     [`  not verified  ${label}: ${subject}: ${detail}`, ...more.map((line) => `                ${line}`)]);
   if (receipt.stopped !== undefined) return [`  not verified  this request's changes: ${receipt.stopped}`, ...leftLines(receipt), ...external];
   return [...receipt.unresolvedQuestion === undefined ? [] : [`  incomplete    ${receipt.unresolvedQuestion}`],
-  ...receipt.units === undefined ? unitLines(receipt) : receipt.units.flatMap((unit) => verified(unit)
+  ...receipt.units === undefined ? unitLines(allEvidence(receipt)) : receipt.units.flatMap((unit) => verified(unit)
     ? unitLines(fromFolder(unit)) : [`  not verified  ${plainName(unit.folder)}: ${plainReason(unit)}`]),
   // One row for the whole change, every repository's lines together, last: it sums up the diff, not the evidence.
   ...linesRow(allEvidence(receipt).lines),
   ...external,
-  ...openCaseLines(receipt.openCases)];
+  ...comparisonParts(receipt).flatMap(({ run, contracts }) => claimcheckLines(run, contracts)),
+  ...openCaseLines(receipt.requestReview.openCases)];
 }
 
 /** One unit's lines of the receipt, from the folder Pi runs in. */
@@ -1475,7 +1532,6 @@ function unitLines(receipt: UnitEvidence): string[] {
         ...verdict === "proved" && evidence.invalidated === undefined ? [`                ${proofScope}`] : [],
         `                content sha256 ${evidence.contentHash}`]),
     ...receipt.contracts.flatMap(mutationLines),
-    ...claimcheckLines(receipt.claimcheck, receipt.contracts),
     ...receipt.tests.map(testLine),
     ...(receipt.models ?? []).flatMap(modelLines),
     ...(receipt.unheaded ?? []).map((path) => `  not checked   ${path}: it declares no tesota-model header, so no model check ran`),
