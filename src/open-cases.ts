@@ -45,7 +45,7 @@ export const openCasesSystemPrompt =
 /** What the model is asked about the operator's `requests`, every message of one request in order. */
 export function openCasesPrompt(requests: readonly string[]): string {
   return `A person gave a coding agent this request:\n\n${requests.join("\n\n")}\n\n` +
-    "You can read only these request messages, not external sources or the agent's change. If the request depends on " +
+    "You can read these request messages and any separately supplied third-party reference context, not other external sources or the agent's change. If the request depends on " +
     "an issue, PR, file, URL or other reference whose relevant contents are not supplied in these messages, record " +
     "status not_listed with a reason naming what is missing and why you cannot list its cases. Missing reference contents are not an open case: " +
     "do not guess what they say or invent alternative interpretations of them. A reference mentioned only as background " +

@@ -8,6 +8,16 @@ datatype TestStatus = passed | failed | skipped | absent | unread
 
 datatype ReportedTest = passed | failed | skipped | none
 
+function reportCoversFailures(reported: int, failed: int, errors: int): bool
+{
+  (((reported >= 0) && (reported == failed)) && (errors == 0))
+}
+
+lemma reportCoversFailures_ensures(reported: int, failed: int, errors: int)
+  ensures (reportCoversFailures(reported, failed, errors) <==> (((reported >= 0) && (reported == failed)) && (errors == 0)))
+{
+}
+
 function baseTestStatus(reported: ReportedTest, covered: bool): TestStatus
 {
   if reported.passed? then

@@ -49,6 +49,58 @@ function noTests(): { root: string; base: string } {
 const addTest = "import { expect, test } from \"bun:test\";\nimport { add } from \"./math\";\n\n" +
   "test(\"adds\", () => { expect(add(1, 2)).toBe(3); });\n";
 
+it("attributes a plain Bun script's unchanged failure to the base without project-authored reports (#728)", async () => {
+  const { root } = noTests();
+  writeFileSync(join(root, "package.json"), JSON.stringify({ packageManager: "bun@1.4.2", scripts: { test: "bun test" } }));
+  writeFileSync(join(root, "math.test.ts"), 'import { expect, test } from "bun:test";\ntest("legacy", () => expect(1).toBe(2));\n');
+  const git = (...args: string[]): string => execFileSync("git", args, { cwd: root, encoding: "utf8" });
+  git("add", "math.test.ts", "package.json");
+  git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "--quiet", "-m", "legacy failure");
+  const base = git("rev-parse", "HEAD").trim();
+  const [run] = await runCommands(root, suggestChecks(root), ["math.ts"], new AbortController().signal,
+    undefined, undefined, { base });
+  expect(run).toMatchObject({ command: "bun run test", evidence: { outcome: "failed" }, origin: { cause: "preexisting" } });
+  expect(run?.failingTests).toEqual(["math.test.ts > legacy"]);
+});
+
+function failingRunner(runner: "bun test" | "vitest run"): { root: string; base: string; from: string } {
+  const { root } = noTests();
+  const from = runner === "bun test" ? "bun:test" : "vitest";
+  if (runner === "vitest run") symlinkSync(join(process.cwd(), "node_modules"), join(root, "node_modules"), "junction");
+  writeFileSync(join(root, "package.json"), JSON.stringify({ type: "module", packageManager: "bun@1.4.2", scripts: { test: runner } }));
+  writeFileSync(join(root, "math.test.ts"), `import { expect, test } from "${from}";\ntest("legacy", () => expect(1).toBe(2));\n`);
+  const git = (...args: string[]): string => execFileSync("git", args, { cwd: root, encoding: "utf8" });
+  git("add", "math.test.ts", "package.json");
+  git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "--quiet", "-m", "legacy failure");
+  return { root, base: git("rev-parse", "HEAD").trim(), from };
+}
+
+it.each(["bun test", "vitest run"] as const)("keeps new %s assertion failures attributable over an already failing base (#728)", async (runner) => {
+  const { root, base, from } = failingRunner(runner);
+  writeFileSync(join(root, "new.test.ts"), `import { expect, test } from "${from}";\ntest("new failure", () => expect(3).toBe(4));\n`);
+  const [run] = await runCommands(root, suggestChecks(root), ["new.test.ts"], new AbortController().signal,
+    undefined, undefined, { base });
+  expect(run?.origin?.cause).toBe("introduced");
+  expect(run?.failingTests?.some((name) => name.endsWith("new failure"))).toBe(true);
+}, 60_000);
+
+it.each(["bun test", "vitest run"] as const)("never hides a new %s import error behind an old assertion failure (#728)", async (runner) => {
+  const { root, base } = failingRunner(runner);
+  writeFileSync(join(root, "broken.test.ts"), 'import "./missing-module";\n');
+  const [run] = await runCommands(root, suggestChecks(root), ["broken.test.ts"], new AbortController().signal,
+    undefined, undefined, { base });
+  expect(run?.evidence.outcome).toBe("failed");
+  expect(run?.origin?.cause).not.toBe("preexisting");
+}, 60_000);
+
+it("attributes a plain Vitest script's unchanged failure and removes private reports (#728)", async () => {
+  const { root, base } = failingRunner("vitest run");
+  const [run] = await runCommands(root, suggestChecks(root), ["math.ts"], new AbortController().signal,
+    undefined, undefined, { base });
+  expect(run?.origin?.cause).toBe("preexisting");
+  expect(existsSync(join(root, run?.evidence.output.match(/--outputFile=([^\s]+)/u)?.[1] ?? "missing"))).toBe(false);
+}, 60_000);
+
 it("credits a test added to a project with no tests that fails on the base and passes with the change", async () => {
   const { root, base } = noTests();
   writeFileSync(join(root, "math.test.ts"), addTest);
@@ -352,7 +404,7 @@ it("reports a check that prints results and hangs after one timeout, without run
   } };
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
   const running = runCommands(root, [{ folder: "", commands: [
-    "node -e \"console.log('146 passing (3s)'); require('fs').writeFileSync('pid', String(process.pid)); setInterval(() => {}, 1000)\"",
+    { command: "node -e \"console.log('146 passing (3s)'); require('fs').writeFileSync('pid', String(process.pid)); setInterval(() => {}, 1000)\"", folder: "" },
   ] }], ["math.ts"], controller.signal, ops, undefined, { base });
   try {
     for (let n = 0; n < 500 && !existsSync(join(root, "pid")); n++) await realTimeout(10);

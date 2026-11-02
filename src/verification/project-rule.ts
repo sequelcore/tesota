@@ -6,6 +6,12 @@ export function below(folder: string, other: string): boolean {
   return folder !== other && (folder === "" || other.startsWith(folder + "/"));
 }
 
+/** Project-declared commands run only under current operator trust of unchanged declarations. */
+//@ ensures \result <==> (unchanged && trusted)
+export function declaredCheckAllowed(unchanged: boolean, trusted: boolean): boolean {
+  return unchanged && trusted;
+}
+
 /** A build is shown by an exact marker, or a filename ending in a wildcard marker's suffix. Version files are not build markers. */
 //@ ensures \result <==> exists(m: nat, m < markers.length && exists(n: nat, n < entries.length && (markers[m].startsWith("*") ? entries[n].endsWith(markers[m].slice(1)) : entries[n] === markers[m])))
 export function builtIn(markers: readonly string[], entries: readonly string[]): boolean {

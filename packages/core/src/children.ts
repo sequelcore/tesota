@@ -10,6 +10,7 @@ import { floorRefusals, peekSessionFile, type SessionEntry, type SessionHeader }
 import type { EngineTool, ToolOutput } from "./tool.ts";
 import type { AgentHost, AgentRequest } from "./tools/agent.ts";
 import { codingTools } from "./tools/index.ts";
+import type { RequestReference } from "../../../src/request-references.ts";
 import { configHooks, guardedWorktree, installedGit, newWorktree, type Workspace } from "./workspace.ts";
 
 /** How far below its top session a child may be (#525): two, as pstack's `orchestrate` playbook spawns sub-coordinators. */
@@ -59,6 +60,7 @@ export interface Parent {
   readonly options: Omit<SessionOptions, "cwd" | "folder">;
   readonly types: readonly AgentType[];
   readonly tree: AgentTree;
+  readonly references: () => readonly RequestReference[];
   readonly create: (options: SessionOptions) => EngineSession;
 }
 
@@ -244,6 +246,7 @@ function childOptions(parent: Parent, child: { readonly header: NonNullable<Sess
   const bind = !child.writes ? (): Workspace => ({ cwd, checkout, release: () => undefined }) : child.guarded ? guarded : worktree;
   return {
     ...inherited, cwd, folder: parent.folder, model: child.model, mode: "print",
+    requestReferences: parent.references(),
     child: { parent: child.header, bind, tree: parent.tree, types: parent.types,
       instructions: (at, branch) => [instructionsText(contextFiles(at), skillCatalog(skills(at), child.model.contextWindow)),
         childInstructions(child.writes, branch), child.type?.instructions ?? ""].filter((part) => part !== "").join("\n\n") },

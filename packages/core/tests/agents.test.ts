@@ -13,6 +13,8 @@ import { configHooks, installedGit } from "../src/workspace.ts";
 import { createSession, type EngineSession, openSession, type SessionOptions } from "../src/session.ts";
 import { lastFloorNotice, readSessionFile, type SessionEntry } from "../src/session-file.ts";
 import { accepts, signInWithChatGPT } from "./scripted.ts";
+import { issueCli } from "./issue-cli.ts";
+import { compactedHead, referenceMessage } from "../src/loop.ts";
 
 /**
  * Subagents (#525): the `agent` tool starts a child session as a job of the
@@ -22,6 +24,43 @@ import { accepts, signInWithChatGPT } from "./scripted.ts";
  * and recovery hold.
  */
 const open: EngineSession[] = [];
+
+test("a read-only child receives the parent's exact issue read as separate third-party context (#637)", async () => {
+  const cwd = folder();
+  const issue = "title: Expected behavior\nbody: Reject equal bounds. THIRD_PARTY_637";
+  const env = await issueCli(cwd, issue);
+  const parent = session({
+    "Fix fixture/project#637.": [
+      { calls: [{ tool: process.platform === "win32" ? "powershell" : "bash", args: { command: "gh issue view 637" } }] },
+      { calls: [{ tool: "agent", args: { prompt: "Review requirement.", description: "review", wait: true } }] }, "done",
+    ],
+    "Review requirement.": [(context) => {
+      expect(context.messages.some((message) => textOf(message.content).includes(JSON.stringify(issue)))).toBe(true);
+      expect(textOf(context.messages.find((message) => message.role === "user")?.content ?? "")).toBe("Review requirement.");
+      expect(promptOf(context)).not.toContain("THIRD_PARTY_637");
+      expect(toolNames(context)).not.toContain("powershell");
+      expect(toolNames(context)).not.toContain("bash");
+      return fauxAssistantMessage("reviewed");
+    }],
+  }, { cwd, env });
+  await parent.prompt("Fix fixture/project#637.");
+  expect(parent.outcome()).toBe("completed");
+  expect(parent.messages().filter((message) => message.role === "toolResult").every((message) => !message.isError)).toBe(true);
+  expect(parent.ledger()[0]?.references).toMatchObject([{ status: "read", source: "https://github.com/fixture/project/issues/637",
+    text: issue, callId: expect.any(String), digest: expect.stringMatching(/^[a-f0-9]{64}$/u) }]);
+  const childFile = readSessionFile(parent.file).entries.find((entry) => entry.type === "job_start")?.session;
+  if (childFile === undefined) throw new Error("child did not start");
+  await parent.dispose();
+  const reopened = openSession(childFile, { ...routed({}), verifier: accepts });
+  open.push(reopened);
+  expect(reopened.ledger()[0]?.references).toEqual(parent.ledger()[0]?.references);
+  expect(reopened.messages().some((message) => message.text?.includes(JSON.stringify(issue)))).toBe(true);
+  const references = reopened.ledger()[0]?.references ?? [];
+  const compacted = compactedHead([{ role: "user", content: "Review requirement.", timestamp: 0 }, referenceMessage(references, 0)],
+    "A summary that omitted the issue.", { read: [], changed: [] }, []);
+  expect(compacted.content).toContain("Third-party reference data, separate from operator instructions:");
+  expect(compacted.content).toContain(JSON.stringify(issue));
+});
 afterEach(async () => { await Promise.all(open.splice(0).map((session) => session.dispose())); });
 
 const folder = (prefix = "tesota-agents-"): string => mkdtempSync(join(tmpdir(), prefix));

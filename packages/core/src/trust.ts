@@ -11,7 +11,7 @@ import { writeWholeJson } from "./whole-file.ts";
  * operator trusts it as it is now: its hooks (#457), its MCP servers (#459)
  * and each of its model charts' readings (#761).
  */
-export type Trusted = "hooks" | "mcp" | `chart:${string}`;
+export type Trusted = "hooks" | "mcp" | "checks" | `chart:${string}`;
 
 /** The trust of one chart reading, by its path from the project root, so trusting one leaves another's as it was. */
 export const chartTrust = (file: string): Trusted => `chart:${file}`;

@@ -21,7 +21,7 @@ Run `bun run formal:check` to check the full list.
 | File | What it decides | Re-prove |
 | --- | --- | --- |
 | [`src/verification/role-model-rule.ts`](../../src/verification/role-model-rule.ts) | Which verification model wins: nonempty flag, then setting, then session | `lsc check --backend=dafny src/verification/role-model-rule.ts` |
-| [`src/verification/check-origin-rule.ts`](../../src/verification/check-origin-rule.ts) | Whether reports show a test failure introduced by the change | `lsc check --backend=dafny src/verification/check-origin-rule.ts` |
+| [`src/verification/check-origin-rule.ts`](../../src/verification/check-origin-rule.ts) | Failure attribution and whether a runner's counts account for reported failures | `lsc check --backend=dafny src/verification/check-origin-rule.ts` |
 | [`src/verification/comment-line-rule.ts`](../../src/verification/comment-line-rule.ts) | Whether a parsed line contains only a comment | `lsc check --backend=dafny src/verification/comment-line-rule.ts` |
 | [`src/verification/proof-cover-rule.ts`](../../src/verification/proof-cover-rule.ts) | Whether a changed line lies within a proved, unnarrowed contract | `lsc check --backend=dafny src/verification/proof-cover-rule.ts` |
 | [`src/verification/range-rule.ts`](../../src/verification/range-rule.ts) | How sorted line numbers form consecutive ranges | `lsc check --backend=dafny src/verification/range-rule.ts` |
@@ -29,7 +29,7 @@ Run `bun run formal:check` to check the full list.
 | [`src/verification/gate-rule.ts`](../../src/verification/gate-rule.ts) | Which calls may change files and which check results return to the agent | `lsc check --backend=dafny src/verification/gate-rule.ts` |
 | [`src/verification/fingerprint-rule.ts`](../../src/verification/fingerprint-rule.ts) | Which repositories and paths changed and whether history permits attribution | `lsc check --backend=dafny src/verification/fingerprint-rule.ts` |
 | [`src/verification/weakening-rule.ts`](../../src/verification/weakening-rule.ts) | Whether annotation or check-script changes may weaken evidence | `lsc check --backend=dafny src/verification/weakening-rule.ts` |
-| [`src/verification/project-rule.ts`](../../src/verification/project-rule.ts) | Which projects and check scripts are selected and which project owns a path | `lsc check --backend=dafny src/verification/project-rule.ts` |
+| [`src/verification/project-rule.ts`](../../src/verification/project-rule.ts) | Project selection, path ownership and unchanged, trusted check approval | `lsc check --backend=dafny src/verification/project-rule.ts` |
 | [`src/verification/mutation-rule.ts`](../../src/verification/mutation-rule.ts) | Whether a mutation is rejected, survives or is proved equivalent | `lsc check --backend=dafny src/verification/mutation-rule.ts` |
 | [`src/verification/footer-rule.ts`](../../src/verification/footer-rule.ts) | What verification is available and how elapsed time and footer layout are shown | `lsc check --backend=dafny src/verification/footer-rule.ts` |
 | [`src/verification/test-weakening-rule.ts`](../../src/verification/test-weakening-rule.ts) | Whether test edits remove checks, loosen assertions or only extend safe lists | `lsc check --backend=dafny src/verification/test-weakening-rule.ts` |
@@ -52,7 +52,7 @@ Run `bun run formal:check` to check the full list.
 | [`packages/core/src/handback-rule.ts`](../../packages/core/src/handback-rule.ts) | Whether a Claude Code query can continue with the recorded tool results | `lsc check --backend=dafny packages/core/src/handback-rule.ts` |
 | [`packages/core/src/account-rule.ts`](../../packages/core/src/account-rule.ts) | Which settings and agent types still name an account before removal | `lsc check --backend=dafny packages/core/src/account-rule.ts` |
 | [`packages/core/src/resume-model-rule.ts`](../../packages/core/src/resume-model-rule.ts) | Which model an explicit, resumed or default print request uses | `lsc check --backend=dafny packages/core/src/resume-model-rule.ts` |
-| [`src/verification/request-context-rule.ts`](../../src/verification/request-context-rule.ts) | Which earlier requests since the last verification are judged, and whether a complete judge prompt fits its model's context | `lsc check --backend=dafny src/verification/request-context-rule.ts` |
+| [`src/verification/request-context-rule.ts`](../../src/verification/request-context-rule.ts) | Which earlier requests are judged, whether their prompt fits and whether references fit count and byte bounds | `lsc check --backend=dafny src/verification/request-context-rule.ts` |
 | [`packages/core/src/usage-rule.ts`](../../packages/core/src/usage-rule.ts) | How account usage is rounded, drawn, colored and deduplicated | `lsc check --backend=dafny packages/core/src/usage-rule.ts` |
 | [`packages/core/src/doctor-rule.ts`](../../packages/core/src/doctor-rule.ts) | Whether a found tool passed its smoke test, and any-failure-over-core-unavailable exit precedence | `lsc check --backend=dafny packages/core/src/doctor-rule.ts` |
 | [`packages/core/src/provider-retry-rule.ts`](../../packages/core/src/provider-retry-rule.ts) | Whether normalized provider classification, retry count and elapsed time permit a model-call retry, including its full wait | `lsc check --backend=dafny packages/core/src/provider-retry-rule.ts` |

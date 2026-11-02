@@ -18,6 +18,8 @@ import type { UsageSources } from "../src/usage.ts";
 import type { ScriptStep } from "./engine.ts";
 import { scriptedReply, signInWithChatGPT } from "./scripted.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
+import { readDeclaredChecks } from "../../../src/project-checks.ts";
+import { trusted } from "../src/trust.ts";
 
 /**
  * `tesota-core`'s commands (#444), typed into an emulated terminal as the
@@ -66,9 +68,17 @@ function scripted(replies: readonly ScriptStep[], twoModels: boolean): { models:
 /** The scripted models for the app, or none when it builds its own (#743). */
 const givenModels = (models: MutableModels, ownModels: boolean | undefined): { models?: MutableModels } => ownModels === true ? {} : { models };
 
+function seedProjectConfig(cwd: string, mcp: object | undefined, checks: object | undefined): void {
+  for (const [name, value] of [["mcp.json", mcp], ["checks.json", checks]] as const) {
+    if (value === undefined) continue;
+    mkdirSync(join(cwd, ".tesota"), { recursive: true });
+    writeFileSync(join(cwd, ".tesota", name), JSON.stringify(value));
+  }
+}
+
 /** The app in a temporary folder, its settings and sessions there too, once it has drawn its first frame. */
-async function app(replies: readonly ScriptStep[] = [], { repository = false, earlier, earlierModel = "faux/faux-1", mcp, projectMcp, skills = {}, served, model, claudeCode, accounts, claude = { signIn: async () => undefined, status: async () => ({ loggedIn: false }) }, usage = noUsage, ownModels, settingsFile }:
-  { repository?: boolean;
+async function app(replies: readonly ScriptStep[] = [], { repository = false, earlier, earlierModel = "faux/faux-1", mcp, projectMcp, projectChecks, skills = {}, served, model, claudeCode, accounts, claude = { signIn: async () => undefined, status: async () => ({ loggedIn: false }) }, usage = noUsage, ownModels, settingsFile }:
+  { repository?: boolean; projectChecks?: object;
     /** An earlier session of the folder that worked in its checkout, asked this and answered "earlier answer" (#595). */
     earlier?: string; earlierModel?: string; mcp?: object; projectMcp?: object; skills?: Record<string, string>;
     /** Signed in to OpenAI with ChatGPT, which serves these models (#566), or whose list cannot be fetched. */
@@ -107,10 +117,7 @@ async function app(replies: readonly ScriptStep[] = [], { repository = false, ea
   }
   // The operator's MCP servers beside their settings, and the project's in its .tesota folder (#459).
   if (mcp !== undefined) writeFileSync(join(dirname(settingsPath), "mcp.json"), JSON.stringify(mcp));
-  if (projectMcp !== undefined) {
-    mkdirSync(join(cwd, ".tesota"));
-    writeFileSync(join(cwd, ".tesota", "mcp.json"), JSON.stringify(projectMcp));
-  }
+  seedProjectConfig(cwd, projectMcp, projectChecks);
   // The project's skills, by folder, each its SKILL.md (#540).
   for (const [name, content] of Object.entries(skills)) {
     mkdirSync(join(cwd, ".agents", "skills", name), { recursive: true });
@@ -135,6 +142,20 @@ async function app(replies: readonly ScriptStep[] = [], { repository = false, ea
 }
 
 const send = (terminal: VirtualTerminal, text: string): void => { terminal.type(text); terminal.type(enter); };
+
+test.each([true, false])("the real startup picker records declared-check trust only after the operator selects it, approve=%s (#753)", async (approve) => {
+  const { terminal, cwd, running } = await app([], { projectChecks: { checks: [{ command: "node project-check.cjs", folder: "" }] } });
+  await terminal.until("This project's checks would run:");
+  const declaration = readDeclaredChecks(cwd);
+  if (declaration.status !== "read") throw new Error("invalid fixture");
+  expect(trusted(cwd, "checks", declaration.hash)).toBe(false);
+  if (!approve) terminal.type("\x1b[B");
+  terminal.type(enter);
+  await terminal.untilGone("This project's checks would run:");
+  expect(trusted(cwd, "checks", declaration.hash)).toBe(approve);
+  send(terminal, "/quit");
+  await running;
+});
 
 test.skipIf(process.platform !== "win32")("Windows without a known Terminal session does not show the obsolete paste warning (#718)", async () => {
   const previous = process.env["WT_SESSION"];

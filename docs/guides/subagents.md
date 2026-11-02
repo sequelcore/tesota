@@ -11,7 +11,7 @@ The `agent` tool takes:
 
 | Argument | Meaning |
 | --- | --- |
-| `prompt` | The brief; the subagent sees nothing else of the conversation |
+| `prompt` | The brief; the rest of the conversation is excluded |
 | `description` | A few words the shell shows |
 | `type` | An [agent type](#agent-types); a general agent when not given |
 | `model` | `provider/id` its sign-in serves; else the type's, then the session's |
@@ -20,6 +20,11 @@ The `agent` tool takes:
 
 A background subagent's report arrives as a message when it ends. Several
 can run at once, and a run doesn't end while one still runs.
+
+Issues named by the request are shared separately as third-party context when
+the parent read them through a supported plain GitHub CLI issue command.
+Source and digest survive resume and compaction. Missing, truncated or oversized
+text is an explicit gap; the child gains no fetch tools or permissions.
 
 ## Reading and writing
 

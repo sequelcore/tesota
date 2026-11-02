@@ -20,6 +20,7 @@ import { SessionLockedError } from "./session-lock.ts";
 import { readSettings, type Settings, unknownSettingsNote } from "./settings.ts";
 import { shellHost } from "./shell/surface.ts";
 import { readStandards } from "./standards.ts";
+import { trusted } from "./trust.ts";
 
 export interface PrintOutput {
   readonly out: (text: string) => void;
@@ -118,6 +119,10 @@ function trustedStandards(cwd: string, settingsPath: string, write: PrintOutput)
   }
   const untrusted = typeof project.hooks !== "string" && anyHooks(project.hooks) && !project.trusted;
   if (untrusted) write.error("The project's hooks do not run: trust them in the shell first.\n");
+  if (standards.checks.status === "invalid") write.error(`${standards.checks.reason}\n`);
+  if (standards.checks.status === "read" && !trusted(standards.root, "checks", standards.checks.hash)) {
+    write.error("The project's declared checks do not run: trust them in the shell first.\n");
+  }
   for (const error of standards.mcp.config.errors) write.error(`${error}\n`);
   if (!standards.mcp.trusted) write.error("The project's MCP servers do not start: trust them in the shell first.\n");
   return { hooks: typeof project.hooks !== "string" && project.trusted ? joinHooks(own, project.hooks) : own,

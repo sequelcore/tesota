@@ -16,7 +16,7 @@ import { providerRetryTokens, providerRetryType } from "./provider-retry.ts";
 import type { StartedSkill } from "./instructions.ts";
 import {
   compactedHead, type Continuation, continuesType, createLoop, type HistoryMessage, jobMessage, type LoopOptions, type LoopSession, type LoopState, skillMessage,
-  toolResult,
+  toolResult, referenceMessage,
 } from "./loop.ts";
 import type { PromptEntry } from "./prompt.ts";
 import { agentTool } from "./tools/agent.ts";
@@ -27,6 +27,8 @@ import {
 } from "./session-file.ts";
 import { lockSession, SessionLockedError } from "./session-lock.ts";
 import { unverifiedFrom } from "../../../src/verification/request-context-rule.js";
+import { readReferences, referenceType, type RequestReference } from "../../../src/request-references.ts";
+import { issueReferences } from "./issue-context.ts";
 import { outputPrefix } from "./tools/shell.ts";
 import { keepTail, maxBytes } from "./truncate.ts";
 import { bindWorkspace, outsideChange, reopenWorkspace, type Workspace } from "./workspace.ts";
@@ -59,6 +61,7 @@ export interface LedgerRequest {
   /** The calls Tesota's floor refused in the run (#622), in order. */
   readonly refusals: readonly FloorRefusal[];
   readonly externalEffects?: readonly ExternalEffect[];
+  readonly references?: readonly RequestReference[];
   /**
    * The earlier run this one continues (#651), and what the verifier saved as
    * that run ended on its question (`requestStartType`), for it to restore.
@@ -70,7 +73,7 @@ export interface LedgerRequest {
    * first, without one a later of them, or this one, continues (#651), whose
    * text and inputs it already holds.
    */
-  readonly unverifiedRequests: readonly Pick<LedgerRequest, "run" | "text" | "inputs">[];
+  readonly unverifiedRequests: readonly Pick<LedgerRequest, "run" | "text" | "inputs" | "references">[];
 }
 
 /** What makes a session a child of another (#525): its parent, where it works, the tree it counts in, its types and instructions. */
@@ -390,6 +393,18 @@ function conversation(entries: readonly SessionEntry[]): Pick<LoopState, "histor
       toolResult({ id: entry.callId, name: entry.toolName }, { text: reconciliationText(entry), isError: true }, 0));
   };
   const counts = new Map<number, number>();
+  const custom = (entry: SessionEntry, order: number): void => {
+    if (entry.type === "custom" && entry.customType === referenceType) {
+      const references = readReferences(entry.data) ?? [{ status: "unavailable" as const,
+        source: "Inherited issue references", reason: "the recorded reference data is malformed" }];
+      const message = referenceMessage(references, 0);
+      history.push(message);
+      toLedger(message, order);
+    } else if (entry.type === "custom_message") {
+      const { customType, content, display, details } = entry;
+      history.push({ role: "custom", customType, content, display, ...details === undefined ? {} : { details }, timestamp: 0 });
+    }
+  };
   for (const [order, entry] of entries.entries()) {
     if (entry.type === "request") {
       const asked: HistoryMessage = { role: "user", content: entry.text, timestamp: Date.parse(entry.at) };
@@ -418,10 +433,7 @@ function conversation(entries: readonly SessionEntry[]): Pick<LoopState, "histor
     else if (entry.type === "job_start") background.set(entry.job, entry.background);
     // A background job's end entered the conversation as the run took it in; a waited one's is its call's result (#525).
     else if (entry.type === "job_end") { if (background.get(entry.job) === true) history.push(jobMessage(entry.text, entry.details, 0)); }
-    else if (entry.type === "custom_message") {
-      const { customType, content, display, details } = entry;
-      history.push({ role: "custom", customType, content, display, ...details === undefined ? {} : { details }, timestamp: 0 });
-    }
+    else custom(entry, order);
   }
   return { history, ledger, prompt, ...compacted === undefined ? {} : { compacted } };
 }
@@ -437,6 +449,7 @@ function ledgerOf(entries: readonly SessionEntry[]): LedgerRequest[] {
   const ledger = ownLedgerOf(entries);
   const inputs = new Map<number, readonly RequestInput[]>();
   const externalEffects = new Map<number, readonly ExternalEffect[]>();
+  const references = new Map<number, readonly RequestReference[]>();
   // A completed answer without a receipt verified no changes. A stopped receipt is only an inventory.
   const verified = verifiedRequests(entries);
   const merged: LedgerRequest[] = [];
@@ -445,10 +458,15 @@ function ledgerOf(entries: readonly SessionEntry[]): LedgerRequest[] {
     inputs.set(request.run, all);
     const effects = [...request.continues === undefined ? [] : externalEffects.get(request.continues.run) ?? [], ...request.externalEffects ?? []];
     externalEffects.set(request.run, effects);
+    const context = issueReferences(entries, request.run, [request.text, ...request.inputs.flatMap((input) => input.kind === "clarification"
+      ? [clarificationText(input.clarification)] : input.origin === "extension" ? [] : [input.text])]);
+    const shared = [...request.continues === undefined ? [] : references.get(request.continues.run) ?? [], ...context];
+    references.set(request.run, shared);
     const earlier = merged.slice(unverifiedFrom(merged.map(({ run }) => verified.has(run))));
     const continued = new Set([...earlier, request].flatMap(({ continues }) => continues === undefined ? [] : [continues.run]));
-    merged.push({ ...request, inputs: all, externalEffects: effects, unverifiedRequests: earlier.filter(({ run }) => !continued.has(run))
-      .map(({ run, text, inputs: given }) => ({ run, text, inputs: given })) });
+    merged.push({ ...request, inputs: all, externalEffects: effects, ...shared.length === 0 ? {} : { references: shared },
+      unverifiedRequests: earlier.filter(({ run }) => !continued.has(run))
+      .map(({ run, text, inputs: given, references: refs }) => ({ run, text, inputs: given, ...refs === undefined ? {} : { references: refs } })) });
   }
   return merged;
 }
@@ -670,7 +688,8 @@ function engineSession(file: string, release: () => void, entries: SessionEntry[
   // A session starts subagents while it is less than two below its top session (#525), counted across the top session's tree.
   const types = options.child?.types ?? agentTypes(workspace.cwd);
   const tree = options.child?.tree ?? { running: 0, limit: options.agentLimit ?? defaultAgentLimit };
-  const host = depth < maxDepth ? agentHost({ id, folder: dirname(file), depth, workspace, options, types, tree, create: createSession })
+  const host = depth < maxDepth ? agentHost({ id, folder: dirname(file), depth, workspace, options, types, tree, create: createSession,
+    references: () => { const current = request(); return [...current?.unverifiedRequests.flatMap((item) => item.references ?? []) ?? [], ...current?.references ?? []]; } })
     : undefined;
   let loop: LoopSession;
   try {
