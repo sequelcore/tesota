@@ -71,6 +71,13 @@ the project's checks run, and the receipt names which.
 
 ### Sharper evidence: test reports
 
+For other toolchains or custom commands, declare
+[project checks](../reference/configuration.md#project-checks). Start the
+terminal and inspect the commands before trusting them. A changed declaration
+asks again; print mode uses existing trust.
+
+Plain Bun, Vitest and Jest scripts receive reporting flags automatically on
+the change and base. Unexplained runner errors keep failure attribution unknown.
 When your tests write a JUnit XML report under the project, Tesota knows
 which tests failed, so it can credit a new test even when others already
 fail. Gradle and Maven write one already. Elsewhere:

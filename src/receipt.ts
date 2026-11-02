@@ -15,6 +15,7 @@ import type { Weakening } from "./verification-changes.js";
 import { attributionResolved, type StartState, type UnmeasuredPath } from "./request-fingerprint.js";
 import type { GateVerdict } from "./verification/gate-rule.js";
 import { clock } from "./operations.js";
+import type { ReferenceProvenance } from "./request-references.js";
 import { checkEnd, decisions, externalStanding, methodStanding, partlyHolds, pathCovered, runStanding, type Standing, verdictTone } from "./verification/verdict-rule.js";
 
 /** The operator requests actually supplied to one model judgment; omissions are explicit, never silent. */
@@ -24,6 +25,7 @@ export interface RequestJudgment {
   readonly folder: string;
   readonly requests: readonly { readonly run: number; readonly text: readonly string[] }[];
   readonly omitted: readonly number[];
+  readonly references?: readonly ReferenceProvenance[];
 }
 
 /**
@@ -348,7 +350,8 @@ function line(path: string, verdict: GateVerdict, evidence: Evidence, assumed: n
 const again = (end: ReturnType<typeof checkEnd>): string =>
   end === "failed" ? ", repeating a failure already sent back" : ", still could not be checked after being sent back";
 
-function testLine({ command, verdict, evidence, failingTests, origin }: Receipt["tests"][number]): string {
+function testLine({ command, declaration, verdict, evidence, failingTests, origin }: Receipt["tests"][number]): string {
+  if (declaration !== undefined) command += ` [declared check ${declaration.index + 1}]`;
   if (evidence.invalidated === "content_changed") return `  stale         ${command}: ${staleEvidenceWords}`;
   if (verdict === "proved") return `  passed        ${command}`;
   if (origin?.cause === "preexisting") return `  failed before ${command}: ${origin.reason}`;
@@ -665,9 +668,10 @@ export const modelEnd = ({ evidence, run, faults }: Pick<ModelResult, "evidence"
   checkEnd("model", evidence.invalidated !== undefined, evidence.outcome, run, faults.some(({ verdict }) => verdict === "passes"));
 
 /** A command's run as a finding: passed, still failing after it went back, or a gap because it did not run or is stale. */
-export function commandFinding({ command, verdict, evidence, failingTests, origin }: Pick<Receipt["tests"][number],
-  "command" | "verdict" | "evidence" | "failingTests" | "origin">): Finding {
+export function commandFinding({ command, declaration, verdict, evidence, failingTests, origin }: Pick<Receipt["tests"][number],
+  "command" | "declaration" | "verdict" | "evidence" | "failingTests" | "origin">): Finding {
   const more = [`Ran in ${seconds(evidence.durationMs)} · sha256 ${evidence.contentHash.slice(0, 12)}`];
+  if (declaration !== undefined) more.push(`Declared check ${declaration.index + 1} · configuration sha256 ${declaration.hash.slice(0, 12)}`);
   if (evidence.invalidated === "content_changed") {
     return { standing: "gap", check: "tests", label: "Tests stale", subject: command, detail: staleEvidenceWords, more };
   }
@@ -1318,11 +1322,14 @@ function requestJudgmentLines(receipt: Pick<Receipt, "requestJudgments">): strin
   const ids = (runs: readonly number[]): string => runs.length < 2 ? runs.join("")
     : `${runs.slice(0, -1).join(", ")} and ${runs.at(-1)}`;
   const requests = (runs: readonly number[]): string => `${runs.length === 1 ? "request" : "requests"} ${ids(runs)}`;
-  return (receipt.requestJudgments ?? []).flatMap(({ method, folder, requests: given, omitted }) => {
+  return (receipt.requestJudgments ?? []).flatMap(({ method, folder, requests: given, omitted, references }) => {
     const judge = method === "claimcheck" ? "ClaimCheck" : "Open cases";
     const unit = folder === "" ? "" : ` · ${plainName(folder)}`;
     return [`${judge} context: ${given.length === 0 ? "no requests supplied" : requests(given.map(({ run }) => run))}${unit}`,
-      ...omitted.length === 0 ? [] : [`${judge} left out ${requests(omitted)}: context capacity${unit}`]];
+      ...omitted.length === 0 ? [] : [`${judge} left out ${requests(omitted)}: context capacity${unit}`],
+      ...(references ?? []).map((reference) => reference.status === "read"
+        ? `${judge} reference: ${reference.source} · third-party context · SHA-256 ${reference.digest}`
+        : `${judge} reference unavailable: ${reference.source}: ${reference.reason}`)];
   });
 }
 

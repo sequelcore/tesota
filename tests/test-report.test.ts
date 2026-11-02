@@ -45,6 +45,21 @@ it("reads a real Jest report of a checkout behind a link, as macOS and Windows t
   ]);
 });
 
+it("refuses Jest reports that leave suite/runtime or snapshot failures outside their assertions (#728)", () => {
+  const root = mkdtempSync(join(tmpdir(), "tesota-jest-errors-"));
+  roots.push(root);
+  const suite = { name: join(realpathSync.native(root), "legacy.test.js"), status: "failed",
+    assertionResults: [{ fullName: "legacy", status: "failed" }] };
+  for (const report of [
+    { numRuntimeErrorTestSuites: 1, testResults: [suite] },
+    { testResults: [suite, { name: join(root, "broken.test.js"), testExecError: { message: "Cannot find module" }, assertionResults: [] }] },
+    { snapshot: { failure: true }, testResults: [suite] },
+  ]) {
+    writeFileSync(join(root, "results.json"), JSON.stringify(report));
+    expect(readTestResults(root, ["results.json"])).toBeUndefined();
+  }
+});
+
 const outcomes: readonly CheckOutcome[] = ["passed", "failed", "timed_out", "cancelled", "not_started", "unconfirmed", "changed_files"];
 const statuses: readonly TestStatus[] = ["passed", "failed", "skipped", "absent", "unread"];
 

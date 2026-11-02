@@ -14,6 +14,10 @@ import type { ScriptStep } from "./engine.ts";
 import type { QuestionSubmit } from "../src/questions.ts";
 import { scriptedReply } from "./scripted.ts";
 import { startMcp } from "../src/mcp.ts";
+import { issueCli } from "./issue-cli.ts";
+import { readDeclaredChecks } from "../../../src/project-checks.ts";
+import { trust } from "../src/trust.ts";
+import { tesotaHome } from "../../../src/home.ts";
 
 /** The proofs the gate runs, scripted per file in order: the gate's decisions on the engine are under test, not LemmaScript. */
 const proofs = new Map<string, ProofOutcome[]>();
@@ -45,6 +49,75 @@ type Receipt = import("../../../src/receipt.ts").Receipt;
  * an extension that tries to silence it.
  */
 const open: EngineSession[] = [];
+
+test.each([true, false])("open cases receive the actual saved issue read or an explicit missing-reference gap, read=%s (#637)", async (read) => {
+  const cwd = repository();
+  const issue = "title: Requirement\nbody: Keep the existing behavior. ISSUE_637_GATE";
+  const env = await issueCli(cwd, issue);
+  const prompts: string[] = [];
+  const faux = fauxProvider();
+  const modelReplies: FauxResponseStep[] = [
+    ...read ? [scriptedReply({ tool: process.platform === "win32" ? "powershell" : "bash", args: { command: "gh issue view 637" } })] : [],
+    scriptedReply({ tool: "write", args: { path: "notes.txt", content: "checked" } }), scriptedReply("done"),
+    (context: Context) => { prompts.push(JSON.stringify(context.messages));
+      return fauxAssistantMessage([fauxToolCall("record_open_cases", { status: "listed", cases: [] })], { stopReason: "toolUse" }); },
+  ];
+  faux.setResponses(modelReplies);
+  const models = createModels(); models.setProvider(faux.provider);
+  const session = gated(cwd, [], { models, model: faux.getModel(), env, flags: {} });
+  await session.prompt("Fix fixture/project#637.");
+  expect(prompts).toHaveLength(1);
+  expect(prompts[0]?.includes("ISSUE_637_GATE")).toBe(read);
+  expect(prompts[0]).toContain(read ? "third-party data" : "no complete supported GitHub CLI issue read");
+  expect(receiptOf(session)?.openCases?.status).toBe("listed");
+  expect(receiptOf(session)?.requestJudgments?.[0]?.references).toMatchObject([{ status: read ? "read" : "unavailable" }]);
+  expect(renderReceipt(receiptOf(session)!)).toContain(read ? "third-party context" : "reference unavailable");
+});
+
+test("a project without a recognized manifest gains verified command and exercise evidence from trusted declarations (#753)", async () => {
+  const cwd = repository();
+  rmSync(join(cwd, "src"), { recursive: true });
+  mkdirSync(join(cwd, ".tesota"));
+  writeFileSync(join(cwd, "rule.cjs"), "exports.value = 1;\n");
+  writeFileSync(join(cwd, ".tesota/checks.json"), JSON.stringify({ checks: [{
+    command: "node --test --test-reporter=junit --test-reporter-destination=result.xml", folder: "", report: "result.xml" }] }));
+  git(cwd, "add", "-A"); git(cwd, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "declared checks");
+  const declaration = readDeclaredChecks(cwd);
+  if (declaration.status !== "read") throw new Error("invalid fixture");
+  mkdirSync(tesotaHome(), { recursive: true });
+  trust(cwd, "checks", declaration.hash);
+  const session = gated(cwd, [{ tool: "write", args: { path: "rule.cjs", content: "exports.value = 2;\n" } },
+    { tool: "write", args: { path: "rule.test.cjs", content: "const {test}=require('node:test'); const assert=require('node:assert/strict'); const {value}=require('./rule.cjs'); test('rule',()=>assert.equal(value,2));\n" } }, "done"]);
+  await session.prompt("Change the rule to two and add its regression test.");
+  expect(receiptOf(session)?.tests[0]?.evidence.outcome).toBe("passed");
+  expect(receiptOf(session)?.exercises[0]?.sensitivity).toBe("fails_then_passes");
+  expect(receiptStanding(receiptOf(session)!)).toBe("verified");
+});
+
+test("duplicate command strings keep each declared invocation's repair history separate (#753)", async () => {
+  const cwd = repository();
+  mkdirSync(join(cwd, ".tesota"));
+  writeFileSync(join(cwd, ".gitignore"), "*.xml\n");
+  writeFileSync(join(cwd, "state.json"), '{"a":[],"b":[]}');
+  writeFileSync(join(cwd, "check.cjs"), `const fs=require('fs'); const state=JSON.parse(fs.readFileSync('state.json','utf8'));
+for(const name of ['a','b']) fs.writeFileSync(name+'.xml', '<testsuite tests="'+state[name].length+'">'+state[name].map(test=>'<testcase name="'+test+'"><failure/></testcase>').join('')+'</testsuite>');
+process.exit(state.a.length+state.b.length?1:0);\n`);
+  writeFileSync(join(cwd, ".tesota/checks.json"), JSON.stringify({ checks: [
+    { command: "node check.cjs", folder: "", report: "a.xml" }, { command: "node check.cjs", folder: "", report: "b.xml" },
+  ] }));
+  git(cwd, "add", "-A"); git(cwd, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "two check contracts");
+  const declaration = readDeclaredChecks(cwd);
+  if (declaration.status !== "read") throw new Error("invalid fixture");
+  mkdirSync(tesotaHome(), { recursive: true }); trust(cwd, "checks", declaration.hash);
+  const session = gated(cwd, [
+    { tool: "write", args: { path: "state.json", content: '{"a":["foo"],"b":["bar"]}' } }, "done",
+    { tool: "write", args: { path: "state.json", content: '{"a":["foo"],"b":["foo"]}' } }, "done",
+    { tool: "write", args: { path: "state.json", content: '{"a":[],"b":[]}' } }, "done",
+  ]);
+  await session.prompt("Make both checks pass.");
+  expect(JSON.parse(readFileSync(join(cwd, "state.json"), "utf8"))).toEqual({ a: [], b: [] });
+  expect(readFileSync(session.file, "utf8").split("\n").filter((line) => line.includes('"type":"call_intent"') && line.includes('"name":"write"'))).toHaveLength(3);
+});
 
 test.each(["echo", "fails", "read.only"])("records an MCP %s call even with no file change (#751)", async (name) => {
   const cwd = repository();

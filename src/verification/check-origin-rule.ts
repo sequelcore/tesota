@@ -8,6 +8,12 @@ export type TestStatus = "passed" | "failed" | "skipped" | "absent" | "unread";
 /** A test's result in the base's reports, or `none` when no report read there names it. */
 export type ReportedTest = "passed" | "failed" | "skipped" | "none";
 
+/** A runner's failed-test count is explained only by equally many reported failures and no unreported errors. */
+//@ ensures \result <==> (reported >= 0 && reported === failed && errors === 0)
+export function reportCoversFailures(reported: number, failed: number, errors: number): boolean {
+  return reported >= 0 && reported === failed && errors === 0;
+}
+
 /**
  * The status of a test on the base: its result there when a base
  * report names it; `absent` when none does although the base run wrote and

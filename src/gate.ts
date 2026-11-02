@@ -181,6 +181,11 @@ function testFailure({ command, failingTests }: CommandRun): string {
   return failingTests === undefined ? command : `failing tests:\n${failingTests.join("\n")}`;
 }
 
+/** Repair history belongs to an invocation contract, rather than every check sharing its command text. */
+function commandIdentity({ command, declaration }: CommandRun): string {
+  return JSON.stringify([command, declaration]);
+}
+
 /**
  * The test rung (#342), once no proof goes back: the commands of the projects
  * that own the changed files (`suggestChecks`, `owningProjects`) run on the
@@ -195,7 +200,7 @@ async function testRung(root: string, base: string | null, changed: readonly str
   env: Readonly<Record<string, string>> | undefined, attributable: boolean, against: Against): Promise<Pick<Receipt, "tests" | "exercises">> {
   const projects = owningProjects(suggestChecks(root), changed);
   const tests = (await checks().runCommands(root, projects, changed, signal, ops, env, against)).map((run) => ({ ...run,
-    verdict: commandVerdict(run.evidence.outcome, testFailure(run), sentBack.get(run.command) ?? [], run.origin?.cause === "preexisting") }));
+    verdict: commandVerdict(run.evidence.outcome, testFailure(run), sentBack.get(commandIdentity(run)) ?? [], run.origin?.cause === "preexisting") }));
   const passed = tests.every(({ evidence }) => evidence.outcome === "passed");
   // A snapshot or a fixture counts as a test for weakened evidence, but is not one a runner can run alone (#615).
   const runnable = changed.filter((path) => checks().isTestPath(path) && checks().isSourcePath(path));
@@ -209,11 +214,12 @@ async function testRung(root: string, base: string | null, changed: readonly str
  * name, why Tesota can't tell whether the changes cause it when it can't,
  * then the end of its output.
  */
-function failingReport({ command, failingTests, evidence, origin }: CommandRun): string {
+function failingReport({ command, declaration, failingTests, evidence, origin }: CommandRun): string {
   const names = failingTests === undefined || failingTests.length === 0 ? ""
     : `These tests fail:\n${failingTests.map((name) => `  ${name}`).join("\n")}\n\n`;
   const unknown = origin?.cause === "unknown" ? `Tesota can't tell whether your changes cause it: ${origin.reason}.\n\n` : "";
-  return `Tesota: \`${command}\` fails with your changes.\n\n${unknown}${names}${evidence.output.trimEnd()}`;
+  const selected = declaration === undefined ? "" : `Declared check ${declaration.index + 1} in .tesota/checks.json.\n\n`;
+  return `Tesota: \`${command}\` fails with your changes.\n\n${selected}${unknown}${names}${evidence.output.trimEnd()}`;
 }
 
 /** What a unit's failing commands are compared with: its base, or why a run there would not show the request's start. */
@@ -480,7 +486,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
   let fingerprints: Promise<ReadonlyMap<string, Fingerprint>> | undefined;
   /** What the operator asked during the request, for ClaimCheck to compare the contracts with. */
   let requests: string[] = [];
-  let judgingRequests: RequestJudgment["requests"] = [];
+  let judgingRequests: JudgmentContext["requests"] = [];
   let requestJudgments: RequestJudgment[] = [];
   const judging = (folder = ""): JudgmentContext => ({ folder, requests: judgingRequests, record: (judgment) => { requestJudgments.push(judgment); } });
   const judgedContext = (): Pick<Receipt, "requestJudgments"> => requestJudgments.length === 0 ? {} : { requestJudgments };
@@ -681,11 +687,11 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     progress.publish({ step: "sent_back", tally: tallied });
     for (const { folder, run } of failing) {
       const sent = commandsSentBack.get(folder) ?? new Map<string, string[]>();
-      sent.set(run.command, [...sent.get(run.command) ?? [], testFailure(run)]);
+      const identity = commandIdentity(run);
+      sent.set(identity, [...sent.get(identity) ?? [], testFailure(run)]);
       commandsSentBack.set(folder, sent);
     }
-    const shown = failing.map(({ folder, run: { command, evidence, failingTests, origin } }): CommandRun =>
-      ({ command: inFolder(folder, command), evidence, ...failingTests === undefined ? {} : { failingTests }, ...origin === undefined ? {} : { origin } }));
+    const shown = failing.map(({ folder, run }): CommandRun => ({ ...run, command: inFolder(folder, run.command) }));
     return sendBack(shown.map(failingReport).join("\n\n"), { round: "tests", commands: shown });
   };
   /** The strength of each repository's contracts that proved, and what its proofs covered. */
@@ -866,17 +872,18 @@ export interface RecordedRequest {
   /** The calls Tesota's floor refused in the run (#622). */
   readonly refusals?: readonly FloorRefusal[];
   readonly externalEffects?: readonly ExternalEffect[];
+  readonly references?: readonly import("./request-references.js").RequestReference[];
   readonly base: { readonly units: readonly RecordedUnit[] };
   /** The earlier request this one continues (#651), and what the gate saved as it ended on its question (`savedStart`). */
   readonly continues?: { readonly run: number; readonly start?: unknown };
   /** Earlier requests since the last non-stopped receipt (#627), oldest first, judged with it. */
-  readonly unverifiedRequests?: readonly (Pick<RecordedRequest, "text" | "inputs"> & { readonly run: number })[];
+  readonly unverifiedRequests?: readonly (Pick<RecordedRequest, "text" | "inputs" | "references"> & { readonly run: number })[];
 }
 
 /** Each whole request in the verification chain, with its ordered operator text. */
-function judgedRequests(request: RecordedRequest, run: number): RequestJudgment["requests"] {
+function judgedRequests(request: RecordedRequest, run: number): JudgmentContext["requests"] {
   return [...request.unverifiedRequests ?? [], { ...request, run: request.run ?? run }]
-    .map((item) => ({ run: item.run, text: operatorText(item) }));
+    .map((item) => ({ run: item.run, text: operatorText(item), ...item.references === undefined ? {} : { references: item.references } }));
 }
 
 /** What the operator asked in a recorded request: its text, then its amendments and answers in order, none an extension's. */

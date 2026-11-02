@@ -66,11 +66,37 @@ other keys under a lock, so two shells keep each other's changes.
 | `.tesota/settings.json` | The project's [hooks](../guides/hooks.md), which run once you trust them |
 | `.tesota/mcp.json` | The project's [MCP servers](../guides/mcp.md), which start once you trust them |
 | `.tesota/permissions.json` | The project's `ask` and `deny` [rules](../guides/permissions.md#rules) |
+| `.tesota/checks.json` | The project's declared checks, below; run only with current operator trust |
 | `AGENTS.md`, or `CLAUDE.md` | [Instructions](../guides/instructions-and-skills.md), in any folder from the root down |
 | `.agents/skills/` | The project's [skills](../guides/instructions-and-skills.md#skills) |
 | `.agents/agents/` | The project's [agent types](../guides/subagents.md#agent-types) |
 | `package.json`, `build.gradle`, `pom.xml`, `Cargo.toml`, `go.mod` | The commands Tesota [checks the change with](../guides/verification.md#test-it-your-commands) |
 | `lemmascript.json` | Where LemmaScript keeps each file's proof (`proof-dir`) |
+
+### Project checks
+
+```json
+{
+  "checks": [{
+    "command": "./scripts/check",
+    "folder": "",
+    "timeoutSeconds": 300,
+    "report": "reports/tests.xml"
+  }]
+}
+```
+
+Declarations replace discovered checks for the checkout. `folder` is the
+execution directory relative to its root, independent of changed paths.
+`report` is optional JUnit XML, relative to that folder. Paths cannot leave
+the checkout, enter `.git`, or pass through links. Reports are cleared before
+execution. Commands use the verification shell.
+
+The file permits 1–32 checks in 64 KiB; each command permits 8 KiB.
+`timeoutSeconds` is an integer from 1 to 900, default 900. Unknown keys are
+invalid. The terminal shows commands before you trust their exact contents.
+Print and child sessions use existing trust. Changed, untrusted or invalid
+declarations leave a named gap and run no discovered substitute.
 
 ## Environment
 

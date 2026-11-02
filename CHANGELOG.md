@@ -5,6 +5,21 @@ Each release of Tesota, newest first. The format follows
 the first stable release are prereleases. Numbers in parentheses are pull
 requests and issues in [sequelcore/tesota](https://github.com/sequelcore/tesota).
 
+## Unreleased
+
+### Added
+
+- Trusted project check declarations for custom toolchains, with working
+  folders, timeouts and JUnit reports (#753).
+- Issue text already read through supported GitHub CLI commands reaches
+  restricted children and request judgments as attributed third-party context.
+  Receipts record its source, digest and gaps (#637).
+
+### Fixed
+
+- Plain Bun, Vitest and Jest scripts produce fresh reports on both revisions
+  for failure attribution; unreported runner errors remain unknown (#728).
+
 ## [0.1.0-alpha.9] - 2026-10-30
 
 ### Added

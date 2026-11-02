@@ -18,6 +18,7 @@ const BUDGETS: readonly (readonly [RegExp, number])[] = [
   [/^docs\/guides\//u, 700],
   [/^docs\/concepts\//u, 1200],
   [/^docs\/reference\//u, 1200],
+  [/^docs\/decisions\//u, 2000],
   [/^docs\/development\.md$/u, 1500],
 ];
 /** The receipt's format is a specification, read field by field rather than through. */

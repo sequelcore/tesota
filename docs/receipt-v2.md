@@ -174,6 +174,17 @@ entries and the shared open-cases context, in both JSON and Markdown.
 | `folder` | string | The ClaimCheck unit's folder, or the empty string for the root or shared open-cases context |
 | `requests` | { run: number, text: string[] }[] | Whole requests supplied, oldest first. `run` is the session's request number; `text` is its original text followed by operator amendments and clarifications in order. Extension input is excluded |
 | `omitted` | number[] | Earlier request numbers left out for context capacity, oldest first. Empty when all fit. No request is truncated |
+| `references` | ReferenceProvenance[], optional | Third-party issue snapshots supplied separately from operator text, and explicit unavailable references. Context only; never affects standing, repair or permissions. Historical absence means unknown reference provenance |
+
+A **ReferenceProvenance** is either `{ status: "read", source, callId, digest }`
+or `{ status: "unavailable", source, reason }`, with string fields. `source`
+identifies the issue; `digest` is SHA-256 of the exact text returned by the
+recorded tool call. It establishes neither authenticity nor correctness.
+The text stays in session context and is not duplicated here. Whole snapshots
+are bounded with their requests; a context-capacity omission records an
+unavailable reference. Terminal and Markdown name each supplied source or gap;
+JSON retains the same metadata. These fields are additive to v2 and do not
+reconstruct missing historical context.
 
 For example, `ClaimCheck context: requests 1 and 3` names the supplied
 context. `ClaimCheck left out request 2: context capacity` makes an omission
@@ -357,6 +368,7 @@ outside Git have empty `inherited` and `unmeasured` lists.
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `command` | string | The command, as a POSIX shell runs it from the project folder, such as `cd web && bun run check` |
+| `declaration` | { hash: string, index: number }, optional | A declared invocation's SHA-256 configuration identity and zero-based check index; separates repair history when command strings repeat. Absent for discovered commands |
 | `evidence` | Evidence | The command's evidence |
 | `failingTests` | string[], optional | The failing tests' names, sorted, from the JUnit XML reports the command wrote. Absent when it wrote none |
 | `origin` | CommandOrigin, optional | Why it fails, from a run on the base. Present when it failed or ran past its limit and verification compared it with the base |

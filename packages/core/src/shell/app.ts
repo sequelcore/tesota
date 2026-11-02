@@ -21,7 +21,7 @@ import type { McpServers, startMcp } from "../mcp.ts";
 import { readMcpConfig } from "../mcp-config.ts";
 import { loadRules } from "../permissions.ts";
 import { askedSessions, createSession, type EngineSession, firstRequest, openSession, sessionsFolder, type Verifier } from "../session.ts";
-import { checkoutRoot } from "../workspace.ts";
+import { checkoutRoot } from "../../../../src/checkout-root.ts";
 import { anyHooks, type Hooks, joinHooks } from "../hooks.ts";
 import { lastFloorNotice, peekSessionFile } from "../session-file.ts";
 import { readStandards } from "../standards.ts";
@@ -507,6 +507,21 @@ export async function runApp(options: AppOptions): Promise<void> {
     }
     if (given) hooks = joinHooks(hooks, project);
   };
+  /** Check declarations execute project commands and require the same content-bound operator trust as hooks. */
+  const trustProjectChecks = async (): Promise<void> => {
+    const declaration = standards.checks;
+    if (declaration.status === "absent") return;
+    if (declaration.status === "invalid") { shell.note(declaration.reason, "error"); return; }
+    if (trusted(standards.root, "checks", declaration.hash)) return;
+    const commands = declaration.checks.map(({ command, folder, timeoutMs, reports }) =>
+      `${folder || "."}: ${command} (${timeoutMs / 1000}s${reports.length === 0 ? "" : `; JUnit ${reports.join(", ")}`})`);
+    const picked = await shell.pick(terminalText(`This project's checks would run: ${commands.join("; ")}`), [
+      { value: "trust", label: "Trust these checks", description: "replaces discovered checks until this file changes" },
+      { value: "skip", label: "Not now", description: "declared checks do not run; the receipt names the gap" },
+    ]);
+    if (picked === "trust") trust(standards.root, "checks", declaration.hash);
+    else shell.note("The project's declared checks do not run in this shell.", "warning");
+  };
   /**
    * Starts the MCP servers (#459): the operator's from beside their settings,
    * and the project's once the operator trusts them as they are now, since
@@ -740,6 +755,7 @@ export async function runApp(options: AppOptions): Promise<void> {
   providers = (await credentials.list()).length;
   if (typeof standards.ownHooks === "string") shell.note(`Your hooks were left out: ${standards.ownHooks}`, "error");
   await trustProjectHooks();
+  await trustProjectChecks();
   serversStarted = startServers();
   await serversStarted;
   // A saved model the sign-in does not serve is refused before the first request (#566).

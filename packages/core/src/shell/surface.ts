@@ -6,6 +6,7 @@ import manifest from "../../package.json" with { type: "json" };
 import { platformShell } from "../tools/shell.ts";
 import { withLockWhile } from "../session-lock.ts";
 import { readSettings } from "../settings.ts";
+import { trusted } from "../trust.ts";
 import type { ShellTheme } from "../../../../src/theme.ts";
 
 export type { MessageRenderer, ToolDrawing } from "../../../../src/contract.ts";
@@ -143,6 +144,7 @@ export function shellHost(settingsPath?: string): HostParts {
     keyText: (action) => keys[action] ?? action,
     version: manifest.version,
     verificationModels: () => readSettings(settingsPath).settings,
+    checksTrusted: (root, hash) => trusted(root, "checks", hash),
     withLockWhile,
     shellConfig: () => {
       const bash = process.platform === "win32" ? gitBash() : undefined;

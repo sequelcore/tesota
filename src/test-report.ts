@@ -188,7 +188,7 @@ function whole(reading: Reading): Map<string, ReportedStatus> | undefined {
  * it that exists is a symbolic link or junction, which a command could have
  * pointed at files outside the checkout.
  */
-function confined(checkout: string, path: string): boolean {
+export function confinedPath(checkout: string, path: string): boolean {
   let current = checkout;
   for (const segment of path.split("/")) {
     current = join(current, segment);
@@ -217,21 +217,31 @@ function jestAssertion(tests: Map<string, ReportedStatus>, file: string, asserti
  * folder behind a symlink (macOS /var) or a short name (Windows) would
  * otherwise put every suite outside it.
  */
+function jestSuite(tests: Map<string, ReportedStatus>, checkout: string, suite: unknown): number | undefined {
+  if (typeof suite !== "object" || suite === null || !("name" in suite) || typeof suite.name !== "string" ||
+    !("assertionResults" in suite) || !Array.isArray(suite.assertionResults)) return undefined;
+  if ("testExecError" in suite && suite.testExecError != null) return undefined;
+  const file = normalizeReportPath(relative(realpathSync.native(checkout), suite.name));
+  if (file === undefined) return undefined;
+  for (const assertion of suite.assertionResults as unknown[]) {
+    if (!jestAssertion(tests, file, assertion)) return undefined;
+  }
+  return suite.assertionResults.length;
+}
+
 function parseJestReport(text: string, checkout: string): Map<string, ReportedStatus> | undefined {
   try {
     const report: unknown = parseJson(text);
     if (typeof report !== "object" || report === null || !("testResults" in report) || !Array.isArray(report.testResults)) return undefined;
+    if ("numRuntimeErrorTestSuites" in report && report.numRuntimeErrorTestSuites !== 0) return undefined;
+    if ("snapshot" in report && typeof report.snapshot === "object" && report.snapshot !== null &&
+      "failure" in report.snapshot && report.snapshot.failure === true) return undefined;
     const tests = new Map<string, ReportedStatus>();
     let count = 0;
     for (const suite of report.testResults as unknown[]) {
-      if (typeof suite !== "object" || suite === null || !("name" in suite) || typeof suite.name !== "string" ||
-        !("assertionResults" in suite) || !Array.isArray(suite.assertionResults)) return undefined;
-      const file = normalizeReportPath(relative(realpathSync.native(checkout), suite.name));
-      if (file === undefined) return undefined;
-      for (const assertion of suite.assertionResults as unknown[]) {
-        if (!jestAssertion(tests, file, assertion)) return undefined;
-        count += 1;
-      }
+      const read = jestSuite(tests, checkout, suite);
+      if (read === undefined) return undefined;
+      count += read;
     }
     const declared = "numTotalTests" in report ? report.numTotalTests : count;
     return declared === count ? tests : undefined;
@@ -241,7 +251,7 @@ function parseJestReport(text: string, checkout: string): Map<string, ReportedSt
 function readReport(checkout: string, path: string): Map<string, ReportedStatus> | undefined {
   try {
     const file = join(checkout, path);
-    if (!confined(checkout, path)) return undefined;
+    if (!confinedPath(checkout, path)) return undefined;
     const stats = lstatSync(file);
     if (!stats.isFile() || stats.size > reportLimit) return undefined;
     const text = readFileSync(file, "utf8");
@@ -278,7 +288,7 @@ export function clearTestReports(checkout: string, paths: readonly string[]): st
   const kept: string[] = [];
   for (const path of paths) {
     try {
-      if (!confined(checkout, path)) throw new Error("The report path passes through a link");
+      if (!confinedPath(checkout, path)) throw new Error("The report path passes through a link");
       rmSync(join(checkout, path), { force: true });
     } catch { kept.push(path); }
   }

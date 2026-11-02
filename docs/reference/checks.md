@@ -91,6 +91,9 @@ members from `package.json` or `pnpm-workspace.yaml` keep their own
 commands, and the root owns files outside them. Each command has fifteen
 minutes; on Windows they run in Git's bash.
 
+[Declared checks](configuration.md#project-checks) replace discovery;
+plain test scripts receive fresh reports.
+
 Changed test files run against the starting code in a temporary worktree,
 through the owning package's `test` script: alone for plain Bun, Vitest
 and Jest scripts, otherwise as the project's whole checks. A member
@@ -137,9 +140,9 @@ reported as unchecked.
 
 - **ClaimCheck:** one request restates each contract without your request;
   another compares that with your request.
-- **Open cases:** reads your saved request, without the change or the
-  files and URLs it names, and lists inputs with more than one plausible
-  result. Two minutes; `off` turns it off.
+- **Open cases:** reads saved requests and supplied issue context, excluding
+  the change, other files and URLs; lists inputs with multiple plausible
+  results. Two minutes; `off` turns it off.
 
 Both read, before your request, the earlier unverified requests back to
 the last successful settlement, as many whole requests as fit the model's

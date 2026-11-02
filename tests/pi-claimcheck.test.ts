@@ -4,6 +4,7 @@ import { contracts } from "../src/proof-guarantees.js";
 import { openCases } from "../src/open-cases.js";
 import type { RequestJudgment } from "../src/receipt.js";
 import { contextUsage } from "../src/context-usage.js";
+import { referenceDigest, type RequestReference } from "../src/request-references.js";
 
 const source = [
   "//@ ensures denied ==> \\result === false",
@@ -36,6 +37,41 @@ function session(...replies: object[]): { ctx: Parameters<typeof claimCheck>[0];
 }
 
 const call = (name: string, args: object): object => ({ content: [{ type: "toolCall", id: "1", name, arguments: args }] });
+
+it("supplies issue snapshots to both judging roles, keeps the blind pass blind, and records provenance apart from operator requests (#637)", async () => {
+  const text = "Third-party issue: deny a blocked path even when allowed.";
+  const reference: RequestReference = { status: "read", source: "https://github.com/fixture/project/issues/637", callId: "read-637",
+    digest: referenceDigest(text), text };
+  const selections: RequestJudgment[] = [];
+  const judging = { requests: [{ run: 1, text: ["Fix #637."], references: [reference] }],
+    record: (selection: RequestJudgment) => { selections.push(selection); } };
+  const { ctx, asked } = session(informalized, call("record_comparisons", { comparisons: [justified(1), justified(2)] }),
+    call("record_open_cases", { status: "listed", cases: [] }));
+  ctx.modelRegistry.find = () => ctx.model;
+  await claimCheck(ctx, ["Fix #637."], items, new AbortController().signal, undefined, judging);
+  await openCases(ctx, ["Fix #637."], "provider/model", new AbortController().signal, judging);
+  expect(asked[0]).not.toContain(text);
+  expect(asked[1]).toContain(JSON.stringify(text));
+  expect(asked[2]).toContain(JSON.stringify(text));
+  expect(selections.map(({ requests: given }) => given)).toEqual([[{ run: 1, text: ["Fix #637."] }], [{ run: 1, text: ["Fix #637."] }]]);
+  expect(selections.map(({ references }) => references)).toEqual([0, 1].map(() => [{ status: "read", source: reference.source,
+    callId: reference.callId, digest: reference.digest }]));
+  expect(JSON.stringify(selections)).not.toContain(text);
+});
+
+it("records an explicit reference omission when the whole request and snapshot cannot fit (#637)", async () => {
+  const text = "x".repeat(80_000);
+  const { ctx, asked } = session();
+  ctx.modelRegistry.find = () => ({ ...ctx.model!, contextWindow: 4096, maxTokens: 256 });
+  const selections: RequestJudgment[] = [];
+  const result = await openCases(ctx, ["Fix #637."], "provider/model", new AbortController().signal, {
+    requests: [{ run: 1, text: ["Fix #637."], references: [{ status: "read", source: "https://github.com/fixture/project/issues/637",
+      callId: "read", digest: referenceDigest(text), text }] }], record: (selection) => { selections.push(selection); },
+  });
+  expect(result.status).toBe("not_listed");
+  expect(asked).toEqual([]);
+  expect(selections[0]?.references).toMatchObject([{ status: "unavailable", reason: expect.stringContaining("context capacity") }]);
+});
 it("budgets complete judge prompts, keeps newest whole requests, and records every omission (#627)", async () => {
   const groups = Array.from({ length: 100 }, (_, index) => ({ run: index + 1, text: [`Requirement ${index + 1}: ${"x".repeat(20_000)}`] }));
   const selections: RequestJudgment[] = [];

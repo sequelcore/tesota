@@ -13,6 +13,7 @@ import { homedir } from "node:os";
 import { isAbsolute, relative } from "node:path";
 import { mkdirSync } from "node:fs";
 import { type Base, captureBase } from "./base.ts";
+import { boundedReferences, referenceContext, referenceType, type RequestReference } from "../../../src/request-references.ts";
 import type { BranchEntry, EntryDraft, ExtensionFactory, PromptOptions, RunOutcome, Session, SessionOutcome, ToolDefinition } from "../../../src/contract.ts";
 import { type ContextBreakdown, contextBreakdown, contextUsage, estimateTokens } from "../../../src/context-usage.js";
 import { conversationMessage } from "./conversation.ts";
@@ -40,6 +41,8 @@ import { clarificationText, type Clarification, type ClarificationAnswer, type C
 type Decider = Verdict["by"] | "operator" | "session" | "hook" | "after_floor";
 
 export interface LoopOptions {
+  /** Attributed issue snapshots for a child, separate from its task brief and instructions. */
+  readonly requestReferences?: readonly RequestReference[];
   /** The session's folder: tools resolve paths and run commands from here. */
   readonly cwd: string;
   readonly models: Models;
@@ -268,6 +271,9 @@ export const jobMessage = (text: string, details: unknown, timestamp: number): C
 export const skillMessage = (skill: StartedSkill, timestamp: number): CustomMessage =>
   ({ role: "custom", customType: skillType, content: skill.instructions, display: false, timestamp });
 
+export const referenceMessage = (references: readonly RequestReference[], timestamp: number): CustomMessage =>
+  ({ role: "custom", customType: referenceType, content: referenceContext(references), display: false, timestamp });
+
 /**
  * What a compacted conversation starts with (#451): the run's request, the
  * skill it started (#540), its amendments and the operator's answers exactly
@@ -281,6 +287,7 @@ export function compactedHead(ledger: readonly HistoryMessage[], summary: string
   const given = ledger.flatMap((message, index) => tail.includes(message) ? [] : [(index === 0
     ? ["The operator's request, exactly as given:"] : message.role === "toolResult" ? ["The operator answered your question:"]
       : message.role === "custom" && message.customType === skillType ? ["The skill the operator started:"]
+        : message.role === "custom" && message.customType === referenceType ? ["Third-party reference data, separate from operator instructions:"]
         : ["Added while you worked:"]).concat(conversationMessage(message).text ?? "")]);
   const content = [...given.flat(), summaryMessage(summary, files)].join("\n\n");
   return { role: "custom", customType: "tesota.compaction", content, display: false, timestamp: Date.now() };
@@ -1312,12 +1319,15 @@ export function createLoop(options: LoopOptions): LoopSession {
     const at = new Date().toISOString();
     const asked: HistoryMessage = { role: "user", content: text, timestamp: Date.parse(at) };
     const instructed = skill === undefined ? undefined : skillMessage(skill, Date.parse(at));
+    const references = boundedReferences(options.requestReferences ?? []);
+    const referenced = references.length === 0 ? undefined : referenceMessage(references, Date.parse(at));
     // A run exists once its request is in the file: one whose base could not be captured is no run, so its
     // number is given again and the input that waited for it is refused, as the file reader requires.
     const written = (async () => {
       let captured: Base;
       try { captured = continues?.base ?? await base(options.cwd, signal); } catch (error) { closed = true; throw error; }
       writer.append({ type: "request", run, text, origin, at, base: captured, ...skill === undefined ? {} : { skill } });
+      if (referenced !== undefined) writer.append({ type: "custom", run, customType: referenceType, data: references });
       // The run it continues and the answer go in with the request, before anything runs.
       if (continues !== undefined) {
         writer.append({ type: "custom", run, customType: continuesType, data: { run: continues.run, clarification: continues.clarification } });
@@ -1325,6 +1335,7 @@ export function createLoop(options: LoopOptions): LoopSession {
       runs = run;
       // The run's input is counted from its request and its skill on, before input that came while it starts takes its place.
       ledger = instructed === undefined ? [asked] : [asked, instructed];
+      if (referenced !== undefined) ledger.push(referenced);
       inputOrder.clear();
       ledger.forEach((message, index) => inputOrder.set(message, index));
       nextInputOrder = ledger.length;
@@ -1338,6 +1349,7 @@ export function createLoop(options: LoopOptions): LoopSession {
     await options.mcp?.()?.ready(signal);
     add(asked);
     if (instructed !== undefined) add(instructed);
+    if (referenced !== undefined) add(referenced);
     let generation = 0;
     let continuations = 0;
     for (;;) {

@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
 import { lockSession, SessionLockedError } from "./session-lock.ts";
+import { checkoutRoot } from "../../../src/checkout-root.ts";
 
 /**
  * Where a session works (#453): the checkout itself, or a Git worktree of it
@@ -54,14 +55,6 @@ const canonical = (folder: string): string => {
   const at = resolve(folder);
   try { return realpathSync.native(at); } catch { return at; }
 };
-
-/** The folder holding `.git` (a folder, or a worktree's file) at or above `folder`, found without running Git; else `folder`. */
-export function checkoutRoot(folder: string): string {
-  for (let at = folder; ; at = dirname(at)) {
-    if (existsSync(join(at, ".git"))) return at;
-    if (dirname(at) === at) return folder;
-  }
-}
 
 /**
  * Whether nothing in `folder` can enter the change of a session working in

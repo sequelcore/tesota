@@ -39,5 +39,8 @@ what it tested, and what nothing checked.
 
 ## Project
 
+[Project checks and shared issue context](decisions/2026-11-01-checks-context-design.md)
+records their system design and [decision](decisions/2026-11-01-checks-context.md).
+
 - [Roadmap](../ROADMAP.md) · [Design](../DESIGN.md) · [Development](development.md) ·
   [Contributing](../CONTRIBUTING.md) · [Security](../SECURITY.md)

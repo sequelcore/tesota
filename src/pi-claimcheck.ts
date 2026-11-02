@@ -4,6 +4,7 @@ import type { Contract } from "./proof-guarantees.js";
 import type { RequestJudgment } from "./receipt.js";
 import { contextUsage } from "./context-usage.js";
 import { fitsContext } from "./verification/request-context-rule.js";
+import { referenceContext, referenceProvenance, type RequestReference } from "./request-references.js";
 
 /**
  * ClaimCheck's round-trip method (metareflection/claimcheck, MIT), adapted to
@@ -119,7 +120,7 @@ export type ModelAccess = Pick<ExtensionContext, "model" | "modelRegistry">;
 /** Whole operator requests, and where the gate records the context each judge actually received. */
 export interface JudgmentContext {
   readonly folder?: string;
-  readonly requests: RequestJudgment["requests"];
+  readonly requests: readonly { readonly run: number; readonly text: readonly string[]; readonly references?: readonly RequestReference[] }[];
   readonly record: (judgment: RequestJudgment) => void;
 }
 
@@ -147,17 +148,22 @@ function promptFits(model: NonNullable<ModelAccess["model"]>, system: string, na
 export function judgmentPrompt(model: NonNullable<ModelAccess["model"]>, system: string, name: string, parameters: TSchema,
   requests: readonly string[], build: (texts: readonly string[]) => string, method: RequestJudgment["method"], judging?: JudgmentContext): string | undefined {
   const groups = judging?.requests ?? requests.map((text, index) => ({ run: index + 1, text: [text] }));
+  const contextOf = (from: number): readonly RequestReference[] => groups.slice(from).flatMap((group) => "references" in group ? group.references ?? [] : []);
   let from = groups.length;
   let prompt: string | undefined;
   while (from > 0) {
-    const candidate = build(groups.slice(from - 1).flatMap(({ text }) => text));
+    const candidate = build(groups.slice(from - 1).flatMap(({ text }) => text)) + referenceContext(contextOf(from - 1));
     if (!promptFits(model, system, name, parameters, candidate)) break;
     prompt = candidate;
     from -= 1;
   }
   // No request is meaningful too: direct callers can have no saved operator input.
   if (groups.length === 0 && promptFits(model, system, name, parameters, build([]))) prompt = build([]);
-  judging?.record({ method, folder: judging.folder ?? "", requests: groups.slice(from), omitted: groups.slice(0, from).map(({ run }) => run) });
+  const references = [...referenceProvenance(contextOf(from)), ...groups.slice(0, from).flatMap((group) => "references" in group
+    ? (group.references ?? []).map((reference) => ({ status: "unavailable" as const, source: reference.source,
+      reason: "the whole request and its references exceed this model's context capacity" })) : [])];
+  judging?.record({ method, folder: judging.folder ?? "", requests: groups.slice(from).map(({ run, text }) => ({ run, text })),
+    omitted: groups.slice(0, from).map(({ run }) => run), ...references.length === 0 ? {} : { references } });
   return prompt;
 }
 

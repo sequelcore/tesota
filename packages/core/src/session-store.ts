@@ -6,7 +6,7 @@ import type { BranchEntry } from "../../../src/contract.ts";
 import type { SessionStore } from "../../../src/pull-request-receipt.ts";
 import { branchOf } from "./branch.ts";
 import { peekSessionFile, type SessionEntry } from "./session-file.ts";
-import { checkoutRoot } from "./workspace.ts";
+import { checkoutRoot } from "../../../src/checkout-root.ts";
 
 /** A folder by its one real name, in one case on Windows, to compare where sessions worked. */
 function same(folder: string): string {

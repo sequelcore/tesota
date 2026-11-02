@@ -1,18 +1,20 @@
 import { execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { type Dirent, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, unlinkSync,
   writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, posix } from "node:path";
-import { promisify } from "node:util";
+import { dirname, join, posix, relative } from "node:path";
+import { promisify, stripVTControlCharacters } from "node:util";
 import { type Evidence, contentHash } from "./evidence.js";
-import { gitEnvironment } from "./git.js";
-import { type ProjectChecks, findProjects, nearestWorkspaceRoot, owningProjects, packageTest, suggestChecks } from "./projects.js";
+import { git as gitRead, gitEnvironment } from "./git.js";
+import { type CheckCommand, type ProjectChecks, findProjects, inFolder, nearestWorkspaceRoot, owningProjects, packageTest, suggestChecks } from "./projects.js";
 import { runProcess } from "./process.js";
 import { clearTestReports, failuresSeenOnBase, introducedTests, readTestResults, type TestResults } from "./test-report.js";
-import { type CheckOrigin, type CheckOutcome, checkOrigin } from "./verification/check-origin-rule.js";
+import { type CheckOrigin, type CheckOutcome, checkOrigin, reportCoversFailures } from "./verification/check-origin-rule.js";
 import { host } from "./host.js";
 import { noOperations, type OperationResult, type OperationSink, type OperationSpec } from "./operations.js";
+import { checkApprovalProblem, checkFolderProblem, checksFile } from "./project-checks.js";
+import { checkoutRoot } from "./checkout-root.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -70,6 +72,8 @@ function reportsWritten(root: string, folder: string, since: number): string[] {
 /** One of the project's commands, run on the change, with the tests that failed when it wrote a test report. */
 export interface CommandRun {
   readonly command: string;
+  /** A declared invocation's immutable contract identity, distinct even when command text is repeated. */
+  readonly declaration?: { readonly hash: string; readonly index: number };
   readonly evidence: Evidence;
   /** The failing tests' names, sorted, from the JUnit reports the run wrote; undefined when it wrote none. */
   readonly failingTests?: readonly string[] | undefined;
@@ -115,10 +119,12 @@ export async function runCommands(root: string, projects: readonly ProjectChecks
 
 /** A command's run on the change, with the owning folder and the reports it wrote. */
 interface Ran {
-  readonly folder: string;
+  readonly project: ProjectChecks;
+  readonly check: CheckCommand;
   readonly run: CommandRun;
   readonly outcome: CommandOutcome;
   readonly results: TestResults | undefined;
+  readonly probe?: Probe;
 }
 
 async function commandRuns(root: string, projects: readonly ProjectChecks[], changed: readonly string[],
@@ -126,19 +132,31 @@ async function commandRuns(root: string, projects: readonly ProjectChecks[], cha
   const hash = contentHash(changed.map((path) => ({ path, content: read(root, path) })));
   const runs: Ran[] = [];
   const spec = (command: string): OperationSpec => ({ method: "command", unit: "", target: command });
-  const planned = projects.flatMap(({ commands }) => commands).map((command) => ops.plan(spec(command)));
+  const planned = projects.flatMap((project) => project.commands.map((check) => ops.plan(spec(checkCommand(root, project, check)))));
   let next = 0;
-  for (const { folder, commands } of projects) {
-    for (const command of commands) {
+  for (const project of projects) {
+    const { commands } = project;
+    for (const [index, check] of commands.entries()) {
+      const { folder } = check;
+      const command = checkCommand(root, project, check);
+      const probe = check.script === undefined ? undefined
+        : runnerProbe(check.script, inFolder(folder, `${check.command}${check.argumentSeparator === undefined ? "" : " --"}`), folder);
       const started = Date.now();
       // After a stop nothing is launched, so no start is published and the planned command closes as not started (#590).
       const id = planned[next++];
-      const { outcome, output } = signal.aborted ? await runShell(command, root, signal)
-        : await ops.run(spec(command), () => runShell(command, root, signal, undefined, env), (ran) => ran.outcome, id);
-      const results = readTestResults(root, reportsWritten(root, folder, started));
+      const execute = async (): Promise<BaseRun> => {
+        if (probe !== undefined) return probeRun(probe, root, signal, env, check.timeoutMs);
+        return runCheck(root, project, check, signal, env);
+      };
+      const ran: BaseRun = signal.aborted ? { ...await runShell(command, root, signal), results: undefined }
+        : await ops.run(spec(command), execute, (ran) => ran.outcome, id);
+      const { outcome } = ran;
+      const output = ran.output ?? "";
+      const { results } = ran;
       const failingTests = results === undefined ? undefined
         : [...results.tests].filter(([, status]) => status === "failed").map(([name]) => name).sort();
-      runs.push({ folder, outcome, results, run: { command, failingTests,
+      runs.push({ project, check, outcome, results, ...probe === undefined ? {} : { probe }, run: { command, failingTests,
+        ...project.approval === undefined ? {} : { declaration: { hash: project.approval.hash, index } },
         ...outcome === "timed_out" ? { origin: { cause: "unknown" as const,
           reason: "the check did not finish within its time limit; it was not rerun on the base" } } : {},
         evidence: { verifier: "command",
@@ -159,16 +177,17 @@ async function originsOnBase(root: string, against: Against, failing: readonly R
   signal: AbortSignal, ops: OperationSink, env: Environment | undefined): Promise<CommandOrigin[]> {
   const unknown = (reason: string): CommandOrigin[] => failing.map(() => ({ cause: "unknown", reason }));
   if ("unfaithful" in against) return unknown(against.unfaithful);
-  const touched = changed.filter((path) => dependencyFiles.has(posix.basename(path)));
-  if (touched.length > 0) {
-    return unknown(`the change touches ${touched.join(", ")}, and the base runs with the checkout's dependencies, so a run there may not be faithful`);
-  }
+  const configurationProblem = await baseConfigurationProblem(root, against.base, changed, failing.map(({ project }) => project), signal);
+  if (configurationProblem !== undefined) return unknown(configurationProblem);
+  const declarationProblem = await declarationsAtBase(against.base, failing.map(({ project }) => project));
+  if (declarationProblem !== undefined) return unknown(declarationProblem);
   try {
     return await atBase(root, against.base, async (project) => {
       const found: CommandOrigin[] = [];
-      for (const { folder, run, outcome, results } of failing) {
+      for (const { project: selected, check, run, outcome, results, probe } of failing) {
         const base = await ops.run({ method: "base_command", unit: "", target: run.command },
-          () => baseRun([run.command], project, folder, signal, env), (ended) => ended.outcome);
+          () => probe === undefined ? runCheck(project, selected, check, signal, env) : probeRun(probe, project, signal, env, check.timeoutMs),
+          (ended) => ended.outcome);
         found.push(commandOrigin(outcome, results, base));
       }
       return found;
@@ -223,15 +242,6 @@ async function git(cwd: string, args: readonly string[]): Promise<string> {
   return stdout;
 }
 
-/** The outcome of a sequence of commands: the first that did not pass, else passed. */
-async function runAll(commands: readonly string[], cwd: string, signal: AbortSignal, env?: Environment): Promise<CommandOutcome> {
-  for (const command of commands) {
-    const { outcome } = await runShell(command, cwd, signal, undefined, env);
-    if (outcome !== "passed") return outcome;
-  }
-  return "passed";
-}
-
 /**
  * The checkout's `node_modules` folders linked into the base worktree, since
  * a worktree holds only tracked files; the links made, in the worktree.
@@ -261,7 +271,7 @@ async function atBase<T>(root: string, base: string, work: (project: string) => 
   try {
     await git(root, ["worktree", "add", "--detach", "--quiet", directory, base]);
     const project = join(directory, prefix);
-    links = linkDependencies(root, project);
+    links = linkDependencies(checkoutRoot(root), checkoutRoot(project));
     return await work(project);
   } finally {
     let unlinked = true;
@@ -278,13 +288,59 @@ async function atBase<T>(root: string, base: string, work: (project: string) => 
 interface BaseRun {
   readonly outcome: CommandOutcome;
   readonly results: TestResults | undefined;
+  readonly output?: string;
 }
 
-/** `commands` run in `project`, a worktree of the base, with the reports they wrote under the owning `folder`. */
-async function baseRun(commands: readonly string[], project: string, folder: string, signal: AbortSignal, env?: Environment): Promise<BaseRun> {
+/** A declaration always executes in its checkout, even when the verification scope is a subdirectory. */
+function executionRoot(scope: string, project: ProjectChecks): string {
+  return project.approval === undefined ? scope : checkoutRoot(scope);
+}
+
+function checkCommand(scope: string, project: ProjectChecks, check: CheckCommand): string {
+  const folder = relative(scope, join(executionRoot(scope, project), check.folder)).replaceAll("\\", "/");
+  return inFolder(folder, check.command);
+}
+
+async function declarationsAtBase(base: string, projects: readonly ProjectChecks[]): Promise<string | undefined> {
+  const approvals = new Map(projects.flatMap(({ approval }) => approval === undefined ? [] : [[approval.root, approval] as const]));
+  for (const approval of approvals.values()) {
+    try {
+      const text = await git(approval.root, ["show", `${base}:${checksFile}`]);
+      if (createHash("sha256").update(text).digest("hex") === approval.hash) continue;
+    } catch { /* no faithful declaration on the base */ }
+    return "the check declarations differ from the base or could not be read there";
+  }
+  return undefined;
+}
+
+/** One invocation, authorized at its original checkout and confined to its actual execution root. */
+async function runCheck(root: string, project: ProjectChecks, check: CheckCommand, signal: AbortSignal, env?: Environment): Promise<BaseRun> {
+  root = executionRoot(root, project);
+  const { folder } = check;
+  const { approval } = project;
+  const problem = approval === undefined ? project.unavailable : checkApprovalProblem(approval) ?? checkFolderProblem(root, folder);
+  if (problem !== undefined) return { outcome: "not_started", output: problem, results: undefined };
+  const cwd = join(root, folder);
+  if (check.reports !== undefined && clearTestReports(cwd, check.reports).length > 0) {
+    return { outcome: "not_started", output: "the declared test report could not be cleared safely", results: undefined };
+  }
   const started = Date.now();
-  const outcome = await runAll(commands, project, signal, env);
-  return { outcome, results: readTestResults(project, reportsWritten(project, folder, started)) };
+  const ran = await runShell(check.command, cwd, signal, check.timeoutMs, env);
+  return { ...ran, results: check.reports === undefined ? readTestResults(root, reportsWritten(root, folder, started))
+    : readTestResults(cwd, check.reports) };
+}
+
+/** The selected project's whole checks run in a base worktree, with the same approval and execution contracts. */
+async function baseRun(selected: ProjectChecks, project: string, signal: AbortSignal, env?: Environment): Promise<BaseRun> {
+  const { commands, folder } = selected;
+  const reports = commands.flatMap((check) => (check.reports ?? []).map((report) => posix.join(check.folder, report)));
+  const started = Date.now();
+  for (const check of commands) {
+    const ran = await runCheck(project, selected, check, signal, env);
+    if (ran.outcome !== "passed") return ran;
+  }
+  return { outcome: "passed", results: reports.length > 0 ? readTestResults(executionRoot(project, selected), reports)
+    : readTestResults(project, reportsWritten(project, folder, started)) };
 }
 
 /**
@@ -364,22 +420,30 @@ const quoted = (path: string): string => `'${path.replaceAll("'", "'\\''")}'`;
  * `./`, runs files the project excludes, so Bun and Vitest take them as
  * filters, and what else they ran is said (`others`, #620).
  */
-function testProbe(project: string, folder: string, files: readonly string[]): Probe | undefined {
+function testProbe(project: string, folder: string, files?: readonly string[]): Probe | undefined {
   const test = packageTest(project, folder);
   if (test === undefined) return undefined;
-  const match = /^(bun test|vitest(?: run)?|jest)(?:\s+[\w./=-]+)*$/u.exec(test.script.trim());
+  return runnerProbe(test.script, test.command, folder, files);
+}
+
+/** The same runner reporting contract for whole-project checks and per-file exercise. */
+function runnerProbe(script: string, command: string, folder: string, files?: readonly string[]): Probe | undefined {
+  // A whole check must keep its selection and reporting semantics; don't override a custom reporter or a watch/bail mode.
+  if (files === undefined && /--(?:reporter|outputFile|json|watch|bail|onlyFailures|changed|update)/u.test(script)) return undefined;
+  const match = /^(bun test|vitest(?: run)?|jest)(?:\s+[\w./=-]+)*$/u.exec(script.trim());
   if (match === null) return undefined;
   const runner = match[1];
-  const name = `.tesota-exercise-${randomUUID()}.${runner === "jest" ? "json" : "xml"}`;
-  const flags = runner === "bun test" ? `--pass-with-no-tests --reporter=junit --reporter-outfile=${name}`
-    : runner === "jest" ? `--passWithNoTests --runInBand --runTestsByPath --json --outputFile=${name}`
-      : `--run --passWithNoTests --reporter=junit --outputFile=${name}`;
-  return { command: [test.command, flags, ...files.map(quoted)].join(" "), folder, report: name };
+  const name = `.tesota-${files === undefined ? "check" : "exercise"}-${randomUUID()}.${runner === "jest" ? "json" : "xml"}`;
+  const flags = runner === "bun test" ? `${files === undefined ? "" : "--pass-with-no-tests "}--reporter=junit --reporter-outfile=${name}`
+    : runner === "jest" ? `${files === undefined ? "" : "--passWithNoTests "}--runInBand ${files === undefined ? "" : "--runTestsByPath "}--json --outputFile=${name}`
+      : `--run ${files === undefined ? "" : "--passWithNoTests "}--reporter=junit --outputFile=${name}`;
+  return { command: [command, flags, ...files?.map(quoted) ?? []].join(" "), folder, report: name,
+    bun: runner === "bun test" };
 }
 
 /** Name the fallback command, and why a workspace member cannot be probed with its own test script. */
-function wholeCheckReason(project: string, folder: string, commands: readonly string[]): string {
-  const by = `by the whole check, ${commands.map((command) => `\`${command}\``).join(", ")}`;
+function wholeCheckReason(project: string, folder: string, commands: readonly CheckCommand[]): string {
+  const by = `by the whole check, ${commands.map(({ command, folder }) => `\`${inFolder(folder, command)}\``).join(", ")}`;
   if (nearestWorkspaceRoot(project, folder) === undefined) return by;
   const test = packageTest(project, folder);
   const fallback = test === undefined
@@ -391,6 +455,7 @@ function wholeCheckReason(project: string, folder: string, commands: readonly st
 /** Exercise a member without a test script through the nearest workspace ancestor that has one, never through lint alone. */
 function exerciseProject(project: string, projects: readonly ProjectChecks[], path: string): { owning?: ProjectChecks; reason: string } {
   const owning = owningProjects(projects, [path])[0];
+  if (owning?.approval !== undefined) return { owning, reason: "" };
   const packages = findProjects(project).filter(({ kinds }) => kinds.includes("node")).map(({ folder }) => ({ folder, commands: [] }));
   const member = owningProjects(packages, [path])[0];
   let workspace = member === undefined ? undefined : nearestWorkspaceRoot(project, member.folder);
@@ -415,6 +480,18 @@ interface Probe {
   readonly command: string;
   readonly folder: string;
   readonly report: string;
+  readonly bun: boolean;
+}
+
+/** Bun 1.4's JUnit omits import/hook errors; require its final summary to account for every failed result. */
+function probeResults(probe: Probe, project: string, output: string): TestResults | undefined {
+  const results = readTestResults(join(project, probe.folder), [probe.report]);
+  if (!probe.bun || results === undefined) return results;
+  const plain = stripVTControlCharacters(output);
+  const failed = /^\s*(\d+) fail\s*$/mu.exec(plain)?.[1];
+  const errors = /^\s*(\d+) errors?\s*$/mu.exec(plain)?.[1];
+  const reported = [...results.tests.values()].filter((status) => status === "failed").length;
+  return reportCoversFailures(reported, failed === undefined ? -1 : Number(failed), Number(errors ?? 0)) ? results : undefined;
 }
 
 /**
@@ -422,12 +499,13 @@ interface Probe {
  * from the runner's folder, so that the tests it names are named by their
  * file there, as the runner was given them.
  */
-async function probeRun(probe: Probe, project: string, signal: AbortSignal, env?: Environment): Promise<BaseRun> {
+async function probeRun(probe: Probe, project: string, signal: AbortSignal, env?: Environment, timeoutMs?: number): Promise<BaseRun> {
   const report = posix.join(probe.folder, probe.report);
   if (clearTestReports(project, [report]).length > 0) return { outcome: "not_started", results: undefined };
   try {
-    const outcome = await runAll([probe.command], project, signal, env);
-    return { outcome, results: readTestResults(join(project, probe.folder), [probe.report]) };
+    const { outcome, output } = await runShell(probe.command, project, signal, timeoutMs, env);
+    return { outcome, output: `Invocation: ${probe.command}\n${output}`,
+      results: probeResults(probe, project, output) };
   } finally { clearTestReports(project, [report]); }
 }
 
@@ -472,24 +550,25 @@ async function againstBase(project: string, root: string, tests: readonly string
     return ran;
   };
   const ended = ({ outcome }: BaseRun): OperationResult => outcome;
-  for (const { owning: { folder, commands }, paths } of folders.values()) {
+  for (const { owning, paths } of folders.values()) {
+    const { folder, commands } = owning;
     const alone = (files: readonly string[]): ReturnType<typeof testProbe> =>
-      testProbe(project, folder, files.map((path) => posix.relative(folder, path)));
+      owning.approval === undefined ? testProbe(project, folder, files.map((path) => posix.relative(folder, path))) : undefined;
     let without: BaseRun | undefined;
     // What runs `files` there, once, with the whole change in the same worktree.
     const changes = new Map<string, { target: string; ran: Promise<BaseRun> }>();
     const withChange = (files: readonly string[]): { target: string; ran: Promise<BaseRun> } => {
       const key = files.join("\n");
       const onChange = alone(files);
-      const target = onChange?.command ?? commands.join(" && ");
+      const target = onChange?.command ?? commands.map(({ command, folder }) => inFolder(folder, command)).join(" && ");
       const made = changes.get(key) ?? { target, ran: holding(changed, () => ops.run({ method: "command", unit: "", target },
-        () => onChange === undefined ? baseRun(commands, project, folder, signal, env) : probeRun(onChange, project, signal, env), ended)) };
+        () => onChange === undefined ? baseRun(owning, project, signal, env) : probeRun(onChange, project, signal, env), ended)) };
       changes.set(key, made);
       return made;
     };
     // What runs each file there is what the operations name: the runner on the file alone, else the project's whole commands.
     const probes = new Map(paths.map((path) => [path, alone([path])] as const));
-    const target = (path: string): string => probes.get(path)?.command ?? commands.join(" && ");
+    const target = (path: string): string => probes.get(path)?.command ?? commands.map(({ command, folder }) => inFolder(folder, command)).join(" && ");
     const planned = new Map(paths.map((path) => [path, ops.plan({ method: "exercise", unit: "", target: target(path) })] as const));
     for (const path of paths) {
       const origin = provenance.get(path) ?? "added";
@@ -498,9 +577,9 @@ async function againstBase(project: string, root: string, tests: readonly string
       const parent = planned.get(path);
       const control: OperationSpec = { method: "base_control", unit: "", target: target(path), ...parent === undefined ? {} : { parent } };
       if (probe === undefined) {
-        const withTest = await holding([path], () => ops.run(exercising, () => baseRun(commands, project, folder, signal, env), ended, planned.get(path)));
+        const withTest = await holding([path], () => ops.run(exercising, () => baseRun(owning, project, signal, env), ended, planned.get(path)));
         if (withTest.outcome !== "passed") {
-          without ??= await ops.run(control, () => baseRun(commands, project, folder, signal, env), ended);
+          without ??= await ops.run(control, () => baseRun(owning, project, signal, env), ended);
         }
         const verdict = exercise(path, origin, withTest, without);
         const by = wholeCheckReason(project, folder, commands);
@@ -536,6 +615,24 @@ async function againstBase(project: string, root: string, tests: readonly string
 const dependencyFiles: ReadonlySet<string> = new Set(["package.json", "package-lock.json", "npm-shrinkwrap.json", "bun.lock",
   "bun.lockb", "pnpm-lock.yaml", "yarn.lock"]);
 
+/** A checkout-wide declaration also borrows dependencies outside a nested verification scope. */
+async function baseConfigurationProblem(root: string, base: string, changed: readonly string[], projects: readonly ProjectChecks[],
+  signal: AbortSignal): Promise<string | undefined> {
+  let paths = changed;
+  if (projects.some(({ approval }) => approval !== undefined)) {
+    const checkout = checkoutRoot(root);
+    const [tracked, untracked] = await Promise.all([
+      gitRead(checkout, ["diff", "--no-renames", "--name-only", "-z", base, "--"], undefined, signal),
+      gitRead(checkout, ["ls-files", "--others", "--exclude-standard", "-z"], undefined, signal),
+    ]);
+    if (tracked === undefined || untracked === undefined) return "the checkout's dependency changes could not be read for the base comparison";
+    paths = [...changed, ...tracked.split("\0"), ...untracked.split("\0")];
+  }
+  const touched = [...new Set(paths.filter((path) => dependencyFiles.has(posix.basename(path)) || path === checksFile))];
+  return touched.length === 0 ? undefined
+    : `the change touches ${touched.join(", ")}, and the base runs with the checkout's dependencies, so a run there may not be faithful`;
+}
+
 /**
  * Each changed or added test file, as the change leaves it, run alone over
  * the base: its project's test runner on that file, or else its project's
@@ -552,10 +649,10 @@ export async function exerciseTests(root: string, base: string, tests: readonly 
   const provenance = new Map(await Promise.all(tests.map(async (path) => [path, await atCommit(root, base, path) ? "changed" : "added"] as const)));
   const unknown = (reason: string): TestExercise[] =>
     tests.map((path) => ({ path, provenance: provenance.get(path) ?? "added", sensitivity: "unknown", reason }));
-  const touched = changed.filter((path) => dependencyFiles.has(posix.basename(path)));
-  if (touched.length > 0) {
-    return unknown(`the change touches ${touched.join(", ")}, and the base runs with the checkout's dependencies, so a run there may not be faithful`);
-  }
+  const configurationProblem = await baseConfigurationProblem(root, base, changed, projects, signal);
+  if (configurationProblem !== undefined) return unknown(configurationProblem);
+  const declarationProblem = await declarationsAtBase(base, projects);
+  if (declarationProblem !== undefined) return unknown(declarationProblem);
   try {
     return await atBase(root, base, (project) => againstBase(project, root, tests, changed, provenance, projects, signal, ops, env));
   } catch (error) {
