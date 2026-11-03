@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import manifest from "../package.json" with { type: "json" };
 import { build } from "../scripts/build.ts";
 
@@ -42,14 +42,35 @@ const clamp = "//@ requires low <= high\n//@ ensures low <= \\result && \\result
   "export function clamp(value: number, low: number, high: number): number {\n  if (value < low) return low;\n" +
   "  if (value > high) return high;\n  return value;\n}\n";
 
-test("the split engine bundle does not retain unused Effect APIs through the lazy gate", async () => {
+test("the split engine bundle keeps checks lazy and omits unused Effect APIs", async () => {
   const result = await Bun.build({ entrypoints: [join(import.meta.dir, "..", "src", "main.ts")],
-    target: "bun", format: "esm", splitting: true, minify: true });
+    target: "bun", format: "esm", splitting: true, minify: true, metafile: true });
   expect(result.success).toBe(true);
   const chunks = await Promise.all(result.outputs.map((output) => output.text()));
   // No consumer uses this API. Importing Effect's namespace dynamically makes Bun retain
   // its export table and otherwise-unused code in chunks shared with shell startup (#532).
   expect(chunks.join("\n")).not.toContain("annotateLogsScoped");
+  const outputs = Object.entries(result.metafile?.outputs ?? {});
+  const entry = outputs.find(([, output]) => output.entryPoint?.replaceAll("\\", "/").endsWith("/shell/measure-shell.ts"));
+  if (entry === undefined) throw new Error("No compiled first-frame entry");
+  const graph = new Map(outputs.map(([path, output]) => [resolve(path), output]));
+  const pending = [resolve(entry[0])];
+  const visited = new Set<string>();
+  const eager = new Set<string>();
+  while (pending.length > 0) {
+    const path = pending.pop()!;
+    if (visited.has(path)) continue;
+    visited.add(path);
+    const output = graph.get(path);
+    if (output === undefined) throw new Error(`Missing compiled chunk ${path}`);
+    for (const input of Object.keys(output.inputs)) eager.add(input.replaceAll("\\", "/"));
+    for (const imported of output.imports) {
+      const target = resolve(dirname(path), imported.path);
+      if (imported.kind !== "dynamic-import" && graph.has(target)) pending.push(target);
+    }
+  }
+  // A shared shell helper must not pull gate-time parsers into first-frame chunks.
+  expect([...eager].filter((path) => /(?:^|\/)src\/verification-changes\.ts$|\/ts-morph\//u.test(path))).toEqual([]);
 });
 
 test("the engine's binary starts, and runs LemmaScript it embeds", () => {

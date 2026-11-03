@@ -16,7 +16,6 @@ import { host } from "./host.js";
 import { noOperations, type OperationResult, type OperationSink, type OperationSpec } from "./operations.js";
 import { checkApprovalProblem, checkFolderProblem, checksFile, readDeclaredChecks } from "./project-checks.js";
 import { checkoutRoot } from "./checkout-root.js";
-import { isSourcePath, isTestPath } from "./verification-changes.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -786,6 +785,8 @@ async function restoreSource(project: string, base: string, source: string, sign
 export async function exerciseSourcePaths(root: string, base: string, tests: readonly string[], changed: readonly string[],
   projects: readonly ProjectChecks[], signal: AbortSignal, ops: OperationSink = noOperations, env?: Environment,
   deadline: number = performance.now() + 120_000): Promise<ReadonlyMap<string, SourceExercise>> {
+  // runShell also serves model checks before the first frame; keep parser-backed classification at settlement.
+  const { isSourcePath, isTestPath } = await import("./verification-changes.js");
   const sources = changed.filter((path) => isSourcePath(path) && !isTestPath(path)).sort();
   const found = new Map<string, SourceExercise>(tests.map((path) => [path, { sources: [], sourceGaps: [] }]));
   if (sources.length === 0 || tests.length === 0) return found;
