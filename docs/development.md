@@ -228,7 +228,7 @@ The docs are for people and agents alike.
 | Using a feature | [Guides](README.md#guides) |
 | How it's built, and why | [Concepts](README.md#concepts) |
 | Exact commands, keys, files and rules | [Reference](README.md#reference) |
-| The receipt's format | [Receipt v2](receipt-v2.md); keep its path, which receipts name |
+| The receipt's format | [Receipt v3](receipt-v3.md); preserve the historical [v2](receipt-v2.md) path and meanings |
 | Direction and non-goals | [Roadmap](../ROADMAP.md) |
 | How the terminal looks, and why | [DESIGN.md](../DESIGN.md) |
 | What each release changed | [Changelog](../CHANGELOG.md) |

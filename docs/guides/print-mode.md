@@ -18,7 +18,7 @@ It's verified like any run. `tesota receipt` then reads its receipt.
 nothing needs a decision. A change nothing could verify ends `unverified`
 and says why; one with a gap ends `incomplete`. A run that changed no
 file, such as a question, ends `Completed; no file changed.` with no claim
-([Standing](../receipt-v2.md#standing)).
+([Standing](../receipt-v3.md#presentation-and-standing)).
 
 Provider failures write a bounded, redacted reason to standard error before
 `Ended error.` Transient failures write a retry line there; Ctrl+C cancels
@@ -32,7 +32,7 @@ for the retry bounds and the errors that stop immediately.
 | `-c`, `--continue` | Continues this folder's most recently changed session ([Continuing a session](#continuing-a-session)) |
 | `-r <session>`, `--resume <session>` | Continues the session with that id, as `tesota receipt` and `/resume` show it |
 | `--model <provider>/<id>` | The model for this run; with `-c` or `--resume`, the one the session last ran on, otherwise your chosen one ([Continuing a session](#continuing-a-session)) |
-| `--claimcheck-model <provider>/<id>` | See [Verification](verification.md#choose-the-opinion-models) |
+| `--claimcheck-model <provider>/<id>\|off` | See [Verification](verification.md#choose-the-opinion-models) |
 | `--open-cases-model <provider>/<id>`, or `off` | See [Verification](verification.md#choose-the-opinion-models) |
 
 ## Exit codes

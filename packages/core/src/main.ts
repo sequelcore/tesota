@@ -34,7 +34,7 @@ const usage: readonly (readonly [string, string] | string)[] = [
   "",
   "The shell and -p also take:",
   ["  --open-cases-model <provider>/<id>|off", "Override openCasesModel in settings; otherwise the session model. off disables listing."],
-  ["  --claimcheck-model <provider>/<id>", "Override claimcheckModel in settings; otherwise the session model restates contracts."],
+  ["  --claimcheck-model <provider>/<id>|off", "Override claimcheckModel in settings; otherwise the session model restates contracts. off disables comparison."],
 ];
 const column = Math.max(...usage.map((row) => typeof row === "string" ? 0 : row[0].length)) + 2;
 const commands = usage.map((row) => typeof row === "string" ? row && `  ${row}` : `  ${row[0].padEnd(column)}${row[1]}`).join("\n");

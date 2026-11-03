@@ -1,0 +1,80 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`leads with what needs the operator, grouped by reason, and keeps the model's opinion out of the count 1`] = `
+[
+  "! Review test edits · 1 heuristic flag",
+  "  May weaken evidence; not confirmed weakening.",
+  "! Review removed or changed contracts · 1 heuristic flag",
+  "  May weaken evidence; not confirmed weakening.",
+  "! Contract too weak · inRange · src/range.ts",
+  "  1 change to its code still proves",
+  "! Test passes without the change · 1 test file",
+  "  it passes without the change too",
+  "○ No proof covers changed lines in 1 file",
+  "○ No proof covers 1 changed file",
+  "",
+  "Specification evidence",
+  "  weak contract inRange in src/range.ts: 1 of 7 changes to its code still prove, so the contract does not rule them",
+  "    out (one may behave the same as the original); 1 proved to behave the same as the code",
+  "  may weaken    tests/clamp.test.ts: edits a test file",
+  "  may weaken    src/clamp.ts: removes or changes //@ ensures \\result >= lo && \\result <= hi",
+  "",
+  "Request review — model opinion",
+  "Contract comparison: completed",
+  "Open cases: not_run; request review was not run",
+  "◇ Partial match reported",
+  "  ClaimCheck · inRange · src/range.ts",
+  "  It does not say a value inside the range is returned unchanged.",
+  "",
+  "▸ Details · paths, output, assumptions, model opinions",
+  "",
+  "Acceptance remains with the reviewer.",
+]
+`;
+
+exports[`names an opinion to read beside the counts, in the accent, and never counts it as a flag or a limit 1`] = `
+[
+  "Request review — model opinion",
+  "Contract comparison: completed",
+  "Open cases: not_run; request review was not run",
+  "◇ Partial match reported",
+  "  ClaimCheck · inRange · src/range.ts",
+  "  It does not say a value inside the range is returned unchanged.",
+  "",
+  "▸ Details · paths, output, assumptions, model opinions",
+  "",
+  "Acceptance remains with the reviewer.",
+]
+`;
+
+exports[`shows a clean receipt as its counts, the acceptance line and one row per method, each saying only what ran 1`] = `
+[
+  "Tesota receipt",
+  "Evidence standing: verified",
+  "No review flags · no verification limits",
+  "",
+  "Request context",
+  "No request messages recorded.",
+  "",
+  "Code evidence",
+  "✓ Tested      bun test · 0:02",
+  "✓ Proved      src/range.ts · 0:02",
+  "○ Models      none recorded",
+  "✓ Exercised   1 test file failed on the base and passed with the change",
+  "",
+  "Specification evidence",
+  "  contract      inRange in src/range.ts: all 6 decided changes to its code fail the proof; 1 proved to behave the",
+  "    same as the code",
+  "✓ Contracts   1 contract: every decided change broke its proof",
+  "",
+  "Request review — model opinion",
+  "Contract comparison: completed",
+  "Open cases: not_run; request review was not run",
+  "◇ No mismatch identified in the compared contracts",
+  "  ClaimCheck · inRange · src/range.ts",
+  "",
+  "▸ Details · paths, output, assumptions, model opinions",
+  "",
+  "Acceptance remains with the reviewer.",
+]
+`;

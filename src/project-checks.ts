@@ -106,7 +106,7 @@ export function checkApprovalProblem(approval: CheckApproval): string | undefine
 /** A declared execution folder is an existing directory without links below this execution root. */
 export function checkFolderProblem(root: string, folder: string): string | undefined {
   try {
-    if (!confinedPath(root, folder) || !statSync(join(root, folder)).isDirectory()) throw new Error("not a confined directory");
+    if ((folder !== "" && !portablePath(folder)) || !confinedPath(root, folder) || !statSync(join(root, folder)).isDirectory()) throw new Error("not a confined directory");
     return undefined;
   } catch { return `the declared folder ${folder || "."} is missing or passes through a link`; }
 }

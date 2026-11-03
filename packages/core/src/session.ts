@@ -16,7 +16,7 @@ import { providerRetryTokens, providerRetryType } from "./provider-retry.ts";
 import type { StartedSkill } from "./instructions.ts";
 import {
   compactedHead, type Continuation, continuesType, createLoop, type HistoryMessage, jobMessage, type LoopOptions, type LoopSession, type LoopState, skillMessage,
-  toolResult, referenceMessage,
+  toolResult, referenceMessage, checkPlanMessage,
 } from "./loop.ts";
 import type { PromptEntry } from "./prompt.ts";
 import { agentTool } from "./tools/agent.ts";
@@ -321,7 +321,9 @@ function unsettledReceipt(entries: readonly SessionEntry[], run: number): Sessio
   const clarifications = request.inputs.flatMap((input) => input.kind === "clarification" ? [input.clarification] : []);
   const receipt = interruptedReceipt({ repository: units.some(({ kind }) => kind === "commit"),
     base: only === undefined || only.kind === "refused" ? null : only.commit, startedAt: request.at, settledAt: new Date().toISOString(),
-    engine: manifest.version, ...clarifications.length === 0 ? {} : { clarifications },
+    engine: manifest.version, requestContext: { requests: [{ run: request.run, text: [request.text, ...request.inputs.flatMap((input) =>
+      input.kind === "clarification" ? [clarificationText(input.clarification)] : input.origin === "extension" ? [] : [input.text])] }],
+      ...clarifications.length === 0 ? {} : { clarifications } },
     ...request.children.length === 0 ? {} : { children: request.children },
     ...request.externalEffects === undefined || request.externalEffects.length === 0 ? {} : { externalEffects: request.externalEffects },
     ...request.refusals.length === 0 ? {} : { floorRefusals: request.refusals } });
@@ -409,6 +411,8 @@ function conversation(entries: readonly SessionEntry[]): Pick<LoopState, "histor
     if (entry.type === "request") {
       const asked: HistoryMessage = { role: "user", content: entry.text, timestamp: Date.parse(entry.at) };
       ledger = entry.skill === undefined ? [asked] : [asked, skillMessage(entry.skill, Date.parse(entry.at))];
+      const checking = checkPlanMessage(entry.base, Date.parse(entry.at));
+      if (checking !== undefined) ledger.push(checking);
       for (const message of ledger) {
         inputOrder.set(message, order);
         history.push(message);

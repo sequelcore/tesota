@@ -1,7 +1,7 @@
 # Checks
 
 Every rule each check follows. [How verification works](../concepts/verification.md)
-explains why; [Receipt v2](../receipt-v2.md) specifies what the receipt
+explains why; [Receipt v3](../receipt-v3.md) specifies what the receipt
 records.
 
 ## When a run is verified
@@ -21,7 +21,7 @@ unanswered question ends generation; the changes are still checked.
   stay out of proof and exercise scope; commands still run with them.
 - **Attribution:** when the captures and history can't credit a change to
   the request, its files are still checked, but measurements that need a
-  reliable start are left out ([Receipt v2](../receipt-v2.md#capturestate)).
+  reliable start are left out ([Receipt v3](../receipt-v3.md#run-metadata)).
 - **Gaps:** an unreadable capture or a file too large to hash can't show
   that nothing changed. Weakening checks compare with the starting commit.
 - **Outside Git:** a private snapshot in `~/.tesota/snapshots`, without

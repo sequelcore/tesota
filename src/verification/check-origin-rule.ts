@@ -1,5 +1,17 @@
 export type CheckOutcome = "passed" | "failed" | "timed_out" | "cancelled" | "not_started" | "unconfirmed" | "changed_files";
 export type CheckOrigin = "introduced" | "preexisting" | "unknown";
+
+/** A check is fixed only when its comparable base failed and its candidate passed. */
+//@ ensures \result <==> (candidate === "passed" && base === "failed")
+export function fixedCheck(candidate: CheckOutcome, base: CheckOutcome): boolean {
+  return candidate === "passed" && base === "failed";
+}
+
+/** A source reversion is noticed only by a newly failing named assertion after a passing candidate control. */
+//@ ensures \result <==> (control === "passed" && reverted === "failed" && matchingAssertions > 0)
+export function sourceAssertion(control: CheckOutcome, reverted: CheckOutcome, matchingAssertions: number): boolean {
+  return control === "passed" && reverted === "failed" && matchingAssertions > 0;
+}
 /**
  * A test's status in the reports a check names: `absent` when every report was
  * read and none has the test, `unread` when a report could not be read.

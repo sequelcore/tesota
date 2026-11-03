@@ -15,11 +15,11 @@ import { roleModel } from "./verification/role-model-rule.js";
 import { type AttemptEnd, GateOperations, type OperationSink, type OperationSpec } from "./operations.js";
 import type { ContractStrength } from "./proof-guarantees.js";
 import type { JudgmentContext } from "./pi-claimcheck.js";
-import type { ExternalEffect, RequestJudgment } from "./receipt.js";
-import { inFolder, owningProjects, suggestChecks } from "./projects.js";
+import type { ExternalEffect, ReceiptCheckPlan, RequestJudgment } from "./receipt.js";
+import { inFolder, owningProjects, suggestChecks, type ProjectChecks, type UnitCheckPlan } from "./projects.js";
 import { proofReport } from "./prove-tool.js";
-import { entryReceipt, type FloorRefusal, inUnit, isReceipt, type ModelResult, noEvidence, type Receipt, type ReceiptChild, receiptEntry, receiptGraphEntry,
-  type UnitEvidence } from "./receipt.js";
+import { entryReceipt, type FloorRefusal, inUnit, isReceipt, type ModelResult, noRequestReview, noEvidence, type Receipt, type ReceiptChild, receiptEntry, receiptGraphEntry,
+  type UnitEvidence, type ReceiptUnit } from "./receipt.js";
 import { attributionResolved, captureFingerprint, compareFingerprints, type Fingerprint, historyFacts, pathBlobs, refTips, type UnmeasuredPath } from "./request-fingerprint.js";
 import { takeSnapshot } from "./snapshot.js";
 import type { Against, CommandRun } from "./test-rung.js";
@@ -112,7 +112,7 @@ async function readIfPresent(path: string): Promise<string | undefined> {
 const statuses: Readonly<Record<string, ChangeStatus>> = { A: "added", D: "deleted" };
 
 /** The diff from `base` and its files, or why the gate cannot read it. */
-async function diffFromBase(root: string, base: string): Promise<ChangedFile[] | Exclude<Receipt["weakened"], readonly unknown[]>> {
+async function diffFromBase(root: string, base: string): Promise<ChangedFile[] | Exclude<UnitEvidence["weakened"], readonly unknown[]>> {
   const listed = await gitOutput(root, [...diffFrom(base, "--name-status"), "-z"]);
   const diff = await gitOutput(root, diffFrom(base, "--unified=0"));
   if (listed === "too_large" || diff === "too_large") return "too_large";
@@ -133,7 +133,7 @@ async function diffFromBase(root: string, base: string): Promise<ChangedFile[] |
  * counts as added whole.
  */
 async function fileChanges(root: string, base: string | null, changed: readonly string[]):
-  Promise<FileChange[] | Exclude<Receipt["weakened"], readonly unknown[]>> {
+  Promise<FileChange[] | Exclude<UnitEvidence["weakened"], readonly unknown[]>> {
   const diffed = base === null ? [] : await diffFromBase(root, base);
   if (typeof diffed === "string") return diffed;
   const inDiff = new Set(diffed.map(({ path }) => path));
@@ -197,8 +197,9 @@ function commandIdentity({ command, declaration }: CommandRun): string {
  */
 async function testRung(root: string, base: string | null, changed: readonly string[],
   sentBack: ReadonlyMap<string, readonly string[]>, signal: AbortSignal, ops: OperationSink,
-  env: Readonly<Record<string, string>> | undefined, attributable: boolean, against: Against): Promise<Pick<Receipt, "tests" | "exercises">> {
-  const projects = owningProjects(suggestChecks(root), changed);
+  env: Readonly<Record<string, string>> | undefined, attributable: boolean, against: Against,
+  admitted: readonly ProjectChecks[], sourceDeadline: () => number): Promise<Pick<UnitEvidence, "tests" | "exercises">> {
+  const projects = owningProjects(admitted, changed);
   const tests = (await checks().runCommands(root, projects, changed, signal, ops, env, against)).map((run) => ({ ...run,
     verdict: commandVerdict(run.evidence.outcome, testFailure(run), sentBack.get(commandIdentity(run)) ?? [], run.origin?.cause === "preexisting") }));
   const passed = tests.every(({ evidence }) => evidence.outcome === "passed");
@@ -206,7 +207,14 @@ async function testRung(root: string, base: string | null, changed: readonly str
   const runnable = changed.filter((path) => checks().isTestPath(path) && checks().isSourcePath(path));
   const present = (await Promise.all(runnable.map(async (path) => await readIfPresent(join(root, path)) === undefined ? [] : [path]))).flat();
   const exercises = attributable && passed && base !== null ? await checks().exerciseTests(root, base, present, changed, projects, signal, ops, env) : [];
-  return { tests, exercises };
+  if (!attributable || !passed || base === null || exercises.length === 0) return { tests, exercises };
+  if ("unfaithful" in against) {
+    const sources = changed.filter((path) => checks().isSourcePath(path) && !checks().isTestPath(path));
+    return { tests, exercises: exercises.map((exercise) => ({ ...exercise, sources: [],
+      sourceGaps: sources.map((path) => ({ path, reason: against.unfaithful })) })) };
+  }
+  const source = await checks().exerciseSourcePaths(root, base, present, changed, admitted, signal, ops, env, sourceDeadline());
+  return { tests, exercises: exercises.map((exercise) => ({ ...exercise, ...source.get(exercise.path) })) };
 }
 
 /**
@@ -232,7 +240,7 @@ function comparedWith(unit: ChangedUnit, attributable: boolean): Against {
 }
 
 /** The files that proved, as changed and at the request's base, whose contracts and covered lines the receipt measures. */
-async function provedSources(root: string, base: string | null, proofs: Receipt["proofs"]): Promise<ProvedSource[]> {
+async function provedSources(root: string, base: string | null, proofs: UnitEvidence["proofs"]): Promise<ProvedSource[]> {
   return Promise.all(proofs.filter(({ verdict }) => verdict === "proved").map(async ({ path, evidence }) => ({ path,
     checked: evidence.files, source: await readIfPresent(join(root, path)) ?? "",
     ...evidence.proofInfo === undefined ? {} : { proofInfo: evidence.proofInfo },
@@ -244,7 +252,7 @@ type ProvedSource = { readonly path: string; readonly checked: readonly string[]
 
 /** The changed lines of each TypeScript file that proved that no contract's proof covers (`uncoveredLines`). */
 async function uncovered(sources: readonly ProvedSource[], changes: Awaited<ReturnType<typeof fileChanges>>,
-  weakened: Receipt["weakened"], signal: AbortSignal): Promise<Receipt["uncovered"]> {
+  weakened: UnitEvidence["weakened"], signal: AbortSignal): Promise<UnitEvidence["uncovered"]> {
   if (typeof changes === "string" || typeof weakened === "string") return [];
   const byPath = new Map(changes.map((change) => [change.path, change]));
   return (await Promise.all(sources.map(async ({ path, checked, source, baseSource, proofInfo }) => {
@@ -272,7 +280,7 @@ function onlyComments(change: FileChange | undefined): boolean {
  * change held any.
  */
 function unprovedFiles(changes: Awaited<ReturnType<typeof fileChanges>>, changed: readonly string[],
-  covered: ReadonlySet<string>): Pick<Receipt, "unverified" | "commentsOnly"> {
+  covered: ReadonlySet<string>): Pick<UnitEvidence, "unverified" | "commentsOnly"> {
   const read = typeof changes === "string" ? [] : changes;
   const unverified = changed.filter((path) => !covered.has(path) && !checks().isTestPath(path) &&
     !onlyComments(read.find((file) => file.path === path)));
@@ -375,7 +383,7 @@ export type GateStatus =
   | { readonly step: "unchanged" };
 
 /** The round so far: the proofs judged, then whether every command passed, then how many contracts are weak. */
-function tally(proofs: Receipt["proofs"], tests?: Receipt["tests"], contracts?: readonly ContractStrength[]): Tally {
+function tally(proofs: UnitEvidence["proofs"], tests?: UnitEvidence["tests"], contracts?: readonly ContractStrength[]): Tally {
   const proved = proofs.filter(({ verdict }) => verdict === "proved").length;
   const passed = tests?.every(({ evidence }) => evidence.outcome === "passed");
   return { proved, notProved: proofs.length - proved, ...tests === undefined || tests.length === 0 ? {} : { tests: passed ? "pass" : "fail" },
@@ -483,24 +491,29 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
   let modelsChecked = new Map<string, ModelCheck>();
   const modelsPassed = new Map<string, ModelCheck>();
   let mayHaveChanged = false;
+  let sourceDeadlines = new Map<string, number>();
   let fingerprints: Promise<ReadonlyMap<string, Fingerprint>> | undefined;
   /** What the operator asked during the request, for ClaimCheck to compare the contracts with. */
   let requests: string[] = [];
   let judgingRequests: JudgmentContext["requests"] = [];
   let requestJudgments: RequestJudgment[] = [];
   const judging = (folder = ""): JudgmentContext => ({ folder, requests: judgingRequests, record: (judgment) => { requestJudgments.push(judgment); } });
-  const judgedContext = (): Pick<Receipt, "requestJudgments"> => requestJudgments.length === 0 ? {} : { requestJudgments };
+
   let clarifications: readonly Clarification[] = [];
   /** The subagents the request started (#525), as the ledger recorded their ends. */
   let children: readonly ReceiptChild[] = [];
   let floorRefusals: readonly FloorRefusal[] = [];
   let externalEffects: readonly ExternalEffect[] = [];
-  const ledgerDetails = (): Pick<Receipt, "clarifications" | "children" | "floorRefusals" | "externalEffects"> => ({
-    ...clarifications.length === 0 ? {} : { clarifications }, ...children.length === 0 ? {} : { children },
+  const ledgerDetails = (): Pick<Receipt, "requestContext" | "requestReview" | "children" | "floorRefusals" | "externalEffects"> => ({
+    requestContext: { requests: judgingRequests.map(({ run, text }) => ({ run, text })), ...clarifications.length === 0 ? {} : { clarifications } },
+    requestReview: { ...noRequestReview, context: requestJudgments }, ...children.length === 0 ? {} : { children },
     ...floorRefusals.length === 0 ? {} : { floorRefusals }, ...externalEffects.length === 0 ? {} : { externalEffects },
   });
   /** The request's units and bases, recorded before the agent can run anything; a run no operator input started takes them as it settles. */
   let start: Promise<Start> | undefined;
+  let admittedChecks: readonly ReceiptCheckPlan[] | undefined;
+  const admissionEvidence = (): { readonly checksAtStart?: readonly ReceiptCheckPlan[] } =>
+    admittedChecks === undefined ? {} : { checksAtStart: admittedChecks };
   let startedAt: string | undefined;
   let requestNumber = 0;
   pi.on("input", async (event, ctx) => {
@@ -515,6 +528,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     unheadedSentBack = new Set();
     modelsChecked = new Map();
     mayHaveChanged = false;
+    sourceDeadlines = new Map();
     fingerprints = undefined;
     clarifications = [];
     children = [];
@@ -611,6 +625,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
       return undefined;
     }
     const begun = await start;
+    admittedChecks = shareableChecks(begun?.checks);
     const workspace = begun?.units.some(({ folder }) => folder !== "") ?? false;
     const at = startedAt ?? new Date().toISOString();
     // A stuck Git or a slow drive must not hold the stop: past the limit the inventory is abandoned, and says so. Its Git
@@ -622,37 +637,37 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
       : { changed: "unreadable" as const, lines: "unreadable" as const, reason: "the inventory ran past its time limit" }));
     reading.abort();
     await gitStopped(reading.signal);
-    const receipt: Receipt = { version: 2,
+    const receipt: Receipt = { version: 3,
       repository: begun?.units.some(({ folder, repository }) => repository && begun.bases.has(folder)) ?? false,
       base: workspace ? null : begun?.bases.get("") ?? null, startedAt: at,
       settledAt: new Date().toISOString(), engine: await engineName(), ...sessionModel(ctx), ...noEvidence,
-      ...inventory, stopped: reason,
+      ...inventory, codeEvidence: { ...noEvidence.codeEvidence, ...admissionEvidence() }, stopped: reason,
       ...ledgerDetails() };
     progress.publish({ step: "settled", receipt });
     return { entries: [receiptEntry(ctx.mode, receipt)] };
   };
   /** Outside Git nothing tells which files changed: a request that may have changed some settles saying none was verified. */
-  const outsideGit = (ctx: ExtensionContext, run: Pick<Receipt, "base" | "startedAt" | "engine" | "model" | "clarifications" | "children" | "floorRefusals" | "externalEffects">,
+  const outsideGit = (ctx: ExtensionContext, run: Pick<Receipt, "base" | "startedAt" | "engine" | "model" | "requestContext" | "requestReview" | "children" | "floorRefusals" | "externalEffects">,
     reason: string | undefined): SettleResult | undefined => {
     if (!mayHaveChanged) return undefined;
-    const receipt: Receipt = { version: 2, repository: false, ...run, settledAt: new Date().toISOString(), ...noEvidence,
-      ...reason === undefined ? {} : { reason } };
+    const receipt: Receipt = { version: 3, repository: false, ...run, settledAt: new Date().toISOString(), ...noEvidence,
+      codeEvidence: { ...noEvidence.codeEvidence, ...admissionEvidence() }, ...reason === undefined ? {} : { reason } };
     progress.publish({ step: "settled", receipt });
     return { entries: [receiptEntry(ctx.mode, receipt)] };
   };
   /** The cases the request leaves open, for the receipt; nothing when the operator turned the list off. */
-  const listOpen = (ctx: ExtensionContext): Effect.Effect<Pick<Receipt, "openCases">> => {
+  const listOpen = (ctx: ExtensionContext): Effect.Effect<Receipt["requestReview"]["openCases"]> => {
     const lister = listWith(pi, ctx);
-    return lister === undefined ? effect().succeed({})
+    return lister === undefined ? effect().succeed({ status: "disabled" as const, reason: "the operator disabled open cases" })
       : effect().map(step((signal) => progress.operations.run({ method: "open_cases", unit: "", target: lister },
-        () => openCases(ctx, requests, lister, signal, judging()), () => "done")), (listed) => ({ openCases: listed }));
+        () => openCases(ctx, requests, lister, signal, judging()), () => "done")), (listed) => listed);
   };
   const failure = (proof: Evidence): string => `${proof.outcome}\n${proof.output}`;
   const sendBack = (content: string, details: SentBack): SettleResult =>
     ({ entries: [{ type: "custom_message", customType: "tesota-gate", content, display: true, details }], continue: true });
   /** Every changed file with contracts proved, in each repository from its own folder. */
-  const prove = (units: readonly ChangedUnit[]): Effect.Effect<Map<string, Receipt["proofs"][number][]>> => effect().gen(function* () {
-    const proofs = new Map<string, Receipt["proofs"][number][]>(units.map(({ folder }) => [folder, []]));
+  const prove = (units: readonly ChangedUnit[]): Effect.Effect<Map<string, UnitEvidence["proofs"][number][]>> => effect().gen(function* () {
+    const proofs = new Map<string, UnitEvidence["proofs"][number][]>(units.map(({ folder }) => [folder, []]));
     for (const unit of units) {
       const files = yield* step((signal) => contractFiles(unit.root, unit.changed, signal));
       const ops = progress.operations.forUnit(unit.folder);
@@ -671,7 +686,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     return proofs;
   });
   /** The proofs that go back, named from the folder Pi runs in. */
-  const proofsBack = (proofs: ReadonlyMap<string, Receipt["proofs"]>, finalizing: boolean): SettleResult | undefined => {
+  const proofsBack = (proofs: ReadonlyMap<string, UnitEvidence["proofs"]>, finalizing: boolean): SettleResult | undefined => {
     if (finalizing || !keepsWorking([...proofs.values()].flat().map(({ verdict }) => verdict))) return undefined;
     progress.publish({ step: "sent_back", tally: tally([...proofs.values()].flat()) });
     const back = [...proofs].flatMap(([folder, judged]) => judged.filter(({ verdict }) => verdict === "send_back")
@@ -695,7 +710,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     return sendBack(shown.map(failingReport).join("\n\n"), { round: "tests", commands: shown });
   };
   /** The strength of each repository's contracts that proved, and what its proofs covered. */
-  const measure = (ctx: ExtensionContext, units: readonly ChangedUnit[], proofs: ReadonlyMap<string, Receipt["proofs"]>,
+  const measure = (ctx: ExtensionContext, units: readonly ChangedUnit[], proofs: ReadonlyMap<string, UnitEvidence["proofs"]>,
     tallied: Tally): Effect.Effect<Map<string, Measured>> => effect().gen(function* () {
     const measured = new Map<string, Measured>();
     for (const unit of units) {
@@ -704,7 +719,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
       if (sources.length > 0) progress.publish({ step: "measuring", startedAt: performance.now(), tally: tallied });
       const strength = attributionResolved(unit.base, unit.startState, unit.endState, unit.snapshot === undefined)
         ? yield* step((signal) => checks().contractStrength(ctx, requests, sources, signal, restateWith(pi, ctx),
-          progress.operations.forUnit(unit.folder), judging(unit.folder))) : { contracts: [] };
+          progress.operations.forUnit(unit.folder), judging(unit.folder))) : { contracts: [], contractComparison: { scope: "eligible_changed_contracts" as const, status: "not_run" as const, reason: "request attribution is unresolved", contracts: [], runs: [] } };
       measured.set(unit.folder, { sources, strength });
     }
     return measured;
@@ -771,7 +786,8 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
   /** Verification once the run completed: each step is where the operator's stop takes effect. */
   const settle = (ctx: ExtensionContext, question: Pick<Receipt, "unresolvedQuestion">): Effect.Effect<SettleResult | undefined> => effect().gen(function* () {
     const { unresolvedQuestion } = question;
-    const { units, bases, refs, tooLarge, refused } = yield* step(() => start ??= begin(ctx.cwd));
+    const { units, bases, refs, tooLarge, refused, checks: admitted } = yield* step(() => start ??= begin(ctx.cwd));
+    admittedChecks = shareableChecks(admitted);
     startedAt ??= new Date().toISOString();
     const engine = yield* effect().promise(engineName);
     const workspace = units.some(({ folder }) => folder !== "");
@@ -791,7 +807,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
       ...measurable.filter((_, k) => read[k] === undefined)] : [];
     if (changed.length === 0 && plain.length === 0) {
       if (externalEffects.length === 0) { progress.unchanged(); return undefined; }
-      const receipt: Receipt = { version: 2, repository: true, ...run, ...noEvidence, settledAt: new Date().toISOString() };
+      const receipt: Receipt = { version: 3, repository: true, ...run, ...noEvidence, codeEvidence: { ...noEvidence.codeEvidence, ...admissionEvidence() }, settledAt: new Date().toISOString() };
       progress.publish({ step: "settled", receipt });
       return { entries: [receiptEntry(ctx.mode, receipt)] };
     }
@@ -800,12 +816,18 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     const proofsSent = proofsBack(proofs, unresolvedQuestion !== undefined);
     if (proofsSent !== undefined) return proofsSent;
     progress.publish({ step: "testing", startedAt: performance.now(), tally: tally(allProofs) });
-    const rungs = new Map<string, Pick<Receipt, "tests" | "exercises">>();
+    const rungs = new Map<string, Pick<UnitEvidence, "tests" | "exercises">>();
     for (const unit of changed) {
       const attributable = attributionResolved(unit.base, unit.startState, unit.endState, unit.snapshot === undefined);
+      const admitted = (yield* effect().promise(async () => (await start)?.checks?.get(unit.folder))) ?? [];
       rungs.set(unit.folder, yield* step((signal) =>
         testRung(unit.root, unit.base, unit.changed, commandsSentBack.get(unit.folder) ?? new Map(), signal,
-          progress.operations.forUnit(unit.folder), ctx.env, attributable, comparedWith(unit, attributable))));
+          progress.operations.forUnit(unit.folder), ctx.env, attributable, comparedWith(unit, attributable),
+          admitted, () => {
+            const deadline = sourceDeadlines.get(unit.folder) ?? performance.now() + 120_000;
+            sourceDeadlines.set(unit.folder, deadline);
+            return deadline;
+          })));
     }
     const allTests = [...rungs.values()].flatMap(({ tests }) => tests);
     const failing = [...rungs].flatMap(([folder, { tests }]) =>
@@ -825,11 +847,12 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
       { method: "receipt", unit: "", target: "receipt" }, () => Promise.all(changed.map((unit) =>
         unitEvidence(unit, proofs.get(unit.folder) ?? [], rungs.get(unit.folder), measured.get(unit.folder), modelRungs.get(unit.folder), signal))),
       () => "done"));
+    const requestReview: Receipt["requestReview"] = { kind: "model_opinion", openCases: open, context: requestJudgments,
+      contractComparison: checks().combineComparisons([...measured.values()].map(({ strength }) => strength.contractComparison)) };
     const settledAt = new Date().toISOString();
     const only = workspace ? undefined : evidence[0];
-    const receipt: Receipt = only !== undefined ? { version: 2, ...run, ...only, ...open, settledAt, ...judgedContext() }
-      : { version: 2, repository: true, ...run, ...noEvidence, ...open, settledAt,
-        ...judgedContext(), units: [
+    const receipt: Receipt = only !== undefined ? { version: 3, ...run, ...only, settledAt, requestReview, codeEvidence: { ...only.codeEvidence, ...admissionEvidence() } }
+      : { version: 3, repository: true, ...run, ...noEvidence, settledAt, requestReview, codeEvidence: { ...noEvidence.codeEvidence, ...admissionEvidence() }, units: [
         ...evidence.map((unit, k) => ({ ...unit, folder: changed[k]?.folder ?? "" })),
         ...plain.map(({ folder }) => ({ folder, repository: false, base: null, ...noEvidence,
           reason: refused.get(folder) ?? "Git could not read it, so Tesota cannot tell what changed" }))]
@@ -855,6 +878,7 @@ interface Start {
   readonly refs: ReadonlyMap<string, readonly string[]>;
   readonly tooLarge: ReadonlyMap<string, readonly string[]>;
   readonly refused: ReadonlyMap<string, string>;
+  readonly checks?: ReadonlyMap<string, readonly ProjectChecks[]>;
 }
 
 /**
@@ -873,7 +897,7 @@ export interface RecordedRequest {
   readonly refusals?: readonly FloorRefusal[];
   readonly externalEffects?: readonly ExternalEffect[];
   readonly references?: readonly import("./request-references.js").RequestReference[];
-  readonly base: { readonly units: readonly RecordedUnit[] };
+  readonly base: { readonly units: readonly RecordedUnit[]; readonly checks?: readonly UnitCheckPlan[] };
   /** The earlier request this one continues (#651), and what the gate saved as it ended on its question (`savedStart`). */
   readonly continues?: { readonly run: number; readonly start?: unknown };
   /** Earlier requests since the last non-stopped receipt (#627), oldest first, judged with it. */
@@ -949,7 +973,8 @@ function recordedStart(base: RecordedRequest["base"]): Start {
     if (unit.kind === "commit" && unit.refs !== undefined) refs.set(unit.folder, unit.refs);
     if (unit.kind === "snapshot") tooLarge.set(unit.folder, unit.tooLarge);
   }
-  return { units: base.units.map(({ folder, kind }) => ({ folder, repository: kind === "commit" })), bases, refs, tooLarge, refused };
+  return { units: base.units.map(({ folder, kind }) => ({ folder, repository: kind === "commit" })), bases, refs, tooLarge, refused,
+    ...base.checks === undefined ? {} : { checks: new Map(base.checks.map(({ folder, projects }) => [folder, projects])) } };
 }
 
 /** The request's start in `cwd`; in a folder of repositories, its own files are snapshotted without the folders below. */
@@ -972,7 +997,8 @@ async function begin(cwd: string): Promise<Start> {
     if ("refused" in snapshot) refused.set(folder, snapshot.refused);
     else { bases.set(folder, snapshot.base); tooLarge.set(folder, snapshot.tooLarge); }
   }
-  return { units, bases, refs, tooLarge, refused };
+  return { units, bases, refs, tooLarge, refused,
+    checks: new Map(units.map(({ folder }) => [folder, suggestChecks(join(cwd, folder))])) };
 }
 
 /**
@@ -987,7 +1013,7 @@ interface ChangedUnit {
   readonly snapshot?: { readonly tooLarge: readonly string[] };
   readonly changed: readonly string[];
   readonly changes: Awaited<ReturnType<typeof fileChanges>>;
-  readonly weakened: Receipt["weakened"];
+  readonly weakened: UnitEvidence["weakened"];
   readonly unreadable: boolean;
   readonly inherited: Receipt["inherited"];
   readonly unmeasured: Receipt["unmeasured"];
@@ -1114,10 +1140,16 @@ async function changedUnit(cwd: string, folder: string, base: string | null, too
       ...tooLarge === undefined ? {} : { snapshot: { tooLarge } } };
 }
 
+/** A receipt retains declaration identity, never the local absolute authorization root. */
+function shareableChecks(checks: ReadonlyMap<string, readonly ProjectChecks[]> | undefined): readonly ReceiptCheckPlan[] | undefined {
+  return checks === undefined ? undefined : [...checks].map(([folder, projects]) => ({ folder, projects: projects.map(({ approval, ...project }) => ({ ...project,
+    ...approval === undefined ? {} : { declaration: { hash: approval.hash } } })) }));
+}
+
 /** What `measure` found in one repository. */
 interface Measured {
   readonly sources: readonly ProvedSource[];
-  readonly strength: Pick<Receipt, "contracts" | "claimcheck">;
+  readonly strength: Awaited<ReturnType<typeof import("./proof-guarantees.js").contractStrength>>;
 }
 
 /** What the model rung found in one repository: each model it checked or kept, and the changed files with no header. */
@@ -1126,7 +1158,7 @@ interface ModelRung {
   readonly unheaded: readonly string[];
 }
 
-/** Graph manifests link the session and evidence; receipt v2 does not acquire capture fields. */
+/** Graph manifests link the session and evidence; the receipt does not acquire capture fields. */
 function receiptModel(model: ModelResult): ModelResult {
   const { capture: _capture, ...receipt } = model;
   return { ...receipt, faults: model.faults.map(({ capture: _faultCapture, ...fault }) => fault) };
@@ -1139,7 +1171,7 @@ function modelEvidence(rung: ModelRung | undefined): Pick<UnitEvidence, "models"
 }
 
 /** Reconcile a check with the content being published, without retrying commands that may rewrite their own inputs. */
-async function settledCheck<T extends { readonly evidence: Evidence; readonly verdict: Receipt["tests"][number]["verdict"] }>(
+async function settledCheck<T extends { readonly evidence: Evidence; readonly verdict: UnitEvidence["tests"][number]["verdict"] }>(
   root: string, check: T): Promise<T> {
   if (await currentContent(root, check.evidence)) return check;
   return { ...check, verdict: "operator", evidence: { ...check.evidence, outcome: "not_started", invalidated: "content_changed",
@@ -1147,7 +1179,7 @@ async function settledCheck<T extends { readonly evidence: Evidence; readonly ve
 }
 
 /** The files `proofs` checked; a proof's `.dfy.gen` is the base `lsc regen` merges against, regenerated from the source the proof covers. */
-function proofFiles(proofs: Receipt["proofs"]): string[] {
+function proofFiles(proofs: UnitEvidence["proofs"]): string[] {
   return proofs.flatMap(({ evidence }) => evidence.files.flatMap((path) => path.endsWith(".dfy") ? [path, `${path}.gen`] : [path]));
 }
 
@@ -1156,7 +1188,7 @@ function proofFiles(proofs: Receipt["proofs"]): string[] {
  * each proof in place after the inventory was read, the files of `proofs`
  * that differ from the base (#737).
  */
-async function leftIn(unit: ChangedUnit, proofs: Receipt["proofs"]): Promise<string[]> {
+async function leftIn(unit: ChangedUnit, proofs: UnitEvidence["proofs"]): Promise<string[]> {
   const proving = new Set(proofFiles(proofs));
   if (proving.size === 0) return [...unit.changed];
   const regenerated = (await pathsFromBase(unit.root, unit.base))?.all.filter((path) => proving.has(path)) ?? [];
@@ -1164,25 +1196,31 @@ async function leftIn(unit: ChangedUnit, proofs: Receipt["proofs"]): Promise<str
 }
 
 /** One repository's evidence for the receipt, in its own terms. */
-async function unitEvidence(unit: ChangedUnit, proofs: Receipt["proofs"], rung: Pick<Receipt, "tests" | "exercises"> | undefined,
-  measured: Measured | undefined, models: ModelRung | undefined, signal: AbortSignal): Promise<UnitEvidence> {
+async function unitEvidence(unit: ChangedUnit, proofs: UnitEvidence["proofs"], rung: Pick<UnitEvidence, "tests" | "exercises"> | undefined,
+  measured: Measured | undefined, models: ModelRung | undefined, signal: AbortSignal): Promise<Omit<ReceiptUnit, "folder">> {
   const settledProofs = await Promise.all(proofs.map((proof) => settledCheck(unit.root, proof)));
   const tests = await Promise.all((rung?.tests ?? []).map((test) => settledCheck(unit.root, test)));
+  const exercises = await Promise.all((rung?.exercises ?? []).map(async (exercise) => {
+    if (exercise.sourceEvidence === undefined || await currentContent(unit.root, exercise.sourceEvidence)) return exercise;
+    return { ...exercise, sources: [], sourceEvidence: { ...exercise.sourceEvidence, outcome: "not_started" as const,
+      invalidated: "content_changed" as const } };
+  }));
   const settledModels = models === undefined ? undefined : { ...models,
     models: await Promise.all(models.models.map((model) => settledCheck(unit.root, model))) };
   const sources = (measured?.sources ?? []).filter(({ path }) => settledProofs.some((proof) => proof.path === path && proof.verdict === "proved"));
   const covered = new Set([...proofFiles(settledProofs.filter(({ verdict }) => verdict === "proved")),
     ...(settledModels?.models ?? []).flatMap(({ path, header }) => modelOwnFiles(path, header))]);
   const left = unit.unreadable ? [] : await leftIn(unit, settledProofs);
-  return { repository: unit.snapshot === undefined, ...modelEvidence(settledModels),
+  const unproved = unprovedFiles(unit.changes, unit.changed, covered);
+  return { repository: unit.snapshot === undefined,
     ...unit.snapshot === undefined ? {} : { snapshot: true, ...unit.snapshot.tooLarge.length === 0 ? {} : { tooLarge: unit.snapshot.tooLarge } },
-    base: unit.base, proofs: settledProofs, ...measured?.strength,
-    contracts: (measured?.strength.contracts ?? []).filter(({ path }) => sources.some((source) => source.path === path)),
+    base: unit.base,
+    specificationEvidence: { weakened: unit.weakened, contracts: (measured?.strength.contracts ?? []).filter(({ path }) => sources.some((source) => source.path === path)) },
     inherited: unit.inherited, unmeasured: unit.unmeasured,
     ...unit.startState === undefined ? {} : { startState: unit.startState },
     ...unit.endState === undefined ? {} : { endState: unit.endState },
-    tests, exercises: rung?.exercises ?? [], weakened: unit.weakened,
-    ...unprovedFiles(unit.changes, unit.changed, covered), uncovered: await uncovered(sources, unit.changes, unit.weakened, signal),
+    ...unproved.commentsOnly === undefined ? {} : { commentsOnly: unproved.commentsOnly },
+    codeEvidence: { proofs: settledProofs, tests, exercises, ...modelEvidence(settledModels), unverified: unproved.unverified, uncovered: await uncovered(sources, unit.changes, unit.weakened, signal) },
     changed: unit.unreadable ? "unreadable" : await recordedChanges(unit.root, left),
     lines: unit.unreadable ? "unreadable" : await checks().changeLines(unit.root, unit.base, left) };
 }

@@ -28,7 +28,7 @@ export interface OpenCase {
 /** The open cases a model listed, with the model as `provider/id`, or why none were listed. */
 export type OpenCases =
   | { readonly status: "listed"; readonly model: string; readonly cases: readonly OpenCase[] }
-  | { readonly status: "not_listed"; readonly reason: string };
+  | { readonly status: "not_run" | "disabled"; readonly reason: string; readonly model?: string };
 
 type ListAnswer =
   | { readonly status: "listed"; readonly cases: readonly OpenCase[] }
@@ -62,14 +62,14 @@ export function openCasesPrompt(requests: readonly string[]): string {
 
 /** The open cases of `requests`, listed by `model`, a `provider/id` Tesota knows, within `OPEN_CASES_TIME_LIMIT_MS`. */
 export async function openCases(ctx: ModelAccess, requests: readonly string[], model: string, signal: AbortSignal, judging?: JudgmentContext): Promise<OpenCases> {
-  if (model === "") return { status: "not_listed", reason: "no model is selected" };
+  if (model === "") return { status: "not_run", reason: "no model is selected" };
   const lister = registered(ctx, model);
-  if (lister === undefined) return { status: "not_listed", reason: `${model} isn't a model Tesota knows (provider/id)` };
+  if (lister === undefined) return { status: "not_run", model, reason: `${model} isn't a model Tesota knows (provider/id)` };
   const prompt = judgmentPrompt(lister, openCasesSystemPrompt, "record_open_cases", listSchema, requests, openCasesPrompt, "open_cases", judging);
-  if (prompt === undefined) return { status: "not_listed", reason: `${model}: no whole request fits the complete prompt within model context capacity` };
+  if (prompt === undefined) return { status: "not_run", model, reason: `${model}: no whole request fits the complete prompt within model context capacity` };
   const listed = await recorded<ListAnswer>(ctx, lister, openCasesSystemPrompt, "record_open_cases", listSchema,
     prompt, AbortSignal.any([signal, AbortSignal.timeout(OPEN_CASES_TIME_LIMIT_MS)]));
-  if (typeof listed === "string") return { status: "not_listed", reason: `${named(lister)} ${listed}` };
-  return listed.status === "not_listed" ? { status: "not_listed", reason: `${named(lister)} ${listed.reason}` }
+  if (typeof listed === "string") return { status: "not_run", model: named(lister), reason: `${named(lister)} ${listed}` };
+  return listed.status === "not_listed" ? { status: "not_run", model: named(lister), reason: `${named(lister)} ${listed.reason}` }
     : { status: "listed", model: named(lister), cases: listed.cases };
 }

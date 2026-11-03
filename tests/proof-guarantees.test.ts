@@ -142,28 +142,30 @@ it("takes only the contracts the request added or changed, whatever their indent
 it("mutates and has a model judge only the changed contracts, and labels the verdict a model's judgment", async () => {
   const complete = vi.fn((_model: unknown, context: { tools: { name: string }[] }) => Promise.resolve({ stopReason: "toolUse",
     content: [{ type: "toolCall", id: "1", name: context.tools[0]?.name, arguments: context.tools[0]?.name === "record_comparisons"
-      ? { comparisons: [{ function: 1, verdict: "partially_justified", explanation: "It excludes negative amounts." }] }
+      ? { comparisons: [{ function: 1, verdict: "partial_match", explanation: "It excludes negative amounts." }] }
       : { informalizations: [{ function: 1, preconditions: "amount >= 0", postcondition: "returns amount", strength: "moderate" }] } }] }));
   const ctx = { model: { provider: "provider", id: "model", contextWindow: 128_000, maxTokens: 4096 } as never, modelRegistry: { complete } as never };
   const strength = await contractStrength(ctx, ["total keeps negative amounts"], [{ path: "src/rules.ts", source: changed, baseSource: base }],
     new AbortController().signal);
-  expect(strength).toEqual({ claimcheck: { status: "judged", restatedBy: "provider/model", comparedBy: "provider/model" }, contracts: [{ path: "src/rules.ts", name: "total",
-    lines: ["//@ requires amount >= 0", "//@ ensures \\result === amount"], mutation: { rejected: 3, survived: [], inconclusive: 0, equivalent: 0 },
-    judgment: { verdict: "partially_justified", explanation: "It excludes negative amounts." },
-    restatement: { preconditions: "amount >= 0", postcondition: "returns amount" } }] });
-  expect(renderReceipt({ ...emptyReceipt, ...strength }))
-    .toContain("  model judged  by ClaimCheck on provider/model, one model for both requests, a model's judgment against the request, not a proof:\n" +
-      "                total in src/rules.ts covers only part of what was asked: It excludes negative amounts.\n" +
-      "                  restated without the request: assumes amount >= 0; guarantees returns amount");
+  expect(strength.contracts).toEqual([{ path: "src/rules.ts", name: "total",
+    lines: ["//@ requires amount >= 0", "//@ ensures \\result === amount"], mutation: { rejected: 3, survived: [], inconclusive: 0, equivalent: 0 } }]);
+  expect(strength.contractComparison).toMatchObject({ status: "completed", runs: [{ status: "completed", restatedBy: "provider/model", comparedBy: "provider/model" }],
+    contracts: [{ folder: "", path: "src/rules.ts", name: "total", text: expect.stringContaining("//@ requires amount >= 0"),
+      assessment: { verdict: "partial_match", explanation: "It excludes negative amounts." },
+      restatement: { preconditions: "amount >= 0", postcondition: "returns amount" } }] });
+  const receipt = { ...emptyReceipt, specificationEvidence: { ...emptyReceipt.specificationEvidence, contracts: strength.contracts },
+    requestReview: { ...emptyReceipt.requestReview, contractComparison: strength.contractComparison } };
+  expect(renderReceipt(receipt)).toContain("total in src/rules.ts: the model identified a partial match: It excludes negative amounts.");
+  expect(renderReceipt(receipt)).toContain("restated without the request: assumes amount >= 0; guarantees returns amount");
   expect(await contractStrength(ctx, [], [{ path: "src/rules.ts", source: base, baseSource: base }], new AbortController().signal))
-    .toEqual({ contracts: [] });
+    .toEqual({ contracts: [], contractComparison: { scope: "eligible_changed_contracts", status: "not_run", reason: "no eligible changed contract", contracts: [], runs: [] } });
   expect(complete).toHaveBeenCalledTimes(2);
 });
 
 it("publishes each contract's mutation and ClaimCheck as operations that ran at once (#590)", async () => {
   const complete = vi.fn((_model: unknown, context: { tools: { name: string }[] }) => Promise.resolve({ stopReason: "toolUse",
     content: [{ type: "toolCall", id: "1", name: context.tools[0]?.name, arguments: context.tools[0]?.name === "record_comparisons"
-      ? { comparisons: [{ function: 1, verdict: "justified", explanation: "Yes." }] }
+      ? { comparisons: [{ function: 1, verdict: "no_mismatch_identified", explanation: "Yes." }] }
       : { informalizations: [{ function: 1, preconditions: "amount >= 0", postcondition: "returns amount", strength: "moderate" }] } }] }));
   const ctx = { model: { provider: "provider", id: "model", contextWindow: 128_000, maxTokens: 4096 } as never, modelRegistry: { complete } as never };
   const ops = new GateOperations();
@@ -179,12 +181,12 @@ it("publishes each contract's mutation and ClaimCheck as operations that ran at 
 it("says when ClaimCheck judged nothing", async () => {
   const strength = await contractStrength({ model: undefined, modelRegistry: {} as never }, [],
     [{ path: "src/rules.ts", source: changed, baseSource: base }], new AbortController().signal);
-  expect(renderReceipt({ ...emptyReceipt, ...strength }))
-    .toContain("  not judged    whether the contracts express the request: ClaimCheck no model is selected");
+  expect(renderReceipt({ ...emptyReceipt, requestReview: { ...emptyReceipt.requestReview, contractComparison: strength.contractComparison } }))
+    .toContain("  model opinion Contract comparison not_run: no model is selected");
 });
 
 it("names each model when a second one restated", () => {
-  expect(renderReceipt({ ...emptyReceipt, contracts: [],
-    claimcheck: { status: "judged", restatedBy: "other/restater", comparedBy: "provider/model" } }))
-    .toContain("  model judged  by ClaimCheck on other/restater restating and provider/model comparing, a model's judgment");
+  expect(renderReceipt({ ...emptyReceipt, requestReview: { ...emptyReceipt.requestReview, contractComparison: { scope: "eligible_changed_contracts",
+    status: "completed", contracts: [], runs: [{ status: "completed", restatedBy: "other/restater", comparedBy: "provider/model" }] } } }))
+    .toContain("restatement model: other/restater; comparison model: provider/model");
 });

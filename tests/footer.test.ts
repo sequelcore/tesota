@@ -69,26 +69,35 @@ it("names the gate's step and what its round found so far", () => {
 });
 
 it("sums up the receipt, leading with whether anything in it needs the operator", () => {
-  const clean: Receipt = { ...emptyReceipt, proofs: [proved], tests: [passing], contracts: [strong],
-    uncovered: [{ path: "src/parse.ts", lines: [[12, 14]] }] };
+  const clean: Receipt = { ...emptyReceipt,
+      codeEvidence: { ...emptyReceipt.codeEvidence, proofs: [proved], tests: [passing], uncovered: [{ path: "src/parse.ts", lines: [[12, 14]] }] },
+      specificationEvidence: { ...emptyReceipt.specificationEvidence, contracts: [strong] }
+};
   expect(words({ step: "settled", receipt: clean })).toBe("○ receipt · 1 proved · tests pass · contracts strong · 3 lines not proved");
   expect(words({ step: "settled", receipt: clean }, "short")).toBe("○ receipt · 1 proved · tests ✓ · 3 lines unproved");
-  const weak: Receipt = { ...clean, contracts: [{ ...strong,
-    mutation: { ...strong.mutation, survived: [{ line: 4, operator: "comparison", before: ">", after: ">=" }] } }],
-    weakened: [{ kind: "edited_test", path: "tests/clamp.test.ts" }], unverified: ["notes.md"], tests: [] };
+  const weak: Receipt = { ...clean,
+      codeEvidence: { ...clean.codeEvidence, unverified: ["notes.md"], tests: [] },
+      specificationEvidence: { ...clean.specificationEvidence, contracts: [{ ...strong,
+              mutation: { ...strong.mutation, survived: [{ line: 4, operator: "comparison", before: ">", after: ">=" }] } }], weakened: [{ kind: "edited_test", path: "tests/clamp.test.ts" }] }
+};
   expect(words({ step: "settled", receipt: weak }))
     .toBe("! receipt · 1 proved · 1 weak contract · 3 lines not verified · 1 file not verified · 1 may weaken the evidence");
   expect(words({ step: "settled", receipt: weak }, "short"))
     .toBe("! receipt · 1 proved · 1 weak · 3 lines unproved · 1 file unproved · 1 may weaken");
   expect(words({ step: "settled", receipt: { ...emptyReceipt, repository: false } })).toBe("! receipt · not verified, no Git repository");
-  expect(words({ step: "settled", receipt: { ...clean, weakened: "too_large", uncovered: [] } }))
+  expect(words({ step: "settled", receipt: { ...clean,
+      codeEvidence: { ...clean.codeEvidence, uncovered: [] },
+      specificationEvidence: { ...clean.specificationEvidence, weakened: "too_large" }
+} }))
     .toBe("! receipt · 1 proved · tests pass · contracts strong · weakening not checked");
 });
 
 it("counts a proof that doesn't hold apart from one that checked nothing or couldn't run", () => {
   const failing = { ...proved, verdict: "send_back", evidence: evidence("failed") } as const;
-  const settledWith = (proof: Receipt["proofs"][number], level: "full" | "glyphs" = "full"): string =>
-    words({ step: "settled", receipt: { ...emptyReceipt, proofs: [proof] } }, level);
+  const settledWith = (proof: Receipt["codeEvidence"]["proofs"][number], level: "full" | "glyphs" = "full"): string =>
+    words({ step: "settled", receipt: { ...emptyReceipt,
+        codeEvidence: { ...emptyReceipt.codeEvidence, proofs: [proof] }
+    } }, level);
   expect(settledWith(failing)).toContain("1 not proved");
   expect(settledWith(failing, "glyphs")).toContain("✗1");
   // Dafny verified nothing, the proof didn't start, or its content changed: a gap, never red.
@@ -101,8 +110,10 @@ it("counts a proof that doesn't hold apart from one that checked nothing or coul
   }
 });
 it("says tests fail only for a command that ran and failed, and counts one that didn't run or is stale as not checked", () => {
-  const settledWith = (command: Receipt["tests"][number], level: "full" | "glyphs" = "full"): string =>
-    words({ step: "settled", receipt: { ...emptyReceipt, tests: [command] } }, level);
+  const settledWith = (command: Receipt["codeEvidence"]["tests"][number], level: "full" | "glyphs" = "full"): string =>
+    words({ step: "settled", receipt: { ...emptyReceipt,
+        codeEvidence: { ...emptyReceipt.codeEvidence, tests: [command] }
+    } }, level);
   const failing = { ...passing, verdict: "send_back", evidence: evidence("failed") } as const;
   expect(settledWith(failing)).toContain("tests fail");
   expect(settledWith(failing, "glyphs")).toContain("tests ✗");
@@ -113,31 +124,42 @@ it("says tests fail only for a command that ran and failed, and counts one that 
     expect(settledWith(gap), gap.evidence.outcome).toContain("1 not checked");
   }
   // A failure beside a gap still reads as failing.
-  expect(words({ step: "settled", receipt: { ...emptyReceipt, tests: [failing, { ...passing, verdict: "operator", evidence: evidence("not_started") }] } }))
+  expect(words({ step: "settled", receipt: { ...emptyReceipt,
+      codeEvidence: { ...emptyReceipt.codeEvidence, tests: [failing, { ...passing, verdict: "operator", evidence: evidence("not_started") }] }
+} }))
     .toContain("tests fail");
 });
 it("names the model being checked, then sums up the models: checked, still failing, and possibly stale", () => {
   expect(words({ step: "checking", path: "models/Stock.tla", startedAt: 0, tally: { proved: 0, notProved: 0, tests: "pass" } }))
     .toBe("◐ checking models… · 0s · tests pass");
-  const model: NonNullable<Receipt["models"]>[number] = { path: "models/Stock.tla", language: "tla", problems: [], run: "passed", states: 13,
+  const model: NonNullable<Receipt["codeEvidence"]["models"]>[number] = { path: "models/Stock.tla", language: "tla", problems: [], run: "passed", states: 13,
     header: { covers: [{ path: "src/stock.mjs", names: [] }], invariants: ["NeverOversold"], atomic: ["each await"], omits: ["failures"], faults: [] },
     evidence: { ...evidence("passed"), verifier: "tlc" }, faults: [], staleness: "possibly_stale", stale: ["src/stock.mjs"],
     writtenWithCode: false, link: "no_replay", verdict: "proved" };
   // Still failing: TLC ran and found a counterexample, as a model whose check went back records it.
   const violated: typeof model = { ...model, run: "violated", evidence: { ...evidence("failed"), verifier: "tlc" }, staleness: "current" };
-  expect(words({ step: "settled", receipt: { ...emptyReceipt, models: [model] } })).toBe("○ receipt · 1 model checked · 1 model possibly stale");
-  expect(words({ step: "settled", receipt: { ...emptyReceipt, models: [{ ...violated, verdict: "no_progress" }] } }))
+  expect(words({ step: "settled", receipt: { ...emptyReceipt,
+      codeEvidence: { ...emptyReceipt.codeEvidence, models: [model] }
+} })).toBe("○ receipt · 1 model checked · 1 model possibly stale");
+  expect(words({ step: "settled", receipt: { ...emptyReceipt,
+      codeEvidence: { ...emptyReceipt.codeEvidence, models: [{ ...violated, verdict: "no_progress" }] }
+} }))
     .toBe("! receipt · 1 model fails");
   expect(words({ step: "settled", receipt: { ...emptyReceipt, unresolvedQuestion: "Which option?",
-    models: [{ ...violated, verdict: "send_back" }] } })).toContain("1 model fails");
+      codeEvidence: { ...emptyReceipt.codeEvidence, models: [{ ...violated, verdict: "send_back" }] }
+} })).toContain("1 model fails");
   // A model TLC could not read went back to the agent, but nothing ran: a gap, never a failure.
   const malformed: typeof model = { ...model, run: "malformed", states: 0, evidence: { ...evidence("failed"), verifier: "tlc" }, staleness: "current" };
   for (const verdict of ["send_back", "no_progress"] as const) {
-    const shown = words({ step: "settled", receipt: { ...emptyReceipt, models: [{ ...malformed, verdict }] } });
+    const shown = words({ step: "settled", receipt: { ...emptyReceipt,
+        codeEvidence: { ...emptyReceipt.codeEvidence, models: [{ ...malformed, verdict }] }
+    } });
     expect(shown).not.toContain("model fails");
     expect(shown).toContain("1 not checked");
   }
-  expect(words({ step: "settled", receipt: { ...emptyReceipt, models: [{ ...model, verdict: "operator", staleness: "current" }] } }))
+  expect(words({ step: "settled", receipt: { ...emptyReceipt,
+      codeEvidence: { ...emptyReceipt.codeEvidence, models: [{ ...model, verdict: "operator", staleness: "current" }] }
+} }))
     .toBe("○ receipt · 1 not checked");
 });
 
@@ -152,10 +174,12 @@ it("never counts a stopped run as verified, even in a repository", () => {
 it("tells a proof that holds only given what the change trusts without proof from one proved outright (#399)", () => {
   const checked = { ...proved, evidence: { ...proved.evidence, files: ["src/clamp.ts", "src/clamp.dfy"] } };
   const extern = (name: string) => ({ path: "src/clamp.ts", kind: "added_assume", annotation: "//@ extern", function: name }) as const;
-  const assumed: Receipt = { ...emptyReceipt, proofs: [checked, { ...checked, path: "src/parse.ts", evidence: { ...checked.evidence,
-    files: ["src/parse.ts", "src/parse.dfy"] } }], tests: [passing],
+  const assumed: Receipt = { ...emptyReceipt,
     // An assumption in the .dfy LemmaScript keeps elsewhere counts for its proof as well.
-    weakened: [extern("lower"), extern("upper"), { path: "src/clamp.dfy", kind: "added_assume", annotation: "assume false;" }] };
+      codeEvidence: { ...emptyReceipt.codeEvidence, proofs: [checked, { ...checked, path: "src/parse.ts", evidence: { ...checked.evidence,
+              files: ["src/parse.ts", "src/parse.dfy"] } }], tests: [passing] },
+      specificationEvidence: { ...emptyReceipt.specificationEvidence, weakened: [extern("lower"), extern("upper"), { path: "src/clamp.dfy", kind: "added_assume", annotation: "assume false;" }] }
+};
   expect(words({ step: "settled", receipt: assumed }))
     .toBe("! receipt · 1 proved · 1 proved on trust · tests pass · 3 may weaken the evidence");
   expect(words({ step: "settled", receipt: assumed }, "short")).toBe("! receipt · 1 proved · 1 on trust · tests ✓ · 3 may weaken");
@@ -163,17 +187,23 @@ it("tells a proof that holds only given what the change trusts without proof fro
 });
 
 it("counts what the checks established and never a model's opinion, as the receipt in the conversation does", () => {
-  const judged: Receipt = { ...emptyReceipt, proofs: [proved], tests: [passing],
-    contracts: [{ ...strong, judgment: { verdict: "not_justified", explanation: "It allows a negative result." } }],
-    claimcheck: { status: "judged", restatedBy: "openai/gpt-5.5", comparedBy: "openai/gpt-5.5" } };
+  const judged: Receipt = { ...emptyReceipt,
+      codeEvidence: { ...emptyReceipt.codeEvidence, proofs: [proved], tests: [passing] },
+      specificationEvidence: { ...emptyReceipt.specificationEvidence, contracts: [{ ...strong }] },
+      requestReview: { ...emptyReceipt.requestReview, contractComparison: { scope: "eligible_changed_contracts", status:"completed",runs:[{status:"completed",restatedBy:"openai/gpt-5.5",comparedBy:"openai/gpt-5.5"}],contracts:[{folder:"",path:strong.path,name:strong.name,text:strong.lines.join("\n"),assessment:{ verdict: "mismatch", explanation: "It allows a negative result." }}] } }
+};
   expect(words({ step: "settled", receipt: judged })).toBe("✓ receipt · 1 proved · tests pass · contracts strong");
-  const misses: Receipt = { ...judged, exercises: [{ path: "tests/clamp.test.ts", provenance: "added", sensitivity: "passes_on_base",
-    reason: "it passes without the change too" }] };
+  const misses: Receipt = { ...judged,
+      codeEvidence: { ...judged.codeEvidence, exercises: [{ path: "tests/clamp.test.ts", provenance: "added", sensitivity: "passes_on_base",
+              reason: "it passes without the change too" }] }
+};
   expect(words({ step: "settled", receipt: misses })).toBe("! receipt · 1 proved · tests pass · contracts strong · 1 test passes without the change");
   expect(words({ step: "settled", receipt: misses }, "short")).toBe("! receipt · 1 proved · tests ✓ · 1 test passes on base");
   expect(words({ step: "settled", receipt: misses }, "glyphs")).toBe("! · ✓1 · tests ✓ · base 1");
   // Strength needs a change the proof caught: two changes that behave the same as the code show nothing.
-  const unmeasured: Receipt = { ...judged, contracts: [{ ...strong, mutation: { ...strong.mutation, rejected: 0, equivalent: 2 } }] };
+  const unmeasured: Receipt = { ...judged,
+      specificationEvidence: { ...judged.specificationEvidence, contracts: [{ ...strong, mutation: { ...strong.mutation, rejected: 0, equivalent: 2 } }] }
+};
   expect(words({ step: "settled", receipt: unmeasured })).toBe("○ receipt · 1 proved · tests pass · 1 not checked");
 });
 
@@ -183,7 +213,9 @@ it("says there was nothing to verify when the change was comments alone, and onl
   expect(words({ step: "settled", receipt: comments })).toBe("○ receipt · nothing to verify, comments only");
   expect(words({ step: "settled", receipt: comments }, "short")).toBe("○ receipt · nothing to verify");
   expect(words({ step: "settled", receipt: comments }, "glyphs")).toBe("○ · no code");
-  expect(words({ step: "settled", receipt: { ...comments, proofs: [proved] } })).toBe("✓ receipt · 1 proved");
+  expect(words({ step: "settled", receipt: { ...comments,
+      codeEvidence: { ...comments.codeEvidence, proofs: [proved] }
+} })).toBe("✓ receipt · 1 proved");
   expect(words({ step: "settled", receipt: emptyReceipt })).toBe("○ receipt · nothing to verify, nothing changed");
 });
 
@@ -337,8 +369,10 @@ it("follows the gate as it publishes, and stops when disposed", () => {
 
 it("narrows at 80 and 30 columns in the order the rule sets", () => {
   const progress = new GateProgress();
-  progress.publish({ step: "settled", receipt: { ...emptyReceipt, proofs: [proved], tests: [passing], contracts: [strong],
-    uncovered: [{ path: "src/parse.ts", lines: [[12, 14]] }] } });
+  progress.publish({ step: "settled", receipt: { ...emptyReceipt,
+      codeEvidence: { ...emptyReceipt.codeEvidence, proofs: [proved], tests: [passing], uncovered: [{ path: "src/parse.ts", lines: [[12, 14]] }] },
+      specificationEvidence: { ...emptyReceipt.specificationEvidence, contracts: [strong] }
+} });
   const { rows } = footer(progress);
   expect(rows(80)[1]).toMatch(/^ ○ receipt · 1 proved · tests ✓ · 3 lines unproved +ctx 5%$/u);
   expect(rows(80)[1]).not.toContain("gpt-5.5");
@@ -361,13 +395,17 @@ it("ends the row with the other extensions' statuses at every width, and colors 
 });
 
 it("sums up a folder of repositories as one receipt, with the folders in none", () => {
-  const units: Receipt = { ...emptyReceipt, units: [{ ...emptyReceipt, folder: "api", proofs: [proved], tests: [passing] },
+  const units: Receipt = { ...emptyReceipt, units: [{ ...emptyReceipt, folder: "api",
+      codeEvidence: { ...emptyReceipt.codeEvidence, proofs: [proved], tests: [passing] }
+},
     { ...emptyReceipt, folder: "notes", repository: false }] };
   expect(words({ step: "settled", receipt: units })).toBe("! receipt · 1 proved · tests pass · 1 folder not verified, no Git");
 });
 
 it("sums up a folder Tesota snapshotted as a receipt like a repository's, and one it could not as not verified", () => {
-  const snapshotted: Receipt = { ...emptyReceipt, repository: false, snapshot: true, proofs: [proved], tests: [passing] };
+  const snapshotted: Receipt = { ...emptyReceipt, repository: false, snapshot: true,
+      codeEvidence: { ...emptyReceipt.codeEvidence, proofs: [proved], tests: [passing] }
+};
   expect(words({ step: "settled", receipt: snapshotted })).toBe("✓ receipt · 1 proved · tests pass");
   expect(words({ step: "settled", receipt: { ...emptyReceipt, repository: false, reason: "it holds too much" } }))
     .toBe("! receipt · not verified, no Git repository");

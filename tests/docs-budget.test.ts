@@ -22,7 +22,7 @@ const BUDGETS: readonly (readonly [RegExp, number])[] = [
   [/^docs\/development\.md$/u, 1500],
 ];
 /** The receipt's format is a specification, read field by field rather than through. */
-const EXEMPT = new Set(["docs/receipt-v2.md"]);
+const EXEMPT = new Set(["docs/receipt-v2.md", "docs/receipt-v3.md"]);
 
 /** The words a reader reads in a Markdown page: no code, fenced or inline, HTML, link targets or table rules. */
 export function proseWords(markdown: string): number {

@@ -11,6 +11,25 @@ import type { ProofOutcome } from "./proof-outcome-rule.js";
  */
 export type Standing = "decide" | "gap" | "holds" | "opinion";
 
+/** A path receives exercise credit only from its own observed assertion sensitivity on current passing evidence. */
+//@ ensures \result <==> (noticed && passed && current)
+export function sourceCredit(noticed: boolean, passed: boolean, current: boolean): boolean {
+  return noticed && passed && current;
+}
+
+/** Review completeness describes model observations only; it never participates in mechanical standing. */
+//@ requires total >= 0 && completed >= 0 && partial >= 0 && disabled >= 0 && completed + partial + disabled <= total
+//@ ensures \result === "completed" <==> (total > 0 && completed === total)
+//@ ensures \result === "disabled" <==> (total > 0 && disabled === total)
+//@ ensures \result === "partial" <==> (partial > 0 || (completed > 0 && completed < total))
+//@ ensures \result === "not_run" <==> (completed === 0 && partial === 0 && (total === 0 || disabled < total))
+export function reviewStatus(total: number, completed: number, partial: number, disabled: number): "completed" | "partial" | "not_run" | "disabled" {
+  if (total > 0 && completed === total) return "completed";
+  if (total > 0 && disabled === total) return "disabled";
+  if (partial > 0 || completed > 0) return "partial";
+  return "not_run";
+}
+
 /** Unverified external effects prevent an overall verified or unchanged claim, preserving a known failure (#751). */
 //@ ensures effects > 0 && standing !== "failed" ==> \result === "incomplete"
 //@ ensures effects <= 0 || standing === "failed" ==> \result === standing
@@ -178,10 +197,9 @@ export function pathCovered(proved: boolean, tested: boolean, exercised: boolean
  * One entry per changed path: `proved[k]` when the receipt does not list it
  * as unproved (it proved, or is a test or comments-only file, which its
  * `unverified` leaves out); `tested[k]` when its unit ran at least one
- * command and every one passed; `exercised[k]` read from its unit's
- * exercises: its unit lists exactly that one path as unproved, records at
- * least one exercise, and every exercise is `fails_then_passes`, so a test
- * noticed the change, and nothing else unproved could be what it noticed.
+ * command and every one passed; `exercised[k]` from a path-specific source
+ * measurement: a reported assertion noticed that path's reversion and the
+ * final candidate control passed on content that remains current (`sourceCredit`).
  * A path is covered (`pathCovered`) when it proved, or was tested and exercised. `gaps`
  * counts the receipt's other gaps, besides those unproved paths.
  */

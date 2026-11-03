@@ -434,7 +434,8 @@ it.skipIf(!withTlc)("leaves a deadlock retry that errors as not checked, not cau
 }, 120_000);
 
 it.skipIf(!withTlc)("leaves a stopped deadlock retry as not checked (#762)", async () => {
-  const { root } = repository(base => deadlockingFault(base));
+  // Keep every reachable state safe so a competing invariant violation cannot bypass the retry.
+  const { root } = repository(base => deadlockingFault(base, "x <= 4"));
   const controller = new AbortController();
   const ops = new GateOperations();
   ops.subscribe(() => {

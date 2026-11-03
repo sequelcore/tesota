@@ -82,7 +82,7 @@ it.runIf(dafny).each([
   expect(text).not.toContain("Proved: every //@ contract");
   if (result.details === undefined) throw new Error("No proof details");
   const receipt = { ...emptyReceipt, changed: [{ path: "dropped.ts", blob: "checked" }],
-    proofs: [{ path: "dropped.ts", verdict: "proved" as const, evidence: result.details.evidence }] };
+    codeEvidence: { ...emptyReceipt.codeEvidence, proofs: [{ path: "dropped.ts", verdict: "proved" as const, evidence: result.details.evidence }] } };
   expect(receiptStanding(receipt)).toBe("incomplete");
   expect(renderReceipt(receipt)).toContain("Specification not attached");
 }, 120_000);

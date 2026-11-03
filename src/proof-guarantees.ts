@@ -4,6 +4,7 @@ import { noOperations, type OperationSink } from "./operations.js";
 import { type ClaimCheck, type Comparison, claimCheck, type JudgmentContext, type Restatement } from "./pi-claimcheck.js";
 import { type MutationResult, mutateContract } from "./proof-mutation.js";
 import { typescript } from "./typescript-source.js";
+import { reviewStatus } from "./verification/verdict-rule.js";
 import { type ProofInfo, sourceInfo } from "./verification/lemmascript-verifier.js";
 
 /**
@@ -131,15 +132,38 @@ export interface ContractStrength {
   /** The contract's `//@` lines as written. */
   readonly lines: readonly string[];
   readonly mutation: MutationResult;
-  /** ClaimCheck's verdict on it, when ClaimCheck judged the contracts: a model's judgment, never a proof. */
-  readonly judgment?: Pick<Comparison, "verdict" | "explanation">;
-  /** ClaimCheck's plain-words reading of it, made without the request, kept even when no verdict followed: an opinion (#730). */
+ }
+
+/** A model's reading of one checked contract, separate from mechanical strength. */
+export interface ContractReview {
+  readonly folder: string;
+  readonly path: string;
+  readonly name: string;
+  readonly text: string;
   readonly restatement?: Restatement;
+  readonly assessment?: Pick<Comparison, "verdict" | "explanation">;
 }
 
-/** Which models ClaimCheck asked, or why it judged nothing. */
-export type ClaimCheckRun = Omit<Extract<ClaimCheck, { status: "judged" }>, "judgments" | "restatements">
-  | Omit<Extract<ClaimCheck, { status: "not_judged" }>, "restatements">;
+export type ClaimCheckRun = Omit<ClaimCheck, "judgments" | "restatements">;
+
+export interface ContractComparison {
+  readonly scope: "eligible_changed_contracts";
+  readonly status: "completed" | "partial" | "not_run" | "disabled";
+  readonly reason?: string;
+  readonly contracts: readonly ContractReview[];
+  readonly runs: readonly ClaimCheckRun[];
+}
+
+/** Omit units with no eligible contracts; preserve every attempted unit and its explicit failure reason. */
+export function combineComparisons(comparisons: readonly ContractComparison[]): ContractComparison {
+  const eligible = comparisons.filter((comparison) => comparison.reason !== "no eligible changed contract");
+  const reasons = eligible.flatMap(({ reason }) => reason === undefined ? [] : [reason]);
+  return { scope: "eligible_changed_contracts", status: reviewStatus(eligible.length,
+    eligible.filter(({ status }) => status === "completed").length, eligible.filter(({ status }) => status === "partial").length,
+    eligible.filter(({ status }) => status === "disabled").length),
+  ...eligible.length === 0 ? { reason: "no eligible changed contract" } : reasons.length === 0 ? {} : { reason: reasons.join("; ") },
+  contracts: eligible.flatMap(({ contracts }) => contracts), runs: eligible.flatMap(({ runs }) => runs) };
+}
 
 /**
  * Mutation and ClaimCheck for each contract a proved file's content added or
@@ -149,10 +173,10 @@ export type ClaimCheckRun = Omit<Extract<ClaimCheck, { status: "judged" }>, "jud
  */
 export async function contractStrength(ctx: Pick<ExtensionContext, "model" | "modelRegistry">, requests: readonly string[],
   files: readonly { readonly path: string; readonly source: string; readonly baseSource: string | undefined; readonly proofInfo?: ProofInfo }[],
-  signal: AbortSignal, restateWith?: string, ops: OperationSink = noOperations, judging?: JudgmentContext): Promise<{ readonly contracts: readonly ContractStrength[]; readonly claimcheck?: ClaimCheckRun }> {
+  signal: AbortSignal, restateWith?: string, ops: OperationSink = noOperations, judging?: JudgmentContext): Promise<{ readonly contracts: readonly ContractStrength[]; readonly contractComparison: ContractComparison }> {
   const items = (await Promise.all(files.map(async ({ path, source, baseSource, proofInfo }) =>
     (await changedContracts(path, source, baseSource, proofInfo, signal)).map((contract) => ({ contract, source }))))).flat();
-  if (items.length === 0) return { contracts: [] };
+  if (items.length === 0) return { contracts: [], contractComparison: { scope: "eligible_changed_contracts", status: "not_run", reason: "no eligible changed contract", contracts: [], runs: [] } };
   const mutate = async (): Promise<MutationResult[]> => {
     const results: MutationResult[] = [];
     for (const { contract, source } of items) {
@@ -165,15 +189,13 @@ export async function contractStrength(ctx: Pick<ExtensionContext, "model" | "mo
   const [mutations, judged] = await Promise.all([mutate(), ops.run({ method: "claimcheck", unit: "",
     target: items.map(({ contract }) => `${contract.path}#${contract.name}`).join(", ") },
   () => claimCheck(ctx, requests, items.map(({ contract }) => contract), signal, restateWith, judging), () => "done")]);
+  const { restatements, judgments, ...run } = judged;
   return {
-    contracts: items.map(({ contract }, index) => {
-      const restatement = judged.restatements?.[index];
-      return { path: contract.path, name: contract.name, lines: contractLines(contract),
-        mutation: mutations[index] ?? { rejected: 0, survived: [], inconclusive: 0, equivalent: 0 },
-        ...judged.status === "judged" && judged.judgments[index] !== undefined ? { judgment: judged.judgments[index] } : {},
-        ...restatement === undefined ? {} : { restatement } };
-    }),
-    claimcheck: judged.status === "judged"
-      ? { status: "judged", restatedBy: judged.restatedBy, comparedBy: judged.comparedBy } : { status: "not_judged", reason: judged.reason },
+    contracts: items.map(({ contract }, index) => ({ path: contract.path, name: contract.name, lines: contractLines(contract),
+      mutation: mutations[index] ?? { rejected: 0, survived: [], inconclusive: 0, equivalent: 0 } })),
+    contractComparison: { scope: "eligible_changed_contracts", status: judged.status, ...judged.reason === undefined ? {} : { reason: judged.reason }, runs: [{ ...run, folder: judging?.folder ?? "" }],
+      contracts: items.map(({ contract }, index) => ({ folder: judging?.folder ?? "", path: contract.path, name: contract.name, text: contract.text,
+        ...restatements?.[index] === undefined ? {} : { restatement: restatements[index] },
+        ...judgments?.[index] === undefined ? {} : { assessment: judgments[index] } })) },
   };
 }

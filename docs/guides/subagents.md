@@ -41,7 +41,7 @@ A writer commits on its branch and ends with a receipt about it. Its work
 counts toward your request only once the agent merges or cherry-picks it
 into its own workspace, where your verification checks it. The report
 alone is never evidence. Your receipt lists each subagent and where its
-receipt stands ([Receipt v2](../receipt-v2.md#child)).
+receipt stands ([Receipt v3](../receipt-v3.md#run-metadata)).
 
 ### Its branch, and no other
 

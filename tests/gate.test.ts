@@ -10,6 +10,7 @@ import { evidenceParts, evidenceText } from "../src/footer.js";
 import { changedFiles, GateProgress, type GateStatus, type RecordedRequest, registerGate, type SentBack,
   STOP_INVENTORY_TIME_LIMIT_MS } from "../src/gate.js";
 import { headCommit } from "../src/git.js";
+import { suggestChecks } from "../src/projects.js";
 import { attributionResolved } from "../src/request-fingerprint.js";
 import { openCasesSystemPrompt } from "../src/open-cases.js";
 import { receiptMarkdown, subjectOf } from "../src/pull-request-receipt.js";
@@ -66,12 +67,29 @@ vi.mock("../src/model-check.js", async (original) => {
 
 const roots: string[] = [];
 
+it("keeps the admitted test check when the change adds a check script (#727)", async () => {
+  const root = repository({
+    "package.json": JSON.stringify({ packageManager: "bun@1.4.2", scripts: { test: "node verify.cjs" } }),
+    "value.js": "1\n",
+    "verify.cjs": "require('node:assert/strict').equal(require('node:fs').readFileSync('value.js', 'utf8').trim(), '2');\n",
+  });
+  const run = gate(root);
+  await run.input();
+  await run.tool("edit");
+  write(root, {
+    "value.js": "3\n",
+    "package.json": JSON.stringify({ packageManager: "bun@1.4.2", scripts: { test: "node verify.cjs", check: "node -e \"process.exit(0)\"" } }),
+  });
+  const result = await run.settle();
+  expect(result?.continue).toBe(true);
+  expect(result?.entries?.some((item) => item.type === "custom_message" && item.content.includes("bun run test"))).toBe(true);
+});
+
 function expectStaleReceipt(recorded: Receipt, check: "tests" | "proof", label: string, subject: string): void {
   // Output is not the source of staleness: presentation must use recorded facts.
   const receipt = { ...recorded,
-    tests: recorded.tests.map((test) => ({ ...test, evidence: { ...test.evidence, output: "checked successfully" } })),
-    proofs: recorded.proofs.map((proof) => ({ ...proof, evidence: { ...proof.evidence, output: "1 verified, 0 errors" } })),
-  };
+      codeEvidence: { ...recorded.codeEvidence, tests: recorded.codeEvidence.tests.map((test) => ({ ...test, evidence: { ...test.evidence, output: "checked successfully" } })), proofs: recorded.codeEvidence.proofs.map((proof) => ({ ...proof, evidence: { ...proof.evidence, output: "1 verified, 0 errors" } })) }
+};
   expect(receiptFindings(receipt)).toContainEqual(expect.objectContaining({ check, label, subject,
     detail: expect.stringContaining("stale") }));
   expect(receiptSummary(receipt).methods.find(({ method }) => method === (check === "tests" ? "Tested" : "Proved"))?.text)
@@ -106,10 +124,10 @@ it.each([
   const settled = await run.settle();
   expect(settled?.continue).not.toBe(true);
   const receipt = entry(settled).details as Receipt;
-  expect(receipt.tests).toMatchObject([{ command: "bun run check", verdict: outcome === "passed" ? "proved" : "operator",
+  expect(receipt.codeEvidence.tests).toMatchObject([{ command: "bun run check", verdict: outcome === "passed" ? "proved" : "operator",
     evidence: { outcome, files: ["input.json", "value.js"] } }]);
   if (outcome === "not_started") {
-    expect(receipt.tests[0]?.evidence.output).toContain("stale");
+    expect(receipt.codeEvidence.tests[0]?.evidence.output).toContain("stale");
     expectStaleReceipt(receipt, "tests", "Tests stale", "bun run check");
     expect(entry(settled).content).not.toContain("  passed        bun run check");
     expect(entry(settled).content).toContain("Evidence is stale: checked content changed before the receipt settled; current content was not checked.");
@@ -128,10 +146,10 @@ it("does not retain proof coverage or contract findings when a command changes t
   write(root, { "src/rule.ts": contract.replace("return 0", "return 2") });
   const settled = entry(await run.settle());
   const receipt = settled.details as Receipt;
-  expect(receipt.proofs).toMatchObject([{ path: "src/rule.ts", verdict: "operator", evidence: { outcome: "not_started" } }]);
-  expect(receipt.contracts).toEqual([]);
-  expect(receipt.unverified).toContain("src/rule.ts");
-  expect(receipt.uncovered).toEqual([]);
+  expect(receipt.codeEvidence.proofs).toMatchObject([{ path: "src/rule.ts", verdict: "operator", evidence: { outcome: "not_started" } }]);
+  expect(receipt.specificationEvidence.contracts).toEqual([]);
+  expect(receipt.codeEvidence.unverified).toContain("src/rule.ts");
+  expect(receipt.codeEvidence.uncovered).toEqual([]);
   expect(settled.content).toContain("Evidence is stale");
   expectStaleReceipt(receipt, "proof", "Proof stale", "src/rule.ts");
   expect(settled.content).not.toContain("  proved        src/rule.ts");
@@ -145,7 +163,7 @@ it("the export still catches content edited after a passing settled receipt (#61
   await run.tool("edit");
   write(root, { "value.js": "2\n" });
   const receipt = entry(await run.settle()).details as Receipt;
-  expect(receipt.tests[0]?.evidence.outcome).toBe("passed");
+  expect(receipt.codeEvidence.tests[0]?.evidence.outcome).toBe("passed");
   commit(root, "checked change");
   expect(await subjectOf(root, receipt, "session", "operator")).toMatchObject({ stale: [], changedAfter: [] });
   write(root, { "value.js": "999\n" });
@@ -161,7 +179,7 @@ it("records the proof files its own proving wrote, so a commit holding them expo
   await run.tool("edit");
   write(root, { "src/rule.ts": contract.replace("return 0", "return 2") });
   const receipt = entry(await run.settle()).details as Receipt;
-  expect(receipt.proofs).toMatchObject([{ path: "src/rule.ts", evidence: { outcome: "passed", files: ["src/rule.ts", "src/rule.dfy"] } }]);
+  expect(receipt.codeEvidence.proofs).toMatchObject([{ path: "src/rule.ts", evidence: { outcome: "passed", files: ["src/rule.ts", "src/rule.dfy"] } }]);
   expect(receipt.changed === "unreadable" ? "unreadable" : receipt.changed.map(({ path }) => path))
     .toEqual(["src/rule.dfy", "src/rule.dfy.gen", "src/rule.ts"]);
   commit(root, "checked change with its proof");
@@ -294,12 +312,12 @@ it.each([false, true])("verifies clarifications and amendments in their journal 
       return Promise.resolve({ stopReason: "toolUse", content: [{ type: "toolCall", id: "result", name: "record_open_cases", arguments: { status: "listed", cases: [] } }] });
     },
   } }, () => ({ text: "Choose the behavior.", at: clarification.at, inputs,
-    base: { units: [{ folder: "", kind: "commit", commit }] } }));
+    base: { units: [{ folder: "", kind: "commit", commit }], checks: [{ folder: "", projects: suggestChecks(root) }] } }));
   await run.input();
   await run.tool("write");
   write(root, { "notes.md": "# Changed\n" });
   const receipt = entry(await run.settle()).details as Receipt;
-  expect(receipt.clarifications).toEqual([clarification]);
+  expect(receipt.requestContext.clarifications).toEqual([clarification]);
   expect(prompts).toHaveLength(1);
   expect(prompts[0]).toContain("Operator selected: A — Use behavior A.");
   expect(prompts[0]).not.toContain("Not operator input.");
@@ -315,7 +333,10 @@ function facts(content: string): string {
   const fence = /^(`{3,})text\n/mu.exec(content);
   if (fence === null) throw new Error(`no fenced details in ${content}`);
   const start = fence.index + fence[0].length;
-  return content.slice(start, content.lastIndexOf("\nFrom ", content.indexOf(`\n${fence[1]}`, start)));
+  return content.slice(start, content.lastIndexOf("\nFrom ", content.indexOf(`\n${fence[1]}`, start)))
+    // Disabled review is asserted through its v3 status; these comparisons protect the mechanical detail rows.
+    .split("\n").filter((line) => line !== "  not listed    the cases the request leaves open: the operator disabled open cases"
+      && line !== "  not listed    the cases the request leaves open: request review was not run").join("\n");
 }
 
 function entry(settled: Settled | undefined): { customType: string; content: string; details?: unknown } {
@@ -347,7 +368,22 @@ it.each(["tui", "print"])("attributes only the request edit and preserves inheri
   write(root, { "notes.md": "new\n" });
   const receipt = entry(await run.settle()).details as Receipt;
   expect(receipt.changed).toEqual([{ path: "notes.md", blob: expect.any(String) }]);
-  expect(receipt).toMatchObject({ inherited: ["old.txt", "src/rule.ts"], proofs: [], unverified: ["notes.md"] });
+  expect(receipt).toMatchObject({ inherited: ["old.txt", "src/rule.ts"], codeEvidence: { proofs: [], unverified: ["notes.md"] } });
+});
+
+it("does not credit source sensitivity when the candidate depends on inherited dirt (#669)", async () => {
+  const root = repository({ "package.json": JSON.stringify({ packageManager: "bun@1.4.2", scripts: { test: "bun test" } }),
+    "a.ts": "export const a = 0;\n", "b.ts": "export const b = 0;\n" });
+  write(root, { "b.ts": "export const b = 1;\n" });
+  const run = gate(root);
+  await run.input();
+  await run.tool("write");
+  write(root, { "a.ts": "export const a = 1;\n", "rule.test.ts":
+    "import {expect,test} from 'bun:test'; import {a} from './a'; import {b} from './b'; test('either',()=>expect(a===1||b===1).toBe(true));\n" });
+  const receipt = entry(await run.settle()).details as Receipt;
+  expect(receipt.inherited).toEqual(["b.ts"]);
+  expect(receipt.codeEvidence.exercises[0]?.sources).toEqual([]);
+  expect(receipt.codeEvidence.exercises[0]?.sourceGaps).toEqual([{ path: "a.ts", reason: expect.stringContaining("started with changes") }]);
 });
 
 it.each(["commit", "delete", "stash", "switch"])("makes a %s eligible even without a remaining worktree diff", async (action) => {
@@ -487,20 +523,20 @@ it.each(["merge", "merge-deleted", "remote", "fetch", "url", "switch", "rebase",
   // Local work on an imported path must remain visible, not be filtered as upstream.
   if (action === "merge") write(root, { "src/imported.ts": contract.replace("return 0", "return 2") });
   const receipt = entry(await run.settle()).details as Receipt;
-  expect(receipt.tests.some(({ evidence }) => evidence.outcome === "passed")).toBe(true);
-  expect(receipt.proofs.map(({ path }) => path)).toContain("src/imported.ts");
+  expect(receipt.codeEvidence.tests.some(({ evidence }) => evidence.outcome === "passed")).toBe(true);
+  expect(receipt.codeEvidence.proofs.map(({ path }) => path)).toContain("src/imported.ts");
   expect(receipt.changed).toEqual(expect.arrayContaining([expect.objectContaining({ path: "test/imported.test.mjs" })]));
   const texts = [renderReceipt(receipt), receiptMarkdown(receipt, { commit: "abc", owner: "t", sessionId: action, stale: [], changedAfter: [] })];
   for (const text of texts) expect(text.match(/compared with the request's start/giu) ?? []).toHaveLength(credited.has(action) ? 0 : 1);
   if (credited.has(action)) {
     expect(receiptFindings(receipt).some(({ label }) => label === "Attribution unresolved")).toBe(false);
     expect(await subjectOf(root, receipt, action, "operator")).toMatchObject({ changedAfter: action === "unchanged" ? ["src/imported.ts", "test/imported.test.mjs"] : [] });
-    expect(receipt.exercises.length).toBeGreaterThan(0);
-    expect(receipt.contracts.length).toBeGreaterThan(0);
+    expect(receipt.codeEvidence.exercises.length).toBeGreaterThan(0);
+    expect(receipt.specificationEvidence.contracts.length).toBeGreaterThan(0);
   } else {
-    expect(receipt.exercises).toEqual([]);
-    expect(receipt.contracts).toEqual([]);
-    expect(receipt.claimcheck).toBeUndefined();
+    expect(receipt.codeEvidence.exercises).toEqual([]);
+    expect(receipt.specificationEvidence.contracts).toEqual([]);
+    expect(receipt.requestReview.contractComparison.runs[0]).toBeUndefined();
     expect(run.progress.operations.operations().some(({ method }) =>
       method === "exercise" || method === "base_control" || method === "mutation" || method === "claimcheck")).toBe(false);
     expect(receiptSummary(receipt).limits.some(({ note, title }) => /history moved/u.test(note + title))).toBe(true);
@@ -519,21 +555,33 @@ it.each(["merge", "merge-deleted", "remote", "fetch", "url", "switch", "rebase",
   }
 });
 
+it("keeps missing historical admission metadata unknown (#727)", async () => {
+  const root = project();
+  const commit = await headCommit(root);
+  const run = gate(root, undefined, {}, () => ({ text: "Update notes.", at: "2026-11-02T00:00:00Z", inputs: [],
+    base: { units: [{ folder: "", kind: "commit", commit }] } }));
+  await run.input();
+  await run.tool("write");
+  write(root, { "notes.md": "# Changed\n" });
+  const receipt = entry(await run.settle()).details as Receipt;
+  expect(Object.hasOwn(receipt.codeEvidence, "checksAtStart")).toBe(false);
+});
+
 it.each([true, false])("credits the request's commits only when the ledger recorded the starting refs (recorded: %s, #599)", async (recordedRefs) => {
   const root = testedProject();
   const commitId = spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).stdout.trim();
   const refs = spawnSync("git", ["for-each-ref", "--format=%(objectname)"], { cwd: root, encoding: "utf8" }).stdout.trim().split("\n");
   const at = new Date().toISOString();
   const run = gate(root, undefined, {}, () => ({ text: "fix it", at, inputs: [],
-    base: { units: [{ folder: "", kind: "commit", commit: commitId, ...recordedRefs ? { refs } : {} }] } }));
+    base: { units: [{ folder: "", kind: "commit", commit: commitId, ...recordedRefs ? { refs } : {} }], checks: [{ folder: "", projects: suggestChecks(root) }] } }));
   await run.input();
   await run.tool("bash");
   write(root, { "test/imported.test.mjs": priceTest(1, 1, "imported") });
   commit(root, "the request's commit");
   const receipt = entry(await run.settle()).details as Receipt;
-  expect(receipt.tests[0]?.evidence.outcome).toBe("passed");
+  expect(receipt.codeEvidence.tests[0]?.evidence.outcome).toBe("passed");
   expect(receiptFindings(receipt).some(({ label }) => label === "Attribution unresolved")).toBe(!recordedRefs);
-  expect(receipt.exercises.length > 0).toBe(recordedRefs);
+  expect(receipt.codeEvidence.exercises.length > 0).toBe(recordedRefs);
 });
 
 it("keeps history that moved between admission and the first tool in scope (#599)", async () => {
@@ -545,8 +593,8 @@ it("keeps history that moved between admission and the first tool in scope (#599
   await run.tool("bash");
   const receipt = entry(await run.settle()).details as Receipt;
   expect(receipt.changed).toContainEqual({ path: "test/imported.test.mjs", blob: expect.any(String) });
-  expect(receipt.tests[0]?.evidence.outcome).toBe("passed");
-  expect(receipt.exercises).toEqual([]);
+  expect(receipt.codeEvidence.tests[0]?.evidence.outcome).toBe("passed");
+  expect(receipt.codeEvidence.exercises).toEqual([]);
   expect(renderReceipt(receipt)).toContain("history moved");
 });
 
@@ -561,8 +609,8 @@ it("qualifies the #612 branch-switch deletion against the request's start (#599)
   git(root, "switch", "before612");
   const receipt = entry(await run.settle()).details as Receipt;
   expect(receipt.changed).toContainEqual({ path: "test/home.test.mjs", blob: null });
-  expect(receipt.exercises).toEqual([]);
-  expect(receipt.tests[0]?.evidence.outcome).toBe("passed");
+  expect(receipt.codeEvidence.exercises).toEqual([]);
+  expect(receipt.codeEvidence.tests[0]?.evidence.outcome).toBe("passed");
   const finding = receiptFindings(receipt).find(({ check }) => check === "weakening");
   expect(finding?.detail).not.toContain("compared with the request's start");
   for (const text of [renderReceipt(receipt), receiptMarkdown(receipt, { commit: "abc", owner: "t", sessionId: "switch", stale: [], changedAfter: [] })]) {
@@ -585,8 +633,8 @@ it("keeps earlier stopped weakening against H when a new request edits another f
   write(root, { "notes.md": "new request\n" });
   const receipt = entry(await run.settle()).details as Receipt;
   expect(receipt.changed).toEqual([{ path: "notes.md", blob: expect.any(String) }]);
-  expect(receipt).toMatchObject({ inherited: ["test/price.test.mjs"], exercises: [] });
-  expect(Array.isArray(receipt.weakened) && receipt.weakened.some(({ path }) => path === "test/price.test.mjs")).toBe(true);
+  expect(receipt).toMatchObject({ inherited: ["test/price.test.mjs"], codeEvidence: { exercises: [] } });
+  expect(Array.isArray(receipt.specificationEvidence.weakened) && receipt.specificationEvidence.weakened.some(({ path }) => path === "test/price.test.mjs")).toBe(true);
   expect(receiptFindings(receipt)).toContainEqual(expect.objectContaining({ standing: "decide", check: "weakening" }));
 });
 
@@ -658,8 +706,7 @@ it("discloses a failed settlement capture when Git can no longer read the index"
   await run.tool("bash");
   writeFileSync(join(root, ".git/index"), "broken index");
   const settled = entry(await run.settle());
-  expect(settled.details).toMatchObject({ startState: { status: "known" },
-    endState: { status: "unknown", reason: expect.stringContaining("Git") }, changed: "unreadable", weakened: "unreadable" });
+  expect(settled.details).toMatchObject({ startState: { status: "known" }, endState: { status: "unknown", reason: expect.stringContaining("Git") }, changed: "unreadable", specificationEvidence: { weakened: "unreadable" } });
   expect(settled.content).toContain("Unknown end state");
 });
 
@@ -775,7 +822,7 @@ it.each(["prove", "bash", "powershell", "mcp__files__write", "unknown", "extensi
     await run.tool(name);
     write(root, { "notes.md": "changed\n" });
     expect((entry(await run.settle()).details as Receipt).changed).toMatchObject([{ path: "notes.md" }]);
-    expect(entry(await run.settle("aborted")).details).toMatchObject({ stopped: expect.any(String), proofs: [], tests: [] });
+    expect(entry(await run.settle("aborted")).details).toMatchObject({ stopped: expect.any(String), codeEvidence: { proofs: [], tests: [] } });
   });
 
 it.each(["steer", "followUp"])("keeps eligibility and send-back history through a %s and repeated settlements", async (behavior) => {
@@ -788,9 +835,9 @@ it.each(["steer", "followUp"])("keeps eligibility and send-back history through 
   expect((await run.settle())?.continue).toBe(true);
   await run.input("interactive", behavior, "also keep the change");
   run.agentStart();
-  expect((entry(await run.settle()).details as Receipt).proofs).toMatchObject([{ verdict: "no_progress" }]);
+  expect((entry(await run.settle()).details as Receipt).codeEvidence.proofs).toMatchObject([{ verdict: "no_progress" }]);
   scripted.delete("src/rule.ts");
-  expect((entry(await run.settle()).details as Receipt).proofs).toMatchObject([{ verdict: "proved" }]);
+  expect((entry(await run.settle()).details as Receipt).codeEvidence.proofs).toMatchObject([{ verdict: "proved" }]);
 });
 
 it.each(["interactive", "extension"])("starts a new %s request ineligible after an editing request", async (source) => {
@@ -819,8 +866,9 @@ it("discloses a check script narrowed after its failing test went back, even whe
   write(root, { "package.json": JSON.stringify({ type: "module", scripts: { check: "node --test test/positive.test.mjs" } }) });
   const settled = entry(await run.settle());
   expect(settled.customType).toBe("tesota-receipt");
-  expect((settled.details as Receipt).tests).toMatchObject([{ evidence: { outcome: "passed" } }]);
-  expect((settled.details as Receipt).weakened).toEqual([
+  expect((settled.details as Receipt).codeEvidence.tests).toMatchObject([{ evidence: { outcome: "not_started",
+    output: expect.stringContaining("admitted package script") } }]);
+  expect((settled.details as Receipt).specificationEvidence.weakened).toEqual([
     { path: "package.json", kind: "changed_check_script", script: "check" },
   ]);
   expect(settled.content).toContain("changes the command or selection of check script check");
@@ -878,8 +926,7 @@ it("keeps the agent working while a changed contract fails, and settles with a r
   expect(entry(failed).content).toContain("This is not finished yet.");
   expect(entry(failed).content).toContain("and run prove again.");
   // The operator's view of what went back: the proof and its evidence.
-  expect(entry(failed).details).toMatchObject({ round: "proofs",
-    proofs: [{ path: "src/rule.ts", evidence: { outcome: "failed", output: "1 verified, 1 error" } }] });
+  expect(entry(failed).details).toMatchObject({ round: "proofs", proofs: [{ path: "src/rule.ts", evidence: { outcome: "failed", output: "1 verified, 1 error" } }] });
   scripted.set("src/rule.ts", { outcome: "vacuous", output: "0 verified, 0 errors" });
   expect((await run.settle())?.continue).toBe(true);
   scripted.delete("src/rule.ts");
@@ -892,9 +939,9 @@ it("keeps the agent working while a changed contract fails, and settles with a r
     "  not verified  notes.md: no verifier covers it",
     "  changed lines implementation +1 -0 · other +2 -1"].join("\n"));
   const receipt = entry(proved).details as Receipt;
-  expect(receipt.proofs.map(({ path, verdict, evidence }) => [path, verdict, evidence.contentHash]))
+  expect(receipt.codeEvidence.proofs.map(({ path, verdict, evidence }) => [path, verdict, evidence.contentHash]))
     .toEqual([["src/rule.ts", "proved", "ccc652fa505b947431e0e61131cecc92a08ca3084e7c79b4171999fc6f20a74f"]]);
-  expect(receipt).toMatchObject({ version: 2, base: await headCommit(root), engine: expect.stringMatching(/^0\.1\.0\+(?:[0-9a-f]{7,40}(?:\.dirty)?|unknown)$/) });
+  expect(receipt).toMatchObject({ version: 3, base: await headCommit(root), engine: expect.stringMatching(/^0\.1\.0\+(?:[0-9a-f]{7,40}(?:\.dirty)?|unknown)$/) });
   expect(receipt.model).toBeUndefined();
   expect(Date.parse(receipt.settledAt)).toBeGreaterThanOrEqual(Date.parse(receipt.startedAt));
 });
@@ -942,12 +989,9 @@ it("leaves a receipt verifying nothing when a run is stopped after a write start
   expect(entry(settled).customType).toBe("tesota-receipt");
   const receipt = entry(settled).details as Receipt;
   const blob = spawnSync("git", ["hash-object", "src/rule.ts"], { cwd: root, encoding: "utf8" }).stdout.trim();
-  expect(receipt).toMatchObject({ version: 2, repository: true, base: await headCommit(root), engine: expect.stringMatching(/^0\.1\.0\+(?:[0-9a-f]{7,40}(?:\.dirty)?|unknown)$/),
-    model: "provider/model", stopped: "the operator stopped the run before Tesota verified it",
-    proofs: [], tests: [], contracts: [], exercises: [], weakened: [], unverified: [], uncovered: [],
-    changed: [{ path: "src/rule.ts", blob }] });
-  expect(receipt.claimcheck).toBeUndefined();
-  expect(receipt.openCases).toBeUndefined();
+  expect(receipt).toMatchObject({ version: 3, repository: true, base: await headCommit(root), engine: expect.stringMatching(/^0\.1\.0\+(?:[0-9a-f]{7,40}(?:\.dirty)?|unknown)$/), model: "provider/model", stopped: "the operator stopped the run before Tesota verified it", changed: [{ path: "src/rule.ts", blob }], codeEvidence: { proofs: [], tests: [], exercises: [], unverified: [], uncovered: [] }, specificationEvidence: { contracts: [], weakened: [] } });
+  expect(receipt.requestReview.contractComparison.runs[0]).toBeUndefined();
+  expect(receipt.requestReview.openCases).toMatchObject({ status: "not_run" });
   expect(Date.parse(receipt.settledAt)).toBeGreaterThanOrEqual(Date.parse(receipt.startedAt));
   expect(run.progress.status).toEqual({ step: "settled", receipt });
   expect(run.steps.map(({ step }) => step)).toEqual(["waiting", "settled"]);
@@ -963,7 +1007,7 @@ it.each([
   await run.tool("write");
   const settled = await run.settle("error", reason);
   expect(settled?.continue).toBeUndefined();
-  expect(entry(settled).details).toMatchObject({ stopped, repository: true, base: await headCommit(root), proofs: [], tests: [] });
+  expect(entry(settled).details).toMatchObject({ stopped, repository: true, base: await headCommit(root), codeEvidence: { proofs: [], tests: [] } });
 });
 
 it("says what changed could not be read when a stopped run's capture fails, never an empty inventory", async () => {
@@ -1002,8 +1046,7 @@ it("settles a stop whose inventory Git never answers, saying the inventory ran p
     }
     expect(gitCalls.mock.calls.length + outputCalls.mock.calls.length).toBeGreaterThan(0);
     const receipt = entry(settled).details as Receipt;
-    expect(receipt).toMatchObject({ stopped: "the operator stopped the run before Tesota verified it", changed: "unreadable",
-      lines: "unreadable", reason: "the inventory ran past its time limit", proofs: [], tests: [] });
+    expect(receipt).toMatchObject({ stopped: "the operator stopped the run before Tesota verified it", changed: "unreadable", lines: "unreadable", reason: "the inventory ran past its time limit", codeEvidence: { proofs: [], tests: [] } });
     expect(receiptStanding(receipt)).toBe("incomplete");
   } finally { vi.useRealTimers(); gitCalls.mockRestore(); outputCalls.mockRestore(); }
 });
@@ -1060,8 +1103,7 @@ it("leaves no receipt when an aborted run only started a read", async () => {
 it("keeps unknown bases unknown when a stopped write had no request input", async () => {
   const run = gate(folder());
   await run.tool("write");
-  expect(entry(await run.settle("aborted")).details).toMatchObject({ repository: false, base: null,
-    stopped: "the operator stopped the run before Tesota verified it", proofs: [], tests: [] });
+  expect(entry(await run.settle("aborted")).details).toMatchObject({ repository: false, base: null, stopped: "the operator stopped the run before Tesota verified it", codeEvidence: { proofs: [], tests: [] } });
 });
 
 it("clears a running footer operation when the run is aborted or fails", async () => {
@@ -1077,7 +1119,9 @@ it("clears a running footer operation when the run is aborted or fails", async (
 it("shows a resumed session's receipt again, unless the operator spoke after it", () => {
   const progress = new GateProgress();
   progress.ready("proofs_and_tests");
-  const receipt = { ...emptyReceipt, proofs: [] };
+  const receipt = { ...emptyReceipt,
+      codeEvidence: { ...emptyReceipt.codeEvidence, proofs: [] }
+};
   const user = { type: "message", message: { role: "user", content: "a request", timestamp: 0 } };
   const settled = { type: "custom_message", customType: "tesota-receipt", content: "Tesota receipt", display: true, details: receipt };
   const gate = { type: "custom_message", customType: "tesota-gate", content: "sent back", display: true };
@@ -1100,12 +1144,12 @@ it("settles a print-mode run with the receipt outside the conversation, so Pi pr
   await printRun.tool("write");
   writeFileSync(join(root, "notes.md"), "# Notes, changed\n");
   const printed = (await printRun.settle())?.entries ?? [];
-  expect(printed).toMatchObject([{ type: "custom", customType: "tesota-receipt", data: { version: 2 } }]);
+  expect(printed).toMatchObject([{ type: "custom", customType: "tesota-receipt", data: { version: 3 } }]);
   const tuiRun = gate(root, undefined, { mode: "tui" });
   await tuiRun.tool("write");
   writeFileSync(join(root, "notes.md"), "# Notes, changed again\n");
   const shown = (await tuiRun.settle())?.entries ?? [];
-  expect(shown).toMatchObject([{ type: "custom_message", customType: "tesota-receipt", display: true, details: { version: 2 } }]);
+  expect(shown).toMatchObject([{ type: "custom_message", customType: "tesota-receipt", display: true, details: { version: 3 } }]);
 });
 
 it("goes back to ready when the gate fails midway, and settles unchanged when the run changed nothing (#536)", async () => {
@@ -1135,7 +1179,7 @@ it("lists the changed lines of a proved file that no contract covers, and not th
     "  return 1;\n}\n");
   const settled = entry(await run.settle());
   expect(facts(settled.content)).toContain("  not verified  src/rule.ts lines 4-6: outside the contracts that proved, and no verifier covers them");
-  expect((settled.details as Receipt).uncovered).toEqual([{ path: "src/rule.ts", lines: [[4, 6]] }]);
+  expect((settled.details as Receipt).codeEvidence.uncovered).toEqual([{ path: "src/rule.ts", lines: [[4, 6]] }]);
 });
 
 it("records the blob of every file the run left changed, and a deleted one as null", async () => {
@@ -1160,18 +1204,18 @@ it("serializes each judge's actual request selection and capacity omissions (#62
     asked.push(context.messages[0]?.content[0]?.text ?? "");
     const name = context.tools[0]?.name;
     const arguments_ = name === "record_open_cases" ? { status: "listed", cases: [] }
-      : name === "record_comparisons" ? { comparisons: [{ function: 1, verdict: "justified", explanation: "as asked" }] }
+      : name === "record_comparisons" ? { comparisons: [{ function: 1, verdict: "no_mismatch_identified", explanation: "as asked" }] }
         : { informalizations: [{ function: 1, preconditions: "none", postcondition: "non-negative", strength: "strong" }] };
     return Promise.resolve({ stopReason: "toolUse", content: [{ type: "toolCall", id: "1", name, arguments: arguments_ }] });
   };
   const run = gate(root, undefined, { model, modelRegistry: { complete, find: () => ({ ...model, id: "lister", contextWindow: 7000 }) },
     flags: { "open-cases-model": "test/lister" } }, () => ({ run: 100, text: "continue", at: "2026-10-26T00:00:00Z", inputs: [],
-    unverifiedRequests: earlier, base: { units: [{ folder: "", kind: "commit", commit }] } }));
+    unverifiedRequests: earlier, base: { units: [{ folder: "", kind: "commit", commit }], checks: [{ folder: "", projects: suggestChecks(root) }] } }));
   await run.input();
   await run.tool("write");
   writeFileSync(join(root, "src/rule.ts"), "//@ ensures \\result >= 0 && \\result <= 1\nexport function f(): number { return 0; }\n");
   const receipt = JSON.parse(JSON.stringify(entry(await run.settle()).details)) as Receipt;
-  expect(receipt.requestJudgments?.map(({ method, requests, omitted }) => [method, requests.map(({ run }) => run), omitted])).toEqual([
+  expect(receipt.requestReview.context?.filter(({ stage }) => stage !== "restatement").map(({ method, requests, omitted }) => [method, requests.map(({ run }) => run), omitted])).toEqual([
     ["claimcheck", [98, 99, 100], Array.from({ length: 97 }, (_, index) => index + 1)],
     ["open_cases", [99, 100], Array.from({ length: 98 }, (_, index) => index + 1)],
   ]);
@@ -1190,7 +1234,7 @@ it("measures the strength of the contracts the request changed once they prove, 
     asked.push(context.messages[0]?.content[0]?.text ?? "");
     const name = context.tools[0]?.name;
     return Promise.resolve({ stopReason: "toolUse", content: [{ type: "toolCall", id: "1", name, arguments: name === "record_comparisons"
-      ? { comparisons: [{ function: 1, verdict: "not_justified", explanation: "It allows any non-negative result." }] }
+      ? { comparisons: [{ function: 1, verdict: "mismatch", explanation: "It allows any non-negative result." }] }
       : { informalizations: [{ function: 1, preconditions: "none", postcondition: "non-negative", strength: "weak" }] } }] });
   };
   const run = gate(root, undefined, { model: { provider: "provider", id: "model", contextWindow: 128_000, maxTokens: 4096 }, modelRegistry: { complete } });
@@ -1201,12 +1245,12 @@ it("measures the strength of the contracts the request changed once they prove, 
     "export function f(): number {\n  return 0;\n}\n");
   writeFileSync(join(root, "src", "other.ts"), "//@ ensures \\result >= 0\nexport function g(): number {\n  return 2;\n}\n");
   const settled = entry(await run.settle());
-  expect(facts(settled.content)).toContain(["  contract      f in src/rule.ts: all 1 decided changes to its code fail the proof",
-    "  model judged  by ClaimCheck on provider/model, one model for both requests, a model's judgment against the request, not a proof:",
-    "                f in src/rule.ts does not express what was asked: It allows any non-negative result."].join("\n"));
+  expect(facts(settled.content)).toContain("  contract      f in src/rule.ts: all 1 decided changes to its code fail the proof");
+  expect(facts(settled.content)).toContain("restatement model: provider/model; comparison model: provider/model");
+  expect(facts(settled.content)).toContain("f in src/rule.ts: the model identified a mismatch: It allows any non-negative result.");
   expect(settled.content).not.toContain("g in src/other.ts");
   expect(asked[1]).toContain("1. f returns zero\n2. and only zero");
-  expect((settled.details as Receipt).contracts.map(({ name, judgment }) => [name, judgment?.verdict])).toEqual([["f", "not_justified"]]);
+  expect((settled.details as Receipt).requestReview.contractComparison.contracts.map(({ name, assessment }) => [name, assessment?.verdict])).toEqual([["f", "mismatch"]]);
 });
 
 it.each([
@@ -1225,7 +1269,7 @@ it.each([
         const name = context.tools[0]?.name;
         const arguments_ = name === "record_informalizations" ? { informalizations: [{ function: 1, preconditions: "none",
           postcondition: "returns zero", strength: "strong", flags: [] }] }
-          : { comparisons: [{ function: 1, verdict: "justified", explanation: "Matches." }] };
+          : { comparisons: [{ function: 1, verdict: "no_mismatch_identified", explanation: "Matches." }] };
         return Promise.resolve({ stopReason: "toolUse", content: [{ type: "toolCall", id: "1", name, arguments: arguments_ }] });
       },
     } });
@@ -1234,7 +1278,7 @@ it.each([
     await run.tool("write");
     write(root, { "src/rule.ts": `//@ ensures \\result === 0\nexport function ${comment}(): number { return 0; }\n` });
     const receipt = entry(await run.settle()).details as Receipt;
-    expect(receipt.claimcheck).toMatchObject({ status: "judged", restatedBy: expected, comparedBy: "nonopenai/session" });
+    expect(receipt.requestReview.contractComparison.runs[0]).toMatchObject({ status: "completed", restatedBy: expected, comparedBy: "nonopenai/session" });
   }
   expect(asked).toEqual([expected, "nonopenai/session", expected, "nonopenai/session"]);
 });
@@ -1257,7 +1301,7 @@ it.each([
   write(root, { "src/rule.ts": `//@ ensures true\n${contract}` });
   const settled = await run.settle();
   expect(settled?.continue).not.toBe(true);
-  expect((entry(settled).details as Receipt).claimcheck).toMatchObject({ status: "not_judged",
+  expect((entry(settled).details as Receipt).requestReview.contractComparison).toMatchObject({ status: phase === "comparing" ? "partial" : "not_run",
     reason: `${expectedModel} the model request failed: No sign-in for ${provider}` });
   expect(entry(settled).content).toContain(`${expectedModel} the model request failed: No sign-in for ${provider}`);
 });
@@ -1269,7 +1313,7 @@ it("restates with the model the claimcheck-model flag names", async () => {
   await run.input();
   await run.tool("write");
   writeFileSync(join(root, "src", "rule.ts"), `//@ ensures true\n${contract}`);
-  expect(entry(await run.settle()).content).toContain("ClaimCheck its restating model other/missing isn't a model Tesota knows (provider/id)");
+  expect(entry(await run.settle()).content).toContain("its restating model other/missing isn't a model Tesota knows (provider/id)");
 });
 
 it.each(["unknown", "unsigned"])("completes with a receipt when the selected open-cases model is %s (#709 characterization)", async (failure) => {
@@ -1286,7 +1330,7 @@ it.each(["unknown", "unsigned"])("completes with a receipt when the selected ope
   expect(find).toHaveBeenCalledWith("openai", "gpt-6-sol");
   const reason = failure === "unknown" ? "openai/gpt-6-sol isn't a model Tesota knows (provider/id)"
     : "openai/gpt-6-sol the model request failed: No sign-in for openai";
-  expect((entry(settled).details as Receipt).openCases).toEqual({ status: "not_listed", reason });
+  expect((entry(settled).details as Receipt).requestReview.openCases).toMatchObject({ status: "not_run", reason });
   expect(facts(entry(settled).content)).toContain(reason);
 });
 
@@ -1307,7 +1351,7 @@ it("lists open cases with the non-OpenAI session model unless the operator names
     await run.tool("write");
     writeFileSync(join(root, "src", "notes.md"), "notes\n");
     const settled = entry(await run.settle());
-    expect((settled.details as Receipt).openCases).toEqual({ status: "listed", model, cases: [{ input: "lateFee(-1)", outcomes: ["0", "-5"] }] });
+    expect((settled.details as Receipt).requestReview.openCases).toEqual({ status: "listed", model, cases: [{ input: "lateFee(-1)", outcomes: ["0", "-5"] }] });
     expect(facts(settled.content)).toContain(`  model listed  by ${model}, cases the request may leave open`);
     expect(asked.at(-1)).toMatchObject({ model, system: openCasesSystemPrompt });
     expect(asked.at(-1)?.text).toContain("A person gave a coding agent this request:\n\nlateFee charges 5 per day late, at most 50\n\n");
@@ -1333,7 +1377,7 @@ it.each([
     await run.tool("write");
     write(root, { "notes.md": text });
     const receipt = entry(await run.settle()).details as Receipt;
-    expect(receipt.openCases).toEqual(expected === undefined ? undefined : { status: "listed", model: expected, cases: [] });
+    expect(receipt.requestReview.openCases).toEqual(expected === undefined ? { status: "disabled", reason: "the operator disabled open cases" } : { status: "listed", model: expected, cases: [] });
   }
   expect(complete).toHaveBeenCalledTimes(expected === undefined ? 0 : 2);
 });
@@ -1354,7 +1398,7 @@ it("reports missing issue contents instead of inventing an open case for the #57
   await run.tool("write");
   writeFileSync(join(root, "src", "notes.md"), "The agent's solution must not reach the lister.\n");
   const settled = entry(await run.settle());
-  expect((settled.details as Receipt).openCases).toEqual({ status: "not_listed", reason: `openai/gpt-6-sol ${reason}` });
+  expect((settled.details as Receipt).requestReview.openCases).toMatchObject({ status: "not_run", reason: `openai/gpt-6-sol ${reason}` });
   expect(facts(settled.content)).toContain("  not listed    the cases the request leaves open:");
   expect(settled.content).not.toContain("cases the request may leave open");
   expect(asked).toHaveLength(1);
@@ -1369,14 +1413,14 @@ it("leaves the open cases out when the operator turns the list off, and says why
   await off.input();
   await off.tool("write");
   writeFileSync(join(root, "src", "notes.md"), "notes\n");
-  expect((entry(await off.settle()).details as Receipt).openCases).toBeUndefined();
+  expect((entry(await off.settle()).details as Receipt).requestReview.openCases).toMatchObject({ status: "disabled" });
   const missing = gate(root, undefined, { model: { provider: "provider", id: "model", contextWindow: 128_000, maxTokens: 4096 }, modelRegistry: { find: () => undefined },
     flags: { "open-cases-model": "nobody/none" } });
   await missing.input();
   await missing.tool("write");
   writeFileSync(join(root, "src", "notes.md"), "more notes\n");
   const settled = entry(await missing.settle());
-  expect((settled.details as Receipt).openCases).toEqual({ status: "not_listed", reason: "nobody/none isn't a model Tesota knows (provider/id)" });
+  expect((settled.details as Receipt).requestReview.openCases).toMatchObject({ status: "not_run", reason: "nobody/none isn't a model Tesota knows (provider/id)" });
   expect(facts(settled.content)).toContain("  not listed    the cases the request leaves open: nobody/none isn't a model Tesota knows (provider/id)");
 });
 
@@ -1390,8 +1434,7 @@ it("sends a weak contract back once, then lists it in the receipt", async () => 
   const sent = await run.settle();
   expect(sent?.continue).toBe(true);
   expect(entry(sent).content).toMatch(/^Tesota: the contract of f in src\/rule\.ts proves, but these changes to its code prove too, so it does not rule them out:\n {2}line 3: 0 became 1\n\nStrengthen the contract/u);
-  expect(entry(sent).details).toMatchObject({ round: "contracts",
-    contracts: [{ path: "src/rule.ts", name: "f", mutation: { survived: [{ line: 3, before: "0", after: "1" }] } }] });
+  expect(entry(sent).details).toMatchObject({ round: "contracts", contracts: [{ path: "src/rule.ts", name: "f", mutation: { survived: [{ line: 3, before: "0", after: "1" }] } }] });
   const settled = entry(await run.settle());
   expect(settled.customType).toBe("tesota-receipt");
   expect(facts(settled.content)).toContain("  weak contract f in src/rule.ts");
@@ -1418,7 +1461,7 @@ it("stops on any failure already sent back, alternating ones included, and forge
   expect(stuck?.continue).toBeUndefined();
   expect(entry(stuck).content).toContain(
     "  NOT proved    src/rule.ts: an obligation fails, repeating a failure already sent back");
-  expect((entry(stuck).details as Receipt).proofs.map(({ verdict }) => verdict)).toEqual(["no_progress"]);
+  expect((entry(stuck).details as Receipt).codeEvidence.proofs.map(({ verdict }) => verdict)).toEqual(["no_progress"]);
   await run.input("extension", "followUp");
   expect((await run.settle())?.continue).toBeUndefined();
   await run.input();
@@ -1541,8 +1584,8 @@ it("measures from the commit the request started at, so an agent's commit hides 
   expect(entry(await run.settle()).content).toContain("Tesota: src/rule.ts does not prove yet.");
   scripted.delete("src/rule.ts");
   const receipt = entry(await run.settle()).details as Receipt;
-  expect(receipt.proofs.map(({ path }) => path)).toEqual(["src/rule.ts"]);
-  expect(receipt.unverified).toEqual(["notes.md"]);
+  expect(receipt.codeEvidence.proofs.map(({ path }) => path)).toEqual(["src/rule.ts"]);
+  expect(receipt.codeEvidence.unverified).toEqual(["notes.md"]);
   await run.input();
   expect(await run.settle()).toBeUndefined();
 });
@@ -1556,7 +1599,7 @@ it("keeps the running request's base through a steer or follow-up sent after the
   commit(root, "agent");
   await run.input("interactive", "steer");
   await run.input("interactive", "followUp");
-  expect((entry(await run.settle()).details as Receipt).proofs.map(({ path }) => path)).toEqual(["src/rule.ts"]);
+  expect((entry(await run.settle()).details as Receipt).codeEvidence.proofs.map(({ path }) => path)).toEqual(["src/rule.ts"]);
 });
 
 it("leaves out of the receipt's files those whose changed lines are all blank or comments, //@ lines aside", async () => {
@@ -1569,7 +1612,7 @@ it("leaves out of the receipt's files those whose changed lines are all blank or
     "src/tool.py": "# The tool's value.\nx = 1\n", "src/legacy.js": "//@ ensures true\nexport const two = 2;\n",
     "notes.md": "# Notes, changed\n", "logo.bin": "\0\u0002" });
   const receipt = entry(await run.settle()).details as Receipt;
-  expect(receipt.unverified).toEqual(["logo.bin", "notes.md", "src/legacy.js"]);
+  expect(receipt.codeEvidence.unverified).toEqual(["logo.bin", "notes.md", "src/legacy.js"]);
   expect(receipt.commentsOnly).toBeUndefined();
 });
 
@@ -1595,7 +1638,7 @@ it("lists every file in a repository whose first commit the agent made", async (
   await run.tool("write");
   writeFileSync(join(root, "notes.md"), "# Notes\n");
   commit(root, "agent");
-  expect((entry(await run.settle()).details as Receipt).unverified).toEqual(["notes.md"]);
+  expect((entry(await run.settle()).details as Receipt).codeEvidence.unverified).toEqual(["notes.md"]);
 });
 
 it("puts each change that may weaken the evidence in the receipt, committed or not", async () => {
@@ -1644,7 +1687,7 @@ it("puts each change that may weaken the evidence in the receipt, committed or n
   ].map((line) => `${line}`));
   // How the edit may weaken each test, under its flag (#646).
   expect(facts(settled.content)).toContain("read from the diff, a heuristic flag, not a verdict\n                f: skips it (it.skip)\n");
-  expect((settled.details as Receipt).weakened).toContainEqual(
+  expect((settled.details as Receipt).specificationEvidence.weakened).toContainEqual(
     { path: "tests/old.test.ts", kind: "deleted_test" });
   // The proof holds only given the assumptions added to its source and its .dfy, not those of another file (#399).
   expect(facts(settled.content)).toContain("  proved        src/rule.ts, trusting 3 unproved parts the change added");
@@ -1673,7 +1716,7 @@ it("says a change too large to read was not checked for weakening, instead of li
     "  not measured  Unmeasured: notes.md: file exceeds 10 MiB",
     "  not checked   weakened evidence: the change is too large to check for weakening",
     ].join("\n"));
-  expect((settled.details as Receipt).weakened).toBe("too_large");
+  expect((settled.details as Receipt).specificationEvidence.weakened).toBe("too_large");
 }, 60_000);
 it("runs the project's tests and keeps exercise after the agent commits",  async () => {
   const root = testedProject();
@@ -1696,9 +1739,9 @@ it("runs the project's tests and keeps exercise after the agent commits",  async
     "  not proved    src/price.mjs: no proof covers it; the project's commands pass with it",
     "  changed lines implementation +1 -1 · tests +10 -0"].join("\n"));
   const receipt = entry(settled).details as Receipt;
-  expect(receipt.tests.map(({ command, evidence }) => [command, evidence.verifier, evidence.files]))
+  expect(receipt.codeEvidence.tests.map(({ command, evidence }) => [command, evidence.verifier, evidence.files]))
     .toEqual([["bun run test", "command", changed]]);
-  expect(receipt.exercises.map(({ path, sensitivity }) => [path, sensitivity])).toEqual([
+  expect(receipt.codeEvidence.exercises.map(({ path, sensitivity }) => [path, sensitivity])).toEqual([
     ["test/negative.test.mjs", "fails_then_passes"], ["test/positive.test.mjs", "passes_on_base"]]);
   // No exercise worktree remains; checkout dependencies are untouched.
   expect(spawnSync("git", ["worktree", "list", "--porcelain"], { cwd: root, encoding: "utf8" }).stdout.match(/^worktree /gmu))
@@ -1722,8 +1765,8 @@ it("neither flags nor lists as not proved a test file that only gains a test", a
     "  not proved    src/price.mjs: no proof covers it; the project's commands pass with it",
     "  changed lines implementation +1 -1 · tests +1 -0"].join("\n"));
   const receipt = settled.details as Receipt;
-  expect(receipt.weakened).toEqual([]);
-  expect(receipt.unverified).toEqual(["src/price.mjs"]);
+  expect(receipt.specificationEvidence.weakened).toEqual([]);
+  expect(receipt.codeEvidence.unverified).toEqual(["src/price.mjs"]);
 }, 60_000);
 
 it("sends failing tests back once when the project writes no test report, then settles with the failure", async () => {
@@ -1767,7 +1810,7 @@ it("sends failing tests back until the set that fails repeats one already sent, 
   expect(stuck?.continue).toBeUndefined();
   expect(entry(stuck).content).toContain(
     "  NOT passed    bun run test: these tests fail, as they did when they went back: test > a");
-  expect((entry(stuck).details as Receipt).tests.map(({ failingTests }) => failingTests)).toEqual([["test > a"]]);
+  expect((entry(stuck).details as Receipt).codeEvidence.tests.map(({ failingTests }) => failingTests)).toEqual([["test > a"]]);
 }, 60_000);
 
 /** A base whose own test already fails, a change that fixes it and adds a test for a module the base lacks. */
@@ -1816,7 +1859,7 @@ it("keeps a failure the base already had from the agent, when the test reports s
   const { settled } = await changeOverFailingBase(junit, { "test/two.test.mjs": priceTest(2, 2, "two") });
   expect(settled?.continue).toBeUndefined();
   expect(facts(entry(settled).content)).toContain("  failed before bun run test: these tests fail on the base too: test > legacy");
-  const [run] = (entry(settled).details as Receipt).tests;
+  const [run] = (entry(settled).details as Receipt).codeEvidence.tests;
   expect(run).toMatchObject({ verdict: "operator", origin: { cause: "preexisting" } });
 }, 60_000);
 
@@ -1838,7 +1881,7 @@ it("never counts a failure as the base's when no test report shows which tests f
   expect(stuck?.continue).toBeUndefined();
   expect(facts(entry(stuck).content)).toContain("  NOT passed    bun run test: it still fails after its failure went back; " +
     "it fails on the base too, and no test report says which tests fail");
-  expect((entry(stuck).details as Receipt).tests[0]?.origin?.cause).toBe("unknown");
+  expect((entry(stuck).details as Receipt).codeEvidence.tests[0]?.origin?.cause).toBe("unknown");
 }, 60_000);
 
 it("gives no verdict on the base when the change touches what decides the dependencies", async () => {
@@ -1912,8 +1955,8 @@ it("verifies each repository the request changed in a folder of repositories, fr
     .toEqual(["rules"]);
   expect(receiptSummary(receipt).limits.some(({ note }) => note.startsWith("rules: history moved"))).toBe(true);
   // Each repository's evidence stays in its own terms, as a pull request in it reads them.
-  expect(receipt.units?.[2]?.proofs.map(({ path }) => path)).toEqual(["src/rule.ts"]);
-  expect(receipt.units?.[0]?.tests.map(({ command }) => command)).toEqual(["bun run test"]);
+  expect(receipt.units?.[2]?.codeEvidence.proofs.map(({ path }) => path)).toEqual(["src/rule.ts"]);
+  expect(receipt.units?.[0]?.codeEvidence.tests.map(({ command }) => command)).toEqual(["bun run test"]);
   expect(existsSync(join(root, "notes", ".git"))).toBe(false);
 }, 60_000);
 
@@ -1967,8 +2010,8 @@ it("leaves a model's own files out of missing-proof limits (#758)", async () => 
     "models/Counter.cfg": "SPECIFICATION Spec\nCONSTANT N = 1\n",
     "models/Fault.cfg": "SPECIFICATION Spec\nCONSTANT N = 2\n" });
   const receipt = entry(await run.settle()).details as Receipt;
-  expect(receipt.models?.map(({ path, verdict }) => [path, verdict])).toEqual([["models/Counter.tla", "proved"]]);
-  expect(receipt.unverified).toEqual(["src/counter.ts"]);
+  expect(receipt.codeEvidence.models?.map(({ path, verdict }) => [path, verdict])).toEqual([["models/Counter.tla", "proved"]]);
+  expect(receipt.codeEvidence.unverified).toEqual(["src/counter.ts"]);
   expect(receiptFindings(receipt).filter(({ standing, check }) => standing === "gap" && check === "coverage").map(({ subject }) => subject))
     .toEqual(["src/counter.ts"]);
 });
@@ -1988,10 +2031,12 @@ it.each(["failed", "weak", "unchecked"] as const)("keeps a %s model's own files 
   const first = await run.settle();
   const receipt = entry(first?.continue ? await run.settle() : first).details as Receipt;
   expect(receiptStanding(receipt)).toBe(status === "unchecked" ? "unverified" : "failed");
-  expect(receipt.unverified).toEqual([]);
+  expect(receipt.codeEvidence.unverified).toEqual([]);
   // Model failure or inability to run must stand independently of the mock's staleness gap.
-  const withoutModelGap = { ...receipt, models: (receipt.models ?? []).map((model) => ({ ...model,
-    staleness: "current" as const, stale: [] })) };
+  const withoutModelGap = { ...receipt,
+      codeEvidence: { ...receipt.codeEvidence, models: (receipt.codeEvidence.models ?? []).map((model) => ({ ...model,
+              staleness: "current" as const, stale: [] })) }
+};
   expect(receiptStanding(withoutModelGap)).not.toBe("verified");
 });
 
@@ -2009,9 +2054,9 @@ it("publishes captured previews as transcript metadata without changing receipt 
   expect(published.customType).toBe("tesota-receipt-graphs");
   expect(published.details.graphs).toMatchObject([{ subject: "models/Counter.tla", capture: { status: "captured", preview: { reached: 9 } } }]);
   const receipt = entryReceipt(published) as Receipt;
-  expect(receipt.version).toBe(2);
-  expect(receipt.models?.[0]?.capture).toBeUndefined();
-  expect(receipt.models?.[0]?.verdict).toBe("proved");
+  expect(receipt.version).toBe(3);
+  expect(receipt.codeEvidence.models?.[0]?.capture).toBeUndefined();
+  expect(receipt.codeEvidence.models?.[0]?.verdict).toBe("proved");
 });
 
 it("model-checks a model when the request changes the code it covers, and leaves it alone otherwise", async () => {
@@ -2021,14 +2066,14 @@ it("model-checks a model when the request changes the code it covers, and leaves
   await run.tool("write");
   writeFileSync(join(root, "notes.md"), "# Notes, edited\n");
   const untouched = entry(await run.settle()).details as Receipt;
-  expect(untouched.models).toBeUndefined();
+  expect(untouched.codeEvidence.models).toBeUndefined();
   expect(modelCalls.size).toBe(0);
   await run.input();
   await run.tool("write");
   writeFileSync(join(root, "src", "counter.ts"), "export const n = 1;\n");
   const settled = entry(await run.settle());
   const receipt = settled.details as Receipt;
-  expect(receipt.models?.map(({ path, verdict, evidence }) => [path, verdict, evidence.verifier])).toEqual([["models/Counter.tla", "proved", "tlc"]]);
+  expect(receipt.codeEvidence.models?.map(({ path, verdict, evidence }) => [path, verdict, evidence.verifier])).toEqual([["models/Counter.tla", "proved", "tlc"]]);
   expect(run.steps.some((status) => status.step === "checking" && status.path === "models/Counter.tla")).toBe(true);
   expect(receiptFindings(receipt).filter(({ check }) => check === "model").map(({ standing, label }) => [standing, label]))
     .toEqual([["holds", "Model-checked"], ["gap", "Model possibly stale"]]);
@@ -2050,7 +2095,7 @@ it("sends back a model whose planted fault passes, keeps each check of unchanged
   expect(entry(sent).content).toMatch(/^Tesota: the model models\/Counter\.tla passes, but these planted faults pass too, so the model cannot tell them from the code:\n {2}models\/Fault\.cfg: lock removed/u);
   expect(entry(sent).details).toMatchObject({ round: "models", models: [{ path: "models/Counter.tla" }], unheaded: [] });
   const receipt = entry(await run.settle()).details as Receipt;
-  expect(receipt.models?.map(({ path, verdict }) => [path, verdict])).toEqual([["models/Counter.tla", "no_progress"], ["models/Other.tla", "proved"]]);
+  expect(receipt.codeEvidence.models?.map(({ path, verdict }) => [path, verdict])).toEqual([["models/Counter.tla", "no_progress"], ["models/Other.tla", "proved"]]);
   expect(modelCalls.get("models/Other.tla")).toBe(1);
   expect(modelCalls.get("models/Counter.tla")).toBe(1);
   expect(receiptFindings(receipt).find(({ label }) => label === "Model too weak")).toMatchObject({ standing: "decide",
@@ -2065,7 +2110,7 @@ it("never fails a run when TLC cannot check a model, and says why", async () => 
   await run.tool("write");
   writeFileSync(join(root, "src", "counter.ts"), "export const n = 1;\n");
   const receipt = entry(await run.settle()).details as Receipt;
-  expect(receipt.models?.[0]?.verdict).toBe("operator");
+  expect(receipt.codeEvidence.models?.[0]?.verdict).toBe("operator");
   expect(receiptFindings(receipt).find(({ check }) => check === "model")).toMatchObject({ standing: "gap", label: "Model not checked" });
   expect(receiptDecisions(receipt)).toBe(0);
 });
@@ -2081,14 +2126,14 @@ it("asks once for a header on a TLA+ model the request wrote without one, then l
   expect(entry(sent).content).toMatch(/^Tesota: spec\/Race\.tla looks like a model with no tesota-model header/u);
   expect(entry(sent).details).toMatchObject({ round: "models", models: [], unheaded: ["spec/Race.tla"] });
   const receipt = entry(await run.settle()).details as Receipt;
-  expect(receipt.unheaded).toEqual(["spec/Race.tla"]);
+  expect(receipt.codeEvidence.unheaded).toEqual(["spec/Race.tla"]);
   expect(receiptFindings(receipt).find(({ check }) => check === "model")).toMatchObject({ standing: "gap", subject: "spec/Race.tla" });
 });
 
 
 /** What the gate published of its operations, as the status line and the timeline read them. */
 const shape = (run: ReturnType<typeof gate>): (string | undefined)[][] =>
-  run.progress.operations.operations().map(({ method, target, state, result }) => [method, target, state, result]);
+  run.progress.operations.operations().filter(({ method }) => method !== "source_exercise").map(({ method, target, state, result }) => [method, target, state, result]);
 
 it("publishes each proof and closes a send-back attempt as returned to the agent, the next as settled (#590)", async () => {
   const root = project();
@@ -2120,9 +2165,9 @@ it("publishes the test rung's commands, each test on the base and its base contr
   await run.tool("write");
   write(root, { "src/price.mjs": "export const total = (n) => Math.max(n, 0);\n", "test/negative.test.mjs": priceTest(-1, 0) });
   await run.settle();
-  expect(shape(run)).toEqual([["command", "bun run test", "ended", "passed"], ["exercise", "bun run test", "ended", "failed"],
+  expect(shape(run)).toEqual([["command", "bun run test", "ended", "passed"], ["base_command", "bun run test", "ended", "passed"], ["exercise", "bun run test", "ended", "failed"],
     ["base_control", "bun run test", "ended", "passed"], ["command", "bun run test", "ended", "passed"], ["receipt", "receipt", "ended", "done"]]);
-  const [, exercise, control] = run.progress.operations.operations();
+  const [, , exercise, control] = run.progress.operations.operations();
   expect(control?.parent).toBe(exercise?.id);
   for (const { startedAt, endedAt, durationMs } of run.progress.operations.operations()) {
     expect(endedAt).toBeGreaterThanOrEqual(startedAt ?? Infinity);

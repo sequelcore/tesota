@@ -33,11 +33,15 @@ what it tested, and what nothing checked.
 - [Commands and keys](reference/commands.md)
 - [Configuration](reference/configuration.md): every file Tesota reads.
 - [Installation](reference/installation.md): versions, platforms, tools, uninstalling.
-- [Receipt v2](receipt-v2.md): the receipt's format.
+- [Receipt v3](receipt-v3.md): the current receipt's format;
+  [v2](receipt-v2.md) remains the historical reference.
 - [Proved rules](reference/proved-rules.md): every rule in `formal:check`.
 - [Glossary](reference/glossary.md)
 
 ## Project
+
+[Request checks, source exercise and receipt v3](decisions/2026-11-02-evidence-v3-design.md)
+records their system design and [decision](decisions/2026-11-02-evidence-v3.md).
 
 [Project checks and shared issue context](decisions/2026-11-01-checks-context-design.md)
 records their system design and [decision](decisions/2026-11-01-checks-context.md).

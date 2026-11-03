@@ -174,7 +174,7 @@ async function shell(cwd: string, script: readonly ScriptStep[], appearance: App
     // The verdict and reason gpt-6-luna gave this contract and request in a live ClaimCheck run on 2026-10-28, word for word;
     // live runs of it and gpt-6.1-sol flagged the boundary 6 times in 6, mostly as a partial match.
     if (tool === "record_comparisons") return fauxAssistantMessage(fauxToolCall(tool, { comparisons: [{
-      function: 1, verdict: "partially_justified",
+      function: 1, verdict: "partial_match",
       explanation: "The contract captures the subtraction and unchanged cases, but applies the 10-unit reduction at amount = 100 as well. " +
         "The request says orders over 100, so this boundary should remain unchanged.",
     }] }));
@@ -267,8 +267,8 @@ async function turn(appearance: Appearance): Promise<void> {
   const receipt = session === undefined ? undefined : peekSessionFile(join(app.sessions, session)).entries.map(entryReceipt).findLast(isReceipt);
   if (receipt === undefined || receiptStanding(receipt) !== "verified" || !screen.includes("✓ Proved") || !screen.includes("✓ Tested")
     || !screen.includes("failed on the base and passed with the change")
-    || receipt.openCases?.status !== "listed" || receipt.openCases.cases.length !== 0
-    || !receipt.contracts.some(({ judgment }) => judgment?.verdict === "partially_justified") || !screen.includes("amount = 100")) {
+    || receipt.requestReview.openCases.status !== "listed" || receipt.requestReview.openCases.cases.length !== 0
+    || !receipt.requestReview.contractComparison.contracts.some(({ assessment }) => assessment?.verdict === "partial_match") || !screen.includes("amount = 100")) {
     throw new Error(`The screenshot run did not verify with an exercised test, no open cases and a shown mismatch:\n${screen}`);
   }
   // Independently check the generated proof with the installed CLI, not a scripted proof result.

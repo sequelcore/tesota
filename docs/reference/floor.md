@@ -68,6 +68,6 @@ a one-liner, another tool or a subagent. So after it refuses:
   to ask. Reading isn't asked.
 - The request's end lists each refused call, what it named and why, and
   how many its subagents had. The receipt lists them without what they
-  named, and they don't change its [standing](../receipt-v2.md#standing).
+  named, and they don't change its [standing](../receipt-v3.md#presentation-and-standing).
 
 These make each attempt visible and put it to you; they don't contain it.

@@ -13,6 +13,7 @@ import { homedir } from "node:os";
 import { isAbsolute, relative } from "node:path";
 import { mkdirSync } from "node:fs";
 import { type Base, captureBase } from "./base.ts";
+import { checkPlanText } from "../../../src/projects.ts";
 import { boundedReferences, referenceContext, referenceType, type RequestReference } from "../../../src/request-references.ts";
 import type { BranchEntry, EntryDraft, ExtensionFactory, PromptOptions, RunOutcome, Session, SessionOutcome, ToolDefinition } from "../../../src/contract.ts";
 import { type ContextBreakdown, contextBreakdown, contextUsage, estimateTokens } from "../../../src/context-usage.js";
@@ -273,6 +274,11 @@ export const skillMessage = (skill: StartedSkill, timestamp: number): CustomMess
 
 export const referenceMessage = (references: readonly RequestReference[], timestamp: number): CustomMessage =>
   ({ role: "custom", customType: referenceType, content: referenceContext(references), display: false, timestamp });
+
+/** Derived from the admitted base, retained with the request through compaction and resume. */
+export const checkPlanMessage = (base: Base, timestamp: number): CustomMessage | undefined =>
+  base.checks?.some(({ projects }) => projects.length > 0) === true
+    ? { role: "custom", customType: "tesota-check-plan", content: checkPlanText(base.checks), display: true, timestamp } : undefined;
 
 /**
  * What a compacted conversation starts with (#451): the run's request, the
@@ -1321,11 +1327,13 @@ export function createLoop(options: LoopOptions): LoopSession {
     const instructed = skill === undefined ? undefined : skillMessage(skill, Date.parse(at));
     const references = boundedReferences(options.requestReferences ?? []);
     const referenced = references.length === 0 ? undefined : referenceMessage(references, Date.parse(at));
+    let checking: CustomMessage | undefined;
     // A run exists once its request is in the file: one whose base could not be captured is no run, so its
     // number is given again and the input that waited for it is refused, as the file reader requires.
     const written = (async () => {
       let captured: Base;
       try { captured = continues?.base ?? await base(options.cwd, signal); } catch (error) { closed = true; throw error; }
+      checking = checkPlanMessage(captured, Date.parse(at));
       writer.append({ type: "request", run, text, origin, at, base: captured, ...skill === undefined ? {} : { skill } });
       if (referenced !== undefined) writer.append({ type: "custom", run, customType: referenceType, data: references });
       // The run it continues and the answer go in with the request, before anything runs.
@@ -1336,6 +1344,7 @@ export function createLoop(options: LoopOptions): LoopSession {
       // The run's input is counted from its request and its skill on, before input that came while it starts takes its place.
       ledger = instructed === undefined ? [asked] : [asked, instructed];
       if (referenced !== undefined) ledger.push(referenced);
+      if (checking !== undefined) ledger.push(checking);
       inputOrder.clear();
       ledger.forEach((message, index) => inputOrder.set(message, index));
       nextInputOrder = ledger.length;
@@ -1350,6 +1359,7 @@ export function createLoop(options: LoopOptions): LoopSession {
     add(asked);
     if (instructed !== undefined) add(instructed);
     if (referenced !== undefined) add(referenced);
+    if (checking !== undefined) add(checking);
     let generation = 0;
     let continuations = 0;
     for (;;) {

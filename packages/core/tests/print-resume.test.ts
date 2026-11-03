@@ -131,7 +131,7 @@ describe("resuming a print run that ended on a question", () => {
       expect(ofRun(entries, 2).filter((entry) => entry.type === "settled" && entry.phase === "verifier")).toHaveLength(1);
       const receipts = receiptsOf(entries, 2);
       expect(receipts).toHaveLength(1);
-      expect(receipts[0]).toMatchObject({ clarifications: [expect.objectContaining(clarification)] });
+      expect(receipts[0]).toMatchObject({ requestContext: { clarifications: [expect.objectContaining(clarification)] } });
       // What the run changed before its question is the request's own, since its start fingerprints were restored.
       expect(JSON.stringify((receipts[0] as { changed: unknown }).changed)).toContain("a.txt");
       expect(receipts[0]).not.toMatchObject({ inherited: [expect.objectContaining({ path: "a.txt" })] });

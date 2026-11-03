@@ -152,12 +152,13 @@ async function liveRun(arm: string, set: string, testCase: LiveCase, run: number
     ...ended.ended === "exited" && ended.exitCode === 0 ? {} : { output: ended.output.slice(-2000) },
     ...facts, receipt: undefined,
     receiptSummary: receipt === undefined ? undefined : {
-      proofs: receipt.proofs.map(({ path, verdict }) => ({ path, verdict })),
-      contracts: receipt.contracts.map(({ path, name, mutation, judgment }) => ({ path, name, survived: mutation.survived.length,
-        rejected: mutation.rejected, inconclusive: mutation.inconclusive, equivalent: mutation.equivalent, verdict: judgment?.verdict })),
-      claimcheck: receipt.claimcheck,
-      tests: receipt.tests.map(({ command, evidence, verdict }) => ({ command, outcome: evidence.outcome, verdict })),
-      exercises: receipt.exercises, weakened: receipt.weakened, unverified: receipt.unverified, uncovered: receipt.uncovered,
+      proofs: receipt.codeEvidence.proofs.map(({ path, verdict }) => ({ path, verdict })),
+      contracts: receipt.specificationEvidence.contracts.map(({ path, name, mutation }) => ({ path, name, survived: mutation.survived.length,
+        rejected: mutation.rejected, inconclusive: mutation.inconclusive, equivalent: mutation.equivalent })),
+      requestReview: receipt.requestReview,
+      tests: receipt.codeEvidence.tests.map(({ command, evidence, verdict }) => ({ command, outcome: evidence.outcome, verdict })),
+      exercises: receipt.codeEvidence.exercises, weakened: receipt.specificationEvidence.weakened,
+      unverified: receipt.codeEvidence.unverified, uncovered: receipt.codeEvidence.uncovered,
     },
     proved: proof?.outcome, resolved,
     weakened: testCase.path === undefined || baseSource === undefined && testCase.untracked[testCase.path] === undefined ? []
@@ -233,8 +234,8 @@ async function replay(): Promise<void> {
       const result = await claimCheck({ model: judge, modelRegistry: registry }, [item.request], item.items,
         AbortSignal.timeout(600_000), restateWith);
       append({ kind: "claimcheck", source: item.source, config, repeat: item.repeat, expresses: item.expresses, result });
-      process.stdout.write(`${item.source} ${config} ${item.repeat}: ${result.status === "judged"
-        ? result.judgments.map(({ verdict }) => verdict).join(", ") : result.reason}\n`);
+      process.stdout.write(`${item.source} ${config} ${item.repeat}: ${result.status === "completed"
+        ? (result.judgments ?? []).map((judgment) => judgment?.verdict ?? "unavailable").join(", ") : result.reason}\n`);
     }
   }
 }

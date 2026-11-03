@@ -1,5 +1,5 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
-import { entryReceipt, isReceipt, type Receipt, type ReceiptStanding, receiptStanding, renderReceipt, standingWords } from "../../../src/receipt.ts";
+import { entryReceipt, isReceipt, type ReceiptStanding, receiptStanding, renderReceipt, standingWords } from "../../../src/receipt.ts";
 import { type AgentType, agentCatalog } from "./agents.ts";
 import { admitChild, branchGuard, childMode, type GuardAdmission } from "./agent-rule.ts";
 import { branchOf } from "./branch.ts";
@@ -88,7 +88,7 @@ async function modelFor(parent: Parent, request: AgentRequest, type: AgentType |
 }
 
 /** What the model reads of a child's end: its report, labeled as the child's words, then its receipt and where its work is. */
-function endText(report: ChildReport, said: string | undefined, receipt: Receipt | undefined, failure: string | undefined): string {
+function endText(report: ChildReport, said: string | undefined, receipt: unknown, failure: string | undefined): string {
   const stopped = report.limited === "turns" ? ` after ${childLimits.turns} replies, its limit`
     : report.limited === "time" ? ` after ${childLimits.minutes} minutes, its limit` : "";
   return [`Subagent "${report.description}" ended ${report.outcome}${stopped}${report.verification === undefined ? "" : `, ${standingWords[report.verification]}`}.`,
@@ -99,16 +99,16 @@ function endText(report: ChildReport, said: string | undefined, receipt: Receipt
     ...report.unguarded === undefined ? [] : ["It ran without Git's guard on its branch, so nothing kept it off other branches: "
       + "check that no branch but its own moved."],
     `Its report, in its own words (not evidence):\n${said?.trim() || "(it said nothing)"}`,
-    ...receipt === undefined ? [] : [renderReceipt(receipt)],
+    ...receipt === undefined ? [] : [isReceipt(receipt) ? renderReceipt(receipt)
+      : "Unsupported receipt format; this Tesota reads receipt v3 only."],
     ...report.branch === undefined ? [] : [`Its work is on branch ${report.branch}, in ${report.worktree ?? "its worktree"}. `
       + "It counts toward your request only once you bring it into your workspace, where your verification checks it."],
     `Its session: ${report.session}`].join("\n\n");
 }
 
 /** The last receipt a child's session settled with, as `tesota -p` reads it, since a child records it as data. */
-function lastReceipt(entries: readonly SessionEntry[]): Receipt | undefined {
-  const found = branchOf(entries).map(entryReceipt).findLast((receipt) => receipt !== undefined);
-  return isReceipt(found) ? found : undefined;
+function lastReceipt(entries: readonly SessionEntry[]): unknown {
+  return branchOf(entries).map(entryReceipt).findLast((receipt) => receipt !== undefined);
 }
 
 /**
@@ -145,7 +145,7 @@ async function runChild(child: EngineSession, brief: string, report: ChildReport
   const outcome = child.outcome() ?? (signal.aborted ? "aborted" : "error");
   // A run that ends in error, such as on a provider's refusal, says why in its end (#564).
   if (outcome === "error") failure ??= written.flatMap((entry) => entry.type === "run_end" ? [entry.reason] : []).at(-1);
-  const verification = receipt === undefined ? undefined : receiptStanding(receipt);
+  const verification = isReceipt(receipt) ? receiptStanding(receipt) : undefined;
   const kept = child.kept() !== undefined && child.workspace.branch !== undefined;
   const refused = floorRefusals(written).length;
   const ended: ChildReport = { ...report, outcome, ...verification === undefined ? {} : { verification },

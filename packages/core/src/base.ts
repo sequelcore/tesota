@@ -3,6 +3,7 @@ import { git } from "../../../src/git.ts";
 import { refTips } from "../../../src/request-fingerprint.ts";
 import { takeSnapshot } from "../../../src/snapshot.ts";
 import { workspaceUnits } from "../../../src/workspace.ts";
+import { suggestChecks, type UnitCheckPlan } from "../../../src/projects.ts";
 import { withLockWhile } from "./session-lock.ts";
 
 /**
@@ -22,6 +23,8 @@ export type BaseUnit =
 /** What a request is measured against: each unit of the session's folder; none when the folder cannot be read. */
 export interface Base {
   readonly units: readonly BaseUnit[];
+  /** Missing on historical requests means the check plan was not recorded. */
+  readonly checks?: readonly UnitCheckPlan[];
 }
 
 /** A repository's base: its commit, null before the first one, and its ref tips; or refused when Git cannot read it. */
@@ -51,5 +54,5 @@ export async function captureBase(cwd: string, signal?: AbortSignal): Promise<Ba
     found.push("refused" in snapshot ? { folder, kind: "refused", reason: snapshot.refused }
       : { folder, kind: "snapshot", commit: snapshot.base, tooLarge: snapshot.tooLarge });
   }
-  return { units: found };
+  return { units: found, checks: units.map(({ folder }) => ({ folder, projects: suggestChecks(join(cwd, folder)) })) };
 }
