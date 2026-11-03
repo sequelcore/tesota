@@ -4,7 +4,7 @@ import { join, posix } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { type Evidence, contentHash } from "./evidence.js";
 import { git } from "./git.js";
-import { configOf, modelOwnFiles } from "./model-files.js";
+import { configOf, inProject, modelOwnFiles } from "./model-files.js";
 import { captureGraph, graphContentHash, graphLimits, type GraphCapture, type GraphOptions } from "./model-graph.js";
 import { stateVariables } from "./model-state.js";
 import { tesotaHome } from "./home.js";
@@ -97,12 +97,6 @@ export function modelHeader(source: string): ModelHeader | undefined {
   }
   const { confirmed, replay, ...rest } = found;
   return { ...rest, ...confirmed === undefined ? {} : { confirmed }, ...replay === undefined ? {} : { replay } };
-}
-
-/** Whether a header's path stays in the project: relative, and never above its root once normalized. */
-export function inProject(path: string): boolean {
-  const normal = posix.normalize(path.replaceAll("\\", "/"));
-  return !posix.isAbsolute(normal) && !/^[A-Za-z]:/u.test(normal) && normal !== ".." && !normal.startsWith("../");
 }
 
 /**

@@ -3,7 +3,8 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, readFileSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, onTestFinished } from "vitest";
-import { checkModel, inProject, modelContent, modelHeader, modelReport, plannedModels, tlcCounterexample, unheadedReport } from "../src/model-check.js";
+import { checkModel, modelContent, modelHeader, modelReport, plannedModels, tlcCounterexample, unheadedReport } from "../src/model-check.js";
+import { inProject } from "../src/model-files.js";
 import { GateOperations } from "../src/operations.js";
 import { counterexampleSteps, modelFinding } from "../src/receipt.js";
 import { graphPreviewRows } from "../src/messages.js";

@@ -1,5 +1,11 @@
 import type { ProofOutcome } from "./proof-outcome-rule.js";
 
+/** A selected design check requires verification even when no tool may have changed files. */
+//@ ensures \result <==> changed || selected
+export function verificationRequired(changed: boolean, selected: boolean): boolean {
+  return changed || selected;
+}
+
 /**
  * A started tool may change files unless it is a trusted built-in reader or
  * question, or it starts in a read-only session, which changes nothing: its

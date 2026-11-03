@@ -9,7 +9,7 @@ import type { SentBack } from "./gate.js";
 import type { LedgerRow } from "./operations.js";
 import { ACCEPTANCE, commandFinding, contractFinding, DETAILS, type Finding, isReceipt, methodWidth, modelFinding, OPINIONS, proofFinding,
   type Receipt, type ReceiptGraph, type ReceiptGraphMessage, receiptChildLines, receiptClarificationLines, receiptRefusalLines, receiptDetailLines,
-  receiptRequestContextLines, receiptSpecificationLines, requestReviewLines, receiptStanding, receiptSummary, type SummaryGroup } from "./receipt.js";
+  receiptRequestContextLines, receiptSpecificationLines, requestReviewLines, requiredModelFinding, receiptStanding, receiptSummary, type SummaryGroup } from "./receipt.js";
 
 /** How the shell asks a message to be drawn: expanded or not, and how far in. */
 type RenderOptions = Parameters<MessageRenderer>[1];
@@ -243,6 +243,7 @@ function ledgerCard(theme: Theme, ledger: Ledger, options: RenderOptions): Compo
 }
 /** What a send-back round asks the agent to fix, as findings; a weak contract names the changes to its code that still prove. */
 function sentBackFindings(sent: SentBack): Finding[] {
+  if (sent.round === "selection") return [requiredModelFinding(sent.requiredModel)];
   if (sent.round === "proofs") return sent.proofs.map(({ path, evidence }) => proofFinding({ path, verdict: "send_back", evidence }));
   if (sent.round === "tests") return sent.commands.map((run) => commandFinding({ ...run, verdict: "send_back" }));
   if (sent.round === "models") {
@@ -255,6 +256,7 @@ function sentBackFindings(sent: SentBack): Finding[] {
 }
 
 function headline(sent: SentBack): string {
+  if (sent.round === "selection") return "the selected model inputs changed";
   if (sent.round === "proofs") return sent.proofs.length === 1 ? "a proof fails" : `${sent.proofs.length} proofs fail`;
   if (sent.round === "tests") return "the tests fail";
   if (sent.round === "models") return sent.models.length === 0 ? "a model declares no header" : sent.models.length === 1 ? "a model fails" : `${sent.models.length} models fail`;

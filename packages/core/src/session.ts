@@ -6,7 +6,7 @@ import { tesotaHome } from "../../../src/home.ts";
 import { entryReceipt, type ExternalEffect, type FloorRefusal, interruptedReceipt, isReceipt, type ReceiptChild, receiptEntry } from "../../../src/receipt.ts";
 import { toolMayChangeFiles } from "../../../src/verification/gate-rule.ts";
 import manifest from "../package.json" with { type: "json" };
-import type { Base } from "./base.ts";
+import { captureBase, type Base } from "./base.ts";
 import type { ExtensionAPI } from "../../../src/contract.ts";
 import { type AgentType, agentTypes } from "./agents.ts";
 import { branchOf } from "./branch.ts";
@@ -325,6 +325,7 @@ function unsettledReceipt(entries: readonly SessionEntry[], run: number): Sessio
       input.kind === "clarification" ? [clarificationText(input.clarification)] : input.origin === "extension" ? [] : [input.text])] }],
       ...clarifications.length === 0 ? {} : { clarifications } },
     ...request.children.length === 0 ? {} : { children: request.children },
+    ...request.base.requiredModel === undefined ? {} : { requiredModel: { selection: request.base.requiredModel, state: "unchecked" } },
     ...request.externalEffects === undefined || request.externalEffects.length === 0 ? {} : { externalEffects: request.externalEffects },
     ...request.refusals.length === 0 ? {} : { floorRefusals: request.refusals } });
   return { run, ...receiptEntry(undefined, receipt) };
@@ -661,6 +662,23 @@ function stateOf(entries: readonly SessionEntry[]): LoopState {
   };
 }
 
+/** Keep the first admitted model identity for this session, including resumed requests. */
+function modelAdmission(entries: readonly SessionEntry[], options: OpenOptions, cwd: string): NonNullable<LoopOptions["captureBase"]> {
+  let pinned = ledgerOf(entries).find((item) => item.base.requiredModel !== undefined)?.base.requiredModel;
+  const required = options.flags?.["require-model"];
+  if (required !== undefined && typeof required !== "string") throw new Error("--require-model takes a model path");
+  if (pinned !== undefined && required !== undefined && resolve(cwd, required) !== resolve(cwd, pinned.folder, pinned.path)) {
+    throw new Error("This session already pins another model; start a new session to select different model inputs");
+  }
+  const admission = options.captureBase ?? ((folder: string, signal: AbortSignal) => captureBase(folder, signal, pinned === undefined ? required : undefined));
+  return async (folder, signal) => {
+    const captured = await admission(folder, signal);
+    pinned ??= captured.requiredModel;
+    if (required !== undefined && pinned === undefined) throw new Error("Request admission did not retain --require-model");
+    return pinned === undefined ? captured : { ...captured, requiredModel: pinned };
+  };
+}
+
 /**
  * The loop over a session file whose lock is held, keeping its entries for
  * the ledger; the lock goes when it is disposed. A session opened again
@@ -697,7 +715,8 @@ function engineSession(file: string, release: () => void, entries: SessionEntry[
     : undefined;
   let loop: LoopSession;
   try {
-    loop = createLoop({ ...options, cwd: workspace.cwd, ...workspace.env === undefined ? {} : { env: workspace.env }, sessionId: id, verifier: (pi) => { options.verifier(pi, request); }, branch: () => branchOf(entries),
+    loop = createLoop({ ...options, cwd: workspace.cwd, captureBase: modelAdmission(entries, options, workspace.cwd),
+      ...workspace.env === undefined ? {} : { env: workspace.env }, sessionId: id, verifier: (pi) => { options.verifier(pi, request); }, branch: () => branchOf(entries),
       writer: options.writer?.(recording) ?? recording, outputFolder: outputOf(file), sessionFile: file, ...opened ? { resumed: stateOf(entries) } : {},
       ...scratch === undefined ? {} : { scratch },
       ...host === undefined ? {} : { jobTools: (jobs) => [agentTool(host, jobs)] },

@@ -7,6 +7,7 @@ import type { Restatement } from "./pi-claimcheck.js";
 import type { ClaimCheckRun, ContractStrength, ContractComparison, ContractReview } from "./proof-guarantees.js";
 import type { Counterexample, ModelCheck, ModelLink } from "./model-check.js";
 import { modelOwnFiles } from "./model-files.js";
+import type { ModelSelectionResult } from "./model-selection.js";
 import type { GraphCapture } from "./model-graph.js";
 import type { ChangeLines, LineCount } from "./change-lines.js";
 import type { TestEdit, WeakenedTest } from "./test-edits.js";
@@ -43,6 +44,8 @@ export interface RequestJudgment {
  */
 interface ReceiptFields {
   readonly version: 3;
+  /** The operator's fixed model inputs and whether this request checked that same selection. */
+  readonly requiredModel?: ModelSelectionResult;
   /** False when the project has no Git repository, so nothing could tell which files changed or verify them. */
   readonly repository: boolean;
   /**
@@ -338,6 +341,8 @@ export function unitReceipt(receipt: Receipt, folder: string): Receipt | undefin
     ...contracts.length === 0 ? { reason: "no eligible changed contract" } : reasons.length === 0 ? {} : { reason: reasons.join("; ") }, contracts, runs };
   const checksAtStart = receipt.codeEvidence.checksAtStart?.filter((plan) => plan.folder === folder);
   return unit === undefined ? undefined : { ...unit, version, startedAt, settledAt, engine, ...model === undefined ? {} : { model },
+    ...receipt.requiredModel?.selection.folder !== folder ? {} : { requiredModel: { ...receipt.requiredModel,
+      selection: { ...receipt.requiredModel.selection, folder: "" } } },
     codeEvidence: { ...unit.codeEvidence, ...checksAtStart === undefined ? {} : { checksAtStart } },
     requestContext, requestReview: { ...requestReview, context: requestReview.context.filter((context) => context.method === "open_cases" || context.folder === folder),
       contractComparison },
@@ -951,18 +956,31 @@ function externalFindings(effects: readonly ExternalEffect[]): Finding[] {
     more: [`Started ${call.startedAt} · call ${call.callId}`, `Arguments sha256 ${call.argumentsHash}`] }));
 }
 
+export function requiredModelFinding({ selection, state }: ModelSelectionResult): Finding {
+  return {
+    standing: state === "checked" ? "holds" : "gap", check: "model",
+    label: state === "changed" ? "Required model changed"
+      : state === "checked" ? "Required model checked" : "Required model unresolved",
+    subject: inUnit(selection.folder, selection.path),
+    detail: state === "changed" ? "the selected model inputs changed; this does not fulfill the operator's selection"
+      : state === "checked" ? "the selected inputs were model-checked; this does not prove the implementation"
+        : "no complete, successful current check of the selected model and all its faults fulfills the selection",
+    more: [`Selected content sha256 ${selection.contentHash}`, ...selection.files.map((path) => inUnit(selection.folder, path))] };
+}
+
 export function receiptFindings(receipt: Receipt): Finding[] {
   const external = externalFindings(receipt.externalEffects ?? []);
+  const selected = receipt.requiredModel === undefined ? [] : [requiredModelFinding(receipt.requiredModel)];
   if (receipt.stopped !== undefined) {
     return [{ standing: "decide", check: "coverage", label: "Not verified", subject: "this request's changes",
-      detail: receipt.stopped, more: [] }, ...external];
+      detail: receipt.stopped, more: [] }, ...selected, ...external];
   }
   return [...receipt.unresolvedQuestion === undefined ? [] : [{ standing: "decide" as const, check: "request" as const,
     label: "Incomplete", subject: "unresolved question", detail: receipt.unresolvedQuestion, more: [] }],
   ...receipt.units === undefined ? unitFindings(allEvidence(receipt)) : receipt.units.flatMap((unit) => verified(unit)
     ? unitFindings(fromFolder(unit), unit.folder) : [{ standing: "decide" as const, check: "coverage" as const, label: "Not verified",
       subject: plainName(unit.folder), detail: plainReason(unit), more: [] }]), ...external,
-    ...comparisonParts(receipt).flatMap(({ run, contracts }) => opinionFindings(run, contracts)), ...openCaseFindings(receipt.requestReview.openCases)];
+    ...comparisonParts(receipt).flatMap(({ run, contracts }) => opinionFindings(run, contracts)), ...openCaseFindings(receipt.requestReview.openCases), ...selected];
 }
 
 /** One unit's findings, from the folder Pi runs in; each unit's tests decide how its unproved files are worded. */
@@ -1172,7 +1190,7 @@ export function receiptStanding(receipt: Receipt): ReceiptStanding {
   const unreadable = units.filter(({ changed }) => changed === "unreadable").length + (evidence.changed === "unreadable" ? 1 : 0);
   const gaps = receiptFindings(withoutUnproved(receipt)).filter(({ standing }) => standing === "gap").length + unreadable;
   // A change of comments alone changed lines, whatever paths the receipt names.
-  return externalStanding(runStanding(evidence.changed === "unreadable" || paths.length > 0 || evidence.commentsOnly === true, receipt.stopped !== undefined,
+  return externalStanding(runStanding(evidence.changed === "unreadable" || paths.length > 0 || evidence.commentsOnly === true || receipt.requiredModel !== undefined, receipt.stopped !== undefined,
     receiptDecisions(receipt), failed, passed, gaps, paths.map(({ proved }) => proved), paths.map(({ tested }) => tested),
     paths.map(({ exercised }) => exercised)), receipt.externalEffects?.length ?? 0);
 }
@@ -1395,9 +1413,11 @@ export function requestReviewLines(receipt: Pick<Receipt, "requestReview">): str
     `Open cases: ${openCases.status}; ${"reason" in openCases ? openCases.reason : `${openCases.cases.length} listed`}`];
 }
 
-export function receiptRequestContextLines(receipt: Pick<Receipt, "requestContext">): string[] {
+export function receiptRequestContextLines(receipt: Pick<Receipt, "requestContext" | "requiredModel">): string[] {
   return ["Request context", ...receipt.requestContext.requests.length === 0 ? ["No request messages recorded."] : [], ...receipt.requestContext.requests.flatMap(({ run, text }) =>
-    [`Request ${run}`, ...text]), ...receiptClarificationLines(receipt)];
+    [`Request ${run}`, ...text]), ...receipt.requiredModel === undefined ? []
+      : [`Required model: ${inUnit(receipt.requiredModel.selection.folder, receipt.requiredModel.selection.path)}`, `Selected content sha256 ${receipt.requiredModel.selection.contentHash}`],
+    ...receiptClarificationLines(receipt)];
 }
 
 export function receiptSpecificationLines(receipt: Receipt, expanded = true): string[] {
@@ -1494,7 +1514,7 @@ function leftLines(receipt: Receipt): string[] {
  * session opens again need not be what the run left.
  */
 export function interruptedReceipt(run: Pick<Receipt, "repository" | "base" | "startedAt" | "settledAt" | "engine" |
-  "requestContext" | "children" | "floorRefusals" | "externalEffects">): Receipt {
+  "requestContext" | "children" | "floorRefusals" | "externalEffects" | "requiredModel">): Receipt {
   return { version: 3, ...run, requestReview: noRequestReview, ...noEvidence, changed: "unreadable", lines: "unreadable",
     stopped: "the session ended before Tesota verified this run, so no check ran; change attribution is unknown, "
       + "and the files on disk now may not be what the run left. A new request verifies the current content",

@@ -123,6 +123,8 @@ checked ([Installation](../reference/installation.md#tools)).
 Quint typechecks first, then needs Apalache to translate for TLC, which
 Windows can't start; write models there in TLA+.
 
+[Pin inputs](../receipt-v3.md#required-model): `--require-model <path>`.
+
 ## What the receipt says
 
 | Receipt | Meaning |

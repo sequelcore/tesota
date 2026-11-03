@@ -22,6 +22,7 @@ migrated or reconstructed by current readers.
 | `startedAt`, `settledAt` | ISO 8601 timestamps |
 | `engine`, `model` | Tesota version and session provider/model when known |
 | `stopped`, `unresolvedQuestion` | Interrupted-run reason or remaining question |
+| `requiredModel` | Optional operator-selected model identity and its check state |
 | `changed` | Each changed path and final Git blob ID; null for deletion; `unreadable` when unknown |
 | `lines` | Added/removed implementation, test and other lines, binary/generated paths; or `unreadable` |
 | `inherited`, `unmeasured` | Unchanged dirty admission paths, and paths whose content could not be measured |
@@ -37,6 +38,34 @@ its units; the root retains the admitted plan. Blob identities, checked-content 
 staleness retain their meanings. Export reports checked content that no longer
 matches the commit and paths changed after settlement. A stopped receipt is an
 inventory, never a verification pass.
+
+### Required model
+
+`requiredModel` holds `{selection, state}` when the session selected a model
+with `--require-model`. `selection` records its project `folder`, model `path`,
+ordered input `files` and their `contentHash`. Paths are relative to that
+project; the folder is relative to the session. The hash uses the same
+path/content SHA-256 binding as check evidence. Covered implementation files
+are excluded from this fixed identity.
+
+The option works in the terminal and print mode:
+
+```sh
+tesota --require-model models/Counter.tla
+tesota -p --require-model models/Counter.tla "Update the implementation"
+```
+
+`state` is `checked` only when the selected inputs are unchanged and their
+current model check and every declared fault completed successfully.
+`changed` means a selected input was replaced or removed. `unchecked` means
+the selected check remains incomplete, including a stopped run. The latter
+two states are receipt gaps; a passing replacement cannot satisfy the original
+selection. No selection is inferred from historical requests without one.
+
+The selection is retained in the request journal across compaction, follow-ups
+and resume. A new session explicitly selects revised inputs. It covers the
+model, its configuration and its declared fault files/configurations; it does
+not pin transitive imports or establish model/implementation conformance.
 
 ## Code evidence
 
