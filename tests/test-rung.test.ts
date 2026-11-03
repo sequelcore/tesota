@@ -23,7 +23,17 @@ async function until(condition: () => boolean, ms = 10_000): Promise<boolean> {
 }
 
 function alive(pid: number): boolean {
-  try { process.kill(pid, 0); return true; } catch { return false; }
+  try { process.kill(pid, 0); } catch (error) {
+    return !(error instanceof Error && "code" in error && error.code === "ESRCH");
+  }
+  // Linux retains a terminated child's PID until it is reaped; existence alone does not mean it can execute.
+  if (process.platform !== "linux") return true;
+  try {
+    const status = readFileSync(`/proc/${pid}/stat`, "utf8");
+    return status.slice(status.lastIndexOf(")") + 2).split(" ")[0] !== "Z";
+  } catch (error) {
+    return !(error instanceof Error && "code" in error && error.code === "ENOENT");
+  }
 }
 
 function folder(): string {
