@@ -497,7 +497,8 @@ it("stops every process a command started when it runs past its time limit", asy
 
 it("reports a check that prints results and hangs after one timeout, without running it on the base (#784)", async () => {
   const { root } = noTests();
-  const command = "node -e \"console.log('146 passing (3s)'); require('fs').writeFileSync('pid', String(process.pid)); setInterval(() => {}, 1000)\"";
+  const command = "node -e \"console.log('146 passing (3s)'); const fs = require('fs'); fs.writeFileSync('pid', ''); " +
+    "setTimeout(() => fs.writeFileSync('pid', String(process.pid)), 100); setInterval(() => {}, 1000)\"";
   writeFileSync(join(root, "package.json"), JSON.stringify({ packageManager: "bun@1.4.2", scripts: { check: command } }));
   execFileSync("git", ["add", "package.json"], { cwd: root });
   execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "--quiet", "-m", "hanging check"], { cwd: root });
@@ -513,14 +514,22 @@ it("reports a check that prints results and hangs after one timeout, without run
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
   const running = runCommands(root, suggestChecks(root), ["math.ts"], controller.signal, ops, undefined, { base });
   try {
-    for (let n = 0; n < 500 && !existsSync(join(root, "pid")); n++) await realTimeout(10);
+    // Creation precedes the write: do not advance the timeout until the child has published its actual PID.
+    for (let n = 0; n < 500 && (!existsSync(join(root, "pid")) || readFileSync(join(root, "pid"), "utf8") === ""); n++) await realTimeout(10);
     expect(existsSync(join(root, "pid"))).toBe(true);
+    const pid = Number(readFileSync(join(root, "pid"), "utf8"));
+    expect(pid).toBeGreaterThan(0);
     await vi.advanceTimersByTimeAsync(15 * 60_000);
     const [run] = await running;
     expect(run?.evidence).toMatchObject({ outcome: "timed_out", output: expect.stringContaining("146 passing") });
     expect(operations).toEqual(["command"]);
     expect(run?.origin).toEqual({ cause: "unknown", reason: expect.stringContaining("did not finish") });
-    expect(alive(Number(readFileSync(join(root, "pid"), "utf8")))).toBe(false);
+    const active = alive(pid);
+    let status = "";
+    if (active && process.platform === "linux") {
+      try { status = readFileSync(`/proc/${pid}/stat`, "utf8"); } catch { status = "the PID became unavailable after the liveness check"; }
+    }
+    expect(active, `the timed-out child ${pid} still executes: ${status}`).toBe(false);
   } finally {
     controller.abort();
     vi.useRealTimers();
