@@ -1,5 +1,12 @@
 import { expect, it } from "vitest";
-import { checksModel, faultVerdict, modelOutcome, reportedTlcRun, runOutcome, staleness, tlcRun, writtenWithCode } from "../src/verification/model-rule.js";
+import { checksModel, faultVerdict, modelOutcome, modelSelectionState, reportedTlcRun, runOutcome, staleness, tlcRun, writtenWithCode } from "../src/verification/model-rule.js";
+
+it("requires both the selected identity and a complete check to fulfill a selection (#791)", () => {
+  expect(modelSelectionState(false, true)).toBe("changed");
+  expect(modelSelectionState(false, false)).toBe("changed");
+  expect(modelSelectionState(true, false)).toBe("unchecked");
+  expect(modelSelectionState(true, true)).toBe("checked");
+});
 
 it("reads TLC's exit status: a pass needs a reachable state, a property violation needs 12 to 14, a parse error is the model's", () => {
   expect(tlcRun(false, false, true, 0, 9)).toBe("passed");

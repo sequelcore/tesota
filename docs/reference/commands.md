@@ -1,6 +1,6 @@
 # Commands and keys
 
-Run `tesota` in your project folder to open the shell. Use slash commands
+Run `tesota` in your project folder. Use slash commands
 inside the shell; use command-line options from your terminal.
 
 ## Command line
@@ -26,6 +26,7 @@ inside the shell; use command-line options from your terminal.
 | `--model <provider>/<id>` | `-p` | The model for this run |
 | `--claimcheck-model <provider>/<id>` | the shell, `-p` | The model that restates contracts for the comparison with your request |
 | `--open-cases-model <provider>/<id>`, or `off` | the shell, `-p` | The model that lists the cases your request leaves open |
+| `--require-model <path>` | `tesota`, `-p` | [Pin inputs](../receipt-v3.md#required-model) |
 
 ## Doctor
 

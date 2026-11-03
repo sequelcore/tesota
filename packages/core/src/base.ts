@@ -1,10 +1,11 @@
-import { join } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { git } from "../../../src/git.ts";
 import { refTips } from "../../../src/request-fingerprint.ts";
 import { takeSnapshot } from "../../../src/snapshot.ts";
 import { workspaceUnits } from "../../../src/workspace.ts";
 import { suggestChecks, type UnitCheckPlan } from "../../../src/projects.ts";
 import { withLockWhile } from "./session-lock.ts";
+import type { ModelSelection } from "../../../src/model-selection.ts";
 
 /**
  * One unit of the session's folder as a request found it: a repository's
@@ -25,6 +26,7 @@ export interface Base {
   readonly units: readonly BaseUnit[];
   /** Missing on historical requests means the check plan was not recorded. */
   readonly checks?: readonly UnitCheckPlan[];
+  readonly requiredModel?: ModelSelection;
 }
 
 /** A repository's base: its commit, null before the first one, and its ref tips; or refused when Git cannot read it. */
@@ -43,8 +45,16 @@ async function repositoryBase(folder: string, root: string): Promise<BaseUnit> {
  * repository Tesota's snapshot of it. Verification reads this record and
  * never rebuilds the base after the agent changed the files.
  */
-export async function captureBase(cwd: string, signal?: AbortSignal): Promise<Base> {
+export async function captureBase(cwd: string, signal?: AbortSignal, requiredModel?: string): Promise<Base> {
   const units = workspaceUnits(cwd);
+  let selection: ModelSelection | undefined;
+  if (requiredModel !== undefined) {
+    const { selectModel } = await import("../../../src/model-selection.ts");
+    const path = relative(cwd, resolve(cwd, requiredModel)).replaceAll("\\", "/");
+    const unit = units.find(({ folder }) => folder !== "" && path.startsWith(`${folder}/`)) ?? units.find(({ folder }) => folder === "");
+    if (unit === undefined) throw new Error("The required model is outside this workspace's projects");
+    selection = await selectModel(join(cwd, unit.folder), relative(join(cwd, unit.folder), resolve(cwd, requiredModel)), unit.folder);
+  }
   const workspace = units.some(({ folder }) => folder !== "");
   const found: BaseUnit[] = [];
   for (const { folder, repository } of units) {
@@ -54,5 +64,6 @@ export async function captureBase(cwd: string, signal?: AbortSignal): Promise<Ba
     found.push("refused" in snapshot ? { folder, kind: "refused", reason: snapshot.refused }
       : { folder, kind: "snapshot", commit: snapshot.base, tooLarge: snapshot.tooLarge });
   }
-  return { units: found, checks: units.map(({ folder }) => ({ folder, projects: suggestChecks(join(cwd, folder)) })) };
+  return { units: found, checks: units.map(({ folder }) => ({ folder, projects: suggestChecks(join(cwd, folder)) })),
+    ...selection === undefined ? {} : { requiredModel: selection } };
 }

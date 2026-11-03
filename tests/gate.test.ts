@@ -20,6 +20,7 @@ import type { ProofOutcome } from "../src/verification/proof-outcome-rule.js";
 import { emptyReceipt } from "./receipts.js";
 import { hangingFilter } from "./hanging-git.js";
 import { host, provideHost } from "../src/host.js";
+import { selectModel } from "../src/model-selection.js";
 
 let verificationModels: ReturnType<ReturnType<typeof host>["verificationModels"]> = {};
 
@@ -1999,6 +2000,62 @@ const counterModel = (name = "Counter"): Record<string, string> => ({
   [`models/${name}.tla`]: `(* tesota-model\n   covers: src/counter.ts\n   invariant: Safe\n   atomic: each step\n   omits: crashes\n` +
     `   fault: models/Fault.cfg lock removed\n*)\n---- MODULE ${name} ----\n====\n`,
   [`models/${name}.cfg`]: "SPECIFICATION Spec\n", "models/Fault.cfg": "SPECIFICATION Spec\n" });
+
+it.each([
+  ["models/Fault.cfg", "SPECIFICATION Spec\nCONSTANT DifferentFault = TRUE\n"],
+  ["models/Counter.tla", "---- MODULE Counter ----\n====\n"],
+  ["models/Counter.cfg", undefined],
+  ["models/Counter.tla", undefined],
+])("retains selected input identity when replacement/deletion of %s is ignored (#791)", async (path, content) => {
+  const root = repository({ "src/counter.ts": "export const n = 0;\n", ...counterModel() });
+  const selection = await selectModel(root, "models/Counter.tla");
+  const request: RecordedRequest = { text: "Keep the selected lock-removal check", at: new Date().toISOString(), inputs: [],
+    base: { units: [{ folder: "", kind: "commit", commit: await headCommit(root) }], requiredModel: selection } };
+  const run = gate(root, undefined, {}, () => request);
+  await run.input();
+  await run.tool("write");
+  if (content === undefined) rmSync(join(root, path));
+  else write(root, { [path]: content });
+  const feedback = await run.settle();
+  expect(feedback?.continue).toBe(true);
+  expect(entry(feedback).content).toContain("selected model inputs changed");
+  const receipt = entry(await run.settle()).details as Receipt;
+  expect(receipt.requiredModel).toMatchObject({ selection, state: "changed" });
+  expect(receiptFindings(receipt)).toContainEqual(expect.objectContaining({ check: "model", label: "Required model changed", standing: "gap" }));
+  expect(receiptStanding(receipt)).not.toBe("verified");
+  expect(modelCalls.get("models/Counter.tla") ?? 0).toBe(0);
+});
+
+it("checks a required unchanged model without a writing tool and permits changed implementation (#791)", async () => {
+  const root = repository({ "src/counter.ts": "export const n = 0;\n", ...counterModel() });
+  const selection = await selectModel(root, "models/Counter.tla");
+  const request: RecordedRequest = { text: "Check the selected model", at: new Date().toISOString(), inputs: [],
+    base: { units: [{ folder: "", kind: "commit", commit: await headCommit(root) }], requiredModel: selection } };
+  const run = gate(root, undefined, {}, () => request);
+  await run.input();
+  const receipt = entry(await run.settle()).details as Receipt;
+  expect(receipt.requiredModel).toMatchObject({ selection, state: "checked" });
+  expect(modelCalls.get("models/Counter.tla")).toBe(1);
+  await run.input();
+  await run.tool("write");
+  write(root, { "src/counter.ts": "export const n = 1;\n" });
+  const changed = entry(await run.settle()).details as Receipt;
+  expect(changed.requiredModel).toMatchObject({ selection, state: "checked" });
+  expect(modelCalls.get("models/Counter.tla")).toBe(2);
+});
+
+it("retains an unchecked selection when cancelled before any writing tool (#791)", async () => {
+  const root = repository({ "src/counter.ts": "export const n = 0;\n", ...counterModel() });
+  const selection = await selectModel(root, "models/Counter.tla");
+  const request: RecordedRequest = { text: "Check the selected model", at: new Date().toISOString(), inputs: [],
+    base: { units: [{ folder: "", kind: "commit", commit: await headCommit(root) }], requiredModel: selection } };
+  const run = gate(root, undefined, {}, () => request);
+  await run.input();
+  const receipt = entry(await run.settle("aborted")).details as Receipt;
+  expect(receipt.requiredModel).toMatchObject({ selection, state: "unchecked" });
+  expect(modelCalls.size).toBe(0);
+  expect(receiptStanding(receipt)).toBe("incomplete");
+});
 
 it("leaves a model's own files out of missing-proof limits (#758)", async () => {
   const root = repository({ "src/counter.ts": "export const n = 0;\n", ...counterModel() });

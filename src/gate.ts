@@ -10,6 +10,7 @@ import { engineName } from "./engine-name.js";
 import { host } from "./host.js";
 import type { ModelCheck } from "./model-check.js";
 import { modelOwnFiles } from "./model-files.js";
+import { selectedModelResult, type ModelSelection, type ModelSelectionResult } from "./model-selection.js";
 import { openCases } from "./open-cases.js";
 import { roleModel } from "./verification/role-model-rule.js";
 import { type AttemptEnd, GateOperations, type OperationSink, type OperationSpec } from "./operations.js";
@@ -25,7 +26,7 @@ import { takeSnapshot } from "./snapshot.js";
 import type { Against, CommandRun } from "./test-rung.js";
 import type { FileChange } from "./verification-changes.js";
 import type { Readiness } from "./verification/footer-rule.js";
-import { commandVerdict, gateVerdict, keepsWorking, toolMayChangeFiles } from "./verification/gate-rule.js";
+import { commandVerdict, gateVerdict, keepsWorking, toolMayChangeFiles, verificationRequired } from "./verification/gate-rule.js";
 import { annotations, proofSources, proveFile } from "./verification/lemmascript-verifier.js";
 import { checksModel } from "./verification/model-rule.js";
 import { type Unit, workspaceUnits } from "./workspace.js";
@@ -349,7 +350,8 @@ export type SentBack =
   | { readonly round: "proofs"; readonly proofs: readonly { readonly path: string; readonly evidence: Evidence }[] }
   | { readonly round: "tests"; readonly commands: readonly CommandRun[] }
   | { readonly round: "contracts"; readonly contracts: readonly ContractStrength[] }
-  | { readonly round: "models"; readonly models: readonly ModelCheck[]; readonly unheaded: readonly string[] };
+  | { readonly round: "models"; readonly models: readonly ModelCheck[]; readonly unheaded: readonly string[] }
+  | { readonly round: "selection"; readonly requiredModel: ModelSelectionResult };
 
 /** The session's model as the receipt records it, when one is set. */
 function sessionModel(ctx: Pick<ExtensionContext, "model">): Pick<Receipt, "model"> {
@@ -472,6 +474,7 @@ export class GateProgress {
  * settles with a receipt that says nothing was verified and why.
  */
 export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest | undefined): GateProgress {
+  pi.registerFlag("require-model", { type: "string", description: "Retain an existing design model and its declared fault inputs" });
   const progress = new GateProgress();
   pi.registerFlag(claimcheckModelFlag, { type: "string",
     description: "The provider/id of ClaimCheck's restating model; overrides settings.claimcheckModel, then the session's model" });
@@ -491,6 +494,18 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
   let modelsChecked = new Map<string, ModelCheck>();
   const modelsPassed = new Map<string, ModelCheck>();
   let mayHaveChanged = false;
+  let requiredModel: ModelSelectionResult | undefined;
+  let selectionSentBack = false;
+  const selectionEvidence = (): Pick<Receipt, "requiredModel"> => requiredModel === undefined ? {} : { requiredModel };
+  const retainSelection = async (ctx: ExtensionContext, models?: ReadonlyMap<string, ModelRung>): Promise<void> => {
+    const selection = recorded?.()?.base.requiredModel;
+    if (selection === undefined) { requiredModel = undefined; return; }
+    const root = join(ctx.cwd, selection.folder);
+    const model = models?.get(selection.folder)?.models.find(({ path }) => path === selection.path);
+    const checked = model !== undefined && model.evidence.outcome === "passed" && model.faults.every(({ verdict }) => verdict === "caught")
+      && await currentContent(root, model.evidence);
+    requiredModel = await selectedModelResult(root, selection, checked);
+  };
   let sourceDeadlines = new Map<string, number>();
   let fingerprints: Promise<ReadonlyMap<string, Fingerprint>> | undefined;
   /** What the operator asked during the request, for ClaimCheck to compare the contracts with. */
@@ -504,10 +519,10 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
   let children: readonly ReceiptChild[] = [];
   let floorRefusals: readonly FloorRefusal[] = [];
   let externalEffects: readonly ExternalEffect[] = [];
-  const ledgerDetails = (): Pick<Receipt, "requestContext" | "requestReview" | "children" | "floorRefusals" | "externalEffects"> => ({
+  const ledgerDetails = (): Pick<Receipt, "requestContext" | "requestReview" | "children" | "floorRefusals" | "externalEffects" | "requiredModel"> => ({
     requestContext: { requests: judgingRequests.map(({ run, text }) => ({ run, text })), ...clarifications.length === 0 ? {} : { clarifications } },
     requestReview: { ...noRequestReview, context: requestJudgments }, ...children.length === 0 ? {} : { children },
-    ...floorRefusals.length === 0 ? {} : { floorRefusals }, ...externalEffects.length === 0 ? {} : { externalEffects },
+    ...floorRefusals.length === 0 ? {} : { floorRefusals }, ...externalEffects.length === 0 ? {} : { externalEffects }, ...selectionEvidence(),
   });
   /** The request's units and bases, recorded before the agent can run anything; a run no operator input started takes them as it settles. */
   let start: Promise<Start> | undefined;
@@ -528,6 +543,8 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     unheadedSentBack = new Set();
     modelsChecked = new Map();
     mayHaveChanged = false;
+    requiredModel = undefined;
+    selectionSentBack = false;
     sourceDeadlines = new Map();
     fingerprints = undefined;
     clarifications = [];
@@ -565,7 +582,8 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
   });
   // A run that ends before verification leaves no step running, and says why if it may have changed files.
   pi.on("agent_before_settle", async (event, ctx) => {
-    if (!mayHaveChanged) {
+    await retainSelection(ctx);
+    if (!verificationRequired(mayHaveChanged, requiredModel !== undefined)) {
       // Only a completed run says it changed no file; a stopped or failed one already says how it ended.
       if (event.outcome === "completed") progress.unchanged();
       else progress.reset();
@@ -620,7 +638,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
    * what the run left (#599), read and never checked, or why it could not be read.
    */
   const stopped = async (ctx: ExtensionContext, reason: string): Promise<SettleResult | undefined> => {
-    if (!mayHaveChanged) {
+    if (!verificationRequired(mayHaveChanged, requiredModel !== undefined)) {
       if (progress.status.step === "waiting" || "startedAt" in progress.status) progress.reset();
       return undefined;
     }
@@ -739,12 +757,15 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
       const planned = yield* step(() => checks().plannedModels(unit.root, unit.changed));
       const models: ModelResult[] = [];
       for (const plan of planned.models) {
+        const selected = requiredModel?.selection;
+        const required = selected?.folder === unit.folder && selected.path === plan.path;
+        if (required && requiredModel?.state === "changed") continue;
         const key = inUnit(unit.folder, plan.path);
         const earlier = [modelsChecked.get(key), modelsPassed.get(key)].find((check) => check?.evidence.contentHash === plan.contentHash);
         const judged = (check: ModelCheck): ModelResult =>
           ({ ...check, verdict: gateVerdict(check.evidence.outcome, checks().modelFailure(check), modelsSentBack.get(key) ?? []) });
-        if (!checksModel(plan.touched, earlier !== undefined)) {
-          if (plan.touched && earlier !== undefined) {
+        if (!checksModel(plan.touched || required, earlier !== undefined)) {
+          if ((plan.touched || required) && earlier !== undefined) {
             progress.operations.reused({ method: "model_main", unit: unit.folder, target: plan.path }, earlier.evidence.outcome);
             models.push(judged(earlier));
           }
@@ -757,7 +778,9 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
         if (check.evidence.outcome === "passed") modelsPassed.set(key, check);
         models.push(judged(check));
       }
-      rungs.set(unit.folder, { models, unheaded: planned.unheaded });
+      const unheaded = planned.unheaded.filter((path) => !(requiredModel?.state === "changed"
+        && requiredModel.selection.folder === unit.folder && requiredModel.selection.files.includes(path)));
+      rungs.set(unit.folder, { models, unheaded });
     }
     return rungs;
   });
@@ -774,6 +797,16 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     for (const path of unheaded) unheadedSentBack.add(path);
     return sendBack([...back.map(checks().modelReport), ...unheaded.length === 0 ? [] : [checks().unheadedReport(unheaded)]].join("\n\n"),
       { round: "models", models: back, unheaded });
+  };
+  /** Ask once to restore selected inputs; repeated replacement remains a receipt gap. */
+  const selectionBack = (finalizing: boolean): SettleResult | undefined => {
+    if (requiredModel?.state !== "changed" || finalizing || selectionSentBack) return undefined;
+    selectionSentBack = true;
+    progress.publish({ step: "sent_back", tally: tally([]) });
+    return sendBack(`Tesota: selected model inputs changed for ${inUnit(requiredModel.selection.folder, requiredModel.selection.path)}. ` +
+      "Restore the selected model, configuration and fault inputs. A passing replacement does not fulfill this selection. " +
+      `Start a new session with --require-model to select revised inputs. Selected content sha256 ${requiredModel.selection.contentHash}.`,
+    { round: "selection", requiredModel });
   };
   /** Weak contracts go back only while generation can continue. */
   const contractsBack = (contracts: readonly ContractStrength[], tallied: Tally, finalizing: boolean): SettleResult | undefined => {
@@ -794,12 +827,14 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     const run = { base: workspace ? null : bases.get("") ?? null, startedAt, engine, ...sessionModel(ctx),
       ...question,
       ...ledgerDetails() };
+    const selectionSent = selectionBack(unresolvedQuestion !== undefined);
+    if (selectionSent !== undefined) return selectionSent;
     // Each repository and each folder Tesota snapshotted, measured from its base.
     const measurable = units.filter(({ folder }) => bases.has(folder));
     const initial = yield* step(async () => fingerprints);
     const read = yield* step((signal) => Promise.all(measurable.map(({ folder, repository }) =>
       changedUnit(ctx.cwd, folder, bases.get(folder) ?? null, repository ? undefined : tooLarge.get(folder) ?? [], initial?.get(folder), run.startedAt,
-        refs.get(folder), signal))));
+        refs.get(folder), signal, requiredModel?.selection.folder === folder))));
     if (!workspace && read[0] === undefined) return outsideGit(ctx, run, refused.get(""));
     const changed = read.filter((unit): unit is ChangedUnit => typeof unit === "object");
     // A folder with no snapshot, or a repository Git could not read, is not verified; it is listed once it may have changed.
@@ -840,6 +875,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     const contractsSent = contractsBack(contracts, tally(allProofs, allTests, contracts), unresolvedQuestion !== undefined);
     if (contractsSent !== undefined) return contractsSent;
     const modelRungs = yield* checkModels(changed, tally(allProofs, allTests, contracts), ctx.env, ctx.sessionFile);
+    yield* step(() => retainSelection(ctx, modelRungs));
     const modelsSent = modelsBack(modelRungs, tally(allProofs, allTests, contracts), unresolvedQuestion !== undefined);
     if (modelsSent !== undefined) return modelsSent;
     const open = yield* listOpen(ctx);
@@ -857,10 +893,14 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
         ...plain.map(({ folder }) => ({ folder, repository: false, base: null, ...noEvidence,
           reason: refused.get(folder) ?? "Git could not read it, so Tesota cannot tell what changed" }))]
         .sort((a, b) => a.folder < b.folder ? -1 : 1) };
-    progress.publish({ step: "settled", receipt });
+    const publishedModels = new Map(evidence.map((unit, index) => [changed[index]?.folder ?? "", {
+      models: unit.codeEvidence.models ?? [], unheaded: unit.codeEvidence.unheaded ?? [] }]));
+    yield* step(() => retainSelection(ctx, publishedModels));
+    const finalReceipt: Receipt = { ...receipt, ...selectionEvidence() };
+    progress.publish({ step: "settled", receipt: finalReceipt });
     const graphs = [...modelRungs].flatMap(([folder, rung]) => rung.models.map((model) => ({
       subject: inUnit(folder, model.path), ...model.capture === undefined ? {} : { capture: model.capture } })));
-    return { entries: [receiptGraphEntry(ctx.mode, receipt, graphs)] };
+    return { entries: [receiptGraphEntry(ctx.mode, finalReceipt, graphs)] };
   });
   return progress;
 }
@@ -897,7 +937,7 @@ export interface RecordedRequest {
   readonly refusals?: readonly FloorRefusal[];
   readonly externalEffects?: readonly ExternalEffect[];
   readonly references?: readonly import("./request-references.js").RequestReference[];
-  readonly base: { readonly units: readonly RecordedUnit[]; readonly checks?: readonly UnitCheckPlan[] };
+  readonly base: { readonly units: readonly RecordedUnit[]; readonly checks?: readonly UnitCheckPlan[]; readonly requiredModel?: ModelSelection };
   /** The earlier request this one continues (#651), and what the gate saved as it ended on its question (`savedStart`). */
   readonly continues?: { readonly run: number; readonly start?: unknown };
   /** Earlier requests since the last non-stopped receipt (#627), oldest first, judged with it. */
@@ -1121,7 +1161,7 @@ async function fingerprintedUnit(root: string, base: string | null, start: Finge
  * changed nothing, and nothing when Git cannot read it.
  */
 async function changedUnit(cwd: string, folder: string, base: string | null, tooLarge: readonly string[] | undefined,
-  fingerprint: Fingerprint | undefined, startedAt: string, refs: readonly string[] | undefined, signal: AbortSignal):
+  fingerprint: Fingerprint | undefined, startedAt: string, refs: readonly string[] | undefined, signal: AbortSignal, required: boolean):
   Promise<ChangedUnit | "unchanged" | undefined> {
   const root = join(cwd, folder);
   const captured = fingerprint === undefined ? undefined : await fingerprintedUnit(root, base, fingerprint, startedAt, refs);
@@ -1134,10 +1174,10 @@ async function changedUnit(cwd: string, folder: string, base: string | null, too
   const full = whole?.changes ?? "unreadable";
   const weakened = typeof full === "string" ? full : await checks().weakenedEvidence(full, signal);
   const changes = typeof full === "string" ? full : full.filter(({ path }) => changed.includes(path));
-  return fingerprint === undefined && changed.length === 0 && Array.isArray(weakened) && weakened.length === 0 ? "unchanged"
-    : { folder, root, base, changed, changes, weakened, unreadable: whole === undefined,
+  const unchanged = fingerprint === undefined && changed.length === 0 && Array.isArray(weakened) && weakened.length === 0;
+  return verificationRequired(!unchanged, required) ? { folder, root, base, changed, changes, weakened, unreadable: whole === undefined,
       inherited: attribution.inherited, unmeasured: attribution.unmeasured, ...captured?.facts,
-      ...tooLarge === undefined ? {} : { snapshot: { tooLarge } } };
+      ...tooLarge === undefined ? {} : { snapshot: { tooLarge } } } : "unchanged";
 }
 
 /** A receipt retains declaration identity, never the local absolute authorization root. */

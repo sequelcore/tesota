@@ -9,6 +9,7 @@ import type { StartedSkill } from "./instructions.ts";
 import { validateAnswers, validateQuestions } from "./questions-schema.ts";
 import { floorNotice } from "./permissions.ts";
 import type { PromptOptions, RunOutcome, SessionOutcome } from "../../../src/contract.ts";
+import { inProject } from "../../../src/model-files.ts";
 
 /**
  * Tesota's session format (#437): one JSON Lines file per session, written
@@ -163,6 +164,13 @@ const isObject = (value: unknown): value is Record<string, unknown> => typeof va
 const isText = (value: unknown): boolean => typeof value === "string";
 const isCount = (value: unknown): boolean => Number.isInteger(value) && (value as number) >= 1;
 const isFlag = (value: unknown): boolean => typeof value === "boolean";
+/** A retained model pin is an input identity, never reconstructed from current project files. */
+const isRequiredModel = (value: unknown): boolean => value === undefined || (isObject(value)
+  && typeof value["folder"] === "string" && inProject(value["folder"])
+  && typeof value["path"] === "string" && inProject(value["path"]) && /\.(?:tla|qnt)$/u.test(value["path"])
+  && typeof value["contentHash"] === "string" && /^[a-f0-9]{64}$/u.test(value["contentHash"])
+  && Array.isArray(value["files"]) && value["files"].includes(value["path"])
+  && value["files"].every((file: unknown) => typeof file === "string" && inProject(file)));
 /** A started skill, when the entry has one (#540). */
 const isSkill = (value: unknown): boolean => value === undefined
   || (isObject(value) && isText(value["name"]) && isText(value["path"]) && isText(value["instructions"]));
@@ -172,7 +180,7 @@ const phases = new Set(["extensions", "verifier"]);
 /** What each entry must hold besides its run, as far as reading it back depends on. */
 const shapes: Record<SessionEntry["type"], (entry: Record<string, unknown>) => boolean> = {
   request: (entry) => isText(entry["text"]) && origins.has(entry["origin"] as string) && isText(entry["at"])
-    && isObject(entry["base"]) && Array.isArray(entry["base"]["units"]) && isSkill(entry["skill"]),
+    && isObject(entry["base"]) && Array.isArray(entry["base"]["units"]) && isRequiredModel(entry["base"]["requiredModel"]) && isSkill(entry["skill"]),
   amendment: (entry) => isCount(entry["id"]) && (entry["behavior"] === "steer" || entry["behavior"] === "followUp")
     && origins.has(entry["origin"] as string) && isText(entry["text"]) && isText(entry["at"]) && isSkill(entry["skill"]),
   clarification: (entry) => isObject(entry["clarification"]) && Number.isInteger(entry["clarification"]["reply"])

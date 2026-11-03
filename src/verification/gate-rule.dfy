@@ -4,6 +4,16 @@ datatype GateVerdict = proved | send_back | no_progress | operator
 
 datatype ProofOutcome = passed | failed | vacuous | timed_out | cancelled | not_started
 
+function verificationRequired(changed: bool, selected: bool): bool
+{
+  (changed || selected)
+}
+
+lemma verificationRequired_ensures(changed: bool, selected: bool)
+  ensures (verificationRequired(changed, selected) <==> (changed || selected))
+{
+}
+
 function toolMayChangeFiles(toolName: string, nativeQuestion: bool, readOnly: bool): bool
 {
   (((((!(nativeQuestion) && !(readOnly)) && (toolName != "read")) && (toolName != "grep")) && (toolName != "find")) && (toolName != "ls"))

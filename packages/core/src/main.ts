@@ -13,7 +13,7 @@ import manifest from "../package.json" with { type: "json" };
  */
 
 /** The verifier's flags (`gate.ts`), taken wherever they come, for the shell and `-p`. */
-const verifierFlags = new Set(["claimcheck-model", "open-cases-model"]);
+const verifierFlags = new Set(["claimcheck-model", "open-cases-model", "require-model"]);
 
 /** One command list for help and argument errors; internal entry points stay out of it. */
 const usage: readonly (readonly [string, string] | string)[] = [
@@ -35,6 +35,7 @@ const usage: readonly (readonly [string, string] | string)[] = [
   "The shell and -p also take:",
   ["  --open-cases-model <provider>/<id>|off", "Override openCasesModel in settings; otherwise the session model. off disables listing."],
   ["  --claimcheck-model <provider>/<id>|off", "Override claimcheckModel in settings; otherwise the session model restates contracts. off disables comparison."],
+  ["  --require-model <path>", "Retain an existing design model and its declared fault inputs for verification."],
 ];
 const column = Math.max(...usage.map((row) => typeof row === "string" ? 0 : row[0].length)) + 2;
 const commands = usage.map((row) => typeof row === "string" ? row && `  ${row}` : `  ${row[0].padEnd(column)}${row[1]}`).join("\n");
@@ -48,6 +49,7 @@ function splitFlags(args: readonly string[]): { flags: Record<string, string>; r
     const arg = args[at] ?? "";
     const [name = "", value] = arg.startsWith("--") ? arg.slice(2).split(/=(.*)/su) : [];
     if (!verifierFlags.has(name)) rest.push(arg);
+    else if (name === "require-model" && (flags[name] !== undefined || value === "" || (value === undefined && args[at + 1]?.startsWith("-")))) rest.push(arg);
     else if (value !== undefined) flags[name] = value;
     else if (args[at + 1] !== undefined) flags[name] = args[++at] ?? "";
     else rest.push(arg);

@@ -276,9 +276,15 @@ export const referenceMessage = (references: readonly RequestReference[], timest
   ({ role: "custom", customType: referenceType, content: referenceContext(references), display: false, timestamp });
 
 /** Derived from the admitted base, retained with the request through compaction and resume. */
-export const checkPlanMessage = (base: Base, timestamp: number): CustomMessage | undefined =>
-  base.checks?.some(({ projects }) => projects.length > 0) === true
-    ? { role: "custom", customType: "tesota-check-plan", content: checkPlanText(base.checks), display: true, timestamp } : undefined;
+export function checkPlanMessage(base: Base, timestamp: number): CustomMessage | undefined {
+  const checks = base.checks?.some(({ projects }) => projects.length > 0) === true ? checkPlanText(base.checks) : "";
+  const selection = base.requiredModel;
+  if (checks === "" && selection === undefined) return undefined;
+  const required = selection === undefined ? "" : `Required design model: ${[selection.folder, selection.path].filter(Boolean).join("/")}. ` +
+    `Selected content sha256 ${selection.contentHash}. Keep its model, configuration and declared fault inputs unchanged; ` +
+    "the verifier will check that selection. A replacement does not satisfy it. This is model evidence, not proof of the implementation.";
+  return { role: "custom", customType: "tesota-check-plan", content: [checks, required].filter(Boolean).join("\n\n"), display: true, timestamp };
+}
 
 /**
  * What a compacted conversation starts with (#451): the run's request, the

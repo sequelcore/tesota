@@ -68,7 +68,7 @@ export function quietOutput(output: string): string[] {
 }
 
 /** Whether the current files still hold the content a verifier checked, independent of Git's index or HEAD. */
-export async function currentContent(root: string, evidence: Evidence): Promise<boolean> {
+export async function currentContent(root: string, evidence: Pick<Evidence, "files" | "contentHash">): Promise<boolean> {
   const files = await Promise.all(evidence.files.map(async (path) => ({ path,
     content: await readFile(join(root, path), "utf8").catch(() => undefined) })));
   return contentHash(files) === evidence.contentHash;

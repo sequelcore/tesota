@@ -1,5 +1,16 @@
 import type { ProofOutcome } from "./proof-outcome-rule.js";
 
+export type ModelSelectionState = "changed" | "unchecked" | "checked";
+
+/** A selected check is fulfilled only by unchanged inputs and a complete current check. */
+//@ ensures \result === "changed" <==> !unchanged
+//@ ensures \result === "checked" <==> unchanged && checked
+//@ ensures \result === "unchecked" <==> unchanged && !checked
+export function modelSelectionState(unchanged: boolean, checked: boolean): ModelSelectionState {
+  if (!unchanged) return "changed";
+  return checked ? "checked" : "unchecked";
+}
+
 /**
  * How one TLC run of a model ended: every reachable state checked and none
  * broke a property (`passed`); TLC found no state to check (`vacuous`); a
