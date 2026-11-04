@@ -11,7 +11,7 @@ import { terminalText } from "../../../../src/terminal-text.ts";
 import tesota from "../../../../src/tesota.ts";
 import { type AccountHands, accountRows, addAccount, type ClaudeCode, claudeOf, removeAccount, signInAgain } from "../accounts.ts";
 import { fileCredentialStore } from "../credentials.ts";
-import { unusedModels } from "../agents.ts";
+import { agentTypeDetails } from "../agents.ts";
 import { startingModel } from "../resume-model-rule.ts";
 import { accountLabels, chosenModel, loginOptions, runnableModel, runnableModels, shellModels } from "../model-access.ts";
 import { claudeCodeProviderId, claudeCodeSignIn } from "../providers/claude-code.ts";
@@ -62,10 +62,12 @@ export interface AppOptions {
 const levels: readonly ModelThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 const label = (model: Model<Api>): string => `${model.provider}/${model.id}`;
 
-/** Names once the agent types whose model Tesota does not run, with the model they run on instead (#568). */
-function noteUnusedModels(shell: Shell, session: EngineSession, model: Model<Api> | undefined): void {
-  const unused = model === undefined ? undefined : unusedModels(session.types, label(model));
-  if (unused !== undefined) shell.note(unused, "warning");
+/** Native model diagnostics belong to the shell's passive warning viewer. */
+function retainAgentModelWarnings(shell: Shell, session: EngineSession, modelSelected: boolean): void {
+  const inheritedModel = modelSelected ? label(session.model) : undefined;
+  for (const type of session.types) {
+    if (type.unsupportedModel !== undefined) shell.warn(`agent-model:${type.path}`, agentTypeDetails(type, inheritedModel));
+  }
 }
 
 /** How many lines of a command or change a permission question shows before it says how many more there are. */
@@ -266,6 +268,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     attached = next;
     showStatuses();
     shell.show(next.session, next.surface, next.state === "working" ? "working" : next.state === "verifying" ? "settling" : undefined);
+    retainAgentModelWarnings(shell, next.session, model !== undefined);
     for (const { put } of next.waiting.splice(0)) await put();
     if (next.state === "waiting" && next.pendingQuestions === 0 && next.waiting.length === 0) {
       // Its run goes on once answered, without an event to say so: the shell shows it working, so Esc stops it.
@@ -324,8 +327,8 @@ export async function runApp(options: AppOptions): Promise<void> {
       }
       const resumed = live((made) => openSession(picked, { ...sessionOptions(made), ...next === undefined ? {} : { model: next.model } }));
       const previous = model === undefined ? "" : label(model);
-      await attach(resumed);
       model = next?.model;
+      await attach(resumed);
       shell.redraw();
       if (next?.unchecked !== undefined) shell.note(next.unchecked, "warning");
       if (next !== undefined && label(next.model) !== previous) shell.note(`Continuing on ${label(next.model)}. Use /model to choose another.`);
@@ -695,7 +698,18 @@ export async function runApp(options: AppOptions): Promise<void> {
         void resumeHere(picked, holder);
       });
     } },
-    "/agents": { description: "Open the sessions dashboard", run: () => { agents(); return Promise.resolve(); } },
+    "/warnings": { description: "View retained warnings", run: async () => { shell.showWarnings(); } },
+    "/agents": { description: "Open sessions or inspect agent types", argumentHint: "[types [name]]", run: async (args) => {
+      if (args === "") { agents(); return; }
+      const [action, name, extra] = args.split(/\s+/u);
+      if (action !== "types" || extra !== undefined) { shell.note("Use: /agents [types [name]]", "warning"); return; }
+      const types = attached.session.types.filter((type) => name === undefined || type.name === name);
+      if (types.length === 0) {
+        shell.note(name === undefined ? "No agent types loaded in this session." : `No agent type ${terminalText(name)} in this session.`);
+        return;
+      }
+      for (const type of types) shell.note(terminalText(agentTypeDetails(type, model === undefined ? undefined : label(attached.session.model))));
+    } },
     "/graph": { description: "Open a model graph a receipt captured", argumentHint: "[--plain] [name]", run: graphCommand },
     "/settings": { description: "Change terminal mode and thinking", run: async () => {
       const picked = await shell.pick("Settings", [
@@ -751,7 +765,7 @@ export async function runApp(options: AppOptions): Promise<void> {
   // The first frame is drawn: the rest of the catalog loads now, while the shell starts its hooks and servers (#743).
   // A failure stays for the uses that wait on it, where it is reported, not as an unhandled rejection here.
   rest().catch(() => undefined);
-  for (const text of settingsNotes(read, settingsPath)) shell.note(text, "warning");
+  for (const text of settingsNotes(read, settingsPath)) shell.warn(`settings:${text}`, text);
   providers = (await credentials.list()).length;
   if (typeof standards.ownHooks === "string") shell.note(`Your hooks were left out: ${standards.ownHooks}`, "error");
   await trustProjectHooks();
@@ -766,7 +780,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     shell.note(`The saved model is not used: ${saved} Choose one with /model.`, "warning");
   } else if (saved?.unchecked !== undefined) shell.note(saved.unchecked, "warning");
   else if (model === undefined) shell.note("No provider is logged in: /login, or set a provider's API key, then /model.", "warning");
-  noteUnusedModels(shell, attached.session, model);
+  retainAgentModelWarnings(shell, attached.session, model !== undefined);
   await shell.stopped;
   for (const each of lives) {
     each.unsubscribe();

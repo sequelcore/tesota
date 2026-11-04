@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { noEvidence, noRequestReview, type Receipt, receiptEntry } from "../../../src/receipt.ts";
-import { agentTypes, agentTypesIn, unusedModels } from "../src/agents.ts";
+import { agentModelWarning, agentTypes, agentTypesIn } from "../src/agents.ts";
 import { engineModels } from "../src/model-access.ts";
 import { childLimits } from "../src/children.ts";
 import { configHooks, installedGit } from "../src/workspace.ts";
@@ -570,11 +570,11 @@ describe("agent types", () => {
     writeFileSync(join(project, ".agents", "agents", "notes.txt"), "not a type");
     const [helper] = agentTypes(project, { user: home, tesota: folder("tesota-agents-tesota-") });
     expect(helper).toEqual({ name: "helper", description: "The project's helper", path: join(project, ".agents", "agents", "helper.md"),
-      instructions: "Project body", unusedModel: "model: sonnet", writes: true, background: false });
+      instructions: "Project body", unsupportedModel: "sonnet", writes: true, background: false });
     expect(agentTypesIn(join(home, "missing"))).toEqual([]);
   });
 
-  test("a type whose model Tesota does not run still loads, and the operator is told the model it runs on (#568)", () => {
+  test("only unsupported native model values produce a diagnostic (#794)", () => {
     const types = folder("tesota-agents-models-");
     const type = (name: string, fields: string): void => {
       writeFileSync(join(types, `${name}.md`), `---\nname: ${name}\ndescription: ${name}\n${fields}---\nBody\n`);
@@ -585,14 +585,33 @@ describe("agent types", () => {
     type("others", "claude.model: opus\ncodex.model: gpt-6-astra\ncodex.sandbox_mode: read-only\n");
     type("plain", "");
     const found = agentTypesIn(types).sort((a, b) => a.name.localeCompare(b.name));
-    expect(found.map(({ name, model, unusedModel }) => [name, model, unusedModel])).toEqual([
-      ["aliased", undefined, "model: sonnet"], ["inherits", undefined, undefined], ["others", undefined, "claude.model, codex.model"],
+    expect(found.map(({ name, model, unsupportedModel }) => [name, model, unsupportedModel])).toEqual([
+      ["aliased", undefined, "sonnet"], ["inherits", undefined, undefined], ["others", undefined, undefined],
       ["plain", undefined, undefined], ["routed", "openai/gpt-6.1-sol", undefined],
     ]);
-    expect(unusedModels(found, "openai/gpt-6.1-sol")).toBe("Agent types aliased (model: sonnet), others (claude.model, codex.model) "
-      + "run on the session's model, openai/gpt-6.1-sol, unless the call names one: Tesota takes a type's model only as provider/id.");
-    expect(unusedModels(found.filter(({ name }) => name === "others"), "openai/x")).toStartWith("Agent type others (claude.model, codex.model) runs");
-    expect(unusedModels(found.filter(({ name }) => name !== "aliased" && name !== "others"), "openai/x")).toBeUndefined();
+    expect(agentModelWarning(found)).toBe("1 agent type has an unsupported model. See /agents types.");
+    expect(agentModelWarning(found.filter(({ name }) => name !== "aliased"))).toBeUndefined();
+    expect(agentModelWarning([...found, ...found.map((type) => ({ ...type, name: `other-${type.name}` }))]))
+      .toBe("2 agent types have an unsupported model. See /agents types.");
+  });
+
+  test("native agent definitions replace shared metadata by name (#794)", () => {
+    const home = folder("tesota-agents-home-");
+    const tesota = folder("tesota-agents-native-");
+    const shared = join(home, ".agents", "agents");
+    const native = join(tesota, "agents");
+    mkdirSync(shared, { recursive: true });
+    mkdirSync(native);
+    writeFileSync(join(shared, "helper.md"), "---\nname: helper\ndescription: Shared helper\nclaude.model: opus\ntesota.model: faux/other\n---\nShared.\n");
+    const project = folder("tesota-agents-project-");
+    const [inherited] = agentTypes(project, { user: home, tesota });
+    expect(inherited?.model).toBeUndefined();
+    expect(inherited?.path).toBe(join(shared, "helper.md"));
+    writeFileSync(join(native, "helper.md"), "---\nname: helper\ndescription: Native helper\nmodel: faux/helper\n---\nNative.\n");
+    const found = agentTypes(project, { user: home, tesota });
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({ model: "faux/helper", path: join(native, "helper.md"), instructions: "Native." });
+    expect(agentModelWarning(found)).toBeUndefined();
   });
 
   test("a child started with a type reads its body, and the parent's tool lists the types", async () => {

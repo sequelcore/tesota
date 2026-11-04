@@ -67,6 +67,83 @@ const choices = [{ question: "Which path should the agent take?", options: [
 ], recommended: 0 }] satisfies readonly ClarificationQuestion[];
 
 describe("the shell", () => {
+  test.each(["fullscreen", "inline"] as const)("passive warnings preserve the input position and draft (%s) (#794)", async (mode) => {
+    const { terminal, shell, session } = shellOn([], mode);
+    terminal.type("draft stays here");
+    const before = await terminal.screen();
+    shell.warn("configuration", "A retained diagnostic with a repair command.");
+    shell.warn("configuration", "A retained diagnostic with a repair command.");
+    const after = (await terminal.until("1 warning · F2 to view")).split("\n");
+    expect(after.findIndex((line) => line.includes("draft stays here"))).toBe(before.findIndex((line) => line.includes("draft stays here")));
+    expect(shown(await terminal.scrollback())).not.toContain("A retained diagnostic");
+    terminal.type("\x1bOQ");
+    await terminal.until("A retained diagnostic");
+    terminal.type("\x03");
+    await terminal.untilGone("Warnings · 1 of 1");
+    expect(await terminal.until("1 warning · F2 to view")).toContain("draft stays here");
+    expect(session.history()).toEqual([]);
+  });
+
+  test("warning dismissal cannot erase an updated diagnostic, and copy uses only the viewed entry (#794)", async () => {
+    const copied: string[] = [];
+    const { terminal, shell } = shellOn([], "fullscreen", [80, 24], { copy: async (text) => { copied.push(text); return true; } });
+    shell.warn("first", "Original first diagnostic");
+    shell.warn("second", "Second diagnostic");
+    shell.showWarnings();
+    await terminal.until("Original first diagnostic");
+    shell.warn("first", "Updated first diagnostic");
+    terminal.type("d");
+    await terminal.until("Second diagnostic");
+    terminal.type("c");
+    await terminal.until("Copied warning");
+    expect(copied).toEqual(["Second diagnostic"]);
+    terminal.type("d");
+    await terminal.until("1 warning · F2 to view");
+    shell.warn("second", "Second diagnostic");
+    expect(await terminal.until("1 warning · F2 to view")).not.toContain("2 warnings");
+    shell.showWarnings();
+    expect(await terminal.until("Updated first diagnostic")).toContain("Warnings · 1 of 1");
+    terminal.type("d");
+    await terminal.untilGone("F2 to view");
+    shell.warn("second", "New second diagnostic");
+    await terminal.until("1 warning · F2 to view");
+  });
+
+  test("F2 leaves an active question in control and warnings belong to their session (#794)", async () => {
+    const first = shellOn([]);
+    const second = shellOn([]);
+    first.shell.warn("first", "First session only");
+    const answer = first.shell.ask("Answer this question");
+    await first.terminal.until("Answer this question");
+    first.terminal.type("\x1bOQ");
+    expect(await first.terminal.until("Answer this question")).not.toContain("Warnings ·");
+    first.terminal.type("answer"); first.terminal.type(enter);
+    expect(await answer).toBe("answer");
+    first.shell.show(second.session);
+    first.shell.showWarnings();
+    expect(await first.terminal.until("No warnings in this session.")).not.toContain("First session only");
+    first.terminal.type("\x1b");
+    first.shell.show(first.session);
+    await first.terminal.until("1 warning · F2 to view");
+  });
+
+  test("warning badges fit narrow terminals and long diagnostics scroll (#794)", async () => {
+    const { terminal, shell } = shellOn([], "fullscreen", [40, 10]);
+    shell.warn("long", Array.from({ length: 30 }, (_, index) => `detail ${index}`).join("\n"));
+    await terminal.until("1 warning · F2 to view");
+    terminal.resize(18, 10);
+    const narrow = await terminal.until("⚠ 1 · F2");
+    expect(narrow.split("\n").every((line) => visibleWidth(line) <= 18)).toBe(true);
+    terminal.type("\x1bOQ");
+    await terminal.until("detail 0");
+    for (let row = 0; row < 24; row++) terminal.type("\x1b[B");
+    await terminal.until("detail 29");
+    terminal.type("\x1bOQ");
+    await terminal.untilGone("Warnings ·");
+    terminal.resize(80, 24);
+    await terminal.until("1 warning · F2 to view");
+  });
+
   test("Ctrl+V reads clipboard text as a paste into the focused input (#718)", async () => {
     let reads = 0;
     const { terminal, shell, session } = shellOn([], "fullscreen", [80, 24], {

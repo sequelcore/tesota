@@ -78,7 +78,9 @@ A nonzero result doesn't stop you using what is available.
 | `/settings` | Terminal mode (fullscreen or inline) and thinking level |
 | `/new` | Start another session beside this one |
 | `/resume` | Open an earlier session of this folder |
-| `/agents` | Open the dashboard of sessions |
+| `/agents` | Sessions dashboard |
+| `/agents types [name]` | Inspect [definitions](../guides/subagents.md#agent-types) |
+| `/warnings` | Retained warnings |
 | `/graph [--plain] [name]` | Open a [model graph](../guides/model-checking.md) a receipt captured; press `o` in the viewer to write HTML and open the system browser; `--plain` appends its text |
 | `/context`, `/compact` | What fills context; summarize the older conversation |
 | `/mcp` | MCP servers: state, reconnect, sign in and out; also `/mcp login\|logout\|reconnect <server>` |
@@ -94,8 +96,9 @@ A nonzero result doesn't stop you using what is available.
 | Alt+Up (Alt+Q on Windows) | Return all pending steers and follow-ups to the input to edit or withdraw |
 | Esc | Stop the run and return pending messages to the input |
 | Shift+Tab | Switch the permission mode: ask, full access, read only |
-| Ctrl+O | Expand or fold tool output and Tesota's cards |
-| Ctrl+T | Open the dashboard |
+| Ctrl+O | Expand or fold tool output and cards |
+| Ctrl+T | Sessions dashboard |
+| F2 | View warnings |
 | Ctrl+C | Clear the input; twice on an empty input, end the shell |
 | Ctrl+D | End the shell, on an empty input |
 

@@ -10,7 +10,7 @@ import { providerError } from "./provider-error.ts";
 import { anyHooks, type Hooks, joinHooks } from "./hooks.ts";
 import type { McpServers } from "./mcp.ts";
 import { type McpServerConfig, readMcpConfig } from "./mcp-config.ts";
-import { unusedModels } from "./agents.ts";
+import { agentModelWarning } from "./agents.ts";
 import { accountLabels, engineModels, runnableModel } from "./model-access.ts";
 import { startingModel } from "./resume-model-rule.ts";
 import { loadRules } from "./permissions.ts";
@@ -216,8 +216,8 @@ export async function runPrint(args: readonly string[], cwd: string, write: Prin
     permissions: { mode: () => settings.permissionMode ?? "ask", rules }, ...chosenOptions(settings) };
   const session = sessionFor(cwd, named.file, options, write);
   if (session === undefined) return 1;
-  const unused = unusedModels(session.types, `${model.provider}/${model.id}`);
-  if (unused !== undefined) write.error(`${unused}\n`);
+  const agentWarning = agentModelWarning(session.types);
+  if (agentWarning !== undefined) write.error(`${agentWarning}\n`);
   const unsubscribe = session.subscribe((event) => {
     if (event.type === "retry" && event.delayMs > 0) write.error(`Retry ${event.attempt}/3 in ${Math.ceil(event.delayMs / 1000)}s… (Ctrl+C to cancel)\n`);
   });

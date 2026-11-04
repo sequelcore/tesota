@@ -331,18 +331,20 @@ describe("the engine's models", () => {
     }
   });
 
-  test("-p names an agent type whose model it does not run, with the model it runs on instead (#568)", async () => {
+  test.each(["claude.model: opus", "model: sonnet"])("-p reports only unsupported native agent models: %s (#794)", async (field) => {
     const credentials = new InMemoryCredentialStore();
     const models = await engineModels(credentials);
     const signOut = await signInWithChatGPT(models, credentials, "offline");
     try {
       const cwd = folder("tesota-core-print-cwd-");
       mkdirSync(join(cwd, ".agents", "agents"), { recursive: true });
-      writeFileSync(join(cwd, ".agents", "agents", "advisor.md"), "---\nname: advisor\ndescription: Advises\nclaude.model: opus\n---\nAdvise.\n");
+      writeFileSync(join(cwd, ".agents", "agents", "advisor.md"), `---\nname: advisor\ndescription: Advises\n${field}\n---\nAdvise.\n`);
       let errors = "";
       await runPrint(["hi", "--model", "openai/gpt-6.1-sol"], cwd, { out: () => undefined, error: (text) => { errors += text; } },
         {}, join(folder("tesota-core-print-"), "settings.json"), models);
-      expect(errors).toContain("Agent type advisor (claude.model) runs on the session's model, openai/gpt-6.1-sol, unless the call names one");
+      expect(errors.includes("1 agent type has an unsupported model. See /agents types.")).toBe(field.startsWith("model:"));
+      expect(errors).not.toContain("claude.model");
+      expect(errors).not.toContain("takes a type's model");
     } finally {
       signOut();
     }
