@@ -8,14 +8,13 @@ import manifest from "../package.json" with { type: "json" };
 import { build } from "../scripts/build.ts";
 
 /**
- * A binary verifies as the checkout does (#472): built as a release builds
+ * A binary verifies as the checkout does: built as a release builds
  * it, and run from a folder outside the checkout, where no package or file of
  * the repository can be found.
  */
 const roots: string[] = [];
 /**
- * Windows can keep a binary that just ran locked for longer than any short wait, as CI's runners do after building one
- * (EBUSY twice in the merge queue, #593, though no process is left). These folders are inside the isolated run's own
+ * Windows can keep a binary that just ran locked for longer than any short wait, even when no process is left. These folders are inside the isolated run's own
  * temporary folder, which `scripts/isolated.ts` removes when the run ends, so a folder Windows still holds is left to it.
  */
 afterEach(() => {
@@ -48,7 +47,7 @@ test("the split engine bundle keeps checks lazy and omits unused Effect APIs", a
   expect(result.success).toBe(true);
   const chunks = await Promise.all(result.outputs.map((output) => output.text()));
   // No consumer uses this API. Importing Effect's namespace dynamically makes Bun retain
-  // its export table and otherwise-unused code in chunks shared with shell startup (#532).
+  // its export table and otherwise-unused code in chunks shared with shell startup.
   expect(chunks.join("\n")).not.toContain("annotateLogsScoped");
   const outputs = Object.entries(result.metafile?.outputs ?? {});
   const entry = outputs.find(([, output]) => output.entryPoint?.replaceAll("\\", "/").endsWith("/shell/measure-shell.ts"));

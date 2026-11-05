@@ -3,8 +3,8 @@ import type { Mode } from "./permission-rule.ts";
 export type Admission = "start" | "too_deep" | "too_many" | "read_only";
 
 /**
- * Whether a session `depth` sessions below its top one may start a child
- * (#525): the child would be one deeper, so it starts only while `depth` is
+ * Whether a session `depth` sessions below its top one may start a child:
+ * the child would be one deeper, so it starts only while `depth` is
  * below `maxDepth`; with fewer than `maxRunning` children running across the
  * top session's tree; and, when it would write, only in a session that may
  * write itself. Depth is refused first, then writing, then the count.
@@ -22,7 +22,7 @@ export function admitChild(depth: number, maxDepth: number, running: number, max
 }
 
 /**
- * The permission mode a child runs in (#525): a child that only reads is
+ * The permission mode a child runs in: a child that only reads is
  * read only whatever its parent's mode; a writing child takes its parent's
  * mode, never a wider one.
  */
@@ -33,14 +33,14 @@ export function childMode(parent: Mode, writes: boolean): Mode {
   return parent;
 }
 
-/** What the operator set for a writing child's branch guard (#619): required, warned about when missing, or off. */
+/** What the operator set for a writing child's branch guard: required, warned about when missing, or off. */
 export type GuardSetting = "require" | "warn" | "off";
 
-/** What a writing child starts with (#619): the guard, no guard, or not at all. */
+/** What a writing child starts with: the guard, no guard, or not at all. */
 export type GuardAdmission = "guard" | "unguarded" | "refuse";
 
 /**
- * How a writing child starts (#619): with Git's guard on its branch when
+ * How a writing child starts: with Git's guard on its branch when
  * this Git can give one and the operator didn't turn it off; without it,
  * when it can't, only if the operator said to warn; otherwise not at all.
  */

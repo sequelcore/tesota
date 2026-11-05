@@ -112,7 +112,7 @@ function testcase(reading: Reading, values: ReadonlyMap<string, string>): boolea
   reading.count += 1;
   const group = values.get("classname") ?? reading.suites.findLast((suite) => suite !== undefined) ?? "";
   // Bun names the file only in `file`, as `tests\x.test.ts`, with the describe block as the class, so a test is named by
-  // its file there too (#615). Node's absolute `file` differs between the base's worktree and the checkout, so it names none.
+  // its file there too. Node's absolute `file` differs between the base's worktree and the checkout, so it names none.
   const file = normalizeReportPath(values.get("file") ?? "");
   const parts = file === undefined || file === group ? [group, test] : [file, group, test];
   reading.testcase = { name: parts.filter((part) => part.length > 0).join(" > "), status: "passed", assertionOnly: true };
@@ -324,7 +324,7 @@ export function introducedTests(candidate: TestResults | undefined, base: TestRe
 }
 
 /**
- * Whether the reports show the failure on the base too (#726): some test
+ * Whether the reports show the failure on the base too: some test
  * fails with the changes, and each one that does fails on the base
  * (`testOrigin`). Without reports on both sides nothing shows it.
  */

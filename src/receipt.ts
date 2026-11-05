@@ -50,7 +50,7 @@ interface ReceiptFields {
   readonly repository: boolean;
   /**
    * Present when the project is in no Git repository and Tesota measured the
-   * request against its own snapshot of it (#384): `base` is that snapshot,
+   * request against its own snapshot of it: `base` is that snapshot,
    * which no one else can fetch.
    */
   readonly snapshot?: true;
@@ -64,7 +64,7 @@ interface ReceiptFields {
   /**
    * Why the run ended before Tesota verified anything, and which checks a stop
    * interrupted or never started; present only then. Its `changed` is then an
-   * inventory of what the run left, read and never checked (#599).
+   * inventory of what the run left, read and never checked.
    */
   readonly stopped?: string;
   /** Generation ended with this unresolved question; verification still settled the changes. */
@@ -85,7 +85,7 @@ interface ReceiptFields {
   readonly tests: readonly (CommandRun & { readonly verdict: GateVerdict })[];
   readonly exercises: readonly TestExercise[];
   /**
-   * Each model whose code or own files the request changed (#551), checked
+   * Each model whose code or own files the request changed, checked
    * with TLC or kept from a passing check of the same content: model-checked
    * evidence, about the model and never a proof of the code. Absent when the
    * request touched no model.
@@ -115,7 +115,7 @@ interface ReceiptFields {
    * deleted; `unreadable` when Git could not tell.
    */
   readonly changed: readonly { readonly path: string; readonly blob: string | null }[] | "unreadable";
-  /** The files in `changed` in lines by category (`changeLines`, #527); `unreadable` when Git could not show the change. */
+  /** The files in `changed` in lines by category (`changeLines`); `unreadable` when Git could not show the change. */
   readonly lines: ChangeLines | "unreadable";
   /** Paths dirty at the first non-reader tool whose content stayed unchanged; tests ran with them. */
   readonly inherited: readonly string[];
@@ -124,16 +124,16 @@ interface ReceiptFields {
   readonly startState?: StartState;
   readonly endState?: StartState;
   /**
-   * In a folder of Git repositories that is in none (#384), what each unit
+   * In a folder of Git repositories that is in none, what each unit
    * holds, in name order: each repository the request changed, measured from
    * its own base, with its paths and commands relative to it; and, once a
    * tool may have changed files, each folder in no repository, with nothing
    * verified. The fields above then hold nothing, and `base` is null.
    */
   readonly units?: readonly ReceiptUnit[];
-  /** The subagents the run started (#525), who did what: each one's own receipt is evidence about its own branch only. */
+  /** The subagents the run started, who did what: each one's own receipt is evidence about its own branch only. */
   readonly children?: readonly ReceiptChild[];
-  /** The calls Tesota's floor refused in the request (#622): what didn't run, neither evidence nor a verdict. */
+  /** The calls Tesota's floor refused in the request: what didn't run, neither evidence nor a verdict. */
   readonly floorRefusals?: readonly FloorRefusal[];
   /** Potential external writes, recorded before invocation and never claimed as persisted or verified. */
   readonly externalEffects?: readonly ExternalEffect[];
@@ -179,7 +179,7 @@ export interface ExternalEffect {
 }
 
 /**
- * A subagent a run started (#525), as its end reported it: what it was
+ * A subagent a run started, as its end reported it: what it was
  * asked in a few words, its type and model, whether it wrote, how its run
  * ended, where its own receipt stands, its session, and the branch its work
  * stays on. What it changed counts only once the run brought it in.
@@ -193,14 +193,14 @@ export interface ReceiptChild {
   readonly verification?: "verified" | "incomplete" | "failed";
   readonly session: string;
   readonly branch?: string;
-  /** How many of its calls Tesota's floor refused (#622). */
+  /** How many of its calls Tesota's floor refused. */
   readonly floorRefusals?: number;
-  /** A writing subagent that ran without Git's guard on its branch (#619). */
+  /** A writing subagent that ran without Git's guard on its branch. */
   readonly unguarded?: true;
 }
 
 /**
- * A call Tesota's floor refused in a request (#622): the tool, what it
+ * A call Tesota's floor refused in a request: the tool, what it
  * named, cut short, and why. A refusal shows that one call didn't run, not
  * that its effect was prevented, nor that the run broke a rule.
  */
@@ -365,7 +365,7 @@ function why(evidence: Evidence): string {
     ? "was stopped" : `could not run: ${evidence.output.split("\n").at(-1) ?? ""}`;
 }
 
-/** A proof that holds only given what the change trusts without proving it (`addedAssumptions`), in plain words (#399). */
+/** A proof that holds only given what the change trusts without proving it (`addedAssumptions`), in plain words. */
 const trusting = (assumed: number): string => `trusting ${plural(assumed, "unproved part", "unproved parts")}`;
 
 /**
@@ -395,7 +395,7 @@ function testLine({ command, declaration, verdict, evidence, failingTests, origi
   if (verdict === "proved") return `  passed        ${command}`;
   if (origin?.cause === "preexisting") return `  failed before ${command}: ${origin.reason}`;
   if (verdict === "operator") return `  NOT passed    ${command}: it ${why(evidence)}`;
-  // Why Tesota couldn't tell whether the change causes the failure, when it couldn't (#726).
+  // Why Tesota couldn't tell whether the change causes the failure, when it couldn't.
   const unknown = origin?.cause === "unknown" ? `; ${origin.reason}` : "";
   if (verdict === "send_back") {
     return `  NOT passed    ${command}: it fails; generation ended before repair${failingTests === undefined ? "" : `: ${failingTests.join("; ")}`}${unknown}`;
@@ -458,7 +458,7 @@ const verdictText: Readonly<Record<NonNullable<ContractReview["assessment"]>["ve
   mismatch: "the model identified a mismatch", suspected_vacuity: "the model suspects contract vacuity",
 };
 
-/** ClaimCheck's plain-words reading of a contract (#730), its precondition without a model's closing full stop. */
+/** ClaimCheck's plain-words reading of a contract, its precondition without a model's closing full stop. */
 const restated = ({ preconditions, postcondition }: Restatement): string =>
   `assumes ${preconditions.trim().replace(/\.$/u, "")}; guarantees ${postcondition.trim()}`;
 
@@ -544,7 +544,7 @@ function weakening(change: Weakening): string[] {
 
 /** Whether a session entry's details hold a receipt this Tesota reads. */
 export function isReceipt(value: unknown): value is Receipt {
-  // A receipt from before the engine named itself (#463) has `pi` in place of `engine`: an earlier Tesota's.
+  // A receipt from before the engine named itself has `pi` in place of `engine`: an earlier Tesota's.
   return typeof value === "object" && value !== null && Reflect.get(value, "version") === 3 && typeof Reflect.get(value, "engine") === "string";
 }
 
@@ -553,7 +553,7 @@ export interface ReceiptEntry { readonly type: string; readonly customType?: str
 
 /**
  * What a `tesota-receipt` entry carries, or `undefined` for any other entry:
- * a message's details, or a custom entry's data from print mode (#427).
+ * a message's details, or a custom entry's data from print mode.
  */
 export function entryReceipt(entry: ReceiptEntry): unknown {
   if (entry.customType === "tesota-receipt-graphs" && entry.type === "custom_message" && typeof entry.details === "object" && entry.details !== null) {
@@ -567,7 +567,7 @@ export function entryReceipt(entry: ReceiptEntry): unknown {
  * The entry a run settles with: a message chat hosts show beside the
  * conversation. Pi's print mode writes the final answer only when it is the
  * session's last message, so there the receipt is a custom entry outside the
- * conversation. Temporary (#427): remove the print branch, and the custom
+ * conversation. Temporary: remove the print branch, and the custom
  * entry in `entryReceipt`, once Pi prints the final assistant text after
  * extension messages.
  */
@@ -638,14 +638,14 @@ export interface Finding {
   readonly subject: string;
   readonly detail: string;
   readonly more: readonly string[];
-  /** How the receipt's summary groups it with findings of the same reason (#591); without one, by its label and detail. */
+  /** How the receipt's summary groups it with findings of the same reason; without one, by its label and detail. */
   readonly group?: FindingGroup;
   /** Said for information only, shown muted: neither a check that held nor a limit, such as a covered file no proof covers. */
   readonly muted?: true;
 }
 
 /**
- * A group of the summary (#591): its title, with `%` for how many of `noun`
+ * A group of the summary: its title, with `%` for how many of `noun`
  * when it counts them, or else followed by the one finding's subject or the
  * count; the note under it, the reason its findings share; and what the
  * finding adds to the group's list of paths.
@@ -710,7 +710,7 @@ export function commandFinding({ command, declaration, verdict, evidence, failin
   }
   const end = evidenceEnd("command", evidence);
   if (end === "passed" && verdict === "proved") return { standing: "holds", check: "tests", label: "Tests pass", subject: command, detail: "", more };
-  // A failure the base already had shows nothing about the change, for or against it (#726).
+  // A failure the base already had shows nothing about the change, for or against it.
   if (origin?.cause === "preexisting") {
     return { standing: "gap", check: "tests", label: "Tests failed before the change", subject: command, detail: origin.reason, more };
   }
@@ -739,7 +739,7 @@ export function modelHolds({ header, states, faults }: ModelCheck): string {
     `${plural(states, "reachable state", "reachable states")}; caught ${caught} of ${plural(faults.length, "planted fault", "planted faults")}`;
 }
 
-/** What a model declares it covers and abstracts, which fixes what it can find (#539). */
+/** What a model declares it covers and abstracts, which fixes what it can find. */
 function abstractionWords({ header }: ModelCheck): string[] {
   return [`Covers ${header.covers.map(({ path, names }) => names.length === 0 ? path : `${path} (${names.join(", ")})`).join("; ")}`,
     ...header.atomic.map((step) => `Atomic: ${step}`), ...header.omits.map((left) => `Leaves out: ${left}`)];
@@ -802,7 +802,7 @@ export function modelFinding(model: ModelResult): Finding {
 }
 
 /**
- * Each model as findings (#551): model-checked when it and every planted
+ * Each model as findings: model-checked when it and every planted
  * fault behaved, marked weaker when the request wrote it with its code; a
  * decision when it still fails or its faults pass after going back; a gap
  * when it could not be checked, a fault did not finish, it may be stale, or a
@@ -841,7 +841,7 @@ function modelLines(model: ModelResult): string[] {
 /**
  * A proof as a finding. One that holds only given parts the change trusts
  * without proving them (`assumed`) says how many, so it never reads as
- * proved outright (#399).
+ * proved outright.
  */
 export function proofFinding({ path, verdict, evidence }: Pick<UnitEvidence["proofs"][number], "path" | "verdict" | "evidence">,
   assumed = 0): Finding {
@@ -875,7 +875,7 @@ function opinionFindings(run: ClaimCheckRun | undefined, contracts: readonly Con
   }
   const by = run.restatedBy === run.comparedBy ? `${run.comparedBy} restated and compared`
     : `${run.restatedBy} restated, ${run.comparedBy} compared`;
-  // A contract short of the request shows the model's reason under its verdict, so the card says why (#730).
+  // A contract short of the request shows the model's reason under its verdict, so the card says why.
   return contracts.flatMap(({ path, name, assessment: judgment, restatement }): Finding[] => judgment === undefined ? [] : [{ standing: "opinion",
     check: "request", label: judgment.verdict === "no_mismatch_identified" ? "Model: no mismatch identified" : "Model: assessment",
     subject: `${name} · ${path}`, detail: judgmentWords[judgment.verdict],
@@ -1082,7 +1082,7 @@ function fingerprintFindings(receipt: UnitEvidence, folder = ""): Finding[] {
  * What holds, in words for one row: each label once, with how many when more
  * than one, and out of how many findings of its check when some of them do
  * not hold (`partlyHolds`), as in "Contract strong (1 of 4)", so the row
- * never reads stronger than the findings it sums up (#399).
+ * never reads stronger than the findings it sums up.
  */
 export function holdsWords(findings: readonly Finding[]): string[] {
   const counts = new Map<string, { readonly check: Check; count: number }>();
@@ -1109,7 +1109,7 @@ export function receiptTone(findings: readonly Finding[]): ReturnType<typeof ver
     findings.some(({ standing, failed }) => standing === "decide" && failed === true), findings.filter(({ standing }) => standing === "gap").length);
 }
 
-/** Where a receipt stands (`runStanding`), in one word for every surface that shows it (#455, #668). */
+/** Where a receipt stands (`runStanding`), in one word for every surface that shows it. */
 export type ReceiptStanding = ReturnType<typeof runStanding>;
 
 /** Each standing as every surface words it: nothing changed claims nothing, so it says there is nothing to verify. */
@@ -1195,7 +1195,7 @@ export function receiptStanding(receipt: Receipt): ReceiptStanding {
     paths.map(({ exercised }) => exercised)), receipt.externalEffects?.length ?? 0);
 }
 
-/** One row of the summary that names a method (#591): what it ran on and how each run ended, never more. */
+/** One row of the summary that names a method: what it ran on and how each run ended, never more. */
 export interface SummaryMethod { readonly glyph: string; readonly method: string; readonly text: string }
 
 /** Findings of one reason as one row of the summary, every path they name kept in `items`. */
@@ -1211,7 +1211,7 @@ export interface SummaryGroup {
 }
 
 /**
- * The receipt's summary (#591), from its `details`: the counts, each method's
+ * The receipt's summary, from its `details`: the counts, each method's
  * runs, then what needs review (`flags`, failed checks first among them),
  * the verification limits, and apart from both the models' opinions and the
  * request's context, which are neither evidence nor counted.
@@ -1322,7 +1322,7 @@ function grouped(findings: readonly Finding[]): SummaryGroup[] {
 
 const counted = (n: number, one: string, many: string, none: string): string => n === 0 ? none : plural(n, one, many);
 
-/** The summary's color (`receiptTone`): green says verified, and only a verified receipt is (#668), so one that verified nothing is amber. */
+/** The summary's color (`receiptTone`): green says verified, and only a verified receipt is, so one that verified nothing is amber. */
 function summaryTone(receipt: Receipt, findings: readonly Finding[]): ReturnType<typeof verdictTone> {
   const tone = receiptTone(findings);
   return tone === "success" && receiptStanding(receipt) !== "verified" ? "warning" : tone;
@@ -1387,7 +1387,7 @@ function requestJudgmentLines(receipt: Pick<Receipt, "requestReview">): string[]
 }
 
 /**
- * The receipt as the operator reads it in plain text (#591): the summary,
+ * The receipt as the operator reads it in plain text: the summary,
  * then every fact under Details, then the request's context. Built from
  * `details`, apart from the Markdown, so no Markdown escape is in it.
  */
@@ -1426,7 +1426,7 @@ export function receiptSpecificationLines(receipt: Receipt, expanded = true): st
     ...typeof evidence.weakened === "string" ? [`Weakening not checked: ${evidence.weakened}`] : evidence.weakened.flatMap(weakening)];
 }
 
-/** Each subagent the run started (#525), in one line; their ends are neither this receipt's evidence nor acceptance. */
+/** Each subagent the run started, in one line; their ends are neither this receipt's evidence nor acceptance. */
 function childLines(receipt: Pick<Receipt, "children">): string[] {
   return (receipt.children ?? []).map((child) =>
     `${child.description}: ${child.outcome}${child.verification === undefined ? "" : `, ${child.verification}`}`
@@ -1436,7 +1436,7 @@ function childLines(receipt: Pick<Receipt, "children">): string[] {
     + `${child.model === undefined ? "" : ` · ${child.model}`}`);
 }
 
-/** Each call Tesota's floor refused (#622), by tool and why, without what it named, which may be a secret's path. */
+/** Each call Tesota's floor refused, by tool and why, without what it named, which may be a secret's path. */
 function refusalLines(receipt: Pick<Receipt, "floorRefusals">): string[] {
   return (receipt.floorRefusals ?? []).map(({ tool, reason }) => `${tool}: ${reason.replace(/^Tesota never allows this: /u, "")}`);
 }
@@ -1467,7 +1467,7 @@ const markdownText = (text: string): string => text.replace(/[\\`*_{}[\]()#+!|<>
 
 /**
  * The same receipt as Markdown for chat hosts, built from `details` as the
- * plain text is (#591): the summary as lists, its words escaped so none
+ * plain text is: the summary as lists, its words escaped so none
  * renders, and the details fenced, so their paths and output are shown as
  * written. The TUI reads the structured details.
  */
@@ -1495,7 +1495,7 @@ export function renderReceiptMessage(receipt: Receipt): string {
   ].join("\n\n");
 }
 
-/** A stopped run's inventory (#599): each path it left changed, or why it could not be read, and what its captures left out. */
+/** A stopped run's inventory: each path it left changed, or why it could not be read, and what its captures left out. */
 function leftLines(receipt: Receipt): string[] {
   return (receipt.units ?? [{ ...receipt, folder: "" }]).flatMap((unit) => [
     ...typeof unit.changed === "string"
@@ -1509,7 +1509,7 @@ function leftLines(receipt: Receipt): string[] {
 
 /**
  * The receipt recovery records for a run whose process ended before it
- * settled (#599): nothing verified it, and since no inventory of what it
+ * settled: nothing verified it, and since no inventory of what it
  * left was saved, what changed is unknown; the files on disk when the
  * session opens again need not be what the run left.
  */

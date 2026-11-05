@@ -14,7 +14,7 @@ import { createSession } from "../src/session.ts";
 import { sessionStore } from "../src/session-store.ts";
 import { scriptedReply } from "./scripted.ts";
 
-/** `tesota receipt` (#463): the last receipt of the engine's sessions in a folder, for a pull request. */
+/** `tesota receipt`: the last receipt of the engine's sessions in a folder, for a pull request. */
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true, maxRetries: 3 }); });
 
@@ -98,7 +98,7 @@ function scripted(replies: readonly Parameters<typeof scriptedReply>[0][]) {
 /**
  * An engine session in `root` with one request per receipt, each settled by
  * a verifier that records it as Tesota does: as a message, or as a custom
- * entry in print mode (#427). Returns the session's id.
+ * entry in print mode. Returns the session's id.
  */
 async function session(root: string, receipts: readonly unknown[], kept: "message" | "entry" = "message"): Promise<string> {
   const created = createSession({ cwd: root, ...scripted(receipts.map(() => "done")), verifier: recording(receipts, kept) });
@@ -462,7 +462,7 @@ it("refuses a receipt from before the engine named itself, which has pi in place
 it("writes a worktree session's receipt from its worktree, and never from the checkout another session holds", async () => {
   const root = repository();
   const base = git(root, "rev-parse", "HEAD");
-  // The first session holds the checkout, so the second works in a worktree of its own (#453).
+  // The first session holds the checkout, so the second works in a worktree of its own.
   const holder = createSession({ cwd: root, ...scripted([]), verifier: recording([]) });
   const other = createSession({ cwd: root, ...scripted([{ tool: "write", args: { path: "b.txt", content: "b" } }, "done"]),
     verifier: recording([{ ...emptyReceipt, base }]) });

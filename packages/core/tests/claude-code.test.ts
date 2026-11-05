@@ -18,7 +18,7 @@ import { readSessionFile } from "../src/session-file.ts";
 import { accepts } from "./scripted.ts";
 
 /**
- * Claude through the operator's own Claude Code (#546), driven by SDK
+ * Claude through the operator's own Claude Code, driven by SDK
  * streams recorded from a real Claude Code, never a live account: a tool
  * call ends the step and the engine's result answers it in the same query;
  * a stop ends the query; a resume, a crash or another model starts a new
@@ -187,7 +187,7 @@ describe("the claude-code provider", () => {
     expect(seen?.signal).toBeUndefined();
     const stop = new AbortController();
     await claudeCodeStatus("/claude-b", execute, stop.signal);
-    // The usage panel's signal stops Claude Code when the panel closes (#3).
+    // The usage panel's signal stops Claude Code when the panel closes.
     expect(seen?.signal).toBe(stop.signal);
   });
 

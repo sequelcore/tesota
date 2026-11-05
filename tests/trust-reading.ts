@@ -6,8 +6,8 @@ import { pathToFileURL } from "node:url";
 import { readingHash } from "../src/model-chart.js";
 
 /**
- * Trusts a project's chart reading as it is now, as the shell's `/graph` does
- * (#761): through the engine's own trust store, in this test file's home.
+ * Trusts a project's chart reading as it is now, as the shell's `/graph` does:
+ * through the engine's own trust store, in this test file's home.
  */
 export function trustReading(root: string, file: string): void {
   // The store expects Tesota's home to exist, as it does once the shell has run.

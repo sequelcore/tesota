@@ -5,7 +5,7 @@ import { runLsc } from "../src/lsc.ts";
 import { grepTool } from "../src/tools/grep.ts";
 
 /**
- * What `binary.test.ts` compiles beside the engine (#472): the verifier's
+ * What `binary.test.ts` compiles beside the engine: the verifier's
  * readers that load a file or a package at the gate, run from inside a
  * binary. With a folder it proves `clamp.ts` there and prints, as JSON, the
  * lines each parser reads as comments and the proof's outcome; as

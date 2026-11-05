@@ -18,7 +18,7 @@ test("graph-bearing transcript messages restore the same receipt standing withou
   expect(receipt).not.toHaveProperty("graphs");
 });
 
-/** The session's entries as Tesota reads them on Pi's branch (#441). */
+/** The session's entries as Tesota reads them on Pi's branch. */
 test("a fresh session has no branch entries", () => {
   expect(branchOf([])).toEqual([]);
 });

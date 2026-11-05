@@ -6,7 +6,7 @@ import type { ScriptStep } from "./engine.ts";
 
 /**
  * Signs `models` in to OpenAI with ChatGPT, whose `GET /models` on the token
- * lists `served` (#563, #566), or fails as offline. Calling the result stops
+ * lists `served`, or fails as offline. Calling the result stops
  * answering that list.
  */
 export async function signInWithChatGPT(models: MutableModels, credentials: CredentialStore,

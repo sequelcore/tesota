@@ -21,7 +21,7 @@ import { accepts, scriptedReply } from "./scripted.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
 
 /**
- * The engine's shell (#444), drawn into an emulated terminal: what the
+ * The engine's shell, drawn into an emulated terminal: what the
  * operator sees, typing as they would, in both modes.
  */
 const open: { session: EngineSession; shell: Shell }[] = [];
@@ -982,7 +982,7 @@ function viewerOn(shell: Shell, terminal: VirtualTerminal, manifest = lights("co
   hide = shell.overlay(viewer);
 }
 
-/** A model that breaks a rule opens on its chart (#761); `c` shows TLC's graph, which these tests read. */
+/** A model that breaks a rule opens on its chart; `c` shows TLC's graph, which these tests read. */
 async function toGraph(terminal: VirtualTerminal): Promise<void> {
   await terminal.until("Model chart · Lights.tla");
   terminal.type("c"); await terminal.until("Model graph · Lights.tla");

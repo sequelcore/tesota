@@ -11,7 +11,7 @@ export interface ProcessRun {
   readonly exitCode: number | null;
   /** The end of what it printed, or why it did not start. */
   readonly output: string;
-  /** The start of what it wrote to each stream, apart, up to 64 KiB each: a hook's answer and its reason (#457). */
+  /** The start of what it wrote to each stream, apart, up to 64 KiB each: a hook's answer and its reason. */
   readonly stdout: string;
   readonly stderr: string;
 }
@@ -53,7 +53,7 @@ function stopTree(pid: number): Promise<void> {
   return Promise.resolve();
 }
 
-/** kernel32's job functions as Bun's FFI binds them (#490). */
+/** kernel32's job functions as Bun's FFI binds them. */
 interface Kernel32Jobs {
   CreateJobObjectW(attributes: null, name: null): unknown;
   OpenProcess(access: number, inherit: number, pid: number): unknown;
@@ -95,7 +95,7 @@ function windowsJobs(): Promise<Kernel32Jobs | undefined> {
  * A Windows job holding the process `pid` and every process it starts, which
  * inherit it however their parents come and go: Git's bash runs a script
  * through a process that exits, which breaks the parent chain `taskkill /T`
- * follows (#490). Undefined when the process could not be put in one.
+ * follows. Undefined when the process could not be put in one.
  */
 function jobFor(jobs: Kernel32Jobs, pid: number): unknown {
   const job = jobs.CreateJobObjectW(null, null);

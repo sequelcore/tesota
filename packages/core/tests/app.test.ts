@@ -23,13 +23,13 @@ import { readDeclaredChecks } from "../../../src/project-checks.ts";
 import { trusted } from "../src/trust.ts";
 
 /**
- * `tesota-core`'s commands (#444), typed into an emulated terminal as the
+ * `tesota-core`'s commands, typed into an emulated terminal as the
  * operator would, on a scripted provider and temporary settings and sessions.
  */
 const folder = (prefix: string): string => mkdtempSync(join(tmpdir(), prefix));
 const enter = "\r";
 
-/** The settings a test starts from, none when it asks for none; a file given as written is written as it is (#714). */
+/** The settings a test starts from, none when it asks for none; a file given as written is written as it is. */
 function seedSettings(path: string, model: string | undefined, accounts: readonly Account[] | undefined, file: object | undefined): void {
   if (file !== undefined) writeFileSync(path, JSON.stringify(file));
   else if (model !== undefined || accounts !== undefined) writeSettings({ ...model === undefined ? {} : { model }, ...accounts === undefined ? {} : { accounts } }, path);
@@ -66,7 +66,7 @@ function scripted(replies: readonly ScriptStep[], twoModels: boolean): { models:
   return { models, credentials };
 }
 
-/** The scripted models for the app, or none when it builds its own (#743). */
+/** The scripted models for the app, or none when it builds its own. */
 const givenModels = (models: MutableModels, ownModels: boolean | undefined): { models?: MutableModels } => ownModels === true ? {} : { models };
 
 function seedProjectConfig(cwd: string, mcp: object | undefined, checks: object | undefined, types: Record<string, string> = {}): void {
@@ -84,19 +84,19 @@ function seedProjectConfig(cwd: string, mcp: object | undefined, checks: object 
 /** The app in a temporary folder, its settings and sessions there too, once it has drawn its first frame. */
 async function app(replies: readonly ScriptStep[] = [], { repository = false, earlier, earlierModel = "faux/faux-1", mcp, projectMcp, projectChecks, skills = {}, types, served, model, claudeCode, accounts, claude = { signIn: async () => undefined, status: async () => ({ loggedIn: false }) }, usage = noUsage, ownModels, settingsFile }:
   { repository?: boolean; projectChecks?: object;
-    /** An earlier session of the folder that worked in its checkout, asked this and answered "earlier answer" (#595). */
+    /** An earlier session of the folder that worked in its checkout, asked this and answered "earlier answer". */
     earlier?: string; earlierModel?: string; mcp?: object; projectMcp?: object; skills?: Record<string, string>; types?: Record<string, string>;
-    /** Signed in to OpenAI with ChatGPT, which serves these models (#566), or whose list cannot be fetched. */
+    /** Signed in to OpenAI with ChatGPT, which serves these models, or whose list cannot be fetched. */
     served?: readonly string[] | "offline"; model?: string; accounts?: readonly Account[];
-    /** Claude through Claude Code (#546), signed in there or not. */
+    /** Claude through Claude Code, signed in there or not. */
     claudeCode?: "signed in" | "signed out";
-    /** Claude Code's sign-in and status in an account's folder (#642), faked. */
+    /** Claude Code's sign-in and status in an account's folder, faked. */
     claude?: AppOptions["claude"];
     /** Where the usage panel reads from, faked: it reads no real Claude Code or ChatGPT. */
     usage?: UsageSources;
-    /** The shell builds its own models over the test's credentials, as the operator's shell does (#743), instead of the scripted ones. */
+    /** The shell builds its own models over the test's credentials, as the operator's shell does, instead of the scripted ones. */
     ownModels?: boolean;
-    /** The operator's settings file as written, keys Tesota does not read included (#714). */
+    /** The operator's settings file as written, keys Tesota does not read included. */
     settingsFile?: object } = {}) {
   const terminal = new VirtualTerminal(100, 30);
   const { models, credentials } = scripted(replies, model === "faux/faux-2");
@@ -113,17 +113,17 @@ async function app(replies: readonly ScriptStep[] = [], { repository = false, ea
   }
   const sessions = folder("tesota-core-app-sessions-");
   const cwd = folder("tesota-core-app-");
-  // Further sessions need a Git repository with a commit, for their own worktrees (#453).
+  // Further sessions need a Git repository with a commit, for their own worktrees.
   if (repository) {
     writeFileSync(join(cwd, "README.md"), "# App\n");
     for (const args of [["init", "-q"], ["add", "-A"], ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base"]]) {
       spawnSync("git", args, { cwd });
     }
   }
-  // The operator's MCP servers beside their settings, and the project's in its .tesota folder (#459).
+  // The operator's MCP servers beside their settings, and the project's in its .tesota folder.
   if (mcp !== undefined) writeFileSync(join(dirname(settingsPath), "mcp.json"), JSON.stringify(mcp));
   seedProjectConfig(cwd, projectMcp, projectChecks, types);
-  // The project's skills, by folder, each its SKILL.md (#540).
+  // The project's skills, by folder, each its SKILL.md.
   for (const [name, content] of Object.entries(skills)) {
     mkdirSync(join(cwd, ".agents", "skills", name), { recursive: true });
     writeFileSync(join(cwd, ".agents", "skills", name, "SKILL.md"), content);
@@ -769,7 +769,7 @@ describe("tesota-core", () => {
       terminal.type(enter);
       await terminal.until("Acceptance remains with the reviewer.");
       send(terminal, "/graph");
-      // A broken rule opens on the chart (#761).
+      // A broken rule opens on the chart.
       expect(await terminal.until("grouped by door > lamp")).toContain("Model chart · models/Lights.tla");
       terminal.type("o");
       const opened = await openedGraph;
@@ -1068,7 +1068,7 @@ describe("tesota-core", () => {
     terminal.type("\x1b[Z");
     await terminal.until("read only");
     expect(readSettings(settingsPath).settings.permissionMode).toBe("read");
-    // Another Tesota saves its model meanwhile; this one's next save keeps it (#453).
+    // Another Tesota saves its model meanwhile; this one's next save keeps it.
     writeSettings({ ...readSettings(settingsPath).settings, model: "faux/elsewhere" }, settingsPath);
     terminal.type("\x1b[Z");
     await terminal.untilGone("read only");
@@ -1140,7 +1140,7 @@ describe("tesota-core", () => {
     await terminal.untilGone("Verifying…");
     send(terminal, "/context");
     const shown = await terminal.until("Free");
-    // After a reply the total is what the provider counted, and what no part accounts for has its own line (#779).
+    // After a reply the total is what the provider counted, and what no part accounts for has its own line.
     expect(shown).toMatch(/Context: [\d,]+ of [\d,]+ tokens \(\d+%\), counted by the provider at the last reply; parts estimated/u);
     for (const part of ["System prompt", "Tools", "Memory files", "Skills", "Messages", "Not attributed"]) expect(shown).toContain(part);
     send(terminal, "/quit");

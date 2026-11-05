@@ -7,7 +7,7 @@ import { below, builtIn, checkScript, keepsProjectKind, owner, pinnedIn } from "
 
 /**
  * The projects a repository holds, at its root or in folders below it to a
- * bounded depth (#318), so a monorepo whose JavaScript app and Java backend
+ * bounded depth, so a monorepo whose JavaScript app and Java backend
  * sit in subfolders gets each one's checks. A project inside another of the
  * same kind belongs to it, as Gradle's settings, Maven's modules and Cargo's
  * workspaces build the projects below them. JavaScript packages keep their
@@ -120,7 +120,7 @@ export function onPath(program: string): boolean {
 }
 
 /**
- * The package manager's `run` for a package (#576): the one its
+ * The package manager's `run` for a package: the one its
  * `packageManager` field names, else its folder's lockfile's, else the first
  * found on the `PATH`; npm when none is, so the command fails as the
  * operator's own would.
@@ -234,7 +234,7 @@ export function checkPlanText(plans: readonly UnitCheckPlan[]): string {
 
 /**
  * The commands the repository appears to use for checking itself, for each
- * project that has some, at the root or in a folder below it (#318).
+ * project that has some, at the root or in a folder below it.
  */
 export function suggestChecks(checkout: string): ProjectChecks[] {
   const root = checkoutRoot(checkout);

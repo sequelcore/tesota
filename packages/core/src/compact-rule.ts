@@ -1,5 +1,5 @@
 /**
- * Whether the conversation must be compacted before the next request (#451):
+ * Whether the conversation must be compacted before the next request:
  * once its tokens pass the context window less the reserve the reply needs.
  * A model with no known window is never compacted ahead; an overflow the
  * provider reports compacts it then.
@@ -10,7 +10,7 @@ export function shouldCompact(tokens: number, window: number, reserve: number): 
 }
 
 /**
- * Where the verbatim tail starts (#451): walking back from the newest message,
+ * Where the verbatim tail starts: walking back from the newest message,
  * the first place a turn may start once the messages after it hold at least
  * `keep` tokens, so a tool call is never split from its result. The messages
  * before it are summarized; 0 when no such place leaves anything to summarize.

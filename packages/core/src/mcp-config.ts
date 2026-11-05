@@ -5,7 +5,7 @@ import { isAbsolute, join } from "node:path";
 import { parseJson } from "../../../src/json.ts";
 
 /**
- * MCP servers as `mcp.json` configures them (#459), in the `mcpServers`
+ * MCP servers as `mcp.json` configures them, in the `mcpServers`
  * format Claude Code, Pi and Gemini CLI share, read as Pi reads it: a
  * `command` runs a local server, a `url` reaches a remote one over
  * streamable HTTP. Read without the MCP client, which loads only when a

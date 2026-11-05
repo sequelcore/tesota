@@ -1,4 +1,4 @@
-/** Verification roles choose a nonempty flag, then a setting, then the session model (#709).
+/** Verification roles choose a nonempty flag, then a setting, then the session model.
  * Empty strings mean no selection; `off` is an explicit selection interpreted by the open-cases caller.
  */
 //@ ensures flag !== "" ==> \result === flag

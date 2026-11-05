@@ -163,7 +163,7 @@ it("renders the real 320-state fixture, conserves regrouped counts and shows the
       node<HTMLButtonElement>(doc, "#trace-toggle").click();
       expect(doc.querySelectorAll(".trace-step")).toHaveLength(data.view.trace.length);
       const leaves = cy.nodes().filter(n => n.isChildless());
-      expect(leaves).toHaveLength(data.view.trace.length); // #759: the run alone, not every member of its groups
+      expect(leaves).toHaveLength(data.view.trace.length); // The run alone, not every member of its groups
       expect(cy.nodes(":parent")).toHaveLength(0);
       expect(leaves.filter(n => n.hasClass("start")).map(n => n.data("members"))).toEqual([[data.view.trace[0].fingerprint]]);
       expect(leaves[0]?.data("label")).toContain("host:");

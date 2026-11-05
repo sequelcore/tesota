@@ -11,7 +11,7 @@ import type { ModelSelection } from "../../../src/model-selection.ts";
  * One unit of the session's folder as a request found it: a repository's
  * commit `HEAD` named, null before its first commit, with every local
  * branch's, remote-tracking ref's and tag's tip then that the commit does not
- * reach (`refTips`, #599), absent when Git could not list them; a snapshot of a folder
+ * reach (`refTips`), absent when Git could not list them; a snapshot of a folder
  * in no repository, with the files left out for their size; or why there is
  * neither. `folder` is relative to the session's folder, as in
  * `workspaceUnits`.
@@ -40,7 +40,7 @@ async function repositoryBase(folder: string, root: string): Promise<BaseUnit> {
 }
 
 /**
- * The base of a request in `cwd` (#437), taken before any tool runs, with
+ * The base of a request in `cwd`, taken before any tool runs, with
  * the gate's units: a repository's commit, and for each folder in no
  * repository Tesota's snapshot of it. Verification reads this record and
  * never rebuilds the base after the agent changed the files.

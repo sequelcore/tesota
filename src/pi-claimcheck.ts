@@ -47,7 +47,7 @@ export interface Comparison {
   readonly explanation: string;
 }
 
-/** What a contract says in plain words, by a model that never saw the request: pass 1's reading, an opinion (#730). */
+/** What a contract says in plain words, by a model that never saw the request: pass 1's reading, an opinion. */
 export type Restatement = Pick<Informalization, "preconditions" | "postcondition">;
 
 /**
@@ -192,7 +192,7 @@ export async function recorded<T>(ctx: ModelAccess, model: NonNullable<ModelAcce
   const why = unanswered(reply, signal);
   if (why !== undefined) return why;
   const call = reply.content.find((part) => part.type === "toolCall" && part.name === name);
-  // TypeBox's checker takes about 100 ms and 24 MB to load, so it loads when a model first answers, not with Tesota (#446).
+  // TypeBox's checker takes about 100 ms and 24 MB to load, so it loads when a model first answers, not with Tesota.
   const { Value } = await import("typebox/value");
   return call?.type === "toolCall" && Value.Check(parameters, call.arguments) ? call.arguments as T : "the model did not record its answer";
 }

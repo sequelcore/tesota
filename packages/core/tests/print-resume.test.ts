@@ -14,7 +14,7 @@ import type { ScriptStep } from "./engine.ts";
 import { scriptedReply } from "./scripted.ts";
 
 /**
- * `tesota -p -c` and `tesota -p --resume <id>` (#651): a print run that
+ * `tesota -p -c` and `tesota -p --resume <id>`: a print run that
  * ended on an unresolved question continues with the answer, and any other
  * session takes the text as a follow-up.
  */
@@ -106,7 +106,7 @@ describe("resuming a print run that ended on a question", () => {
       if (file === undefined) throw new Error("No session was written");
       const id = basename(file, ".jsonl");
       expect(first.error).toContain(`Awaiting your answer: tesota -p --resume ${id} "<answer>"`);
-      // The question reads as a question, with its choices, not as JSON (#713).
+      // The question reads as a question, with its choices, not as JSON.
       expect(first.error).toContain("The agent wanted to ask you something before going on:\n  Which file name should I use?\n    - a.txt: Name it a.txt.");
       const before = statSync(file).size;
 

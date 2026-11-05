@@ -11,7 +11,7 @@ export interface LineCount {
 }
 
 /**
- * A request's change in lines by where they are (#527): each category's text
+ * A request's change in lines by where they are: each category's text
  * lines; apart, the files Git counts no lines for, such as images
  * (`binary`); and the files the repository marks as generated, whatever
  * category they count in (`generated`). A summary of the diff, never a

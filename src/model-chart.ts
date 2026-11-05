@@ -7,7 +7,7 @@ import { stateValues, stateVariables } from "./model-state.js";
 import { boundedCount, brokenRules, defaultProjection, groupValues, stateCount } from "./model-view.js";
 
 /**
- * The chart (#761): TLC's reached graph projected onto a few states in the
+ * The chart: TLC's reached graph projected onto a few states in the
  * user's words, with TLC's trace numbered on it. The words come from a reading
  * the agent writes beside the model, `<Model>.chart.ts`; without one, states
  * are grouped by the model's control variable. The projection only regroups

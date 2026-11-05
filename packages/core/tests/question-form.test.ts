@@ -98,7 +98,7 @@ test.each(["dark", "light"] as const)("%s question ANSI rendering follows the th
   expect({ choices, text, submit }).toMatchSnapshot();
 });
 
-// pi-tui's single-line Input deletes line breaks from a paste, joining words (#624).
+// pi-tui's single-line Input deletes line breaks from a paste, joining words.
 test.each([["\r\n", "CRLF"], ["\n", "LF"], ["\r", "CR"]])("a bracketed paste with %j breaks reaches the agent with a space for each break (%s)", (separator) => {
   const answers: unknown[] = [];
   const draft = createQuestionDraft(questions);

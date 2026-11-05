@@ -7,7 +7,7 @@ import type { ProofOutcome } from "./proof-outcome-rule.js";
  * fails, a weak contract, a change that may weaken the evidence or a test
  * that passes without the change; a gap to know about (`gap`), such as lines
  * no proof covers; evidence that holds (`holds`); or a model's opinion
- * (`opinion`), which is a candidate and never evidence (#375).
+ * (`opinion`), which is a candidate and never evidence.
  */
 export type Standing = "decide" | "gap" | "holds" | "opinion";
 
@@ -30,7 +30,7 @@ export function reviewStatus(total: number, completed: number, partial: number, 
   return "not_run";
 }
 
-/** Unverified external effects prevent an overall verified or unchanged claim, preserving a known failure (#751). */
+/** Unverified external effects prevent an overall verified or unchanged claim, preserving a known failure. */
 //@ ensures effects > 0 && standing !== "failed" ==> \result === "incomplete"
 //@ ensures effects <= 0 || standing === "failed" ==> \result === standing
 export function externalStanding(standing: "verified" | "incomplete" | "failed" | "unverified" | "unchanged", effects: number):
@@ -61,8 +61,8 @@ export function decisions(standings: readonly Standing[]): number {
 /**
  * Whether a summary of one check's findings must say how many of them hold,
  * as in "Contract strong (1 of 4)": some finding of that check needs the
- * operator or is a gap, so its label alone would read as if every one held
- * (#399). A model's opinion is never evidence either way.
+ * operator or is a gap, so its label alone would read as if every one held.
+ * A model's opinion is never evidence either way.
  */
 //@ ensures \result <==> exists(k: nat, k < standings.length && (standings[k] === "decide" || standings[k] === "gap"))
 export function partlyHolds(standings: readonly Standing[]): boolean {
@@ -92,7 +92,7 @@ export function verdictTone(decisions: number, failed: boolean, gaps: number): "
 }
 
 /**
- * How a method's row of the receipt sums up its `runs` (#591), of which
+ * How a method's row of the receipt sums up its `runs`, of which
  * `held` held outright, `partly` held with less than they claim, such as a
  * proof trusting what the change added, and `failed` failed: `holds` only
  * when every run held outright, so no row reads as a universal success
@@ -170,7 +170,7 @@ export function statementResult(stopped: boolean, standing: "verified" | "incomp
 }
 
 /**
- * Whether one changed path is covered (#668), in the standing and the
+ * Whether one changed path is covered, in the standing and the
  * receipt's summary alike: it proved, or it was tested and exercised, as
  * `runStanding` reads each of them from the receipt.
  */
@@ -180,7 +180,7 @@ export function pathCovered(proved: boolean, tested: boolean, exercised: boolean
 }
 
 /**
- * Where a run's verification stands (#668), one meaning on every surface:
+ * Where a run's verification stands, one meaning on every surface:
  * `failed` when it stopped or something needs the operator (`decisions`) and
  * a check failed, `incomplete` when either holds without a failed check.
  * A check failed only when it ran and showed the change wrong: a failing

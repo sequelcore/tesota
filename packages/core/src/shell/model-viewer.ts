@@ -112,7 +112,7 @@ const wrapped = (text: string, width: number): string[] => {
 };
 
 /**
- * The full-screen model graph (#592), mounted through the shell's overlay as
+ * The full-screen model graph, mounted through the shell's overlay as
  * the dashboard is. It holds only what step 3a's worker returns: each regroup,
  * drill and search is one more disposable worker. Counts on a partial graph
  * read as lower bounds, a group's warning counts its reported violating
@@ -130,7 +130,7 @@ export class ModelViewer implements Component {
   #pan: [number, number] = [0, 0];
   #panelTop = 0;
   #trace: { readonly selected: string | undefined; readonly pan: readonly [number, number] } | undefined;
-  /** The chart (#761), read once with the first view; regroups and drills read TLC's graph only. */
+  /** The chart, read once with the first view; regroups and drills read TLC's graph only. */
   #chart: ModelChart | undefined;
   #chartShown = false;
   #chartRows: readonly { readonly line: ChartLine; readonly text: string }[] = [];

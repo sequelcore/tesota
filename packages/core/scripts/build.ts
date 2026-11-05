@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { executableName, hostTarget } from "../src/ripgrep.ts";
 
 /**
- * The `tesota` binary (#472), as the budget measures it and a release would
+ * The `tesota` binary, as the budget measures it and a release would
  * ship it: `bun build --compile` of the engine, which embeds LemmaScript and
  * the TypeScript parser as code, and at the binary's root the files
  * verification reads beside its code: tree-sitter's runtime and each grammar
@@ -37,7 +37,7 @@ export const targets = [
 /** Compiles `entry`, the engine unless given, into `outfile`, for `target` or this system. */
 export function build(outfile: string, options: { readonly target?: string; readonly entry?: string } = {}): void {
   // Splitting keeps the loop in its own chunk, loaded only when used: without it every start parsed the whole
-  // bundle, 20-25 ms more on Linux and Windows. Bytecode did the same at 3 MB more (#435).
+  // bundle, 20-25 ms more on Linux and Windows. Bytecode did the same at 3 MB more.
   const build = Bun.spawnSync(["bun", "build", "--compile", "--minify", "--format=esm", "--splitting",
     ...options.target === undefined ? [] : [`--target=${options.target}`], "--asset-naming=[name].[ext]",
     options.entry ?? engine, ...embedded(options.target ?? hostTarget), "--outfile", outfile], { cwd: repository, stdout: "ignore", stderr: "pipe" });

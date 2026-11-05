@@ -9,7 +9,7 @@ import { JEV_SKIP_BELOW, diffFiles, git, jevSkips, jevTriage, option, parseFindi
   from "./review-session.js";
 
 /**
- * Findings as evidence (#375) on SWE-smith's JavaScript bugs
+ * Findings as evidence on SWE-smith's JavaScript bugs
  * (`SWE-bench/SWE-smith-js`), registered on 2026-10-10 before any review:
  * bugs planted in real repositories, each with the tests it breaks and a
  * Docker image of the repository before the bug, which is the correct
@@ -318,11 +318,11 @@ async function gate(): Promise<void> {
 }
 
 /**
- * The fix step (#375, step 3), registered on 2026-10-11 before any run. The instance's failing tests stay hidden from
+ * The fix step (step 3), registered on 2026-10-11 before any run. The instance's failing tests stay hidden from
  * the agent: they are the oracle, and every SWE-smith bug is caught by them by construction, so showing them would only
  * measure the test rung Tesota already has. The visible suite is `PASS_TO_PASS`, the tests that pass with the bug and
  * without it, as far as they pass on the change. Tesota's rule accepts a finding as evidence when its repro test failed
- * on the change, passes after the fix, no visible test breaks and no test file changed.
+ * on the change, passes on the repaired code, no visible test breaks and no test file changed.
  */
 const fixPrompt = (requested: string, finding: Finding, tests: readonly string[], script: string): string =>
   `A reviewer reported this finding about the uncommitted change in this repository (\`git diff\` shows it), made for this ` +
@@ -400,8 +400,8 @@ async function fix(): Promise<void> {
  * of the seed and its key. A case's expectation is right when its test passes on the correct code, which the operator
  * never sees; it would confirm a finding when it also fails on the change.
  *
- * Version 2, registered on 2026-10-11 before any run of it: version 1's cases often named the code's internals, which
- * no one who knows only the request can judge (#397). A case now states what someone does and what they get, in the
+ * The case prompt (version 2, registered on 2026-10-11 before any run of it) avoids code internals that
+ * no one who knows only the request can judge. A case states what someone does and what they get, in the
  * request's own words; a finding that cannot be stated that way is declared not judgeable, writes no case, and
  * reaches the receipt as unverified.
  */
@@ -421,7 +421,7 @@ const casePrompt = (requested: string, finding: Finding): string =>
   "{\"cases\": [{\"case\": 1, \"text\": \"the case in the request's words\"}], \"notJudgeable\": null}, or " +
   "{\"cases\": [], \"notJudgeable\": \"why the claim needs the code's internals\"}.";
 
-/** The case records written with the current prompt; a record without a version came from the first. */
+/** The case records written with the current prompt; an absent version denotes version 1. */
 const currentCases = (): Record<string, any>[] =>
   records().filter((record) => record["kind"] === "cases" && (record["prompt"] ?? 1) === CASE_PROMPT);
 
@@ -520,14 +520,13 @@ function exportCases(): void {
 }
 
 /**
- * A reviewer that proposes checks, not verdicts (#397), registered on 2026-10-15 before any run. It reads the request
+ * A reviewer that proposes checks, not verdicts, registered on 2026-10-15 before any run. It reads the request
  * and the change and, for each defect it suspects, writes a case in the request's words with a test, or lists a gap
  * when the suspicion needs the code's internals. It never reports a bare finding; the harness runs each case's test on
  * the correct code and on the change, as for the cases stage.
  *
- * Version 2 (`--prompt=2`), registered on 2026-10-16 before any run of it: reviewers flag correct changes often, and a
- * prior stated over the whole set cut one model's false alarms without losing recall, where saying the item at hand is
- * correct cut recall too. Version 2 adds that prior and nothing about the change at hand.
+ * Version 2 (`--prompt=2`), registered on 2026-10-16 before any run of it, states a prior over the whole set:
+ * many changes are correct. It makes no claim about whether the change at hand is correct.
  */
 const CHECKS_PROMPT = 1;
 const CLEAN_AWARE = "Many of the changes you review are correct, and there is no quota of cases: an empty list is a normal " +
@@ -656,13 +655,13 @@ function proposedCases(): ProposedCase[] {
 }
 
 /**
- * A model standing in for the operator (#397), registered on 2026-10-15 before any run: it sees the request, the
+ * A model standing in for the operator, registered on 2026-10-15 before any run: it sees the request, the
  * change's diff and one case, not the repository or how the case's test ran, and says whether the expectation is right.
  * `--source` names whose cases, `--arm` keeps one arm's, `--limit` caps how many, in the order of a SHA-256 of the seed
  * and the case's id.
  *
- * Version 2 (`--prompt=2`), registered on 2026-10-15 before any run of it: studies find that a model shown the code
- * writes what the code does rather than what it should do, so the judge never sees the change. It sees the request and
+ * In version 2 (`--prompt=2`), registered on 2026-10-15 before any run of it, the judge never sees the change,
+ * to avoid judging intent by the implementation. It sees the request and
  * what the request makes the specification: for a refactor that keeps behavior, the changed files as they were before
  * the change; for a bug report, the report alone. It answers whether the case follows from that, contradicts it, or is
  * left unsettled, with the question the operator would be asked; only a case that follows is approved.
@@ -743,7 +742,7 @@ function lastJson(reply: string): Record<string, unknown> {
 }
 
 /**
- * Whether a case's test checks that case (#397), registered on 2026-10-15 before any run: a case judged right can
+ * Whether a case's test checks that case, registered on 2026-10-15 before any run: a case judged right can
  * still fail on correct code when its test does not check what it says. A model sees one case and the test file that
  * holds its test, not the code under test, and says whether that test passes exactly when the case holds.
  */
@@ -775,7 +774,7 @@ async function faithful(): Promise<void> {
 }
 
 /**
- * A refuter between the reviewer and the operator (#397), registered on 2026-10-16 before any run: a model asked to
+ * A refuter between the reviewer and the operator, registered on 2026-10-16 before any run: a model asked to
  * approve a case let wrong ones through, so this one is asked to refute it, from the request and the repository, and
  * only a case it lets stand reaches the operator. What the change currently does counts for neither side, since the
  * case's own test settles that. No verdict lets the case stand.
@@ -809,7 +808,7 @@ async function refute(): Promise<void> {
 }
 
 /**
- * The reviewer arms of #397 in the operator's terms: controls with at least one case shown, bugs with a shown case whose
+ * The reviewer arms in the operator's terms: controls with at least one case shown, bugs with a shown case whose
  * test passes on the correct code and fails on the change, and cases shown per change. A source with refuter verdicts
  * gives a second row that shows only the cases the refuter let stand.
  */

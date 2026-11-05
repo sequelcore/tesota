@@ -80,10 +80,10 @@ function prune(snapshots: string): void {
 
 /**
  * Whether `folder` is a home folder or a drive's root, which Tesota never
- * snapshots, nor the folders in it (`workspaceUnits`, #478): they hold a
+ * snapshots, nor the folders in it (`workspaceUnits`): they hold a
  * person's files, not a project. The home folder counts by any of its names:
  * a session's folder comes by its real name, and a Windows home may be named
- * short (#453).
+ * short.
  */
 export function homeOrDriveRoot(folder: string): boolean {
   const real = (path: string): string => {
@@ -96,7 +96,7 @@ export function homeOrDriveRoot(folder: string): boolean {
 }
 
 /**
- * A snapshot of the folder at `root`, which is in no Git repository (#384),
+ * A snapshot of the folder at `root`, which is in no Git repository,
  * for the gate to measure a request against as it measures a repository
  * against its `HEAD`: Git run in the folder (`gitEnvironment`) uses a Git
  * directory under Tesota's own (`tesotaHome`), and the folder gains nothing. Each
@@ -114,7 +114,7 @@ export async function takeSnapshot(root: string, ownFiles: boolean, withLockWhil
   const snapshots = join(tesotaHome(), "snapshots");
   const gitDir = join(snapshots, createHash("sha256").update(`${at}\0${ownFiles}`).digest("hex").slice(0, 16));
   mkdirSync(snapshots, { recursive: true });
-  // One writer for the store (#461): pruning also removes other folders. The lock stays outside what it prunes.
+  // One writer for the store: pruning also removes other folders. The lock stays outside what it prunes.
   // A stop ends the wait for the store, and no Git step starts after it; one under way is short and runs to its end.
   const stopped = { refused: "the run was stopped before the snapshot was taken" };
   const isStopped = (): boolean => signal?.aborted === true;

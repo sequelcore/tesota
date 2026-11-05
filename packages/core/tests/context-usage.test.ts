@@ -4,7 +4,7 @@ import { contextBreakdown, contextReport, contextUsage } from "../../../src/cont
 import type { HistoryMessage } from "../src/loop.ts";
 
 /**
- * The session's context use, by Pi's token rules (#441): each number below is
+ * The session's context use, by Pi's token rules: each number below is
  * what Pi 1.3.0's `estimateTokens` and `calculateContextTokens` gave for the
  * same messages, a quarter of the characters rounded up per message, an image
  * as 1,200 tokens.

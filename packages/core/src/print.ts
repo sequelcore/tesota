@@ -29,7 +29,7 @@ export interface PrintOutput {
 
 const usage = "tesota -p [-c | --resume <session>] \"<request>\" [--model <provider>/<id>]";
 
-/** The session `-c` (the folder's latest) or `--resume <id>` names (#651). */
+/** The session `-c` (the folder's latest) or `--resume <id>` names. */
 type Named = { readonly latest: true } | { readonly id: string };
 
 /** The value option `names` gives at `args[at]`, as `<name> <value>` or `--<name>=<value>`, and how many arguments it took; none when it is not there. */
@@ -67,7 +67,7 @@ function parse(args: readonly string[]): { request: string; model?: string; sess
 
 /**
  * The file of the session `named` in `cwd`'s folder, among those `/resume`
- * lists (#651): the one changed last for `-c`, the one with that id, as
+ * lists: the one changed last for `-c`, the one with that id, as
  * `tesota receipt` and `/resume` show it, for `--resume`; or why there is none.
  */
 function sessionNamed(cwd: string, named: Named | undefined): { file?: string } | { refused: string } {
@@ -82,7 +82,7 @@ function sessionNamed(cwd: string, named: Named | undefined): { file?: string } 
 }
 
 /**
- * The model the run starts on, or none, saying why (#651). A continued
+ * The model the run starts on, or none, saying why. A continued
  * session keeps the model it last ran on, account included, unless `--model`
  * says otherwise, which is said on standard error; one that cannot run now is
  * refused, not replaced.
@@ -93,7 +93,7 @@ async function modelFor(models: MutableModels, explicit: string | undefined, fil
   const lastModel = last === undefined ? "" : `${last.provider}/${last.model}`;
   const chosen = startingModel(explicit ?? "", lastModel, setting ?? "");
   if (chosen === "") { write.error("No model: run tesota, then /login and /model.\n"); return undefined; }
-  // A model the sign-in does not serve is refused here rather than at the first request (#566).
+  // A model the sign-in does not serve is refused here rather than at the first request.
   const runnable = await runnableModel(models, chosen);
   if (typeof runnable === "string") {
     write.error(explicit === undefined && lastModel !== ""
@@ -129,14 +129,14 @@ function trustedStandards(cwd: string, settingsPath: string, write: PrintOutput)
     mcp: { own: standards.mcp.own, ...standards.mcp.trusted ? { project: standards.mcp.project } : {} } };
 }
 
-/** How the run ended and where its verification stands, from the receipt it settled with, and what Tesota's floor refused (#622). */
+/** How the run ended and where its verification stands, from the receipt it settled with, and what Tesota's floor refused. */
 function ending(outcome: string | undefined, file: string): string {
   const { entries } = peekSessionFile(file);
-  // The last request's own receipt: a follow-up never claims the standing of the run before it (#536).
+  // The last request's own receipt: a follow-up never claims the standing of the run before it.
   const run = entries.findLast((entry) => entry.type === "request")?.run;
   const receipt = entries.filter((entry) => "run" in entry && entry.run === run).map(entryReceipt).findLast((found) => found !== undefined);
   const standing = isReceipt(receipt) ? receiptStanding(receipt) : undefined;
-  // A run that changed nothing claims no standing (#668), and a completed one with no receipt changed no file (#536);
+  // A run that changed nothing claims no standing, and a completed one with no receipt changed no file;
   // one that changed something unverified says why.
   const end = entries.findLast((entry) => entry.type === "run_end");
   const reason = outcome === "error" && end?.type === "run_end" && end.reason !== undefined ? `${providerError(end.reason)}\n` : "";
@@ -145,7 +145,7 @@ function ending(outcome: string | undefined, file: string): string {
       : outcome === "completed" ? "; no file changed" : "" : standing === "unchanged" ? ` (${standingWords[standing]})`
       : `, ${standingWords[standing]}${standing === "unverified" ? `: ${unverifiedWhy(receipt as Receipt)}` : ""}; tesota receipt writes it for a pull request`}.\n`
     + (lastFloorNotice(entries) ?? "")
-    // A run that ended on its question says how to answer it (#651).
+    // A run that ended on its question says how to answer it.
     + (pendingQuestion(entries) === undefined ? "" : `${awaitingNotice(entries)}\nAwaiting your answer: tesota -p --resume ${basename(file, ".jsonl")} "<answer>"\n`);
 }
 
@@ -171,7 +171,7 @@ function sessionFor(cwd: string, file: string | undefined, options: OpenOptions,
   }
 }
 
-/** The MCP servers of the folder the session works in, its worktree's when it has one, so they never act in another session's (#459). */
+/** The MCP servers of the folder the session works in, its worktree's when it has one, so they never act in another session's. */
 async function serversFor(session: EngineSession, mcp: { own: string; project?: string }): Promise<McpServers | undefined> {
   const { servers }: { servers: readonly McpServerConfig[] } = readMcpConfig(mcp.own, mcp.project, session.workspace.cwd);
   if (servers.length === 0) return undefined;
@@ -180,7 +180,7 @@ async function serversFor(session: EngineSession, mcp: { own: string; project?: 
 }
 
 /**
- * `tesota -p "<request>"` in `cwd` (#463): one request without the shell,
+ * `tesota -p "<request>"` in `cwd`: one request without the shell,
  * verified as every run is, on the chosen model or `--model`, with the
  * verifier's `flags`. The answer goes to standard output, where the
  * verification stands and how to read the receipt to standard error. It runs
@@ -228,7 +228,7 @@ export async function runPrint(args: readonly string[], cwd: string, write: Prin
   try {
     servers = await serversFor(session, mcp);
     // A request stopped before it began is refused rather than run; that is the stop, not a failure to report.
-    // In a session that ended on its question the text is the answer; otherwise a follow-up, as the shell sends one (#651).
+    // In a session that ended on its question the text is the answer; otherwise a follow-up, as the shell sends one.
     await session.reply(asked.request).catch((error: unknown) => { if (!stopped) throw error; });
     write.out(`${session.lastAssistantText() ?? ""}\n`);
   } finally {
@@ -237,7 +237,7 @@ export async function runPrint(args: readonly string[], cwd: string, write: Prin
     process.off("SIGTERM", stop);
     // Each is let go of whatever the other does, so a session that fails to close never leaves its servers running.
     await Promise.allSettled([session.dispose(), servers?.close()]);
-    // A run that throws still says how it ended and what the floor refused (#622).
+    // A run that throws still says how it ended and what the floor refused.
     write.error(ending(session.outcome(), session.file));
   }
   const kept = session.kept();

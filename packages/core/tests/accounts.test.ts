@@ -8,8 +8,8 @@ import { chosenModel, engineModels } from "../src/model-access.ts";
 import { readSettings, writeSettings } from "../src/settings.ts";
 
 /**
- * Adding, signing in again, viewing and removing an account in one step
- * (#642). Signing in itself is Claude Code's and ChatGPT's: both are faked,
+ * Adding, signing in again, viewing and removing an account in one step.
+ * Signing in itself is Claude Code's and ChatGPT's: both are faked,
  * and Tesota's part is checked: the folder it makes, what it records in the
  * operator's settings, and what it refuses.
  */

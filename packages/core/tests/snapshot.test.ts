@@ -37,7 +37,7 @@ test("two processes snapshot one fresh folder together", async () => {
     console.log(unit.commit);
     process.disconnect();
   `;
-  // A third process, in the same home as the two (#466: this one may keep another), takes a snapshot, which registers
+  // A third process, in the same home as the two (this one may keep another), takes a snapshot, which registers
   // the store's Git folder for reading, then reads both commits and counts the store's commits.
   const reader = `
     import { captureBase } from ${JSON.stringify(new URL("../src/base.ts", import.meta.url).href)};

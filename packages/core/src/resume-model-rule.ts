@@ -1,5 +1,5 @@
 /**
- * The model a print run starts on (#651); "" stands for none. An explicit
+ * The model a print run starts on; "" stands for none. An explicit
  * `--model` wins; otherwise a continued session keeps the model it last ran
  * on, account included; otherwise the setting's default.
  */

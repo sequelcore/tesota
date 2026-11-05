@@ -10,7 +10,7 @@ import { type CheckDeclaration, readDeclaredChecks } from "../../../src/project-
 export type HooksRead = Hooks | string;
 
 /**
- * The command hooks (#457) and MCP servers (#459) a session in `cwd` runs:
+ * The command hooks and MCP servers a session in `cwd` runs:
  * the operator's, beside their settings, and the project's, in its
  * `.tesota` folder, with whether the operator trusts the project's as they
  * are now. The shell asks about those not trusted; print mode leaves them out.

@@ -53,7 +53,7 @@ export interface AppOptions {
   readonly sessions?: string;
   /** The verifier's flags, by name, as the command line gave them. */
   readonly flags?: Readonly<Record<string, string>>;
-  /** Claude Code's sign-in and status in an account's folder (#642); the operator's own Claude Code when not given. */
+  /** Claude Code's sign-in and status in an account's folder; the operator's own Claude Code when not given. */
   readonly claude?: ClaudeCode | undefined;
   /** Where the usage panel reads from; Claude Code's usage report and ChatGPT's usage endpoint when not given. */
   readonly usage?: UsageSources;
@@ -78,7 +78,7 @@ function clipped(lines: readonly string[]): string {
 }
 
 /**
- * How a permission question reads for `call` (#449): what it would do, as
+ * How a permission question reads for `call`: what it would do, as
  * Claude Code and Codex ask it, then the command, the edit's replacements or
  * the file's start in their own block, then why Tesota asks.
  */
@@ -99,16 +99,16 @@ export function confirmation(call: { name: string; arguments: unknown }, reason:
   return { title: `Use ${call.name}?`, body: JSON.stringify(args), note };
 }
 
-/** How many accounts' sign-ins the shell checks at once: for the usage panel, /model and /login (#744). */
+/** How many accounts' sign-ins the shell checks at once: for the usage panel, /model and /login. */
 const checksAtOnce = 4;
 
-/** On Windows over SSH the inline shell, which the remote terminal draws reliably; otherwise the operator's choice (#432). */
+/** On Windows over SSH the inline shell, which the remote terminal draws reliably; otherwise the operator's choice. */
 const modeFor = (settings: Settings): "fullscreen" | "inline" =>
   process.platform === "win32" && (process.env["SSH_CONNECTION"] ?? process.env["SSH_CLIENT"]) !== undefined ? "inline"
     : settings.tuiMode ?? "fullscreen";
 
 /**
- * `tesota-core`: the engine's shell in the current folder (#444), on the
+ * `tesota-core`: the engine's shell in the current folder, on the
  * engine's models and settings, verified by Tesota's gate, with the
  * commands an operator needs every day. Resolves when the shell ends.
  */
@@ -116,16 +116,16 @@ export async function runApp(options: AppOptions): Promise<void> {
   const credentials = options.credentials ?? fileCredentialStore();
   const read = readSettings(options.settingsPath);
   let settings = read.settings;
-  // Only the providers the saved model and accounts are built on before the first frame; the rest of the catalog right after (#743).
+  // Only the providers the saved model and accounts are built on before the first frame; the rest of the catalog right after.
   const { models, rest } = options.models === undefined ? await shellModels(credentials, settings.accounts ?? [], settings.model)
     : { models: options.models, rest: () => Promise.resolve() };
-  // Another Tesota may have saved since this one started: only what changed here is written over it (#453).
+  // Another Tesota may have saved since this one started: only what changed here is written over it.
   const save = (change: Partial<Settings>): void => {
     settings = { ...settings, ...change };
     updateSettings(change, options.settingsPath);
   };
   const folder = options.sessions ?? sessionsFolder(options.cwd);
-  // Tesota's interface takes the shell's editor, key names, version and shell, never Pi's (#446).
+  // Tesota's interface takes the shell's editor, key names, version and shell, never Pi's.
   provideHost(shellHost(options.settingsPath));
   const theme = shellTheme("dark", getTerminalColorMode());
   const verifier: Verifier = (pi, request) => { tesota(pi, request); };
@@ -133,7 +133,7 @@ export async function runApp(options: AppOptions): Promise<void> {
   let model = chosenModel(models, settings);
   let permissionMode: Mode = settings.permissionMode ?? "ask";
   const rules = loadRules(options.cwd);
-  /** The operator's answer to a call the mode and rules leave to them (#449): once, for this session, or no. */
+  /** The operator's answer to a call the mode and rules leave to them: once, for this session, or no. */
   const answer = async (call: { name: string; arguments: unknown }, reason: string): Promise<"once" | "session" | "deny"> => {
     const picked = await shell.confirm({ ...confirmation(call, reason), items: [
       { value: "once", label: "Yes" },
@@ -143,12 +143,12 @@ export async function runApp(options: AppOptions): Promise<void> {
     return picked === "once" || picked === "session" ? picked : "deny";
   };
   const modeNames: Readonly<Record<Mode, string>> = { read: "read only", ask: "ask", full: "full access" };
-  /** The sessions this shell runs (#455): each its own workspace, surface, state and questions; one is shown. */
+  /** The sessions this shell runs: each its own workspace, surface, state and questions; one is shown. */
   const lives: Live[] = [];
   let attached: Live;
   /**
-   * The statuses Tesota's footer shows on its third row: the permission mode
-   * (#449), and how many other sessions wait for the operator (#455).
+   * The statuses Tesota's footer shows on its third row: the permission mode,
+   * and how many other sessions wait for the operator.
    */
   const showStatuses = (): void => {
     for (const live of lives) live.surface.statuses.set("permissions", modeNames[permissionMode]);
@@ -158,15 +158,15 @@ export async function runApp(options: AppOptions): Promise<void> {
   };
   const settingsPath = options.settingsPath ?? join(tesotaHome(), "settings.json");
   /**
-   * The command hooks every session's calls pass (#457) and the MCP servers
-   * they reach (#459): the operator's own, and the project's once the
+   * The command hooks every session's calls pass and the MCP servers
+   * they reach: the operator's own, and the project's once the
    * operator trusts them as they are now.
    */
   const standards = readStandards(options.cwd, settingsPath);
   let hooks: Hooks = typeof standards.ownHooks === "string" ? {} : standards.ownHooks;
-  /** The MCP servers every session reaches (#459), started once the project's are trusted or left out; none configured, none. */
+  /** The MCP servers every session reaches, started once the project's are trusted or left out; none configured, none. */
   let mcp: { readonly start: typeof startMcp; readonly own: string; readonly project: string | undefined } | undefined;
-  /** Each workspace's servers (#459): a session in its own worktree reaches servers that run there, never in another's. */
+  /** Each workspace's servers: a session in its own worktree reaches servers that run there, never in another's. */
   const workspaces = new Map<string, McpServers | undefined>();
   /** The servers of the workspace at `cwd`, started the first time a session there asks; none when none is configured. */
   const serversIn = (cwd: string): McpServers | undefined => {
@@ -240,7 +240,7 @@ export async function runApp(options: AppOptions): Promise<void> {
         made.state = "ended";
         made.outcome = event.outcome;
         if (made !== attached) shell.note(`“${firstLine(made.request)}” ended ${event.outcome}${made.verification === undefined ? "" : `, ${standingWords[made.verification]}`}.`);
-        // What the floor refused shows at every request's end, whatever else happened (#622).
+        // What the floor refused shows at every request's end, whatever else happened.
         const refused = lastFloorNotice(peekSessionFile(made.session.file).entries);
         if (refused !== undefined) shell.note(refused.trimEnd());
       } else if (event.type === "job") follows(made, event.details);
@@ -251,7 +251,7 @@ export async function runApp(options: AppOptions): Promise<void> {
       }
     });
   };
-  /** The subagents the shell's sessions started (#525), by their session's file, as their jobs last said, for the dashboard. */
+  /** The subagents the shell's sessions started, by their session's file, as their jobs last said, for the dashboard. */
   const children = new Map<string, { readonly parent: Live; readonly row: SessionRow }>();
   const follows = (parent: Live, details: unknown): void => {
     const { session, description, outcome, verification, branch, writes } = (details ?? {}) as Record<string, unknown>;
@@ -309,7 +309,7 @@ export async function runApp(options: AppOptions): Promise<void> {
       : { model, unchecked: `${reason} Continuing on ${label(model)}. Use /model to choose another.` };
   };
   /**
-   * Opens the session in `picked` and shows it (#595). `holder`, the session
+   * Opens the session in `picked` and shows it. `holder`, the session
    * that holds its checkout, is closed first: kept resumable, or deleted if it
    * was never asked anything.
    */
@@ -346,7 +346,7 @@ export async function runApp(options: AppOptions): Promise<void> {
   const terminal = options.terminal ?? new ProcessTerminal();
   const mode = modeFor(settings);
   /**
-   * `/graph` (#592): a graph the shown session captured, newest first or by its name, read through step 3a's
+   * `/graph`: a graph the shown session captured, newest first or by its name, read through step 3a's
    * disposable worker. It opens full-screen over the shell; with `--plain`, or in a terminal that cannot hold a full
    * screen, its text rendering is appended to the conversation instead.
    */
@@ -371,7 +371,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     }
     const [{ appendOnlyText, fitsFullScreen, fullScreen, ModelViewer }, { loadModelView, writeModelViewHtml, openBrowser }, { manifestReading }] =
       await Promise.all([import("./model-viewer.ts"), import("../../../../src/model-view-process.ts"), import("../../../../src/model-chart.ts")]);
-    // A chart reading is the project's code: the viewer's process runs it only once trusted as it is now (#761).
+    // A chart reading is the project's code: the viewer's process runs it only once trusted as it is now.
     const reading = await manifestReading(graph.manifest);
     if (reading !== undefined && !trusted(reading.root, chartTrust(reading.file), reading.hash)) {
       const picked = await shell.pick(`This project's chart reading would run: ${terminalText(reading.file)} labels the chart`, [
@@ -414,7 +414,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     ...each.verification === undefined ? {} : { verification: each.verification },
     workspace: each.session.workspace.branch ?? "checkout", startedAt: each.startedAt, attached: each === attached,
   })), ...[...children.values()].filter(({ parent }) => lives.includes(parent)).map(({ row }) => row)];
-  /** Opens the dashboard over the shell (#455), until a session is attached or the operator goes back. */
+  /** Opens the dashboard over the shell, until a session is attached or the operator goes back. */
   const agents = (): void => {
     const byId = (id: string): Live | undefined => lives.find((each) => each.session.file === id);
     let hide = (): void => undefined;
@@ -423,7 +423,7 @@ export async function runApp(options: AppOptions): Promise<void> {
         hide();
         const next = byId(id);
         if (next !== undefined) void attach(next);
-        // A subagent's session is its parent's job until it ends; then it opens like any other (#525).
+        // A subagent's session is its parent's job until it ends; then it opens like any other.
         else if (children.has(id)) shell.note(`That is a subagent's session: once it ends, /resume opens it (${basename(id)}).`);
       },
       peek: (id) => peekLines(byId(id)?.session.history() ?? childHistory(id)),
@@ -450,7 +450,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     return terminalSignIn(work, { terminal, ...options.openSignInPage === undefined ? {} : { open: options.openSignInPage } });
   });
   const claude = claudeOf(options.claude);
-  /** The accounts as this shell manages them (#642): Claude Code's sign-in gets the terminal while it runs. */
+  /** The accounts as this shell manages them: Claude Code's sign-in gets the terminal while it runs. */
   const hands: AccountHands = { settingsPath, models, credentials, interaction, cwd: options.cwd,
     claude: { signIn: (at) => shell.handOver(() => claude.signIn(at)), status: claude.status } };
   /** Runs an account's step, says what it did or why not, and keeps this shell's list of accounts as the settings now say. */
@@ -459,7 +459,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     const { accounts } = readSettings(settingsPath).settings;
     settings = { ...settings, ...accounts === undefined ? {} : { accounts } };
   };
-  /** Adds an account in one step (#642): a provider, a name, and its own sign-in. */
+  /** Adds an account in one step: a provider, a name, and its own sign-in. */
   const addAnAccount = async (): Promise<void> => {
     const provider = await shell.pick("Account of", [
       { value: "claude-code", label: "Claude Code", description: "signs in with your own Claude Code, in a folder of its own" },
@@ -470,15 +470,15 @@ export async function runApp(options: AppOptions): Promise<void> {
     if (name === undefined || name.trim() === "") return;
     await accountStep(() => provider === "openai-codex" ? browserSignIn((interaction) => addAccount({ ...hands, interaction }, provider, name.trim())) : addAccount(hands, provider, name.trim()));
   };
-  /** An account picked in the usage panel (#642): signed in again or removed. */
+  /** An account picked in the usage panel: signed in again or removed. */
   const manageAccount = async (id: string): Promise<void> => {
     const action = await shell.pick(id, [{ value: "login", label: "Sign in again" }, { value: "remove", label: "Remove" }]);
     if (action === "login") await accountStep(() => id.startsWith("openai-codex") ? browserSignIn((interaction) => signInAgain({ ...hands, interaction }, id)) : signInAgain(hands, id));
     else if (action === "remove") await accountStep(() => removeAccount(hands, id));
   };
   /**
-   * `/usage` and `/accounts`: one panel over the session, with a tab for how much each account has left and one for the accounts
-   * (#642), opened on the tab the command names. Its readings are read and time-limited off the session's path.
+   * `/usage` and `/accounts`: one panel over the session, with a tab for how much each account has left and one for the accounts,
+   * opened on the tab the command names. Its readings are read and time-limited off the session's path.
    */
   const usagePanel = (tab: UsageTab): Promise<void> => {
     let hide = (): void => undefined;
@@ -492,7 +492,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     void panel.start();
     return Promise.resolve();
   };
-  /** A project's hooks run its own commands: they run only once the operator trusts them as they are now (#457). */
+  /** A project's hooks run its own commands: they run only once the operator trusts them as they are now. */
   const trustProjectHooks = async (): Promise<void> => {
     const { hooks: project, hash, trusted: already } = standards.projectHooks;
     if (typeof project === "string") { shell.note(`The project's hooks were left out: ${project}`, "error"); return; }
@@ -526,7 +526,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     else shell.note("The project's declared checks do not run in this shell.", "warning");
   };
   /**
-   * Starts the MCP servers (#459): the operator's from beside their settings,
+   * Starts the MCP servers: the operator's from beside their settings,
    * and the project's once the operator trusts them as they are now, since
    * they run the project's commands; without that trust only the operator's
    * start. Their configuration errors are noted.
@@ -557,7 +557,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     serversIn(attached.session.workspace.cwd);
   };
   /**
-   * `/mcp` (#459): the servers with their state, and for one picked, or named
+   * `/mcp`: the servers with their state, and for one picked, or named
    * after `login`, `logout` or `reconnect`, that action; a sign-in shows the
    * page to open and waits for the browser's redirect.
    */
@@ -604,7 +604,7 @@ export async function runApp(options: AppOptions): Promise<void> {
   };
   const commands: Readonly<Record<string, { description: string; argumentHint?: string; run: (args: string) => Promise<void> }>> = {
     "/model": { description: "Choose the model", run: async () => {
-      // The labels are checked while the models are, so a Claude Code folder's two checks share one run (#744).
+      // The labels are checked while the models are, so a Claude Code folder's two checks share one run.
       const labels = accountLabels(credentials, settings.accounts ?? [], claude.status, { concurrency: checksAtOnce });
       let available: readonly Model<Api>[];
       try { available = await runnableModels(models); } catch (error) {
@@ -612,7 +612,7 @@ export async function runApp(options: AppOptions): Promise<void> {
         shell.note(`No models to choose from: ${error instanceof Error ? error.message : String(error)}.`, "warning");
         return;
       }
-      // Claude Code signs in by itself, never through Tesota's /login (#546).
+      // Claude Code signs in by itself, never through Tesota's /login.
       if (models.getProvider(claudeCodeProviderId) !== undefined && !available.some(({ provider }) => provider === claudeCodeProviderId)) {
         shell.note(claudeCodeSignIn);
       }
@@ -633,7 +633,7 @@ export async function runApp(options: AppOptions): Promise<void> {
       shell.note(`Model: ${label(next)}.`);
     } },
     "/login": { description: "Sign in to a model provider", run: async () => {
-      // The one list read before an async use: the whole catalog is loaded first (#743).
+      // The one list read before an async use: the whole catalog is loaded first.
       await rest();
       const providers = models.getProviders().filter(({ auth }) => auth.oauth !== undefined || auth.apiKey?.login !== undefined);
       const accounts = await accountLabels(credentials, settings.accounts ?? [], claude.status, { concurrency: checksAtOnce });
@@ -666,7 +666,7 @@ export async function runApp(options: AppOptions): Promise<void> {
       await models.logout(picked);
       shell.note(`Logged out of ${picked}.`);
     } },
-    // A new session runs beside the others, in its own worktree when another holds the checkout (#453, #455).
+    // A new session runs beside the others, in its own worktree when another holds the checkout.
     "/new": { description: "Start another session beside this one", run: async () => {
       try {
         await attach(live((made) => createSession({ cwd: options.cwd, folder, ...sessionOptions(made) })));
@@ -685,7 +685,7 @@ export async function runApp(options: AppOptions): Promise<void> {
       const holder = recorded.worktree !== undefined ? undefined : lives.find((each) => each.session.workspace.worktree === undefined
         && sameFolder(checkoutRoot(each.session.workspace.cwd), checkoutRoot(recorded.cwd)));
       if (holder === undefined) { await resumeHere(picked); return; }
-      // The session that holds the checkout hands it over once it has no running work (#595).
+      // The session that holds the checkout hands it over once it has no running work.
       const named = `“${firstLine(holder.request)}”`;
       if (holder.state === "idle" || holder.state === "ended") { await resumeHere(picked, holder); return; }
       const wait = await shell.pick(`${named} is running in ${recorded.cwd}, which this session needs`,
@@ -733,7 +733,7 @@ export async function runApp(options: AppOptions): Promise<void> {
       shell.note("Compacting…");
       await attached.session.compact().catch((error: unknown) => { shell.note(error instanceof Error ? error.message : String(error), "warning"); });
     } },
-    // What fills the model's window, part by part, as Claude Code's and Qwen Code's /context show it (#779).
+    // What fills the model's window, part by part, as Claude Code's and Qwen Code's /context show it.
     "/context": { description: "What fills the model's window, part by part", run: () => {
       const context = attached.session.context();
       shell.note(context === undefined ? "The model's context window is unknown, so its use can't be shown." : contextReport(context));
@@ -745,7 +745,7 @@ export async function runApp(options: AppOptions): Promise<void> {
 
   shell = startShell({ terminal, mode,
     fullRepaint: process.platform === "win32", theme, session: attached.session, status, surface: attached.surface,
-    // The shown session's folder and statuses, whichever session that is (#455).
+    // The shown session's folder and statuses, whichever session that is.
     footerData: footerData(() => attached.session.workspace.cwd, () => attached.surface.statuses, () => providers),
     nextMode: () => {
       permissionMode = permissionMode === "ask" ? "full" : permissionMode === "full" ? "read" : "ask";
@@ -762,7 +762,7 @@ export async function runApp(options: AppOptions): Promise<void> {
       await command.run(text.slice(word.length).trim());
       return true;
     } });
-  // The first frame is drawn: the rest of the catalog loads now, while the shell starts its hooks and servers (#743).
+  // The first frame is drawn: the rest of the catalog loads now, while the shell starts its hooks and servers.
   // A failure stays for the uses that wait on it, where it is reported, not as an unhandled rejection here.
   rest().catch(() => undefined);
   for (const text of settingsNotes(read, settingsPath)) shell.warn(`settings:${text}`, text);
@@ -772,7 +772,7 @@ export async function runApp(options: AppOptions): Promise<void> {
   await trustProjectChecks();
   serversStarted = startServers();
   await serversStarted;
-  // A saved model the sign-in does not serve is refused before the first request (#566).
+  // A saved model the sign-in does not serve is refused before the first request.
   const saved = model === undefined ? undefined : await runnableModel(models, label(model));
   if (typeof saved === "string") {
     model = undefined;
@@ -788,14 +788,14 @@ export async function runApp(options: AppOptions): Promise<void> {
   }
   await Promise.all(lives.map((each) => each.session.dispose()));
   await Promise.all([...workspaces.values()].map((servers) => servers?.close()));
-  // The shell has given the terminal back: worktrees with work in them are named where the operator sees them (#453).
+  // The shell has given the terminal back: worktrees with work in them are named where the operator sees them.
   for (const each of lives) {
     const kept = each.session.kept();
     if (kept !== undefined) console.log(kept);
   }
 }
 
-/** A session the shell runs (#455): its own surface, where its run stands, its receipt, and the questions it holds for the operator. */
+/** A session the shell runs: its own surface, where its run stands, its receipt, and the questions it holds for the operator. */
 interface Live {
   session: EngineSession;
   readonly surface: Surface;
@@ -816,7 +816,7 @@ const sameFolder = (a: string, b: string): boolean => process.platform === "win3
 
 const firstLine = (text: string | undefined): string => (text ?? "").split("\n")[0]?.trim() || "new session";
 
-/** What a subagent's session file holds so far (#525): its request and replies, for the dashboard to peek at. */
+/** What a subagent's session file holds so far: its request and replies, for the dashboard to peek at. */
 function childHistory(file: string): HistoryMessage[] {
   try {
     return peekSessionFile(file).entries.flatMap((entry): HistoryMessage[] => entry.type === "request"

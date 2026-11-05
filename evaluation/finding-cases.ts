@@ -1,5 +1,5 @@
 /**
- * The cases for findings as evidence (#375), registered on 2026-10-10 before
+ * The cases for findings as evidence, registered on 2026-10-10 before
  * any run. Each is a change to review: a request, a base, and a candidate
  * written over the base as the uncommitted change. They are restored from
  * the review evaluation at `d0c03f66` (`src/review-evaluation.ts`), whose

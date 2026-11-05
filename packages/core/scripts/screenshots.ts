@@ -16,7 +16,7 @@ import { WORDMARK } from "../../../src/welcome-header.ts";
 import { flowSvg, flowSvgPath } from "./readme-flow.ts";
 
 /**
- * The documentation's images (#468): Tesota's shell as it draws itself,
+ * The documentation's images: Tesota's shell as it draws itself,
  * driven in an emulated terminal on a scripted model, and written as SVG in
  * `docs/assets`, light and dark. Run it again when the screen changes:
  * `bun run --cwd packages/core screenshots`. The verified turn runs the
@@ -234,7 +234,7 @@ async function welcome(appearance: Appearance): Promise<void> {
 
 const totalBefore = "export function total(amount: number): number {\n  return amount;\n}\n";
 // The agent's change misses the request's boundary: "over 100" leaves 100 alone, but the code, its contract and the
-// test it wrote all take 10 off at 100. Every check passes; only the request review can notice (#731's spec gap).
+// test it wrote all take 10 off at 100. Every check passes; only the request review can notice the gap between the code and the request.
 const totalAfter = "//@ ensures amount >= 100 ==> \\result === amount - 10\n" +
   "//@ ensures amount < 100 ==> \\result === amount\n" +
   "export function total(amount: number): number {\n  return amount >= 100 ? amount - 10 : amount;\n}\n";

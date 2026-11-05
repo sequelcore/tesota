@@ -2,7 +2,7 @@ import type { Terminal } from "@earendil-works/pi-tui";
 import xterm from "@xterm/headless";
 
 /**
- * A terminal the shell draws into for tests (#444), emulated by xterm.js as
+ * A terminal the shell draws into for tests, emulated by xterm.js as
  * Pi's own tests do (pi-tui's `test/virtual-terminal.ts`): what it shows is
  * read back from the emulator's screen and scrollback, and keys are sent as
  * the terminal would send them.
@@ -19,7 +19,7 @@ export class VirtualTerminal implements Terminal {
    * When set, each start queries the terminal as pi-tui's `ProcessTerminal` does,
    * and the terminal answers this many milliseconds later. An answer that comes
    * while the terminal is read is consumed; one that comes after it stopped
-   * reaching the shell's prompt as typed text, and lands in `atPrompt` (#574).
+   * reaching the shell's prompt as typed text, and lands in `atPrompt`.
    */
   answersQueriesAfterMs: number | undefined;
   /** What reached the prompt after the terminal stopped being read. */

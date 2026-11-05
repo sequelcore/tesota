@@ -5,7 +5,7 @@ import type { HistoryMessage } from "./loop.ts";
 import { changedSections, promptStep } from "./prompt-rule.ts";
 import type { EngineTool } from "./tool.ts";
 
-/** The named parts of the system prompt after its fixed opening, in the order the model reads them (#779). */
+/** The named parts of the system prompt after its fixed opening, in the order the model reads them. */
 export const sectionNames = ["explore", "tools", "guidelines", "instructions"] as const;
 
 /** The system prompt and tools a request gives the model: the fixed opening, each section's text (empty when absent) and the tools. */
@@ -22,8 +22,8 @@ export interface PromptEntry {
 }
 
 /**
- * The prompt in `cwd` with the `active` tools (#441, #779): a fixed opening,
- * with the session's `scratch` folder when it has one (#653), then what to
+ * The prompt in `cwd` with the `active` tools: a fixed opening,
+ * with the session's `scratch` folder when it has one, then what to
  * explore with, what each tool that has one says of itself, their rules,
  * trimmed and each once, and the `instructions`. A `given` prompt replaces
  * all of it.
@@ -54,7 +54,7 @@ export function promptState(cwd: string, active: readonly EngineTool[], instruct
 export const promptText = (state: PromptState): string => [state.content, ...state.sections].filter((part) => part !== "").join("\n\n");
 
 /**
- * The system message a request adds so the model has `desired` (#779): the
+ * The system message a request adds so the model has `desired`: the
  * leading one while the transcript has none, then only the sections and
  * tools that changed, appended; nothing when nothing changed, so the head a
  * provider caches never moves.
@@ -82,7 +82,7 @@ export function promptChange(log: readonly SystemMessage[], desired: PromptState
 }
 
 /**
- * The conversation as the model reads it (#779): the leading system message,
+ * The conversation as the model reads it: the leading system message,
  * then the messages, each later system message after the one it follows
  * and the call results right after that, since a provider takes a system
  * message only after the operator's turn; a settle handler's message is

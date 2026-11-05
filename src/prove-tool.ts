@@ -10,7 +10,7 @@ import type { OnTrust } from "./verification-changes.js";
 import { annotations, projectFiles, proveFile } from "./verification/lemmascript-verifier.js";
 
 /**
- * The working agent's own proof run (#294): LemmaScript with Dafny on one
+ * The working agent's own proof run: LemmaScript with Dafny on one
  * TypeScript file it is working on, so it sees a failing obligation while it
  * works, as LemmaScript's loop intends, instead of after the turn.
  */
@@ -24,7 +24,7 @@ const syntaxGuidance = "LemmaScript syntax: //@ requires P and //@ ensures P abo
   "its return value; //@ invariant P as the first lines inside a loop; forall(j: nat, j < items.length ==> P) and " +
   "exists(j: nat, j < items.length && P); ==> for implication and === for equality.";
 
-/** How the agent should use `prove`, and what a pass is worth: #294's measured guidance. */
+/** How the agent should use `prove`, and what a pass is worth. */
 export const PROVE_GUIDELINES: readonly string[] = [
   "prove runs LemmaScript with Dafny on a TypeScript file with //@ annotations and reports whether its contracts " +
     "hold for every input they admit. After you change such a file, run prove and work until it passes.",
@@ -58,7 +58,7 @@ const fileLimit = 1024 * 1024;
 
 /**
  * Whether the project has a TypeScript file with `//@` annotations, which
- * turns on `prove` and its guidance (#294). It reads only the project's
+ * turns on `prove` and its guidance. It reads only the project's
  * files `projectFiles` walks to (`annotated`); a project it cannot read has
  * none.
  */
@@ -84,8 +84,8 @@ function trustLine(change: OnTrust): string {
 
 /**
  * A pass, in words that claim no more than the proof: every contract holds
- * only when the files it checked trust nothing and leave nothing out (#402);
- * otherwise each such line is named, as the receipt names them (#399).
+ * only when the files it checked trust nothing and leave nothing out;
+ * otherwise each such line is named, as the receipt names them.
  */
 function passedWords(path: string, trusted: readonly OnTrust[]): string {
   if (trusted.length === 0) return `Proved: every //@ contract in ${path} holds.`;
@@ -100,7 +100,7 @@ async function trustedIn(root: string, files: readonly string[], info: Evidence[
   };
   const found = await Promise.all(files.map(async (path) => ({ path, content: await read(path),
     generated: path.endsWith(".dfy") ? await read(`${path}.gen`) : undefined })));
-  // Loaded when a proof first passes rather than with Tesota, as the gate loads its checks (#446).
+  // Loaded when a proof first passes rather than with Tesota, as the gate loads its checks.
   const { provedOnTrust } = await import("./verification-changes.js");
   const existing = await provedOnTrust(found.flatMap(({ path, content, generated }) => content === undefined ? []
     : [{ path, content, ...generated === undefined ? {} : { generated } }]), signal);
@@ -203,7 +203,7 @@ function renderResult(result: ToolResult<ProveDetails | undefined>, options: { e
 const parameters: TObject<{ path: TString }> = Type.Object({ path: Type.String({ description: "The TypeScript file to prove, relative to the project" }) });
 
 /**
- * `prove`, inactive until the extension offers it (#779): where Dafny is on
+ * `prove`, inactive until the extension offers it: where Dafny is on
  * the PATH or the project has contracts (`hasContracts`). It runs alone,
  * since the evidence must describe the files as no other tool call left them
  * mid-proof.

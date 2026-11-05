@@ -238,7 +238,7 @@ it("shows a proof's result in a few words, and Dafny's output only when expanded
   expect(drawn({ outcome: "passed", output: "Dafny program verifier finished with 2 verified, 0 errors" })).toEqual([
     "prove src/range.ts                                                          2.1s", "",
     "✓ Proved — every contract holds · 2 verified, 0 errors"]);
-  // #402: a pass that rests on trust says so, and names each line.
+  // A pass that rests on trust says so, and names each line.
   const trusted: OnTrust[] = [{ path: "src/range.ts", kind: "added_assume", annotation: "//@ extern", function: "lower" }];
   expect(drawn({ outcome: "passed", output: "Dafny program verifier finished with 2 verified, 0 errors", trusted }).slice(2)).toEqual([
     "✓ Proved, not outright — its contracts hold only if what it trusts is right · 2", "  verified, 0 errors",

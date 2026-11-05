@@ -11,7 +11,7 @@ import { dirname, join } from "node:path";
 import { goesOn } from "../handback-rule.ts";
 
 /**
- * Claude through the operator's own Claude Code (#546): a model provider,
+ * Claude through the operator's own Claude Code: a model provider,
  * `claude-code`, that runs the unmodified Claude Code program the Claude
  * Agent SDK bundles for the platform. Claude Code answers each step and
  * runs nothing: its built-in tools are off, and Tesota's tools are declared
@@ -71,7 +71,7 @@ export const claudeCodeSignIn = "Claude through your own Claude Code: sign in th
  * The Claude Code program to run: the one the SDK installs for this
  * platform, when Tesota runs from source, or else the operator's own
  * `claude` on the `PATH`, since a compiled `tesota` has no SDK install to
- * find it in (#570). `CLAUDE_CODE_EXECUTABLE` explicitly selects a program
+ * find it in. `CLAUDE_CODE_EXECUTABLE` explicitly selects a program
  * instead (also used by the isolated test runner). None when neither is there.
  */
 export function claudeCodeExecutable(installed: () => string | undefined = () => process.env["CLAUDE_CODE_EXECUTABLE"] ?? sdkClaudeCode()): string | undefined {
@@ -113,7 +113,7 @@ const checking = new WeakMap<typeof execFile, Map<string, Promise<ClaudeCodeStat
 /**
  * Non-secret account metadata from Claude Code itself; never reads its
  * credential files. `signal` stops Claude Code when it aborts. Checks of one
- * folder at the same time share one run (#744): `/model` asks a provider's
+ * folder at the same time share one run: `/model` asks a provider's
  * sign-in and its account label together. A check with a signal runs on its
  * own, so stopping it stops no one else's, and nothing is kept once a check
  * returns, so signing in or out elsewhere shows at the next one.
@@ -147,7 +147,7 @@ function statusOf(configDir: string | undefined, execute: typeof execFile, signa
 
 /**
  * Claude Code's own sign-in (`claude auth login`) for the account in
- * `configDir` (#642), on the operator's terminal: Tesota starts it and waits,
+ * `configDir`, on the operator's terminal: Tesota starts it and waits,
  * and never sees what it asks or stores. Settles when it ends, whether or not
  * it signed in; `claudeCodeStatus` says which.
  */
@@ -307,12 +307,12 @@ function toolServer(tools: () => readonly Tool[], answer: (callId: string) => Pr
   };
   // The SDK types the instance as the MCP SDK's server class, of which it calls only `connect`.
   return { config: { type: "sdk" as const, name: server, instance: instance as never },
-    /** Tells Claude Code the tools changed, so it lists them again (#779). */
+    /** Tells Claude Code the tools changed, so it lists them again. */
     changed: (): void => { void send?.({ jsonrpc: "2.0", method: "notifications/tools/list_changed" }).catch(() => undefined); } };
 }
 
 /**
- * What a conversation must still match to go on in its query (#779): the
+ * What a conversation must still match to go on in its query: the
  * transcript's leading system message, its text and tools. A later system
  * message changes the prompt in place, so it never restarts the query.
  */
@@ -409,7 +409,7 @@ class Conversation {
   readonly system: string;
   /** The transcript's leading system message the query was opened from, which a step must still match to go on in it. */
   readonly leading: string;
-  /** The tools Claude Code may call now, and how many of the transcript's system messages it has had (#779). */
+  /** The tools Claude Code may call now, and how many of the transcript's system messages it has had. */
   tools: readonly Tool[];
   offered: ReadonlySet<string>;
   systems: number;
@@ -431,7 +431,7 @@ class Conversation {
 
   /**
    * Takes in the system messages the transcript added since the query last
-   * had it (#779): the tools as they are now, which Claude Code lists again,
+   * had it: the tools as they are now, which Claude Code lists again,
    * and each change of the prompt as a note it reads before going on.
    */
   update(systems: readonly SystemMessage[], tools: readonly Tool[]): TextContent[] {

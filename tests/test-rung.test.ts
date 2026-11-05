@@ -42,7 +42,7 @@ function folder(): string {
   return root;
 }
 
-/** A Git repository holding only `math.ts` and a `package.json` whose tests are Bun's, with no tests (#575); its commit. */
+/** A Git repository holding only `math.ts` and a `package.json` whose tests are Bun's, with no tests; its commit. */
 function noTests(): { root: string; base: string } {
   const root = folder();
   writeFileSync(join(root, "math.ts"), "export function sub(a: number, b: number): number { return a - b; }\n");
@@ -351,7 +351,7 @@ async function judged(path: string, test: string, others: Record<string, string>
   return exercise;
 }
 
-// A runner that selects nothing passes with no tests, so its exit alone shows no test ran (#615).
+// A runner that selects nothing passes with no tests, so its exit alone shows no test ran.
 it.each([
   ["a file the runner does not select", "tests/math.check.ts", addTest, {}, /on the base it passed, but the runner wrote no test report/u],
   ["a file whose only test is skipped", "math.test.ts", addTest.replace("test(", "test.skip("), {}, /every test from math\.test\.ts was skipped/u],
@@ -370,7 +370,7 @@ it("never credits a test that fails on the base when none of its tests runs on t
     reason: expect.stringMatching(/^it fails on the base by .*, but with the change in the same worktree, without the checkout's ignored files, .* passed and every test from math\.test\.ts was skipped$/u) });
 }, 60_000);
 
-// The base worktree lacks files the repository ignores, so the change runs there too, not in the checkout (#618).
+// The base worktree lacks files the repository ignores, so the change runs there too, not in the checkout.
 it.each([["the runner on it alone", "bun test"], ["the whole check", "bun test && echo whole"]])(
   "never credits a test, judged by %s, that fails on the base only for want of an ignored file", async (_label, script) => {
     const { root } = noTests();
@@ -408,7 +408,7 @@ it("still credits a test of a real change beside one that needs an ignored file 
   expect(exercises.map((each) => each.sensitivity)).toEqual(["unknown", "fails_then_passes"]);
 }, 60_000);
 
-// A filter selects every path that ends the same way; what else it ran is said, never taken for the file (#620).
+// A filter selects every path that ends the same way; what else it ran is said, never taken for the file.
 it.each(["bun test", "vitest run"])("says which other files %s ran when judging one test file", async (runner) => {
   const { root } = noTests();
   symlinkSync(join(process.cwd(), "node_modules"), join(root, "node_modules"), "junction");

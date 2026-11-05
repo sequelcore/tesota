@@ -1,7 +1,7 @@
 name: Tesota binaries
-# Every target a release ships (#472), built once with their checksums and kept for a week. Each runner starts the
+# Every target a release ships, built once with their checksums and kept for a week. Each runner starts the
 # binaries it can run and installs one with the install script; Linux runs the musl ones in Alpine. A tag `v<version>`
-# publishes those same files as a GitHub Release, with a provenance attestation for each binary (#372).
+# publishes those same files as a GitHub Release, with a provenance attestation for each binary.
 on:
   push:
     branches: [main, dev]

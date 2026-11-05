@@ -1,6 +1,6 @@
 /**
- * Where a changed file's lines count in the receipt's summary of the change
- * (#527): tests by the gate's test-path rule first; then a generated file, or
+ * Where a changed file's lines count in the receipt's summary of the change:
+ * tests by the gate's test-path rule first; then a generated file, or
  * one in no programming language (documentation, configuration, a manifest
  * or lockfile, an asset), is other; the rest is implementation. A category
  * says where the lines are, never how risky they are.

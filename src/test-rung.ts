@@ -78,7 +78,7 @@ export interface CommandRun {
   readonly evidence: Evidence;
   /** The failing tests' names, sorted, from the JUnit reports the run wrote; undefined when it wrote none. */
   readonly failingTests?: readonly string[] | undefined;
-  /** Why a command failed, or why its cause is unknown when it did not finish (#726, #784). */
+  /** Why a command failed, or why its cause is unknown when it did not finish. */
   readonly origin?: CommandOrigin;
   /** The actual comparable base execution, including an explicit not-started comparison when unavailable. */
   readonly baseline?: { readonly outcome: CommandOutcome; readonly output: string };
@@ -145,7 +145,7 @@ async function commandRuns(root: string, projects: readonly ProjectChecks[], cha
       const probe = check.script === undefined ? undefined
         : runnerProbe(check.script, inFolder(folder, `${check.command}${check.argumentSeparator === undefined ? "" : " --"}`), folder);
       const started = Date.now();
-      // After a stop nothing is launched, so no start is published and the planned command closes as not started (#590).
+      // After a stop nothing is launched, so no start is published and the planned command closes as not started.
       const id = planned[next++];
       const execute = async (): Promise<BaseRun> => {
         const problem = admittedInvocationProblem(root, project, check);
@@ -265,7 +265,7 @@ function commandOrigin(outcome: CommandOutcome, results: TestResults | undefined
 
 /**
  * A changed or added test file against the base, the commit the request
- * started from (#527), as two facts apart. Its provenance: the base held the
+ * started from, as two facts apart. Its provenance: the base held the
  * file, so this request changed it, or this request added it, so what it
  * expects is the request's own. Its sensitivity: it fails on the base while
  * the base passes without it, or the tests it adds newly fail there by the
@@ -426,7 +426,7 @@ function exercise(path: string, provenance: TestExercise["provenance"], withTest
  * Why a runner's pass shows nothing about `file`, relative to the runner's
  * folder, from the report it wrote: none, or no test from that file ran and
  * passed. A filter that selects nothing passes with no tests, so an exit
- * alone is not a test that ran (#615). Undefined when one did.
+ * alone is not a test that ran. Undefined when one did.
  */
 function unobserved(results: TestResults | undefined, file: string): string | undefined {
   if (results === undefined) return "the runner wrote no test report Tesota could read whole";
@@ -439,7 +439,7 @@ function unobserved(results: TestResults | undefined, file: string): string | un
  * The files besides `file` that a runner given only it ran tests from, by
  * its report, as a clause for the reason; empty when none. A filter selects
  * every path that ends the same way, and Bun and Vitest have none that is
- * exact and keeps the project's own selection (#620).
+ * exact and keeps the project's own selection.
  */
 function others(results: TestResults | undefined, file: string): string {
   const ran = [...results?.tests.keys() ?? []].flatMap((name) => name.includes(" > ") ? [name.slice(0, name.indexOf(" > "))] : []);
@@ -450,8 +450,8 @@ function others(results: TestResults | undefined, file: string): string {
 /**
  * A file that fails on the base `by` what runs it, credited only when that,
  * `onChange`, passed with the change in the same worktree, so that both
- * sides lack the same files the repository ignores (#618), and, for a runner
- * on the files alone, ran a test from it that passed (#615). Undefined
+ * sides lack the same files the repository ignores, and, for a runner
+ * on the files alone, ran a test from it that passed. Undefined
  * `file` for the whole commands, which name no file.
  */
 function credited(verdict: TestExercise, file: string | undefined, by: string, onChange: string, change: BaseRun): TestExercise {
@@ -462,7 +462,7 @@ function credited(verdict: TestExercise, file: string | undefined, by: string, o
     : { ...verdict, sensitivity: "unknown", reason: `${but} passed and ${missing}` };
 }
 
-/** What the commands a session runs add to Tesota's environment, such as a writing subagent's branch guard (#619). */
+/** What the commands a session runs add to Tesota's environment, such as a writing subagent's branch guard. */
 export type Environment = Readonly<Record<string, string>>;
 
 /** A path as one word for the POSIX shell the project's checks run in. */
@@ -474,7 +474,7 @@ const quoted = (path: string): string => `'${path.replaceAll("'", "'\\''")}'`;
  * shell composites cannot safely receive runner flags. Jest takes the files
  * as exact paths and still keeps the project's selection; Bun's exact form,
  * `./`, runs files the project excludes, so Bun and Vitest take them as
- * filters, and what else they ran is said (`others`, #620).
+ * filters, and what else they ran is said (`others`).
  */
 function testProbe(project: string, folder: string, files?: readonly string[]): Probe | undefined {
   const test = packageTest(project, folder);
@@ -566,7 +566,7 @@ async function probeRun(probe: Probe, project: string, signal: AbortSignal, env?
 }
 
 /**
- * Each test file over the base, by what runs it there (#603): the project's
+ * Each test file over the base, by what runs it there: the project's
  * own test runner on that file alone, with per-test reporting, when its test
  * script is one (`testProbe`), else the project's whole commands. A file
  * that fails there runs once more on the base without it: alone, the base's
@@ -779,7 +779,7 @@ async function restoreSource(project: string, base: string, source: string, sign
 }
 
 /**
- * Counterfactual per-source sensitivity (#669). Every probe starts with the full candidate and reverts exactly one source.
+ * Counterfactual per-source sensitivity. Every probe starts with the full candidate and reverts exactly one source.
  * The shared deadline includes setup and controls; process cleanup is awaited even after its measurement budget expires.
  */
 export async function exerciseSourcePaths(root: string, base: string, tests: readonly string[], changed: readonly string[],

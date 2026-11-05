@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deviceId, readSettings, unknownSettingsNote, updateSettings, writeSettings } from "../src/settings.ts";
 
-/** The operator's settings (#443), always in a temporary folder. */
+/** The operator's settings, always in a temporary folder. */
 const fileIn = (): string => join(mkdtempSync(join(tmpdir(), "tesota-core-settings-")), "settings.json");
 
 describe("the settings file", () => {

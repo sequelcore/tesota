@@ -8,7 +8,7 @@ import { modelContext } from "../src/prompt.ts";
 import { createSession, type EngineSession, openSession, type SessionOptions } from "../src/session.ts";
 
 /**
- * Compaction in a session (#451): it triggers at the margin and on overflow,
+ * Compaction in a session: it triggers at the margin and on overflow,
  * keeps the tail verbatim and the request exact, merges its summaries,
  * survives a resume, and ends the run when it cannot summarize.
  */
@@ -48,7 +48,7 @@ function scripted(steps: readonly Step[], summaries: readonly (string | { readon
   };
   faux.setResponses(Array.from({ length: 60 }, () => (context: unknown) => answer(context as Context)));
   const models = createModels();
-  // Temporary, until #484: given the session's id, pi-ai 1.3.0's scripted model counts a cached prompt's new tokens
+  // Given the session's id, pi-ai 1.3.0's scripted model counts a cached prompt's new tokens
   // twice, which these measured windows cannot absorb, so the id is withheld from it. Remove once pi-ai counts them once.
   const withoutSession = <Options extends { sessionId?: string }>(options?: Options) => {
     const { sessionId: _, ...rest } = options ?? {};

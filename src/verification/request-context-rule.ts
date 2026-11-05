@@ -6,7 +6,7 @@ export function referenceFits(count: number, bytes: number, size: number, maxCou
 }
 
 /**
- * Which earlier requests a new request is judged with (#627), oldest first:
+ * Which earlier requests a new request is judged with, oldest first:
  * those after the last request whose changes were verified, as recorded by
  * a final successful settlement with a receipt, not merely a completed
  * answer. A stopped receipt is an inventory, not verification. Returns the

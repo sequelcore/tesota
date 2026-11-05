@@ -1,5 +1,5 @@
 /**
- * #698: terminal exclusions win; retry only rate limits, 5xx or other clearly
+ * Terminal exclusions win; retry only rate limits, 5xx or other clearly
  * transient failures. Three retries maximum, strictly inside two minutes from
  * the first failure, including the full provider-requested wait.
  * `terminal` and `transient` are normalized provider type/transport evidence.

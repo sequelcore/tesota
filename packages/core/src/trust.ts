@@ -8,8 +8,8 @@ import { writeWholeJson } from "./whole-file.ts";
 
 /**
  * What of a project runs its own commands, and so runs only once the
- * operator trusts it as it is now: its hooks (#457), its MCP servers (#459)
- * and each of its model charts' readings (#761).
+ * operator trusts it as it is now: its hooks, its MCP servers
+ * and each of its model charts' readings.
  */
 export type Trusted = "hooks" | "mcp" | "checks" | `chart:${string}`;
 

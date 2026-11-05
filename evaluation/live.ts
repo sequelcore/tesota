@@ -14,14 +14,14 @@ import { engineRegistry, session } from "./engine-session.js";
 import { manifest, read, write } from "./sessions.js";
 
 /**
- * Slice 8's live evaluation (#350): each registered case runs in a fresh Git
- * repository in an engine session (`engine-session.ts`, #464), verified by
+ * The live evaluation: each registered case runs in a fresh Git
+ * repository in an engine session (`engine-session.ts`), verified by
  * Tesota or, in the `plain` arm, settling without it. The model comes from the
  * operator's Tesota sign-in: `OPENAI_API_KEY` is removed. Each run appends one
  * JSON line to `--out`, which a later call resumes from. No instructions of
  * the operator's or the project's are read; the `tesota` arm loads each skill
  * named in `--skills`, with the checkout's `lsc` on `PATH` so an agent a
- * skill tells to install it finds it instead (#387). `--thinking` sets the
+ * skill tells to install it finds it instead. `--thinking` sets the
  * reasoning effort, Pi's default when not given.
  * The `claimcheck` mode replays ClaimCheck, with the session's model alone and
  * with a second model, on the contracts the runs left and on the strengthen
@@ -65,7 +65,7 @@ async function fromProofCase(testCase: ProofCase): Promise<LiveCase> {
 }
 
 /**
- * A first-contract case (#387): its base, without a contract, is committed;
+ * A first-contract case: its base, without a contract, is committed;
  * the bug comes from the strengthen or proof case it was made from, whose
  * contract locates the same buggy body and names its function
  * (`withBuggyBody`).
@@ -79,7 +79,7 @@ async function fromFirstContractCase(testCase: ProofCase | StrengthenCase): Prom
     ...buggy === undefined ? {} : { buggy }, kept: [] };
 }
 
-/** An open case (#387): its base is committed, and its own `buggy` locates the bug under a contract of the stated behavior. */
+/** An open case: its base is committed, and its own `buggy` locates the bug under a contract of the stated behavior. */
 async function fromOpenCase(testCase: OpenCase): Promise<LiveCase> {
   const name = (await contracts(testCase.path, testCase.buggy))[0]?.name;
   return { name: testCase.name, request: testCase.request, committed: testCase.base, untracked: {}, hiddenTest: testCase.hiddenTest,

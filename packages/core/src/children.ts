@@ -13,22 +13,22 @@ import { codingTools } from "./tools/index.ts";
 import type { RequestReference } from "../../../src/request-references.ts";
 import { configHooks, guardedWorktree, installedGit, newWorktree, type Workspace } from "./workspace.ts";
 
-/** How far below its top session a child may be (#525): two, as pstack's `orchestrate` playbook spawns sub-coordinators. */
+/** How far below its top session a child may be: two, as pstack's `orchestrate` playbook spawns sub-coordinators. */
 export const maxDepth = 2;
 
-/** How many children run at once across a top session's tree when the settings do not say (#525). */
+/** How many children run at once across a top session's tree when the settings do not say. */
 export const defaultAgentLimit = 4;
 
-/** The model replies a child may take, and the time it may run, before it is stopped (#525). */
+/** The model replies a child may take, and the time it may run, before it is stopped. */
 export const childLimits = { turns: 100, minutes: 60 };
 
-/** The children running across one top session's tree, counted against its limit (#525). */
+/** The children running across one top session's tree, counted against its limit. */
 export interface AgentTree {
   running: number;
   readonly limit: number;
 }
 
-/** What a child's end reports (#525): to the shell, the parent's receipt and the operator; the report itself is never evidence. */
+/** What a child's end reports: to the shell, the parent's receipt and the operator; the report itself is never evidence. */
 export interface ChildReport {
   readonly description: string;
   readonly type?: string;
@@ -44,9 +44,9 @@ export interface ChildReport {
   readonly session: string;
   /** A writing child's branch and worktree, when it changed something and they stay. */
   readonly branch?: string;
-  /** How many of its calls Tesota's floor refused (#622), when any were. */
+  /** How many of its calls Tesota's floor refused, when any were. */
   readonly floorRefusals?: number;
-  /** A writing child that ran without Git's guard on its branch (#619): this Git has none and the operator said to warn, or turned it off. */
+  /** A writing child that ran without Git's guard on its branch: this Git has none and the operator said to warn, or turned it off. */
   readonly unguarded?: true;
   readonly worktree?: string;
 }
@@ -93,7 +93,7 @@ function endText(report: ChildReport, said: string | undefined, receipt: unknown
     : report.limited === "time" ? ` after ${childLimits.minutes} minutes, its limit` : "";
   return [`Subagent "${report.description}" ended ${report.outcome}${stopped}${report.verification === undefined ? "" : `, ${standingWords[report.verification]}`}.`,
     ...failure === undefined ? [] : [`It failed: ${failure}`],
-    // What the floor refused it binds this run too: the same effect is not to be reached another way (#622).
+    // What the floor refused it binds this run too: the same effect is not to be reached another way.
     ...report.floorRefusals === undefined ? [] : [`Tesota's floor refused ${report.floorRefusals} of its calls; no one can allow `
       + "those effects, so don't reach them another way. Its session lists them."],
     ...report.unguarded === undefined ? [] : ["It ran without Git's guard on its branch, so nothing kept it off other branches: "
@@ -143,7 +143,7 @@ async function runChild(child: EngineSession, brief: string, report: ChildReport
   const written = peekSessionFile(child.file).entries;
   const receipt = lastReceipt(written);
   const outcome = child.outcome() ?? (signal.aborted ? "aborted" : "error");
-  // A run that ends in error, such as on a provider's refusal, says why in its end (#564).
+  // A run that ends in error, such as on a provider's refusal, says why in its end.
   if (outcome === "error") failure ??= written.flatMap((entry) => entry.type === "run_end" ? [entry.reason] : []).at(-1);
   const verification = isReceipt(receipt) ? receiptStanding(receipt) : undefined;
   const kept = child.kept() !== undefined && child.workspace.branch !== undefined;
@@ -156,7 +156,7 @@ async function runChild(child: EngineSession, brief: string, report: ChildReport
 }
 
 /**
- * The children `parent` starts (#525). A child is a session in the same
+ * The children `parent` starts. A child is a session in the same
  * sessions folder, its parent in its header, on the call's brief: one that
  * only reads shares the parent's folder with the read tools, read only; one
  * that writes always gets a worktree of its own and the parent's mode. It
@@ -184,7 +184,7 @@ export function agentHost(parent: Parent): AgentHost {
       const runnable = await modelFor(parent, request, type);
       if (typeof runnable === "string") return refused(runnable);
       const { model, unchecked } = runnable;
-      // A model kept unchecked is named in what the call returns, so the agent knows why a refusal may follow (#567).
+      // A model kept unchecked is named in what the call returns, so the agent knows why a refusal may follow.
       const withNote = (text: string): string => unchecked === undefined ? text : `${unchecked}\n\n${text}`;
       const depth = parent.depth + 1;
       parent.tree.running += 1;
@@ -217,7 +217,7 @@ export function agentHost(parent: Parent): AgentHost {
 }
 
 /**
- * How a child of `parent` starts (#619): one that writes, with Git's guard
+ * How a child of `parent` starts: one that writes, with Git's guard
  * on its branch, which needs Git 2.54, or without it only if the operator
  * said to warn or turned it off; one that only reads needs none.
  */

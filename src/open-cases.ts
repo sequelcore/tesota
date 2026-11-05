@@ -3,17 +3,14 @@ import { type JudgmentContext, judgmentPrompt, type ModelAccess, named, recorded
 
 /**
  * A model's list of the cases the operator's request leaves open: inputs
- * for which someone who made the request could expect more than one result
- * (#397). The agent settles such a case silently, in code and a contract
+ * for which someone who made the request could expect more than one result.
+ * The agent settles such a case silently, in code and a contract
  * that prove either way, so the receipt lists them for the operator to
  * settle. The list is a model's opinion, never evidence and never a verdict,
- * and it does not go back to the agent. It reads the request alone: shown
- * the agent's change as well, models listed more false alarms. Measured
- * before it shipped, with this prompt (#397). Its two rules on standard
- * terms came from #429, after it listed readings of "clamp" that its usual
- * meaning rules out: a term keeps that meaning, and an input the request
- * allows that the meaning gives no result for stays open, since the first
- * rule alone dropped such inputs, an empty name or a page size of zero.
+ * and it does not go back to the agent. It reads the request alone to avoid false
+ * alarms from the agent's change. A standard term keeps its usual meaning,
+ * and an input the request allows that the meaning gives no result for
+ * stays open, such as an empty name or a page size of zero.
  */
 
 /** The list ends within this, so a stalled provider cannot hold the run open. */

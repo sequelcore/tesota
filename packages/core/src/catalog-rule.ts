@@ -1,5 +1,5 @@
 /**
- * The characters the skill catalog may take in the system prompt (#457): two
+ * The characters the skill catalog may take in the system prompt: two
  * percent of the context window at four characters per token, as Codex
  * budgets its own, or 8,000 characters when the window is not known.
  */
@@ -12,7 +12,7 @@ export function catalogBudget(window: number): number {
 }
 
 /**
- * How much of a file of `size` characters the prompt keeps (#457), when files
+ * How much of a file of `size` characters the prompt keeps, when files
  * before it already took `used` of a `cap`: all of it while it fits, what is
  * left when it does not, and nothing once the cap is full.
  */

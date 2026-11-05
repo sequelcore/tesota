@@ -1,5 +1,5 @@
 /**
- * What Tesota's verification uses from the engine that runs it (#433): the
+ * What Tesota's verification uses from the engine that runs it: the
  * session's events, the tools, model access, and what it draws through the
  * shell. Only what Tesota uses is here. Names and shapes come from Pi's
  * extension API, where they were first written down, so an extension written
@@ -19,7 +19,7 @@ export type RunOutcome = "completed" | "aborted" | "error";
  * means its lifecycle finished with its verifier's settlement, not that
  * every check passed and never human acceptance. `incomplete` means the
  * run may not say it is done: a settle handler failed, the verifier had no
- * settle handler, or settlement sent the run back too often (#439); Pi has
+ * settle handler, or settlement sent the run back too often; Pi has
  * no such state, which the conformance tests mark as a guarantee it lacks.
  * `interrupted` means the process ended during the run, as a resumed
  * session finds it.
@@ -80,7 +80,7 @@ export interface ToolExecutionStartEvent {
   /**
    * Set by the engine when the session is read only: only tools that read
    * start there, and its subagents only read, so the call changes nothing in
-   * its folder (#585).
+   * its folder.
    */
   readonly readOnly?: boolean;
 }
@@ -103,7 +103,7 @@ export interface SettleEvent {
   /**
    * Why the run did not complete, in plain words, when the engine knows:
    * the operator stopped it, the provider failed, a handler threw. Pi does
-   * not say; the receipt of a run that was not verified states it (#439).
+   * not say; the receipt of a run that was not verified states it.
    * With outcome `completed`, an unresolved question ended generation:
    * verify normally, but settle with a receipt rather than sending it back.
    */
@@ -197,11 +197,11 @@ export interface ToolDrawing<Args = unknown, Details = unknown> {
 }
 
 /**
- * What the working indicator's label says while the gate verifies (#590): `line` gives the work running at
+ * What the working indicator's label says while the gate verifies: `line` gives the work running at
  * `now`, on the clock of `performance.now()`, or undefined when none runs; `subscribe` calls the listener when it
  * changes and returns the function that stops it. The shell listens only while it shows the label. `block`, when
  * given, names the message renderer that draws the detail itself as the conversation's last block while the gate
- * verifies (#591), its details the detail; the shell lets it go when verification ends, where the receipt follows.
+ * verifies, its details the detail; the shell lets it go when verification ends, where the receipt follows.
  */
 export interface WorkingDetail {
   readonly block?: string;
@@ -209,7 +209,7 @@ export interface WorkingDetail {
   subscribe(listener: () => void): () => void;
 }
 
-/** What a run is doing while the working indicator shows (#749): the model at work, the gate verifying, compacting, or waiting to retry. */
+/** What a run is doing while the working indicator shows: the model at work, the gate verifying, compacting, or waiting to retry. */
 export type WorkPhase = "working" | "verifying" | "compacting" | "retrying";
 
 /** An animation the indicator plays: each frame its rows, all as wide, the next shown after `intervalMs`; one frame stays still. */
@@ -255,7 +255,7 @@ export interface ExtensionContext {
   /** The durable session file; verification artifacts are written beside it. */
   readonly sessionFile?: string;
   readonly signal: AbortSignal | undefined;
-  /** What every process the session starts adds to Tesota's environment, such as a writing subagent's branch guard (#619). */
+  /** What every process the session starts adds to Tesota's environment, such as a writing subagent's branch guard. */
   readonly env?: Readonly<Record<string, string>>;
   getContextUsage(): ContextUsage | undefined;
 }
@@ -275,14 +275,14 @@ export interface ToolDefinition<Parameters extends TSchema = TSchema, Details = 
   promptSnippet?: string;
   /**
    * Rules for the system prompt while the tool is active; a function is read
-   * on every request, so rules can arrive once they apply (#779).
+   * on every request, so rules can arrive once they apply.
    */
   promptGuidelines?: string[] | (() => readonly string[]);
   /** False keeps the tool from the model until an extension activates it. */
   defaultActive?: boolean;
   /** `sequential`: the call runs alone. */
   executionMode?: "sequential" | "parallel";
-  /** What a call does, for the engine's permissions (#449): only reads, writes or edits files, or runs something; runs when not said. */
+  /** What a call does, for the engine's permissions: only reads, writes or edits files, or runs something; runs when not said. */
   access?: "read" | "write" | "run";
   parameters: Parameters;
   execute(toolCallId: string, params: Static<Parameters>, signal: AbortSignal | undefined, onUpdate: undefined,

@@ -1,4 +1,4 @@
-/** #318: a directory is a strict descendant only across a folder boundary; the root contains every other directory. */
+/** A directory is a strict descendant only across a folder boundary; the root contains every other directory. */
 //@ ensures \result <==> (folder !== other && (folder === "" || other.startsWith(folder + "/")))
 //@ ensures folder === other ==> !\result
 //@ ensures folder === "" && other !== "" ==> \result

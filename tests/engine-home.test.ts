@@ -9,7 +9,7 @@ it.each([
   ["engine folder", "packages/core", "tests/session.test.ts"],
 ])("a direct session test from the %s refuses before writing home state", (_name, cwd, file) => {
   // Give the child a fresh home, but no wrapper marker: this is the direct
-  // invocation that bypassed isolation in #612. Never inspect the real home.
+  // invocation that bypasses isolation. Never inspect the real home.
   const home = mkdtempSync(join(tmpdir(), "tesota-direct-test-"));
   const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, USERPROFILE: home };
   delete env["TESOTA_ISOLATED"];

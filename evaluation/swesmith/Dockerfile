@@ -1,4 +1,4 @@
-# SWE-smith's harness for `run.py`, at the commit the findings evaluation (#375) was built on.
+# SWE-smith's harness for `run.py`, pinned for the findings evaluation.
 # SWE-bench's harness imports Unix-only modules, so it runs here rather than on the host.
 FROM python:3.12-slim
 RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Installs tesota on macOS or Linux from its GitHub Releases (#372), or updates it when run again:
+# Installs tesota on macOS or Linux from its GitHub Releases, or updates it when run again:
 #
 #   curl -fsSL https://raw.githubusercontent.com/sequelcore/tesota/main/install.sh | sh
 #   curl -fsSL https://raw.githubusercontent.com/sequelcore/tesota/main/install.sh | sh -s -- 0.1.0-alpha.1

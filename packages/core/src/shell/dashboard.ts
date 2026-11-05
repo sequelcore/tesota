@@ -24,7 +24,7 @@ export interface DashboardActions {
   back(): void;
 }
 
-/** The session list (#455), with a conversation preview and confirmation before stopping a busy session. */
+/** The session list, with a conversation preview and confirmation before stopping a busy session. */
 export class Dashboard implements Component {
   private readonly theme: ShellTheme;
   private readonly rows: () => readonly SessionRow[];

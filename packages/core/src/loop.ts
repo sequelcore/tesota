@@ -38,7 +38,7 @@ import { askQuestions, blockingProseQuestion, type QuestionResponder } from "./q
 import { askAccepted, questionRepair } from "./questions-rule.ts";
 import { clarificationText, type Clarification, type ClarificationAnswer, type ClarificationQuestion } from "../../../src/clarification.ts";
 
-/** Who decided whether a call runs, as the session records it (#449, #622). */
+/** Who decided whether a call runs, as the session records it. */
 type Decider = Verdict["by"] | "operator" | "session" | "hook" | "after_floor";
 
 export interface LoopOptions {
@@ -49,17 +49,17 @@ export interface LoopOptions {
   readonly models: Models;
   readonly model: Model<Api>;
   readonly systemPrompt?: string;
-  /** The instructions and skills after the default prompt; the operator's and the project's (#457) when not given. */
+  /** The instructions and skills after the default prompt; the operator's and the project's when not given. */
   readonly instructions?: string;
   /** The tools the model may call; the file tools and platform's shell when not given. */
   readonly tools?: (spool: () => string, cwd: string, env?: Readonly<Record<string, string>>) => readonly EngineTool[];
-  /** What every process the session starts adds to Tesota's environment (#619). */
+  /** What every process the session starts adds to Tesota's environment. */
   readonly env?: Readonly<Record<string, string>>;
   /** Where the session's entries go. */
   readonly writer: SessionWriter;
   /** The durable output folder beside the session's file, created on first use. */
   readonly outputFolder: string;
-  /** The session's scratch folder (#653), where file tools may write besides `cwd`; none when not given. */
+  /** The session's scratch folder, where file tools may write besides `cwd`; none when not given. */
   readonly scratch?: string;
   /** The durable session file whose directory owns verification artifacts. */
   readonly sessionFile?: string;
@@ -69,7 +69,7 @@ export interface LoopOptions {
   readonly captureBase?: (cwd: string, signal: AbortSignal) => Promise<Base>;
   /** The session's extensions; they settle before the verifier and cannot replace it. */
   readonly extensions?: readonly ExtensionFactory[];
-  /** What verifies each run before it may complete (#439); a run whose verifier has no settle handler never completes. */
+  /** What verifies each run before it may complete; a run whose verifier has no settle handler never completes. */
   readonly verifier: ExtensionFactory;
   /** How the session is shown, as handlers read it in `ctx.mode`: `tui` when not given. */
   readonly mode?: string;
@@ -82,35 +82,35 @@ export interface LoopOptions {
   /** The shell the session's extensions draw on; none in print mode. */
   readonly surface?: DrawingSurface;
   /**
-   * Who may allow what (#449): the mode, the rules, and how to ask the
+   * Who may allow what: the mode, the rules, and how to ask the
    * operator; with no one to ask, a call that would ask is refused. Full
    * access with no rules when not given; the floor holds either way.
    */
   readonly permissions?: Permissions;
   /**
-   * When to compact (#451): before a request, once the conversation passes the
+   * When to compact: before a request, once the conversation passes the
    * context window less `reserve` tokens, keeping at least the last `keep`
    * verbatim. Pi's 16,384 and 20,000 when not given.
    */
   readonly compaction?: { readonly reserve: number; readonly keep: number };
   /**
-   * The command hooks each call passes (#457), read when it is made, so
+   * The command hooks each call passes, read when it is made, so
    * hooks trusted while the session runs apply from then on; none when not
    * given. They run after the permission check, so they can only refuse more.
    */
   readonly hooks?: () => Hooks;
   /** The session's id, which a hook is told. */
   readonly sessionId?: string;
-  /** The MCP servers' tools (#459), read before each request; none when not given or while it gives none. */
+  /** The MCP servers' tools, read before each request; none when not given or while it gives none. */
   readonly mcp?: () => McpTools | undefined;
   /** The terminal's explicit operator-question bridge; absent in print and headless runs. */
   readonly questions?: QuestionResponder;
-  /** Tools whose calls start jobs of the run (#525), such as `agent`; none when not given. */
+  /** Tools whose calls start jobs of the run, such as `agent`; none when not given. */
   readonly jobTools?: (jobs: Jobs) => readonly EngineTool[];
 }
 
 /**
- * What a job is recorded with before it runs (#525): the call that starts
+ * What a job is recorded with before it runs: the call that starts
  * it, what it is, whether it runs in the background, the session an agent
  * job runs as, and what the shell shows of it.
  */
@@ -131,8 +131,7 @@ export interface JobEnd {
 }
 
 /**
- * The jobs of a session's runs (#525, built once for #524's background
- * commands): work a call starts that goes on beside the run. A job is
+ * The jobs of a session's runs: work a call starts that goes on beside the run. A job is
  * recorded, and synced, before it runs; it stops when its run stops or the
  * session closes. A background job's end reaches the run as input, in the
  * order the jobs ended; the call waits for one that is not in the background.
@@ -155,7 +154,7 @@ export interface PreparedJob {
   readonly discard: () => Promise<void>;
 }
 
-/** The tools of the MCP servers a session reaches (#459). */
+/** The tools of the MCP servers a session reaches. */
 export interface McpTools {
   /** Their tools as the servers offer them now; a long result's whole text goes under `spool()`. */
   tools(spool: () => string): readonly EngineTool[];
@@ -163,7 +162,7 @@ export interface McpTools {
   ready(signal: AbortSignal): Promise<void>;
 }
 
-/** How a session decides what its calls may do (#449). */
+/** How a session decides what its calls may do. */
 export interface Permissions {
   mode(): Mode;
   readonly rules: Rules;
@@ -184,7 +183,7 @@ export interface CustomMessage {
 export type HistoryMessage = Message | CustomMessage;
 
 /**
- * What a session tells the shell as it happens (#444): a message entering the
+ * What a session tells the shell as it happens: a message entering the
  * conversation, the reply as it streams, a call starting, and the run's
  * state: working, settling (its extensions and verifier), or ended.
  */
@@ -195,22 +194,22 @@ export type SessionEvent =
   | { readonly type: "reply"; readonly partial: AssistantMessage }
   | { readonly type: "call"; readonly call: ToolCall }
   | { readonly type: "state"; readonly state: "working" | "settling" }
-  /** The conversation is being compacted (#451), and then was, from about `tokensBefore` tokens to `tokensAfter`. */
-  /** A line for the operator from outside the conversation: a hook's message or failure (#457). */
+  /** The conversation is being compacted, and then was, from about `tokensBefore` tokens to `tokensAfter`. */
+  /** A line for the operator from outside the conversation: a hook's message or failure. */
   | { readonly type: "note"; readonly text: string }
   /** A model-call retry's cancellable wait; zero clears the countdown. */
   | { readonly type: "retry"; readonly attempt: number; readonly delayMs: number }
   | { readonly type: "compacting" }
   | { readonly type: "compacted"; readonly tokensBefore: number; readonly tokensAfter: number }
-  /** A job the run started (#525), from its call: running, then ended, with what the shell shows of it. */
+  /** A job the run started, from its call: running, then ended, with what the shell shows of it. */
   | { readonly type: "job"; readonly job: string; readonly callId: string; readonly state: "running" | "ended"; readonly details: JsonValue }
   | { readonly type: "ended"; readonly outcome: SessionOutcome; readonly reason?: string };
 
-/** The `custom` entry that links a run to the one it continues (#651), recorded with its request. */
+/** The `custom` entry that links a run to the one it continues, recorded with its request. */
 export const continuesType = "tesota.continues";
 
 /**
- * The earlier run a request continues (#651), one that ended on an
+ * The earlier run a request continues, one that ended on an
  * unresolved question: the new run is measured from that run's base, and
  * the operator's answer is its clarification, never permission.
  */
@@ -224,7 +223,7 @@ export interface Continuation {
 export interface LoopSession extends Session {
   /** The model this session uses, including the default inherited by its children. */
   readonly model: Model<Api>;
-  /** The contract's prompt; `continues` starts a run that continues an earlier one (#651) instead of taking a new base. */
+  /** The contract's prompt; `continues` starts a run that continues an earlier one instead of taking a new base. */
   prompt(text: string, options?: PromptOptions & { readonly continues?: Continuation }): Promise<void>;
   /** The conversation in order, as the model and the shell see it. */
   history(): readonly HistoryMessage[];
@@ -234,11 +233,11 @@ export interface LoopSession extends Session {
   withdrawPendingMessages(): readonly PendingMessage[];
   /** Tells `listener` what happens from now on; the returned function stops it. */
   subscribe(listener: (event: SessionEvent) => void): () => void;
-  /** Compacts the conversation between runs (#451); rejects, saying why, while a run goes or when it cannot. */
+  /** Compacts the conversation between runs; rejects, saying why, while a run goes or when it cannot. */
   compact(): Promise<void>;
-  /** The skills the operator may start by name, `/name` at the start of a request (#540), read as the session started. */
+  /** The skills the operator may start by name, `/name` at the start of a request, read as the session started. */
   skills(): readonly Skill[];
-  /** What fills the model's window now (#779), by part; unknown without a context window. */
+  /** What fills the model's window now, by part; unknown without a context window. */
   context(): ContextBreakdown | undefined;
 }
 
@@ -249,17 +248,17 @@ export interface LoopState {
   readonly amendments: number;
   readonly tokens: { readonly input: number; readonly output: number; readonly total: number };
   readonly outcome: SessionOutcome | undefined;
-  /** The transcript's system messages since the last compaction (#779): the prompt and tools the model had. */
+  /** The transcript's system messages since the last compaction: the prompt and tools the model had. */
   readonly prompt?: readonly PromptEntry[];
   /** The last run's request, its delivered amendments and its submitted answers, as the messages that brought them. */
   readonly ledger?: readonly HistoryMessage[];
-  /** The last compaction (#451): its summary, the files summarized so far, and where replies count toward usage again. */
+  /** The last compaction: its summary, the files summarized so far, and where replies count toward usage again. */
   readonly compacted?: { readonly summary: string; readonly files: FilesTouched; readonly counted: number };
 }
 
 const skillType = "tesota.skill";
 
-/** A background job's end as it enters the conversation (#525): the model reads it as the operator's, and the shell shows it. */
+/** A background job's end as it enters the conversation: the model reads it as the operator's, and the shell shows it. */
 export const jobType = "tesota.job";
 
 /** A background job's end as a message, in the conversation as the run took it in. */
@@ -267,7 +266,7 @@ export const jobMessage = (text: string, details: unknown, timestamp: number): C
   ({ role: "custom", customType: jobType, content: text, display: true, ...details === undefined ? {} : { details }, timestamp });
 
 /**
- * The instructions of a skill the operator started by name (#540): the model
+ * The instructions of a skill the operator started by name: the model
  * reads them after the request, as the operator's; the shell does not show
  * them, and neither the ledger's request nor verification reads them.
  */
@@ -289,8 +288,8 @@ export function checkPlanMessage(base: Base, timestamp: number): CustomMessage |
 }
 
 /**
- * What a compacted conversation starts with (#451): the run's request, the
- * skill it started (#540), its amendments and the operator's answers exactly
+ * What a compacted conversation starts with: the run's request, the
+ * skill it started, its amendments and the operator's answers exactly
  * as given, which no summary replaces, then the summary. It is context the
  * model reads as the operator's; the shell does not show it.
  */
@@ -308,9 +307,9 @@ export function compactedHead(ledger: readonly HistoryMessage[], summary: string
 }
 
 /**
- * The instructions after the default prompt (#457): those given, or the
+ * The instructions after the default prompt: those given, or the
  * operator's and the project's files and the catalog of `available` skills,
- * which `/context` counts apart (#779); none under a given prompt.
+ * which `/context` counts apart; none under a given prompt.
  */
 function instructionsOf(options: LoopOptions, available: readonly Skill[]): { text: string; files: readonly { path: string; content: string }[]; catalog: string } {
   if (options.systemPrompt !== undefined) return { text: "", files: [], catalog: "" };
@@ -391,7 +390,7 @@ function endedBy(exit: Exit.Exit<Ended>): Ended {
   throw Cause.squash(exit.cause);
 }
 
-/** The command `call` gives `tool`, as the shell's own parser reads it for the floor (#697); nothing where it has none or can't read it. */
+/** The command `call` gives `tool`, as the shell's own parser reads it for the floor; nothing where it has none or can't read it. */
 async function parsedCommand(call: ToolCall, tool: EngineTool | undefined): Promise<readonly ParsedCommand[] | undefined> {
   const command: unknown = ((call.arguments ?? {}) as Record<string, unknown>)["command"];
   return typeof command === "string" && tool?.parse !== undefined ? await tool.parse(command) : undefined;
@@ -412,7 +411,7 @@ async function execute(tools: readonly EngineTool[], call: ToolCall, signal: Abo
   }
 }
 
-/** An extension's tool as the engine runs it: its text parts joined, its details kept, and a returned `isError` a failure (#441). */
+/** An extension's tool as the engine runs it: its text parts joined, its details kept, and a returned `isError` a failure. */
 function extensionTool(tool: ToolDefinition, context: (signal: AbortSignal) => Parameters<ToolDefinition["execute"]>[4]): EngineTool {
   const { name, description, parameters, promptSnippet, promptGuidelines, access } = tool;
   return {
@@ -442,9 +441,9 @@ const stoppedReason = "the operator stopped the run";
 const disposedReason = "The session is closed; start or resume one to go on.";
 
 /**
- * Compaction as a loop starts (#451): its margins, Pi's when not given, and
+ * Compaction as a loop starts: its margins, Pi's when not given, and
  * what a resumed session last held, the system messages since the last
- * compaction (#779) among it.
+ * compaction among it.
  */
 function compactionAtStart(options: LoopOptions): {
   readonly margins: { readonly reserve: number; readonly keep: number };
@@ -464,7 +463,7 @@ const promptTools = (prompt: readonly PromptEntry[]): string[] | undefined => pr
 const nothingToSummarize = "the recent messages alone fill the part kept verbatim";
 
 /**
- * A session's tools and which the model may call (#441). An extension's tool
+ * A session's tools and which the model may call. An extension's tool
  * is active unless it says otherwise. Setting the active tools ignores
  * unknown names and repeats and takes effect from the next model request.
  * A resumed session restores the tools the model last had; a restored tool
@@ -472,7 +471,7 @@ const nothingToSummarize = "the recent messages alone fill the part kept verbati
  * tool came first.
  * A request offers the session's own tools in their given order, then the
  * others by name, so the same tools always reach the model in the same
- * order, however they arrived (#779).
+ * order, however they arrived.
  */
 function toolbox(given: EngineTool[]) {
   const own = given.map(({ name }) => name);
@@ -484,7 +483,7 @@ function toolbox(given: EngineTool[]) {
   /** Restored tools not registered yet; once restored, only these become active as they register. */
   let pending = new Set<string>();
   let restored = false;
-  /** The names of the MCP servers' tools in `tools` (#459). */
+  /** The names of the MCP servers' tools in `tools`. */
   let external = new Set<string>();
   const known = (name: string): boolean => tools.some((tool) => tool.name === name);
   const activeTools = (): EngineTool[] => ordered(active).flatMap((name) => tools.filter((tool) => tool.name === name));
@@ -508,7 +507,7 @@ function toolbox(given: EngineTool[]) {
       pending = new Set(names.filter((name) => !known(name)));
     },
     /**
-     * Keeps the MCP servers' tools as they offer them now (#459): a new one
+     * Keeps the MCP servers' tools as they offer them now: a new one
      * joins the active tools, one withdrawn goes, and none takes the
      * name of a tool the session already has.
      */
@@ -534,7 +533,7 @@ function toolbox(given: EngineTool[]) {
   };
 }
 
-/** A session's own tools: those given, or the file tools, the platform's shell and `ask_user`; then those that start jobs (#525). */
+/** A session's own tools: those given, or the file tools, the platform's shell and `ask_user`; then those that start jobs. */
 const sessionTools = (options: LoopOptions, spool: () => string, questions: AskHost, jobs: Jobs): EngineTool[] =>
   [...options.tools?.(spool, options.cwd, options.env) ?? codingTools(options.cwd, spool, undefined, questions, options.env),
     ...options.jobTools?.(jobs) ?? []];
@@ -552,7 +551,7 @@ export interface PendingMessage {
 
 interface Queued extends PendingMessage {
   readonly order: number;
-  /** The skill it starts by name (#540), whose instructions enter the conversation after it. */
+  /** The skill it starts by name, whose instructions enter the conversation after it. */
   readonly skill?: StartedSkill;
 }
 
@@ -567,8 +566,8 @@ interface Ended {
 type Settled = { readonly next: "continue"; readonly automatic: boolean } | { readonly next: "end"; readonly outcome: SessionOutcome };
 
 /**
- * The engine's agent loop (#432), writing everything to its session (#437)
- * and settling each run with its extensions and then its verifier (#439).
+ * The engine's agent loop, writing everything to its session
+ * and settling each run with its extensions and then its verifier.
  * A run ends `completed` only when its verifier settled it; `prompt`
  * resolves once it has ended, and rejects when a write fails, after which
  * nothing further runs.
@@ -620,7 +619,7 @@ export function createLoop(options: LoopOptions): LoopSession {
       }
     },
   };
-  /** The jobs running now (#525), each stopped by its own controller, and the background ones that ended, waiting to enter the conversation. */
+  /** The jobs running now, each stopped by its own controller, and the background ones that ended, waiting to enter the conversation. */
   const jobs = new Map<string, { readonly controller: AbortController; readonly done: Promise<void> }>();
   const finishedJobs: { readonly job: string; readonly end: JobEnd }[] = [];
   /** How many times something a run waiting on its jobs wakes for happened: a job's end or new input. */
@@ -685,11 +684,11 @@ export function createLoop(options: LoopOptions): LoopSession {
   const tools = toolbox(sessionTools(options, spool, questionHost, jobHost));
   const thinkingLevel = thinkingOf(options.model, options.thinkingLevel);
   const base = options.captureBase ?? captureBase;
-  /** The operator's and the project's skills, read once as the session starts, from its own folder (#457). */
+  /** The operator's and the project's skills, read once as the session starts, from its own folder. */
   const available = skills(options.cwd);
   const memory = instructionsOf(options, available);
   const instructions = memory.text;
-  /** The prompt and tools the model should have with `active` (#779). */
+  /** The prompt and tools the model should have with `active`. */
   const stateFor = (active: readonly EngineTool[]) => promptState(options.cwd, active, instructions, options.scratch, options.systemPrompt);
   /** Appends, and records, what the model must be told so it has the prompt and `offered` tools; nothing when it has them already. */
   const tellPrompt = (offered: readonly EngineTool[]): void => {
@@ -848,7 +847,7 @@ export function createLoop(options: LoopOptions): LoopSession {
       toLedger(instructed, order);
       add(instructed);
     }
-    // The background jobs that ended come after, in the order they ended (#525); they are no request input, so not in the ledger.
+    // The background jobs that ended come after, in the order they ended; they are no request input, so not in the ledger.
     const reported = finishedJobs.splice(0);
     for (const { job, end } of reported) {
       writer.append({ type: "job_end", run, job, outcome: end.outcome, text: end.text, details: end.details });
@@ -862,9 +861,9 @@ export function createLoop(options: LoopOptions): LoopSession {
   const allowedForSession = new Set<string>();
   /** Why the last call `permitted` refused was refused, by its id. */
   const refusals = new Map<string, string>();
-  /** Why a call is asked, or refused, after the floor refused one in its request (#622). */
+  /** Why a call is asked, or refused, after the floor refused one in its request. */
   const afterFloor = "Tesota's floor refused a call earlier in this request, so it asks before any other command or file change.";
-  /** The runs in which Tesota's floor refused a call (#622). */
+  /** The runs in which Tesota's floor refused a call. */
   const floorRefused = new Set<number>();
   /**
    * What the model is told after the floor refuses: the refusal covers the
@@ -880,7 +879,7 @@ export function createLoop(options: LoopOptions): LoopSession {
     ({ text: `Not run: ${refusals.get(call.id) ?? "it was not allowed."}`, isError: true });
 
   /**
-   * Whether `call` may run (#449): the floor, the mode and the rules decide
+   * Whether `call` may run: the floor, the mode and the rules decide
    * (`judge`), and the operator answers what they leave to them, once or for
    * the session. Every decision is recorded before the call runs, or instead.
    */
@@ -913,7 +912,7 @@ export function createLoop(options: LoopOptions): LoopSession {
   }
 
   /**
-   * `verdict` once the floor refused a call in run `run` (#622): what it
+   * `verdict` once the floor refused a call in run `run`: what it
    * would allow beyond reading is asked instead, or refused with no one to
    * ask (`afterRefusal`), for the floor's own reason, not the mode's.
    */
@@ -953,7 +952,7 @@ export function createLoop(options: LoopOptions): LoopSession {
   }
 
   /**
-   * Runs an allowed call between its hooks (#457): `PreToolUse` hooks may
+   * Runs an allowed call between its hooks: `PreToolUse` hooks may
    * still refuse it, recorded as the hook's decision; `PostToolUse` hooks
    * see its result, and one that blocks has its reason added for the model.
    * What hooks say for the operator is a note.
@@ -1001,7 +1000,7 @@ export function createLoop(options: LoopOptions): LoopSession {
     if (question) {
       state.decision = JSON.stringify(call.arguments);
       if (!askAccepted(state.times)) {
-        // Named as every unresolved question is, so the operator's reply answers it and continues the request (#713).
+        // Named as every unresolved question is, so the operator's reply answers it and continues the request.
         state.unresolved = `Unresolved question: ${JSON.stringify(call.arguments)}. This request already asked the operator three times.`;
         return { isError: true, details: "question-limit", text: state.unresolved + " The operator sees this question and a reply continues the work. Generation ends incomplete; do not ask in plain text." };
       }
@@ -1079,7 +1078,7 @@ export function createLoop(options: LoopOptions): LoopSession {
   }
 
   /**
-   * Compacts the conversation (#451): everything before the verbatim tail
+   * Compacts the conversation: everything before the verbatim tail
    * (`cutPoint`) is summarized by the session's model, merged into the
    * previous summary, and replaced by the run's request and amendments as
    * given followed by the summary. A failed summary is tried once more; one
@@ -1124,7 +1123,7 @@ export function createLoop(options: LoopOptions): LoopSession {
       stuck = shouldCompact(tokensAfter, options.model.contextWindow ?? 0, margins.reserve);
       writer.append({ type: "compaction", run, summary: result.summary, kept, read: files.read, changed: files.changed,
         tokensBefore, tokensAfter });
-      // The summary rewrites the head anyway: the prompt starts over with one leading message holding what the model had (#779).
+      // The summary rewrites the head anyway: the prompt starts over with one leading message holding what the model had.
       prompt = [];
       tellPrompt(tools.forRequest());
       writer.sync();
@@ -1154,7 +1153,7 @@ export function createLoop(options: LoopOptions): LoopSession {
   /**
    * Whether input came for a run whose model stopped, delivered: what waited,
    * or, while its jobs still run, the next job's end or input, which it waits
-   * for (#525). None once nothing waits and no job runs.
+   * for. None once nothing waits and no job runs.
    */
   const awaitInput = (run: number): Effect.Effect<boolean> => Effect.gen(function* () {
     for (let seen = changes; !deliver(run, ["steer", "followUp"]); seen = changes) {
@@ -1280,7 +1279,7 @@ export function createLoop(options: LoopOptions): LoopSession {
   }
 
   /**
-   * Settles the run's turns (#439): the extensions settle, then the
+   * Settles the run's turns: the extensions settle, then the
    * verifier, and the proved rule (`settle-rule.ts`) decides from what they
    * returned whether the run goes on or how it ends. The verifier finalizes
    * a run that will not complete, told why; only a verification it ran on a
@@ -1362,7 +1361,7 @@ export function createLoop(options: LoopOptions): LoopSession {
     recorded = written.catch(() => undefined);
     await written;
     await host.input({ type: "input", text, source: origin }, signal);
-    // The MCP servers starting with the session get a while to connect before the model hears of the request (#459).
+    // The MCP servers starting with the session get a while to connect before the model hears of the request.
     await options.mcp?.()?.ready(signal);
     add(asked);
     if (instructed !== undefined) add(instructed);
@@ -1372,7 +1371,7 @@ export function createLoop(options: LoopOptions): LoopSession {
     let continuations = 0;
     for (;;) {
       const ended = await turnsOf(run, signal, generation > 0);
-      // A run's jobs end with it (#525): those still running are stopped, and their ends enter the conversation before it settles.
+      // A run's jobs end with it: those still running are stopped, and their ends enter the conversation before it settles.
       if (jobs.size > 0) {
         await stopJobs();
         deliver(run, []);

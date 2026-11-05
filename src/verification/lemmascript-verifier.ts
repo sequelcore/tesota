@@ -14,7 +14,7 @@ const timeoutMs = 5 * 60_000;
 const limits = "Proves only the annotated properties of the translated functions, within LemmaScript's supported " +
   "TypeScript subset. It says nothing about unannotated code, or whether the properties are what was asked.";
 
-/** Dependency-owned clauses and selection, with source text from extract and semantic facts from info --typed (#772). */
+/** Dependency-owned clauses and selection, with source text from extract and semantic facts from info --typed. */
 export type ProofInfo = { readonly status: "unavailable"; readonly reason: string } | {
   readonly status: "read";
   readonly functions: readonly { readonly name: string; readonly clauses: readonly string[]; readonly bodyClauses: readonly string[] }[];
@@ -190,7 +190,7 @@ function run(executable: string, args: readonly string[], cwd: string, signal: A
  * `lsc` with `args`, run as its own process: from a checkout, its script on
  * the runtime running Tesota, resolved when a proof runs rather than when the
  * extension loads, so Tesota opens even where LemmaScript is missing; in a
- * binary, which embeds LemmaScript, the binary's own `__lsc` command (#472).
+ * binary, which embeds LemmaScript, the binary's own `__lsc` command.
  */
 export function lscCommand(): { executable: string; args: readonly string[] } {
   if (inBinary) return { executable: process.execPath, args: ["__lsc"] };
@@ -240,7 +240,7 @@ function realName(path: string): string {
  * `path` relative to `root`, with `/`, both by their real names: LemmaScript
  * prints real paths, and a project may be reached through a link, as macOS's
  * temporary folder `/var` is one to `/private/var`, or by a short name, as
- * Windows' `RUNNER~1` (#472).
+ * Windows' `RUNNER~1`.
  */
 function within(root: string, path: string): string {
   return relative(realName(root), realName(path)).split("\\").join("/");

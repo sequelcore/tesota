@@ -8,7 +8,7 @@ import { type Access, type Decision, decide, isDataCommand, type Mode, type Rule
 import { climbsBack, normalizeWindowsSegment } from "./subpath-rule.ts";
 import type { FloorRefusal } from "../../../src/receipt.ts";
 
-/** Rules as an operator or a project writes them (#449): `tool(pattern)`, or a tool's name alone, by verdict. */
+/** Rules as an operator or a project writes them: `tool(pattern)`, or a tool's name alone, by verdict. */
 export interface RulesFile {
   readonly allow?: readonly string[];
   readonly ask?: readonly string[];
@@ -86,7 +86,7 @@ function rulesAt(path: string, verdicts: readonly Rule["verdict"][]): Rule[] {
 }
 
 /**
- * The rules for a session in `cwd` (#449): the operator's from
+ * The rules for a session in `cwd`: the operator's from
  * `~/.tesota/permissions.json`, and the project's from
  * `.tesota/permissions.json`, of which only `ask` and `deny` count, so a
  * repository can tighten what its operator allows but never grant itself
@@ -156,7 +156,7 @@ const guardedWord = new RegExp(
  */
 const joinPath = /\(\s*join-path\s+(?:-path\s+)?("[^"\n()]*"|'[^'\n()]*'|[^\s()'";|&]+)\s+(?:-childpath\s+)?("[^"\n()]*"|'[^'\n()]*'|[^\s()'";|&]+)\s*\)/giu;
 
-/** Whether a recursive deletion names a guarded folder, or a subpath of one that climbs back to it or above it (#633). */
+/** Whether a recursive deletion names a guarded folder, or a subpath of one that climbs back to it or above it. */
 function deletesGuarded(command: string): boolean {
   const flat = command.replace(joinPath, (group: string, parent: string, child: string) =>
     /[$@`*?[\]]/u.test(child) ? group : ` "${parent.replace(/["']/gu, "")}/${child.replace(/["']/gu, "")}" `);
@@ -171,7 +171,7 @@ function deletesGuarded(command: string): boolean {
     unjoined || climbsBack(((doubled ?? single ?? "") + rest!.replace(/["']/gu, "")).split(/[\\/]/u).map(normalizeWindowsSegment))));
 }
 
-/** A command as PowerShell's parser and binder read it (#697): the command it runs, null when only running decides; what each parameter binds; its words. */
+/** A command as PowerShell's parser and binder read it: the command it runs, null when only running decides; what each parameter binds; its words. */
 export interface ParsedCommand {
   readonly name: string | null;
   readonly parameters: Readonly<Record<string, readonly string[]>>;
@@ -231,7 +231,7 @@ function cmdDestroys(text: string, guarded: (word: string) => boolean): boolean 
 const recursionFlag = /^(?:-(?:r[a-z]*|[a-z]*r)|\/s)$/iu;
 
 /**
- * Whether a parsed command recursively deletes a guarded folder (#697):
+ * Whether a parsed command recursively deletes a guarded folder:
  * `Remove-Item` however spelled, bound to recurse, with a path naming one;
  * a command only running names, or the verbatim words after a stop-parsing
  * token (`--%`), given recursion flags and such a path; or a shell given
@@ -261,7 +261,7 @@ function parsedDestroys(commands: readonly ParsedCommand[], cwd: string): boolea
 }
 
 /**
- * Quoted arguments of simple data commands are not commands (#681). Recognize
+ * Quoted arguments of simple data commands are not commands. Recognize
  * the whole input before hiding anything: unknown syntax or a pipeline consumer
  * could execute the data. This is deliberately not a general shell parser.
  * Escapes, interpolation, redirection, comments and grouping fall back to the
@@ -301,7 +301,7 @@ function destructiveSubject(command: string): string {
   return head ? command : visible.join("");
 }
 
-/** Secrets no call may touch: Tesota's credentials and its MCP sign-ins (#459), SSH's keys, and `.env` files, by any of the names given. */
+/** Secrets no call may touch: Tesota's credentials and its MCP sign-ins, SSH's keys, and `.env` files, by any of the names given. */
 function secretPath(...paths: readonly string[]): boolean {
   const ssh = canonicalOnce(join(homedir(), ".ssh"));
   const credentials = ["auth.json", "mcp-auth.json"].flatMap((name) => {
@@ -318,14 +318,14 @@ const namesSecret = (command: string): boolean =>
 
 /** What a call is about, for rules and the floor: the command a shell runs, or the path another tool reads or changes. */
 function subjectOf(call: ToolCall): string {
-  // The model's arguments, unvalidated until the call runs: they may be null (#664).
+  // The model's arguments, unvalidated until the call runs: they may be null.
   const said = ((call.arguments ?? {}) as Record<string, unknown>)[shells.has(call.name) ? "command" : "path"];
   return typeof said === "string" ? said : "";
 }
 
 /**
  * Why the floor refuses `call`, if it does; a file tool writes only in `cwd`
- * and the session's `scratch` folder (#653). A command's text is read as
+ * and the session's `scratch` folder. A command's text is read as
  * before, and also as its shell's parser read it (`parsed`), when it did.
  */
 function floorReason(call: ToolCall, access: Access, cwd: string, scratch: string | undefined,
@@ -363,11 +363,11 @@ export interface Verdict {
 const modeWords: Readonly<Record<Mode, string>> = { read: "read only", ask: "ask", full: "full access" };
 
 /**
- * Whether `call`, a tool that `access`es, may run in `cwd` (#449): the
+ * Whether `call`, a tool that `access`es, may run in `cwd`: the
  * floor, then the mode and the strongest matching rule, decided by the
  * proved rule (`decide`), with `present` saying whether someone can answer,
- * `scratch` the session's scratch folder by its real name, when it has one (#653),
- * and `parsed` a command as its shell's parser read it, when it could (#697).
+ * `scratch` the session's scratch folder by its real name, when it has one,
+ * and `parsed` a command as its shell's parser read it, when it could.
  */
 export function judge(call: ToolCall, access: Access, cwd: string, mode: Mode, rules: Rules, present: boolean,
   scratch?: string, parsed?: readonly ParsedCommand[]): Verdict {
@@ -403,7 +403,7 @@ export type { Access, Mode };
 
 /**
  * What the operator sees at a request's end when Tesota's floor refused
- * calls in it (#622), its own and its subagents', whatever else happened:
+ * calls in it, its own and its subagents', whatever else happened:
  * each refused call, and that the refusals say nothing of what ran after.
  * Undefined when there were none.
  */

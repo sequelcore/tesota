@@ -8,7 +8,7 @@ import { shownPercent } from "../src/usage-rule.ts";
 import { shellTheme } from "../../../src/theme.ts";
 
 /**
- * The usage panel (#184, #260): the tab each command opens, switching tabs,
+ * The usage panel: the tab each command opens, switching tabs,
  * the session's account marked, a narrow terminal, and a failed read. It is
  * given its accounts and readings, so nothing here reads one.
  */

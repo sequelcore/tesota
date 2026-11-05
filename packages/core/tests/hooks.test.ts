@@ -9,7 +9,7 @@ import { createSession, type EngineSession } from "../src/session.ts";
 import { trust, trusted, trustHash } from "../src/trust.ts";
 import { accepts, scriptedReply } from "./scripted.ts";
 
-/** Command hooks as Claude Code configures them (#457): reading, matching, running, deciding, trusting, and in a session. */
+/** Command hooks as Claude Code configures them: reading, matching, running, deciding, trusting, and in a session. */
 const folder = (prefix: string): string => mkdtempSync(join(tmpdir(), prefix));
 
 /** A hook: a script, in a folder whose name has a space, run by Bun through the system's shell as an operator's hook is. */

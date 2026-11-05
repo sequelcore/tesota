@@ -13,11 +13,11 @@ import { keepHead, keepTail, maxBytes } from "../src/truncate.ts";
 /** What only `@tesota/core`'s tools promise; the loop tests compare the shared behavior with Pi. */
 
 const folders: string[] = [];
-/** The tools' runs still going: a test that times out leaves its command running in its folder (#562). */
+/** The tools' runs still going: a test that times out leaves its command running in its folder. */
 const running: { readonly stop: AbortController; readonly done: Promise<unknown> }[] = [];
 /**
  * Stops the test's runs and waits for them to end, then removes its folders: on Windows a process keeps its
- * working folder busy, so removing it while the command runs fails with EBUSY (#562).
+ * working folder busy, so removing it while the command runs fails with EBUSY.
  */
 async function cleanUp(): Promise<void> {
   const runs = running.splice(0);

@@ -3,7 +3,7 @@ import { dirname } from "node:path";
 
 /**
  * Writes `value` to `path` as JSON, whole or not at all: beside it, synced,
- * then renamed over it, so a crash leaves the old file or the new one (#443).
+ * then renamed over it, so a crash leaves the old file or the new one.
  * `mode` applies where the system has modes, to a file this creates.
  */
 export function writeWholeJson(path: string, value: unknown, mode?: number): void {

@@ -31,7 +31,7 @@ const { default: tesota } = await import("../../../src/tesota.ts");
 const { entryReceipt, isReceipt } = await import("../../../src/receipt.ts");
 
 /**
- * Tesota's verification, whole, as the session's verifier (#441), so its gate
+ * Tesota's verification, whole, as the session's verifier, so its gate
  * is mandatory: it offers `prove` once the agent writes a contract, and
  * settles the run with a receipt.
  */

@@ -10,7 +10,7 @@ export interface ViewRequest {
   /** Project these groups as individual states; all other groups keep their edge multiplicities. */
   readonly expanded?: readonly string[];
   readonly search?: string;
-  /** Also project the graph onto its chart (#761). */
+  /** Also project the graph onto its chart. */
   readonly chart?: boolean;
 }
 export interface ViewState {

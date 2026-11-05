@@ -39,8 +39,8 @@ a proved rule changed, and `git diff --check`. CI runs the root and engine
 checks in parallel on Ubuntu, Windows and macOS, the engine tests in two
 shards, the whole `formal:check` once on Ubuntu, and the engine's session
 and tool tests on musl Linux; `CI gate` passes only when all of them do.
-`bun run check` never calls a live model. Report what ran: a passing
-check, a live observation and a person's acceptance are different claims.
+`bun run check` never calls a live model. Report checks, live
+observations and human acceptance separately.
 
 ## Layout
 
@@ -73,6 +73,9 @@ fails when one differs from its package.
   console still needs a person to look.
 - **Guards:** a test fails on a Pi package other than `pi-ai`, `pi-tui` or
   `pi-mcp`; lint limits cyclomatic complexity to 20.
+- **Comments:** `comment-history.test.ts` rejects issue citations except `TODO(#N)`
+  and external `owner/repo#N` workarounds. Reviewers check open status and current-state
+  wording. Literals and `//@` are excluded; no file exceptions.
 
 ## Proved rules
 

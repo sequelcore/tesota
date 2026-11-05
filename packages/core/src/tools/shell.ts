@@ -35,7 +35,7 @@ export function bash(executable: string): Shell {
 
 /**
  * Bash where `find` locates it; otherwise POSIX sh, which every Unix has at
- * `/bin/sh`, as Alpine's BusyBox ash without bash (#547). The tool keeps its
+ * `/bin/sh`, as Alpine's BusyBox ash without bash. The tool keeps its
  * name, which permission rules and hooks match; its label tells the model
  * the shell is not bash.
  */

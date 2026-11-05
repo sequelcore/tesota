@@ -5,7 +5,7 @@ import { tesotaHome } from "../../../src/home.ts";
 import { catalog, frontmatterFields, projectFolders, readText } from "./instructions.ts";
 
 /**
- * An agent type (#525): a Markdown file in an agents folder, in Claude
+ * An agent type: a Markdown file in an agents folder, in Claude
  * Code's format. Its body joins the instructions of a child started with it.
  */
 export interface AgentType {
@@ -14,7 +14,7 @@ export interface AgentType {
   readonly path: string;
   /** A configured `provider/id`; omission and `inherit` leave selection to the call or parent. */
   readonly model?: string;
-  /** An unsupported native `model` value; other harnesses' metadata is ignored (#794). */
+  /** An unsupported native `model` value; other harnesses' metadata is ignored. */
   readonly unsupportedModel?: string;
   /** `writes: true`: it changes files, in a worktree of its own. */
   readonly writes?: true;
@@ -64,7 +64,7 @@ export function agentCatalog(types: readonly AgentType[], contextWindow: number 
     ({ name, description, after: writes === true ? " (writes)" : "" })), "agent types", contextWindow);
 }
 
-/** A short startup diagnostic; role-specific details stay in /agents types (#794). */
+/** A short startup diagnostic; role-specific details stay in /agents types. */
 export function agentModelWarning(types: readonly AgentType[]): string | undefined {
   const count = types.filter(({ unsupportedModel }) => unsupportedModel !== undefined).length;
   if (count === 0) return undefined;

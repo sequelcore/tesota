@@ -6,7 +6,7 @@ import { below, builtIn, holds, owner, pinnedIn } from "../src/verification/proj
 import { findProjects, inFolder, owningProjects, packageTest, suggestChecks } from "../src/projects.js";
 
 /**
- * Projects found at the root or in folders below it (#318), and the checks
+ * Projects found at the root or in folders below it, and the checks
  * suggested for each, run from its own folder.
  */
 const roots: string[] = [];
@@ -15,7 +15,7 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-/** A `PATH` holding only these programs, so a package without a lockfile does not depend on the machine's (#576). */
+/** A `PATH` holding only these programs, so a package without a lockfile does not depend on the machine's. */
 async function onPath(...programs: string[]): Promise<void> {
   const bin = await mkdtemp(join(tmpdir(), "tesota-path-"));
   roots.push(bin);

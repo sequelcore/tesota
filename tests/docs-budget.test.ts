@@ -6,7 +6,7 @@ import { expect, it } from "vitest";
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 
 /**
- * How many words each kind of page may hold (#751): the prose a reader reads, outside code blocks, HTML and link
+ * How many words each kind of page may hold: the prose a reader reads, outside code blocks, HTML and link
  * targets. A page that needs more is split, or its detail moves to the page that owns it.
  */
 const BUDGETS: readonly (readonly [RegExp, number])[] = [

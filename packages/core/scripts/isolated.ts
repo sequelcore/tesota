@@ -6,7 +6,7 @@ import { join } from "node:path";
  * Runs a command with a home folder and a temporary folder of its own,
  * removed when it ends, so the engine's tests and budget never read or write
  * the operator's `~/.tesota`, `~/.pi` or Git configuration, and leave nothing
- * in the temporary folder (#479). The temporary folder is inside the home,
+ * in the temporary folder. The temporary folder is inside the home,
  * as Windows keeps it, so a test's folder stays short where the shell shows
  * it under `~`. Both are set before the command starts, because Bun gives a
  * process it spawns without `env` the environment it started with, not
@@ -39,7 +39,7 @@ try {
     PATH: `${bin}${process.platform === "win32" ? ";" : ":"}${process.env["PATH"] ?? ""}`,
     HOME: home, USERPROFILE: home, APPDATA: home, LOCALAPPDATA: home, TMPDIR: temporary, TEMP: temporary, TMP: temporary } }).exitCode ?? 1;
 } finally {
-  // Longer than a test's own cleanup: a binary a test built may still be held by Windows for a while (#593).
+  // Longer than a test's own cleanup: a binary a test built may still be held by Windows for a while.
   rmSync(root, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 });
 }
 process.exit(code);

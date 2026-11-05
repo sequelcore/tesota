@@ -81,7 +81,7 @@ async function claudeDiagnosis(id: string): Promise<Diagnosis> {
 
 /**
  * Collect sequential local probes. Project tests are deliberately not run: they may write or download.
- * Warnings, such as settings Tesota does not read (#714), never change the exit code.
+ * Warnings, such as settings Tesota does not read, never change the exit code.
  */
 export async function doctorReport(): Promise<{ capabilities: Diagnosis[]; warnings: string[]; exitCode: number }> {
   const capabilities: Diagnosis[] = [];

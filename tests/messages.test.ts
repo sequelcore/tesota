@@ -211,7 +211,7 @@ it("shows the cases a model listed as left open in the opinions, outside the cou
   expect(rows[opinions + 5]).toBe("◇ 2 open cases for you to settle, listed by openai/gpt-6-sol");
   expect(rows.join("\n")).not.toContain("lateFee(-1)");
   expect(shown("tesota-receipt", listed, 120, true).join("\n")).toContain("lateFee(-1): 0 or -5");
-  // A listing that did not happen stays in muted details, not the opinions (#757).
+  // A listing that did not happen stays in muted details, not the opinions.
   const unlisted: Receipt = { ...clean,
       requestReview: { ...clean.requestReview, openCases: { status: "not_run", reason: "openai/gpt-6-sol was stopped" } }
 };
@@ -233,7 +233,7 @@ it("leads with what needs the operator, grouped by reason, and keeps the model's
   expect(rows.join("\n")).not.toContain("x > hi");
 });
 
-// #399: three functions marked `//@ extern` are trusted without proof, so the file proved only given them.
+// Three functions marked `//@ extern` are trusted without proof, so the file's proof depends on them.
 const extern = (name: string): Weakening => ({ path: "src/range.ts", kind: "added_assume", annotation: "//@ extern", function: name });
 const unmeasured = (name: string): Receipt["specificationEvidence"]["contracts"][number] =>
   ({ ...contract, name, mutation: { rejected: 0, survived: [], equivalent: 0, inconclusive: 0 } });

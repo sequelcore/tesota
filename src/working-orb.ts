@@ -2,7 +2,7 @@ import { backgroundAnsi, type Color, colorToRgb, foregroundAnsi, type TerminalCo
 import type { IndicatorAnimation, Theme, WorkingIndicator, WorkPhase } from "./contract.js";
 
 /**
- * The working orb (#749): a small lit sphere in half blocks, four columns by two rows, so its pixels are square and
+ * The working orb: a small lit sphere in half blocks, four columns by two rows, so its pixels are square and
  * it is round. Each phase has its own motion, so the orb says what the run is doing: the model at work turns it, the
  * gate verifying scans it in the accent, compacting condenses it, and waiting to retry only pulses, dim.
  */

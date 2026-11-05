@@ -29,7 +29,7 @@ function openKernel32() {
 
 /**
  * The C libraries that may hold `flock`, in order: macOS's; on Linux glibc's,
- * then musl's, which distributions such as Alpine have instead (#472).
+ * then musl's, which distributions such as Alpine have instead.
  */
 function libcNames(): string[] {
   if (process.platform === "darwin") return ["libSystem.B.dylib"];
@@ -61,7 +61,7 @@ export interface Kernel32 {
 
 /**
  * Windows' lock through `kernel32`. A sharing violation is contention. So is a failure with no error code
- * (`GetLastError` read 0, #550) while the lock file exists: something between the two FFI calls reset the thread's
+ * (`GetLastError` read 0) while the lock file exists: something between the two FFI calls reset the thread's
  * last error, and a held file is the only way this call fails on a file that is there. A missing folder or any
  * other coded error is still thrown.
  */
@@ -89,7 +89,7 @@ function lockWithFlock(path: string): SessionLock {
 }
 
 /**
- * The session's one writer (#437), held by the operating system: on Windows
+ * The session's one writer, held by the operating system: on Windows
  * a handle to `path` that shares nothing, elsewhere `flock`, both through
  * `bun:ffi` since Bun has no file lock. A second writer, in this process or
  * another, is refused. The system releases the lock when its holder exits
@@ -98,7 +98,7 @@ function lockWithFlock(path: string): SessionLock {
  */
 /**
  * Runs `work` holding the lock at `path`, waiting up to about a second for
- * another holder, in this process or another (#457): a read, change and
+ * another holder, in this process or another: a read, change and
  * write of a shared file then never loses another's change.
  */
 export function withLock<T>(path: string, work: () => T): T {
@@ -121,8 +121,8 @@ export function withLock<T>(path: string, work: () => T): T {
 
 /**
  * Runs `work`, which may wait on the network, holding the lock at `path`,
- * waiting up to `waitMs` for another holder in this process or another
- * (#459): an MCP token refresh, which a second at once would spend. A wait
+ * waiting up to `waitMs` for another holder in this process or another:
+ * an MCP token refresh, which a second at once would spend. A wait
  * that runs out is refused naming the file, and a `signal` that stops ends
  * the wait with its reason; work that already holds the lock runs to its
  * end, so the lock is never released under it.

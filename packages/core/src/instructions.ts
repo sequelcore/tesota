@@ -5,10 +5,10 @@ import { tesotaHome } from "../../../src/home.ts";
 import { catalogBudget, kept } from "./catalog-rule.ts";
 import { mayStart } from "./invocation-rule.ts";
 
-/** The characters every instruction file may take together, as Codex allows its project files (#457). */
+/** The characters every instruction file may take together, as Codex allows its project files. */
 const instructionsBudget = 32 * 1024;
 
-/** An instruction file included in the session's system prompt (#457). */
+/** An instruction file included in the session's system prompt. */
 export interface ContextFile {
   readonly path: string;
   readonly content: string;
@@ -35,7 +35,7 @@ export function readText(path: string): string | undefined {
 }
 
 /**
- * The operator's shared `~/.agents/AGENTS.md` and Tesota's own (#568), then
+ * The operator's shared `~/.agents/AGENTS.md` and Tesota's own, then
  * each project's instructions from its Git root to cwd; a file reached again
  * through a link to it is read once, where it first comes.
  */
@@ -66,9 +66,9 @@ export interface Skill {
   readonly name: string;
   readonly description: string;
   readonly path: string;
-  /** `disable-model-invocation: true`: only the operator starts it, by name, so the model's catalog leaves it out (#540). */
+  /** `disable-model-invocation: true`: only the operator starts it, by name, so the model's catalog leaves it out. */
   readonly disableModelInvocation?: true;
-  /** `user-invocable: false`: only the model starts it, so the `/` menu and `/name` leave it out (#540). */
+  /** `user-invocable: false`: only the model starts it, so the `/` menu and `/name` leave it out. */
   readonly userInvocable?: false;
 }
 
@@ -81,7 +81,7 @@ function unquote(value: string): string {
   return value.trim();
 }
 
-/** A line that opens or closes frontmatter: `---` from the first column; indented, it belongs to a value (#457). */
+/** A line that opens or closes frontmatter: `---` from the first column; indented, it belongs to a value. */
 const delimiter = (line: string): boolean => line.trimEnd() === "---";
 
 /** The lines of a SKILL.md and where its frontmatter closes; none when it has no frontmatter. */
@@ -95,7 +95,7 @@ export function frontmatter(content: string): { readonly lines: string[]; readon
 /**
  * A Markdown file's frontmatter fields among `names`, unquoted, and its body
  * after it; none when it has no frontmatter. A description may go on over
- * indented lines, folded or not, as Agent Skills write it (#457).
+ * indented lines, folded or not, as Agent Skills write it.
  */
 export function frontmatterFields(content: string, names: readonly string[]):
   { readonly fields: ReadonlyMap<string, string>; readonly body: string } | undefined {
@@ -165,11 +165,11 @@ export function skills(cwd: string, homes: { readonly user: string; readonly tes
   return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** Whether `by` may start `skill` (#540), as the proved rule decides from its frontmatter. */
+/** Whether `by` may start `skill`, as the proved rule decides from its frontmatter. */
 export const startable = (skill: Skill, by: "model" | "operator"): boolean =>
   mayStart(by === "model", skill.disableModelInvocation === true, skill.userInvocable !== false);
 
-/** A skill the operator started by name (#540): only the model reads its instructions; the request is the line the operator typed. */
+/** A skill the operator started by name: only the model reads its instructions; the request is the line the operator typed. */
 export interface StartedSkill {
   readonly name: string;
   readonly path: string;
@@ -206,7 +206,7 @@ export function withArguments(body: string, typed: string): string {
 
 /**
  * The skill `text` starts when it begins with `/name` of one the operator
- * may start, on the rest of the line as its arguments (#540); none when it
+ * may start, on the rest of the line as its arguments; none when it
  * names no such skill. A skill whose file can no longer be read is an error.
  */
 export function startedSkill(text: string, list: readonly Skill[]): StartedSkill | undefined {
@@ -225,7 +225,7 @@ const catalogHeading = "Available skills: read each skill's SKILL.md with the re
 /**
  * The skills the model may start, with instructions to read each one before
  * using it, within the context budget; one only the operator starts is left
- * out (#540).
+ * out.
  */
 export function skillCatalog(skills: readonly Skill[], contextWindow: number | undefined): string {
   return catalog(catalogHeading, skills.filter((skill) => startable(skill, "model"))
@@ -234,7 +234,7 @@ export function skillCatalog(skills: readonly Skill[], contextWindow: number | u
 
 /**
  * A catalog of `entries` under `heading` within the context budget, as the
- * skill catalog (#457) and the agent types (#525) are listed: whole, then
+ * skill catalog and the agent types are listed: whole, then
  * each description cut to 250 characters, then the last entries left out
  * and counted as more `kind` available; empty when there are none.
  */
