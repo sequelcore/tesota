@@ -9,7 +9,7 @@ import { withLock } from "./session-lock.ts";
 import { parseJson } from "../../../src/json.ts";
 import { writeWholeJson } from "./whole-file.ts";
 
-/** How the shell draws: on the alternate screen, or into the terminal's scrollback (#432). */
+/** How the shell draws: on the alternate screen, or into the terminal's scrollback. */
 export type TuiMode = "fullscreen" | "inline";
 
 /** An explicitly chosen provider instance; declared only in the operator's settings. */
@@ -19,24 +19,24 @@ export type Account = { readonly name: string; readonly provider: "claude-code";
 /** An account's name: one or more ASCII letters, digits, `_` or `-`. */
 export const accountName: RegExp = /^[A-Za-z0-9_-]+$/u;
 
-/** What the operator chose, kept between sessions (#443). */
+/** What the operator chose, kept between sessions. */
 export interface Settings {
   readonly accounts?: readonly Account[];
   /** The model, as `provider/id`. */
   readonly model?: string;
-  /** Verification role models (#709); the session model when absent. Only open cases accepts `off`. */
+  /** Verification role models; the session model when absent. Only open cases accepts `off`. */
   readonly openCasesModel?: string;
   readonly claimcheckModel?: string;
   readonly thinkingLevel?: ModelThinkingLevel;
   readonly tuiMode?: TuiMode;
-  /** How freely the agent may act (#449): read only, ask, or full access; ask when not set. */
+  /** How freely the agent may act: read only, ask, or full access; ask when not set. */
   readonly permissionMode?: Mode;
   /** This installation's id, a UUID, which some providers' login asks for. */
   readonly deviceId?: string;
-  /** How many subagents may run at once across a session's tree (#525), from 1 to 16; 4 when not set. */
+  /** How many subagents may run at once across a session's tree, from 1 to 16; 4 when not set. */
   readonly agentLimit?: number;
   /**
-   * Whether Git keeps a writing subagent off every branch but its own (#619):
+   * Whether Git keeps a writing subagent off every branch but its own:
    * `require` starts none without it, `warn` starts one unguarded and says
    * so, `off` never guards; `require` when not set.
    */
@@ -82,7 +82,7 @@ const checks: { readonly [Name in keyof Settings]-?: (value: unknown) => boolean
   subagentBranchGuard: (value) => guardSettings.has(value as string),
 };
 
-/** The settings read back, the names of those that were invalid and left out, and the keys Tesota does not read (#714). */
+/** The settings read back, the names of those that were invalid and left out, and the keys Tesota does not read. */
 export interface ReadSettings {
   readonly settings: Settings;
   readonly invalid: readonly string[];
@@ -93,7 +93,7 @@ export interface ReadSettings {
 const known: readonly string[] = [...Object.keys(checks), "hooks"];
 
 /**
- * The operator's settings (#443) in `~/.tesota/settings.json` unless given
+ * The operator's settings in `~/.tesota/settings.json` unless given
  * another file: none when it does not exist, each value checked, and one
  * that fails left out and named so the shell can say so. A file that is not
  * JSON is a failure, never read as empty.
@@ -112,7 +112,7 @@ export function readSettings(path: string = join(tesotaHome(), "settings.json"))
 }
 
 /**
- * What to tell the operator about keys Tesota does not read (#714), once, so
+ * What to tell the operator about keys Tesota does not read, once, so
  * a typo or an invented setting doesn't look like it worked; none when there
  * are none. A key within two edits of a real one, ignoring case, names it.
  */
@@ -163,12 +163,12 @@ export function writeSettings(settings: Settings, path: string = join(tesotaHome
 }
 
 /**
- * Writes `change` over the settings as they are now (#453): read, merged and
+ * Writes `change` over the settings as they are now: read, merged and
  * written under a lock, so two Tesotas saving at once each keep the other's
  * change; a change made from the settings as they are then, such as an
  * account added to the list, is given as a function of them. The rest of the
  * file stays as written, the operator's hooks and any value Tesota leaves out
- * included (#642). Waits up to about a second for another's save.
+ * included. Waits up to about a second for another's save.
  */
 export function updateSettings(change: Partial<Settings> | ((current: Settings) => Partial<Settings>),
   path: string = join(tesotaHome(), "settings.json")): void {

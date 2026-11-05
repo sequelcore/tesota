@@ -11,8 +11,8 @@ import { claudeCodeLogin, claudeCodeStatus } from "./providers/claude-code.ts";
 import { type Account, accountName, readSettings, updateSettings } from "./settings.ts";
 
 /**
- * The operator's accounts (#642), added, signed in again, listed and
- * removed in one step each, kept in the `accounts` setting (#636) and
+ * The operator's accounts, added, signed in again, listed and
+ * removed in one step each, kept in the `accounts` setting and
  * nowhere else. Signing in is the provider's own: Claude Code's in the
  * account's folder, which Tesota only starts, and pi-ai's ChatGPT sign-in
  * into the account's own credential slot.

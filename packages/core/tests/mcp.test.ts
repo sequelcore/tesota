@@ -14,7 +14,7 @@ import { startHttpMcp } from "./mcp-http-server.ts";
 import { accepts, scriptedReply } from "./scripted.ts";
 import type { ScriptStep } from "./engine.ts";
 
-/** MCP servers (#459): their configuration, their tools' names, a real local and a real remote server, sign-in, and in a session. */
+/** MCP servers: their configuration, their tools' names, a real local and a real remote server, sign-in, and in a session. */
 const folder = (prefix: string): string => mkdtempSync(join(tmpdir(), prefix));
 const serverScript = fileURLToPath(new URL("./mcp-server.mjs", import.meta.url));
 const spool = (): string => folder("tesota-core-mcp-spool-");
@@ -467,7 +467,7 @@ describe("MCP tools in a session", () => {
   const results = (created: EngineSession) => created.messages().filter((message) => message.role === "toolResult")
     .map((message) => ({ text: message.text, isError: message.isError }));
 
-  /** The tools the session's recorded system messages last gave the model (#779). */
+  /** The tools the session's recorded system messages last gave the model. */
   const offered = (created: EngineSession): string[] => {
     const entries = readFileSync(created.file, "utf8").trimEnd().split("\n").map((line) => JSON.parse(line) as { type: string; message?: SystemMessage });
     return getCurrentTools(entries.flatMap(({ type, message }) => type === "system" && message !== undefined ? [message] : []))

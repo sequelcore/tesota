@@ -12,7 +12,7 @@ import { createSession, type EngineSession } from "../src/session.ts";
 import { writeSettings } from "../src/settings.ts";
 import { accepts, scriptedReply, signInWithChatGPT } from "./scripted.ts";
 
-/** The models a session runs on (#443): pi-ai's catalog over the engine's credentials, never the operator's real ones. */
+/** The models a session runs on: pi-ai's catalog over the engine's credentials, never the operator's real ones. */
 const folder = (prefix: string): string => mkdtempSync(join(tmpdir(), prefix));
 const open: EngineSession[] = [];
 const saved = process.env["ANTHROPIC_API_KEY"];

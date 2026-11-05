@@ -15,7 +15,7 @@ function scripted(options: SessionOptions) {
 
 /**
  * `@tesota/core` on Pi's scripted model, with its sessions in the test's
- * own home folder (#437), and its extensions (#439, #441).
+ * own home folder, and its extensions.
  */
 export const tesotaEngine: TestEngine = {
   name: "@tesota/core",

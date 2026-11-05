@@ -1,5 +1,5 @@
 /**
- * What Tesota's verification takes from the engine that runs it (#446):
+ * What Tesota's verification takes from the engine that runs it:
  * the engine's shell gives these once, before Tesota loads, so the
  * verification layer in `src/` never imports the engine.
  */

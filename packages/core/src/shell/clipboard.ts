@@ -13,7 +13,7 @@ function commands(): [string, string[]][] {
 }
 
 /**
- * Copies `text` to the operator's clipboard (#444), as Pi does: the system's
+ * Copies `text` to the operator's clipboard, as Pi does: the system's
  * clipboard, then its command, and last the terminal's own (OSC 52, written
  * through `write`), which reaches the clipboard over SSH but cannot be
  * checked. Resolves true once a route that can be checked took it.

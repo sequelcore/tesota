@@ -98,7 +98,7 @@ export class QuestionForm extends ScrollView implements Focusable {
   }
 
   /**
-   * pi-tui's single-line `Input` deletes the line breaks of a bracketed paste, joining words (#624). The field holds
+   * pi-tui's single-line `Input` deletes the line breaks of a bracketed paste, joining words. The field holds
    * one line, so each break (`\r\n`, `\n` or `\r`) becomes a space before it gets there. A paste can arrive in
    * several chunks, so whether one is open is remembered; typed Enter outside a paste is untouched.
    */
@@ -144,7 +144,7 @@ export class QuestionForm extends ScrollView implements Focusable {
     const question = this.currentQuestion();
     const selected = this.draft.selected[this.draft.question];
     if (selected === undefined) return [];
-    // Framed as everything in the input's place (#531): a count only when there are several, then the question as the
+    // Framed as everything in the input's place: a count only when there are several, then the question as the
     // title, a blank row, and the choices with the text and submit action that complete them; `footerLines` follows.
     const inner = Math.max(1, width - BAR_WIDTH);
     const several = this.questions.length > 1;

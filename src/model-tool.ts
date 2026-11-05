@@ -10,7 +10,7 @@ import { checkModel, HEADER_FORMAT, type ModelCheck, modelHeader, modelReport, t
 import { linkWords, modelHolds, modelWhy } from "./receipt.js";
 
 /**
- * The working agent's own model check (#554): TLC on one TLA+ or Quint model
+ * The working agent's own model check: TLC on one TLA+ or Quint model
  * it is working on, through the gate's own check (`checkModel`), so it sees a
  * counterexample while it works. Without it, pstack's
  * `/create-formal-verification-skill` judged TLC unavailable and wrote a
@@ -40,7 +40,7 @@ export const MODEL_GUIDELINES: readonly string[] = [
  * A model's check for the agent: what a pass establishes and what it does
  * not, why it did not run, or what the gate would send back (`modelReport`).
  */
-/** A captured model without a reading is asked for one once per check, as a model without a header is given the header (#761). */
+/** A captured model without a reading is asked for one once per check, as a model without a header is given the header. */
 function readingAsk(root: string, model: string): string {
   const reading = readingPath(model);
   return existsSync(resolve(root, reading)) ? ""

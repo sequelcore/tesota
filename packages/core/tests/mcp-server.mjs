@@ -1,4 +1,4 @@
-// A local MCP server for the engine's MCP tests (#459), over stdio: JSON-RPC
+// A local MCP server for the engine's MCP tests, over stdio: JSON-RPC
 // messages one per line. Its tools each show one behavior the client must
 // handle; `crash` exits, so the next call must connect again. With
 // TESOTA_MCP_RESOURCES_ONLY it offers resources and no tools at all.

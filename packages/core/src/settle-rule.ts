@@ -7,7 +7,7 @@ export type AfterVerifier = "continue" | "completed" | "incomplete" | "aborted" 
 export const continuationLimit = 32;
 
 /**
- * What follows ordinary settle handlers (#439): a completed loop continues
+ * What follows ordinary settle handlers: a completed loop continues
  * when a handler asks and the budget allows, or reaches verification when
  * none asks. Cancellation, a loop failure, a throw or an exhausted budget
  * only finalizes. An unresolved question (`finalizing`) stops generation,
@@ -29,13 +29,13 @@ export function afterExtensions(run: RunOutcome, cancelled: boolean, threw: bool
 }
 
 /**
- * What follows the verifier's settle handler (#439): cancellation wins,
+ * What follows the verifier's settle handler: cancellation wins,
  * and a loop error survives only if no settle handler threw. A completed
  * loop can continue or finish only after a registered verifier ran without
  * a throw. Its continuation uses the automatic budget; unseen operator
  * input continues without that budget when the verifier did not ask.
  * Every other case is incomplete, including a verifier that only finalized.
- * Jobs the run started that still run (#525) keep it going like unseen
+ * Jobs the run started that still run keep it going like unseen
  * input, so a run never completes while it waits on one. A finalizing
  * unresolved question cannot continue or complete, even if a handler asks.
  */

@@ -3,13 +3,13 @@ import type { ContextUsage } from "./contract.js";
 
 type EstimatedMessage = Message | { readonly role: "custom"; readonly content: string };
 
-/** Pi's character estimate: text as written, and 1,200 tokens per image (#441). */
+/** Pi's character estimate: text as written, and 1,200 tokens per image. */
 function contentChars(content: string | readonly (TextContent | ImageContent)[]): number {
   return typeof content === "string" ? content.length
     : content.reduce((chars, part) => chars + (part.type === "image" ? 4800 : part.text.length), 0);
 }
 
-/** Pi rounds each message's character estimate up separately (#441). */
+/** Pi rounds each message's character estimate up separately. */
 export function estimateTokens(message: EstimatedMessage): number {
   let chars = 0;
   if (message.role === "assistant") {
@@ -29,10 +29,10 @@ export function estimateTokens(message: EstimatedMessage): number {
 }
 
 /**
- * What the provider counted at the last reply it answered (#441): that
+ * What the provider counted at the last reply it answered: that
  * reply's usage, then an estimate of every message after it; none without
  * one. Replies before `counted` were answers to a conversation compaction
- * has since replaced (#451), so their usage counts nothing now.
+ * has since replaced, so their usage counts nothing now.
  */
 function providerCount(history: readonly EstimatedMessage[], counted: number): { tokens: number } | { trailing: number } {
   let trailing = 0;
@@ -50,7 +50,7 @@ function providerCount(history: readonly EstimatedMessage[], counted: number): {
 }
 
 /**
- * The context window's use, by Pi's token rules (#441): what the provider
+ * The context window's use, by Pi's token rules: what the provider
  * counted at the last reply (`providerCount`), or without one the system
  * message estimated with the tools it declares, as Pi estimates it.
  */
@@ -63,7 +63,7 @@ export function contextUsage(history: readonly EstimatedMessage[], systemPrompt:
   return { tokens, contextWindow, percent: (tokens / contextWindow) * 100 };
 }
 
-/** How much of the window each part of the context takes (#779), in Pi's estimate of a quarter of the characters, rounded up. */
+/** How much of the window each part of the context takes, in Pi's estimate of a quarter of the characters, rounded up. */
 export interface ContextBreakdown {
   readonly contextWindow: number;
   /** The prompt's own text: what it says of the agent and its tools, without the memory files and skills it carries. */
@@ -84,7 +84,7 @@ export interface ContextBreakdown {
   readonly notAttributed?: number;
 }
 
-/** What `/context` shows (#779): the prompt as sent, split into the memory `files` and skill `catalog` it holds, the tools and the conversation. */
+/** What `/context` shows: the prompt as sent, split into the memory `files` and skill `catalog` it holds, the tools and the conversation. */
 export function contextBreakdown(parts: { readonly prompt: string; readonly files: readonly { readonly path: string; readonly content: string }[];
   readonly catalog: string; readonly tools: readonly { readonly name: string }[]; readonly history: readonly EstimatedMessage[];
   readonly contextWindow: number; readonly counted?: number }): ContextBreakdown {
@@ -109,7 +109,7 @@ export function contextBreakdown(parts: { readonly prompt: string; readonly file
     ..."tokens" in count ? { counted: count.tokens, notAttributed: used - estimated } : {} };
 }
 
-/** `/context`'s text (#779): the total, one line per part with the memory files by name, MCP tools only when there are some, and the cache. */
+/** `/context`'s text: the total, one line per part with the memory files by name, MCP tools only when there are some, and the cache. */
 export function contextReport(breakdown: ContextBreakdown): string {
   const count = (tokens: number): string => tokens.toLocaleString("en-US");
   const line = (label: string, tokens: number, detail = ""): string =>

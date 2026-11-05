@@ -188,7 +188,7 @@ it("judges nothing, and says why, without a model or a usable answer", async () 
     .toEqual({ status: "not_run", restatedBy: "provider/model", failedStage: "restatement", reason: "provider/model the model request failed: rate limited" });
   expect(await claimCheck(session(new Error("offline")).ctx, requests, items, signal))
     .toEqual({ status: "not_run", restatedBy: "provider/model", failedStage: "restatement", reason: "provider/model the model request failed: offline" });
-  // A restatement made before the comparison failed is kept (#730).
+  // A restatement made before the comparison failed is kept.
   expect(await claimCheck(session(informalized, call("record_comparisons", { comparisons: [{ function: 1, verdict: "fine" }] })).ctx,
     requests, items, signal)).toEqual({ status: "partial", restatedBy: "provider/model", comparedBy: "provider/model", failedStage: "comparison", reason: "provider/model the model did not record its answer", restatements });
   expect(await claimCheck(session({ content: [{ type: "text", text: "They look right." }] }).ctx, requests, items, signal))

@@ -1,6 +1,6 @@
 /**
- * Which of the models a setting or agent type names keep the account `id`
- * (#642): `named[i]` is the provider part of one such `provider/id` model,
+ * Which of the models a setting or agent type names keep the account `id`:
+ * `named[i]` is the provider part of one such `provider/id` model,
  * and it uses the account exactly when it is that account's provider ID. An
  * account is removed only when none uses it, so a removal never leaves a
  * setting or agent type naming an account that is gone.

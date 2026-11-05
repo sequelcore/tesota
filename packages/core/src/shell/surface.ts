@@ -15,7 +15,7 @@ export type { MessageRenderer, ToolDrawing } from "../../../../src/contract.ts";
 export const expandKey = "ctrl+o";
 
 /**
- * What an extension draws through the shell (#446), kept until the shell
+ * What an extension draws through the shell, kept until the shell
  * mounts it: its header, footer, editor and working indicator, its status
  * texts, how its messages and tool calls are drawn, and the theme. The
  * session's extensions set it as they start, before the shell has drawn
@@ -32,7 +32,7 @@ export interface Surface {
   footer: Parameters<ShellUI["setFooter"]>[0];
   editor: Parameters<ShellUI["setEditorComponent"]>[0];
   indicator: Parameters<ShellUI["setWorkingIndicator"]>[0];
-  /** What the label says while the gate verifies (#590). */
+  /** What the label says while the gate verifies. */
   detail: WorkingDetail | undefined;
   readonly statuses: Map<string, string>;
   readonly renderers: Map<string, MessageRenderer>;
@@ -94,12 +94,12 @@ function branchOf(gitDir: string | undefined): string | null {
 }
 
 /**
- * What the footer reads besides the session (#446): the current Git branch,
+ * What the footer reads besides the session: the current Git branch,
  * followed as `HEAD` changes, the extensions' status texts, and how many
  * providers are logged in.
  */
 export function footerData(cwd: () => string, statuses: () => ReadonlyMap<string, string>, providers: () => number): FooterData {
-  // The shown session's folder, which changes when the shell shows another session: its worktree's branch, not the checkout's (#453).
+  // The shown session's folder, which changes when the shell shows another session: its worktree's branch, not the checkout's.
   return {
     getGitBranch: () => branchOf(gitDirOf(cwd())),
     getExtensionStatuses: statuses,
@@ -132,10 +132,10 @@ function gitBash(): string | undefined {
 }
 
 /**
- * What the engine gives Tesota (#446): its key names, version, and the
+ * What the engine gives Tesota: its key names, version, and the
  * shell the project's checks run in, and its asynchronous OS lock. Checks
  * are written for a POSIX shell (`inFolder`), so on Windows they run in
- * Git's bash, as Pi and Claude Code run commands there (#463); the agent's
+ * Git's bash, as Pi and Claude Code run commands there; the agent's
  * own shell stays the platform's. Without Git's bash, the platform's shell
  * runs them.
  */

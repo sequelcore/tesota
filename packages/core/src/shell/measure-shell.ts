@@ -35,15 +35,15 @@ class CountingTerminal implements Terminal {
 
 const tenths = (ms: number): number => Math.round(ms * 10) / 10;
 
-/** A saved model whose provider loads alone, as most operators' does; only its provider decides what loads first (#743). */
+/** A saved model whose provider loads alone, as most operators' does; only its provider decides what loads first. */
 const savedModel = "openai-codex/gpt-6.1-sol";
 
 /**
- * The shell's own budget (#444): the milliseconds from the process's start
+ * The shell's own budget: the milliseconds from the process's start
  * to the shell's first frame, and the process's resident memory once it has
  * drawn the scripted loop's conversation (`loopRounds` rounds of write and
  * read, as `--measure-loop` runs them). The shell draws Tesota's own
- * interface, its header with the tree included, as `tesota-core` does (#446),
+ * interface, its header with the tree included, as `tesota-core` does,
  * and the session settles as the loop's measurement does. Printed as JSON.
  */
 export async function measureShell(): Promise<void> {
@@ -55,7 +55,7 @@ export async function measureShell(): Promise<void> {
     const theme = shellTheme("dark", "truecolor");
     const surface = createSurface(theme);
     // Tesota as an extension draws its interface; the measured run settles at once, so the gate's checks are not timed here.
-    // The models are the real shell's (#600), loaded as `runApp` loads them (#743): the saved model's provider before the
+    // The models are the real shell's, loaded as `runApp` loads them: the saved model's provider before the
     // first frame, the rest of pi-ai's catalog right after. No credentials or accounts; the scripted model is added to them.
     const { models, rest } = await shellModels(new InMemoryCredentialStore(), [], savedModel);
     const session = createSession({ cwd, folder: sessions, ...scripted(loopRounds, models),

@@ -6,7 +6,7 @@ import type { ShellTheme } from "../../../../src/theme.ts";
 const SPINNER: IndicatorAnimation = { frames: ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"].map((frame) => [frame]), intervalMs: 80 };
 
 /**
- * The row under the conversation while a run works (#749): the indicator's animation for the phase, which may be
+ * The row under the conversation while a run works: the indicator's animation for the phase, which may be
  * several rows tall, beside the message, whose lines and wrapped rows stand to its right. An extension's frames are
  * drawn as given, asked for in the shell's theme each time, so they follow the terminal turning light or dark; the
  * shell's own spinner takes the accent.

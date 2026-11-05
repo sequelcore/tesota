@@ -8,7 +8,7 @@ import { tesotaEngine } from "./adapters/tesota.ts";
 import type { ScriptStep, TestEngine } from "./engine.ts";
 
 /**
- * The agent loop and its tools (#435), the same on every engine: each test
+ * The agent loop and its tools, the same on every engine: each test
  * checks what the tools did to the files, which calls failed and in what
  * order, never how an engine words its output.
  */

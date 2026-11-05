@@ -12,7 +12,7 @@ import type { ScriptStep } from "./engine.ts";
 import { scriptedReply } from "./scripted.ts";
 
 /**
- * Settlement with a mandatory verifier (#439), what only `@tesota/core`
+ * Settlement with a mandatory verifier, what only `@tesota/core`
  * promises: the verifier settles after the extensions and none can silence
  * it, a run completes only when it verified, every other end is finalized
  * once with its reason, and input that verification did not see sends the

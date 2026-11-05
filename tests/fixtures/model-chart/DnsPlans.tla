@@ -1,4 +1,4 @@
-(* A test fixture for the model chart (#761), not a model of Tesota's code, so
+(* A test fixture for the model chart, not a model of Tesota's code, so
    the gate does not check it. Copied from a project's models/DnsPlans.tla; its
    DnsPlansStaleWrite.cfg plants the stale write behind dns-stale.dot. *)
 ---- MODULE DnsPlans ----

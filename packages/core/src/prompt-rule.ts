@@ -1,5 +1,5 @@
 /**
- * Which sections of the system prompt a request sends again (#779): each
+ * Which sections of the system prompt a request sends again: each
  * whose text differs from what the model already has, so an unchanged
  * section never moves the head a provider caches.
  */
@@ -19,7 +19,7 @@ export function changedSections(previous: readonly string[], current: readonly s
 }
 
 /**
- * What a request adds to the transcript's system messages (#779): the
+ * What a request adds to the transcript's system messages: the
  * leading one while the model has none, a change once a section or a tool
  * changed, and nothing otherwise.
  */

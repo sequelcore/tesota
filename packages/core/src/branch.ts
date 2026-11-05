@@ -3,7 +3,7 @@ import { toolResult } from "./loop.ts";
 import { reconciliationText } from "./session.ts";
 import type { SessionEntry } from "./session-file.ts";
 
-/** The session's entries in file order, as Tesota reads Pi's branch (#441). */
+/** The session's entries in file order, as Tesota reads Pi's branch. */
 export function branchOf(entries: readonly SessionEntry[]): BranchEntry[] {
   const branch: BranchEntry[] = [];
   const amendments = new Map<number, string>();

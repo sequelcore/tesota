@@ -5,7 +5,7 @@ import type { Evidence } from "../src/evidence.js";
 import { modelOutcome } from "../src/verification/model-rule.js";
 import { emptyReceipt } from "./receipts.js";
 
-// What "verified" means on every surface (#668): evidence that passed, every changed path covered, no gap, nothing to decide.
+// What "verified" means on every surface: evidence that passed, every changed path covered, no gap, nothing to decide.
 
 const ran = (outcome: Evidence["outcome"]): Evidence => ({ verifier: "command", claim: "the tests pass", limits: "", outcome,
   output: "", durationMs: 1, files: [], contentHash: "" });
@@ -72,7 +72,7 @@ describe("the receipt's standing (#668)", () => {
   });
 
   it("is unverified when something changed and nothing could be verified", () => {
-    // #651: an empty file created, with nothing to check it.
+    // An empty added file, with nothing to check it.
     expect(receiptStanding({ ...emptyReceipt, changed: [{ path: "notes.txt", blob: "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391" }],
         codeEvidence: { ...emptyReceipt.codeEvidence, unverified: ["notes.txt"] }
     })).toBe("unverified");

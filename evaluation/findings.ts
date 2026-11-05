@@ -8,7 +8,7 @@ import { JEV_SKIP_BELOW, git, jevSkips, jevTriage, option, parseFindings, agent,
 import { manifest, read, write } from "./sessions.js";
 
 /**
- * Findings as evidence (#375), measured before it is built: whether turning
+ * Findings as evidence, measured before it is built: whether turning
  * each review finding into a reproduction test that must fail on the change
  * removes false findings without losing real ones. Every stage appends JSON
  * lines to `--out`, and a later call resumes from them.

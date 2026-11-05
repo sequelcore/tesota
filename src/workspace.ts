@@ -4,7 +4,7 @@ import { skipped } from "./projects.js";
 import { homeOrDriveRoot } from "./snapshot.js";
 
 /**
- * What the gate verifies in the folder Pi runs in (#384): a Git repository,
+ * What the gate verifies in the folder Pi runs in: a Git repository,
  * or a folder that is in none. `folder` is relative to the folder Pi runs in,
  * with forward slashes, and empty for that folder itself.
  */
@@ -29,7 +29,7 @@ function inRepository(root: string): boolean {
  * that hold dependencies or build output (`skipped`) are left out. A folder
  * with no repository directly in it is one folder in none, whole; one that
  * cannot be read has no unit. A home folder or a drive's root holds a
- * person's files, so there its other folders are no units (#478): the folder
+ * person's files, so there its other folders are no units: the folder
  * itself, which is never snapshotted (`homeOrDriveRoot`), and its
  * repositories are.
  */

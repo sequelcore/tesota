@@ -68,7 +68,7 @@ function groupDetails(group: ViewGroup): void {
   appendRules(panel, rules(group).split(", "));
   panel.append(button(`Show its ${group.members.length} ${group.members.length === 1 ? "state" : "states"}`, () => { expanded.add(group.id); render(); }));
 }
-/** The failing run alone (#759): its states in order, every other state folded away. */
+/** The failing run alone: its states in order, every other state folded away. */
 function runElements(): cytoscape.ElementDefinition[] {
   let previous: ReadonlyMap<string, string> = new Map();
   return view.trace.flatMap((step, i): cytoscape.ElementDefinition[] => {
@@ -275,7 +275,7 @@ for (const [i, step] of view.trace.entries()) {
   });
   item.className = "trace-step"; trace.append(item); appendRules(trace, broken); previous = vars;
 }
-/** The chart (#761), drawn by Pele from Mermaid the worker wrote; Pele's own CSS variables follow the page's light and dark tokens. */
+/** The chart, drawn by Pele from Mermaid the worker wrote; Pele's own CSS variables follow the page's light and dark tokens. */
 function drawChart(text: string): void {
   const parsed = new DOMParser().parseFromString(renderMermaid(text).svg, "image/svg+xml").documentElement;
   const each = (root: Element): Element[] => [root, ...root.querySelectorAll("*")];

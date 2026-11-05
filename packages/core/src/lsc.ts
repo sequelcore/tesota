@@ -2,7 +2,7 @@
  * LemmaScript's `lsc` with `args`, run from inside this process: the command
  * a binary answers as `tesota __lsc`, since it embeds LemmaScript rather than
  * finding it on disk, and the verifier runs it as its own process
- * (`lemmascript-verifier.ts`, #472). `lsc` reads its arguments from
+ * (`lemmascript-verifier.ts`). `lsc` reads its arguments from
  * `process.argv` as it loads, and sets the process's exit code itself.
  */
 export async function runLsc(args: readonly string[]): Promise<void> {

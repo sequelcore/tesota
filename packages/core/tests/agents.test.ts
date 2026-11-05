@@ -17,7 +17,7 @@ import { issueCli } from "./issue-cli.ts";
 import { compactedHead, referenceMessage } from "../src/loop.ts";
 
 /**
- * Subagents (#525): the `agent` tool starts a child session as a job of the
+ * Subagents: the `agent` tool starts a child session as a job of the
  * run, in the background or waited for; a run never settles while its jobs
  * run; children read the parent's folder or write in a worktree of their
  * own and end with their own receipt; depth, limits, permissions, stopping
@@ -98,7 +98,7 @@ function routed(scripts: Record<string, Reply[]>): Pick<SessionOptions, "models"
 const system = (context: Context): { content?: string; toolsAdded?: { name: string; description: string }[] }[] =>
   (context.messages as unknown as { role: string }[]).filter((message) => message.role === "system") as never;
 const toolNames = (context: Context): string[] => system(context).flatMap(({ toolsAdded }) => (toolsAdded ?? []).map(({ name }) => name));
-/** The system prompt the model read, its sections included (#779). */
+/** The system prompt the model read, its sections included. */
 const promptOf = (context: Context): string => getCurrentSystemPrompt(context.messages);
 
 function session(scripts: Record<string, Reply[]>, options: Partial<SessionOptions> = {}): EngineSession {
@@ -252,7 +252,7 @@ describe("the agent tool", () => {
     expect(childCwd).not.toBe(parent.workspace.cwd);
     expect(readFileSync(join(childCwd, "b.txt"), "utf8")).toBe("b\n");
     const [child] = parent.ledger()[0]?.children ?? [];
-    // Its receipt records no change and no evidence, so it claims no standing (#668).
+    // Its receipt records no change and no evidence, so it claims no standing.
     expect(child).toMatchObject({ description: "write b", writes: true, outcome: "completed" });
     expect(child?.verification).toBeUndefined();
     expect(child?.branch).toMatch(/^tesota\//u);
@@ -298,7 +298,7 @@ describe("the agent tool", () => {
     expect(lastFloorNotice(readSessionFile(parent.file).entries)).toContain("its subagents: 1 call, listed in their own sessions");
   });
 
-  // #619: a writing child's branch is guarded by Git's configuration hooks, which came in Git 2.54.
+  // A writing child's branch is guarded by configuration hooks, which require Git 2.54.
   const guarding = configHooks(installedGit());
   const shellTool = process.platform === "win32" ? "powershell" : "bash";
 
@@ -515,7 +515,7 @@ describe("recovery", () => {
       const resumed = openSession(file, { ...routed({}), verifier: accepts });
       open.push(resumed);
       expect(entries(file).filter((entry) => entry.type === "job_end")).toMatchObject([{ job: job.job, outcome: "unknown" }]);
-      // A subagent may change files, as the gate decides it (`toolMayChangeFiles`), so the run gets a receipt that verified nothing (#599).
+      // A subagent may change files, as the gate decides it (`toolMayChangeFiles`), so the run gets a receipt that verified nothing.
       expect(resumed.history().slice(-2)).toMatchObject([{ role: "custom", customType: "tesota.job" },
         { role: "custom", customType: "tesota-receipt", details: { changed: "unreadable", codeEvidence: { proofs: [], tests: [] } } }]);
       expect(entries(job.session).at(-1)).toMatchObject({ type: "run_end", outcome: "interrupted" });

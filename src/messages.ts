@@ -181,7 +181,7 @@ function countRow(theme: Theme, counts: string, tone: ThemeColor): string {
 }
 
 /**
- * The receipt as the request's one block (#591), drawn from its details as
+ * The receipt as the request's one block, drawn from its details as
  * the plain text is: the counts and the acceptance line, each method, what
  * needs review and the limits grouped by reason, the models' opinions apart
  * and never counted, then the request's context and the details. Ctrl+O
@@ -229,7 +229,7 @@ const isLedger = (value: unknown): value is Ledger =>
   typeof value === "object" && value !== null && typeof Reflect.get(value, "ledger") === "function";
 
 /**
- * The request's block while the gate verifies (#591): what runs, what ended
+ * The request's block while the gate verifies: what runs, what ended
  * and how, each attempt that went back folded into a row; every check when
  * expanded. It reads the ledger each time it is drawn, so it stays live; the
  * receipt takes its place when the run settles.

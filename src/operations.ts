@@ -1,7 +1,7 @@
 import type { WorkingDetail } from "./contract.js";
 
 /**
- * The gate's operations (#590): each proof, project command, test run on the
+ * The gate's operations: each proof, project command, test run on the
  * base, mutation, ClaimCheck call, model run, open-case listing and receipt
  * assembly, published by the code that runs it as it starts and as it ends.
  * Nothing is inferred from timings or output. Operations describe what ran;
@@ -106,7 +106,7 @@ const observed: Readonly<Partial<Record<OperationMethod, Partial<Record<Operatio
   base_control: { passed: ["○", " · passed on the base"], failed: ["○", " · failed on the base"] },
 };
 
-/** One row of the ledger (#591): a glyph, its words, and how far under an earlier attempt it sits. */
+/** One row of the ledger: a glyph, its words, and how far under an earlier attempt it sits. */
 export interface LedgerRow {
   readonly glyph: string;
   readonly text: string;
@@ -171,7 +171,7 @@ export class GateOperations implements WorkingDetail, OperationSink {
   operations(): readonly Operation[] { return this.#all; }
 
   /**
-   * What a stop cut short in the pass running (#599), named as the ledger
+   * What a stop cut short in the pass running, named as the ledger
    * names it: work that began and ended with no result of its own, and work
    * planned that never began.
    */
@@ -244,7 +244,7 @@ export class GateOperations implements WorkingDetail, OperationSink {
   }
 
   /**
-   * The request's checks as a ledger (#591): each attempt that went back to
+   * The request's checks as a ledger: each attempt that went back to
    * the agent folded into one row, then the latest attempt's ended checks,
    * the three latest when collapsed with a count of the earlier ones, then
    * what runs at `now`. Expanded, every check of every attempt.

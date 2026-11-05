@@ -5,7 +5,7 @@ export const notRun = 2;
 export const noEffect = 3;
 
 /**
- * What recovery adds for each call of a session's replies (#437). Call `i`
+ * What recovery adds for each call of a session's replies. Call `i`
  * has a result the session saw (`seen[i]`), had its intent recorded before
  * it ran (`intended[i]`), or was already repaired by an earlier recovery
  * (`repaired[i]`). A call with a result or a repair gets nothing, so no

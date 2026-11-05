@@ -10,7 +10,7 @@ import { chatgptUsage, claudeCodeReport, type StartUsageQuery } from "../src/usa
 import { filledSegments, meterTone, shownPercent } from "../src/usage-rule.ts";
 
 /**
- * The usage panel's sources and readings (#184, #260): each source's reply
+ * The usage panel's sources and readings: each source's reply
  * parsed, malformed ones included; the last-known fallback, its age and whom
  * it was read for; an underlying account read once; a round stopped. Nothing
  * here reaches the network or a real Claude Code.

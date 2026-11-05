@@ -35,7 +35,7 @@ it("keeps Jest assertions in different files distinct and refuses malformed nati
   ]);
   writeFileSync(join(root, "results.json"), JSON.stringify({ testResults: [{ name: join(real, "first.test.js"), assertionResults: [{ fullName: "adds", status: "unknown" }] }] }));
   expect(readTestResults(root, ["results.json"])).toBeUndefined();
-  // A report holding fewer tests than it counts was cut short, so none of it is evidence (#615).
+  // A report holding fewer tests than it counts was cut short, so none of it is evidence.
   writeFileSync(join(root, "results.json"), JSON.stringify({ ...report, numTotalTests: 3 }));
   expect(readTestResults(root, ["results.json"])).toBeUndefined();
   writeFileSync(join(root, "results.json"), JSON.stringify({ ...report, numTotalTests: 2 }));

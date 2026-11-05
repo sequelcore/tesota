@@ -13,14 +13,14 @@ import { mountWelcomeHeader, WelcomeHeader } from "./welcome-header.js";
 import { workingOrb } from "./working-orb.js";
 
 /**
- * Tesota, as Pi and the engine's shell load it (#446): it mounts the welcome screen
+ * Tesota, as Pi and the engine's shell load it: it mounts the welcome screen
  * (`WelcomeHeader`) and the working orb, its motion by phase (`workingOrb`),
  * draws the input as a full-width prompt band (`BarEditor`) over
  * a footer that shows the gate's evidence (`EvidenceFooter`), holds a run open
  * while a changed file's contracts do not prove (`registerGate`), and styles
  * the gate's messages and receipt (`registerMessages`).
  *
- * The agent knows from the start what it can verify (#779): `prove` where
+ * The agent knows from the start what it can verify: `prove` where
  * Dafny is on the PATH or the project has contracts, and `check_model` where
  * TLC is installed. Each tool's rules join the prompt where the project
  * already has what they are about, or once the agent writes its first
@@ -47,7 +47,7 @@ export default function tesota(pi: ExtensionAPI, recorded?: () => RecordedReques
       model: () => ctx.model === undefined ? "no model"
         : ctx.model.reasoning ? `${ctx.model.id} ${pi.getThinkingLevel()}` : ctx.model.id,
       context: () => ctx.getContextUsage() }, () => tui.requestRender()));
-    // The label beside the orb names the gate's running work; the shell listens only while it shows the label (#590).
+    // The label beside the orb names the gate's running work; the shell listens only while it shows the label.
     ctx.ui.setWorkingDetail(progress.operations);
     rules.prove = contracts;
     if (contracts || onPath("dafny")) offer(proveTool.name);

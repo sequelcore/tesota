@@ -36,13 +36,13 @@ mock.module("../../../src/verification/lemmascript-verifier.ts", () => ({
   proveSource: () => Promise.resolve("failed" satisfies ProofOutcome),
 }));
 const { registerGate } = await import("../../../src/gate.ts");
-// The gate runs here as the engine's shell runs it, with the shell's editor, key names, version and shell (#446).
+// The gate runs here as the engine's shell runs it, with the shell's editor, key names, version and shell.
 provideHost(shellHost());
 const { entryReceipt, isReceipt, receiptDetailLines, receiptFindings, receiptStanding, renderReceipt } = await import("../../../src/receipt.ts");
 type Receipt = import("../../../src/receipt.ts").Receipt;
 
 /**
- * Tesota's gate on `@tesota/core` (#439): the session's verifier, reading
+ * Tesota's gate on `@tesota/core`: the session's verifier, reading
  * the request from the ledger. What the gate decides is tested through Pi's
  * fake host in the root tests; these check that the engine carries those
  * decisions: send-backs, receipts in both forms, runs that end early, and
@@ -298,7 +298,7 @@ function gated(cwd: string, script: readonly ScriptStep[], options: Partial<Sess
   const models = createModels();
   models.setProvider(faux.provider);
   const session = createSession({ cwd, folder: mkdtempSync(join(tmpdir(), "tesota-core-sessions-")), models, model: faux.getModel(),
-    // The gate is typed against Pi's API until slice 5 runs Tesota's extension unchanged; it uses only what the engine hosts.
+    // The gate is typed against Pi's API; it uses only what the engine hosts.
     flags: { "open-cases-model": "off" }, verifier: (pi, request) => { registerGate(pi as never, request); }, ...options });
   open.push(session);
   return session;
@@ -626,7 +626,7 @@ describe("the gate on @tesota/core", () => {
     writeFileSync(join(cwd, "a.md"), "a\n");
     git(cwd, "add", "-A");
     git(cwd, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base");
-    // From `cmd`, as `lemmascript-verifier.test.ts` takes it: PowerShell's COM call gave no name now and then (#493).
+    // From `cmd`, as `lemmascript-verifier.test.ts` takes it: PowerShell's COM call gave no name now and then.
     const named = spawnSync("cmd", ["/d", "/c", `for %I in ("${cwd}") do @echo %~sI`], { encoding: "utf8", windowsVerbatimArguments: true });
     const short = named.stdout.trim();
     if (short === "") throw new Error(`cmd gave no short name (status ${named.status}): ${named.stderr}`);
@@ -917,7 +917,7 @@ describe("a run that ends before the gate verifies it", () => {
     const cwd = repository();
     const session = gated(cwd, [{ tool: "write", args: { path: "new.txt", content: "new\n" } }, "done"]);
     await session.prompt("write new.txt");
-    // Nothing checks new.txt, so its run is unverified, never verified (#668).
+    // Nothing checks new.txt, so its run is unverified, never verified.
     expect(receiptStanding(receiptOf(session)!)).toBe("unverified");
     open.splice(open.indexOf(session), 1);
     await session.dispose();

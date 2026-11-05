@@ -3,7 +3,7 @@ import { runProcess } from "../../../src/process.ts";
 import { parseJson } from "../../../src/json.ts";
 
 /**
- * Command hooks (#457), configured as Claude Code configures them, which
+ * Command hooks, configured as Claude Code configures them, which
  * Codex follows too: under `hooks` in a settings file, each event a list of
  * groups, each group a `matcher` of tool names and the commands it runs.
  */
@@ -130,7 +130,7 @@ const shellFor = (command: string): string[] => process.platform === "win32"
 async function runHook(hook: HookCommand, input: HookInput, signal: AbortSignal): Promise<Ran> {
   const seconds = hook.timeout ?? defaultTimeoutSeconds;
   const [shell, ...args] = shellFor(hook.command);
-  // Tesota's one process runner (#457): a hook that runs past its time is stopped with every process it started, and
+  // Tesota's one process runner: a hook that runs past its time is stopped with every process it started, and
   // what it prints is kept within bounds.
   const run = await runProcess(shell ?? "sh", args, input.cwd, signal, seconds * 1000, undefined,
     { input: JSON.stringify(input), env: { ...process.env, TESOTA_PROJECT_DIR: input.cwd }, verbatim: true });

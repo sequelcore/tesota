@@ -6,7 +6,7 @@ import { lockSession, SessionLockedError } from "./session-lock.ts";
 import { checkoutRoot } from "../../../src/checkout-root.ts";
 
 /**
- * Where a session works (#453): the checkout itself, or a Git worktree of it
+ * Where a session works: the checkout itself, or a Git worktree of it
  * on its own branch. Its tools run there, and its base, diff, checks and
  * receipt are its own. The permission floor keeps its file tools' writes
  * there, not its shell: a command can reach anything the operator can.
@@ -20,7 +20,7 @@ export interface Workspace {
   readonly worktree?: string;
   readonly branch?: string;
   readonly base?: string;
-  /** What every process the session starts adds to Tesota's environment, such as a writing subagent's branch guard (#619). */
+  /** What every process the session starts adds to Tesota's environment, such as a writing subagent's branch guard. */
   readonly env?: Readonly<Record<string, string>>;
   /**
    * Lets go of the workspace as the session closes: the checkout for the
@@ -58,7 +58,7 @@ const canonical = (folder: string): string => {
 
 /**
  * Whether nothing in `folder` can enter the change of a session working in
- * `cwd` (#653): it is outside both `cwd` and the tree of the repository
+ * `cwd`: it is outside both `cwd` and the tree of the repository
  * holding it, or Git ignores it there. The gate reads only `cwd`'s tree,
  * and no file Git ignores, so this holds whatever the remote, the branch or
  * the commits.
@@ -144,7 +144,7 @@ function worktreeLease(worktree: string): () => void {
 }
 
 /**
- * Binds a new session `id` opened in `checkout` to its workspace (#453): the
+ * Binds a new session `id` opened in `checkout` to its workspace: the
  * checkout itself when no other session holds it; else, in a Git repository,
  * a worktree on branch `tesota/<id>` from the current commit, in
  * `~/.tesota/worktrees`. Outside Git, a second session is refused, since
@@ -161,8 +161,8 @@ export function bindWorkspace(checkout: string, id: string): Workspace {
 /**
  * A worktree of its own for session `id` opened in `checkout`, whoever holds
  * the checkout: on branch `tesota/<id>` from the current commit, in
- * `~/.tesota/worktrees`, as a second session gets (#453) and a writing child
- * always does (#525). Outside Git it is refused, saying `outsideGit`.
+ * `~/.tesota/worktrees`, as a second session gets and a writing child
+ * always does. Outside Git it is refused, saying `outsideGit`.
  */
 export function newWorktree(checkout: string, id: string, outsideGit: string): Workspace {
   const at = canonical(checkout);
@@ -180,7 +180,7 @@ export function newWorktree(checkout: string, id: string, outsideGit: string): W
   return worktreeWorkspace(at, made, relative(repository.top, at), branch, repository.head, worktreeLease(made));
 }
 
-/** Whether a Git, by its `--version` line, runs hooks defined in configuration beside a repository's own: Git 2.54 and later (#619). */
+/** Whether a Git, by its `--version` line, runs hooks defined in configuration beside a repository's own: Git 2.54 and later. */
 export function configHooks(version: string): boolean {
   const [major = 0, minor = 0] = (/(\d+)\.(\d+)/u.exec(version) ?? []).slice(1).map(Number);
   return major > 2 || (major === 2 && minor >= 54);
@@ -191,7 +191,7 @@ let gitVersion: string | undefined;
 export const installedGit = (): string => gitVersion ??= gitIn(".", ["--version"]).out;
 
 /**
- * Git's guard on a writing subagent's branch (#619): a `reference-transaction`
+ * Git's guard on a writing subagent's branch: a `reference-transaction`
  * hook defined in configuration, so it runs beside the repository's own
  * hooks and changes neither them nor the repository's configuration. In the
  * repository it was admitted to, by Git's absolute common folder, a
@@ -218,7 +218,7 @@ exit $refused
 
 /**
  * `workspace`, a worktree on its own branch, with Git's guard on that branch
- * in the environment of every process its session starts (#619): appended
+ * in the environment of every process its session starts: appended
  * to the configuration pairs Tesota's own environment has, never in a file.
  */
 export function guardedWorktree(workspace: Workspace): Workspace {

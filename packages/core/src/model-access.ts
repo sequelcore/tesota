@@ -6,7 +6,7 @@ import { claudeCodeProvider, claudeCodeProviderId, claudeCodeStatus } from "./pr
 import { type Account, deviceId, readSettings, type Settings } from "./settings.ts";
 
 /**
- * Each of pi-ai's built-in providers, loaded on its own (#743), so the shell can
+ * Each of pi-ai's built-in providers, loaded on its own, so the shell can
  * start with only those its saved model needs: a static `import()` each, which
  * the compiled binary keeps in a chunk of its own until it is loaded. A test
  * holds it to pi-ai's `builtinProviders()`.
@@ -56,19 +56,19 @@ export const providerLoaders: Readonly<Record<string, () => Promise<Provider>>> 
   "zai-coding-cn": async () => (await import("@earendil-works/pi-ai/providers/zai-coding-cn")).zaiCodingCnProvider(),
 };
 
-/** pi-ai's whole catalog, loaded when first asked, never on import (#743). */
+/** pi-ai's whole catalog, loaded when first asked, never on import. */
 const catalog = async (): Promise<readonly Provider[]> => (await import("@earendil-works/pi-ai/providers/all")).builtinProviders();
 
 /**
- * The models a Tesota session runs on (#443): pi-ai's built-in providers,
+ * The models a Tesota session runs on: pi-ai's built-in providers,
  * authorized by the engine's own credentials and, as pi-ai resolves them,
  * API keys in the environment, and Claude through the operator's own Claude
- * Code (`claude-code`, #546), on pi-ai's Anthropic catalog. Logging in and
+ * Code (`claude-code`), on pi-ai's Anthropic catalog. Logging in and
  * out is `Models.login` and `Models.logout` with `loginOptions`. Pi's remote
  * catalog refresh is left out until something needs it.
  */
 export async function engineModels(credentials: CredentialStore = fileCredentialStore(), accounts: readonly Account[] = readSettings().settings.accounts ?? []): Promise<MutableModels> {
-  // pi-ai imports each sign-in flow by a path a compiled `tesota` does not have, so they are embedded instead (#372).
+  // pi-ai imports each sign-in flow by a path a compiled `tesota` does not have, so they are embedded instead.
   // pi-ai registers its flows only all at once; Anthropic's is never reached, since no provider here offers it.
   registerBunOAuthFlows();
   const models = createModels({ credentials });
@@ -80,7 +80,7 @@ export async function engineModels(credentials: CredentialStore = fileCredential
  * Adds to `models` each of `providers` it doesn't hold yet, Anthropic's with
  * its API key alone, then what is built on them: `claude-code` on Anthropic's
  * models, and each account on the provider it is an instance of. Run again as
- * more providers load, it adds only what is new (#743).
+ * more providers load, it adds only what is new.
  */
 function fill(models: MutableModels, providers: readonly Provider[], accounts: readonly Account[]): void {
   for (const provider of providers) {
@@ -97,12 +97,12 @@ function fill(models: MutableModels, providers: readonly Provider[], accounts: r
 /** The built-in provider `provider` is built on: `claude-code` on Anthropic's models, any other on itself. */
 const builtOn = (provider: string): string => provider === claudeCodeProviderId ? "anthropic" : provider;
 
-/** The async uses of pi-ai's `Models` that can reach any provider: the shell's models load the whole catalog before each (#743). */
+/** The async uses of pi-ai's `Models` that can reach any provider: the shell's models load the whole catalog before each. */
 const catalogUses = new Set(["refresh", "checkAuth", "getAvailable", "getAvailableOfType", "getAllAvailable", "getAuth", "login", "logout",
   "complete", "completeSimple", "fetchDeferred", "cancelDeferred", "generateImages", "classify"]);
 
 /**
- * The shell's models (#743): at first only the providers its saved model
+ * The shell's models: at first only the providers its saved model
  * (`saved`, `provider/id`) and `accounts` are built on, so the shell draws its
  * first frame without pi-ai's whole catalog, about 35 ms and 12 MB. `rest()`
  * loads the rest once, and every async use that can reach any provider waits
@@ -133,7 +133,7 @@ export async function shellModels(credentials: CredentialStore, accounts: readon
 /** `account`'s provider ID, `<provider>@<name>`. */
 export const accountId = (account: Account): string => `${account.provider}@${account.name}`;
 
-/** Adds `account`'s provider instance to `models`, as `engineModels` does for each declared one and adding an account does (#642). */
+/** Adds `account`'s provider instance to `models`, as `engineModels` does for each declared one and adding an account does. */
 export function setAccountProvider(models: MutableModels, account: Account): void {
   const id = accountId(account);
   if (account.provider === "claude-code") {
@@ -282,7 +282,7 @@ export const loginOptions = (settingsPath?: string): LoginOptions => ({ agentNam
 
 /**
  * The model the operator chose, if it still exists, else none. Tesota never
- * picks one for them (#425): the first a credential reaches may be one the
+ * picks one for them: the first a credential reaches may be one the
  * sign-in does not serve, which failed with a provider's error; with none,
  * the shell and `-p` say how to choose one.
  */
@@ -295,7 +295,7 @@ const label = (model: Model<Api>): string => `${model.provider}/${model.id}`;
 
 /**
  * The OpenAI models a ChatGPT sign-in serves, as `GET /models` on its token
- * lists them (#563, #566), or none when OpenAI is not signed in with
+ * lists them, or none when OpenAI is not signed in with
  * ChatGPT. Throws when the list cannot be fetched.
  */
 async function servedByChatGPT(models: Models): Promise<ReadonlySet<unknown> | undefined> {
@@ -317,10 +317,10 @@ const narrowed = (available: readonly Model<Api>[], served: ReadonlySet<unknown>
   served === undefined ? available : available.filter((model) => model.provider !== "openai" || served.has(model.id));
 
 /**
- * The models Tesota can run (#563, #566): those of the providers it is
+ * The models Tesota can run: those of the providers it is
  * signed in to, but with ChatGPT sign-in only the OpenAI models it serves;
  * OpenAI refuses the rest of its catalog at the first request. `/model`
- * lists them, ChatGPT's list asked while the sign-ins are checked (#744).
+ * lists them, ChatGPT's list asked while the sign-ins are checked.
  * Throws when the ChatGPT sign-in's list cannot be fetched.
  */
 export async function runnableModels(models: Models): Promise<readonly Model<Api>[]> {
@@ -333,7 +333,7 @@ export async function runnableModels(models: Models): Promise<readonly Model<Api
  * is not one; `-p`, the shell's saved model and the `agent` tool read it. It
  * is refused only when the ChatGPT sign-in's list arrived without it: when
  * the list cannot be fetched, it is kept with `unchecked` saying why, since
- * OpenAI still refuses one it does not serve at the first request (#567).
+ * OpenAI still refuses one it does not serve at the first request.
  */
 export async function runnableModel(models: Models, named: string): Promise<{ readonly model: Model<Api>; readonly unchecked?: string } | string> {
   const available = await models.getAvailable();

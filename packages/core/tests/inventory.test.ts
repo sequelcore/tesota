@@ -4,10 +4,10 @@ import { createRequire } from "node:module";
 import { dirname, join, relative } from "node:path";
 
 /**
- * What Tesota takes from Pi's packages (#463): model access from `pi-ai`, the
- * terminal from `pi-tui` and the MCP client from `pi-mcp` (#459), never Pi's
+ * What Tesota takes from Pi's packages: model access from `pi-ai`, the
+ * terminal from `pi-tui` and the MCP client from `pi-mcp`, never Pi's
  * coding agent, whose extension API Tesota declares itself (`src/contract.ts`).
- * The evaluation keeps Pi until it runs on the engine (#464), so it is not
+ * The evaluation keeps Pi until it runs on the engine, so it is not
  * checked here.
  */
 const root = join(import.meta.dir, "..", "..", "..");

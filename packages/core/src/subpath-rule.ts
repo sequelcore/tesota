@@ -25,7 +25,7 @@ export function normalizeWindowsSegment(segment: string): string {
 
 /**
  * How far the first `k` segments of a subpath go below the folder it starts
- * from (#633): one down for a name, one up for `..`, none for `.` or an empty
+ * from: one down for a name, one up for `..`, none for `.` or an empty
  * segment, which a doubled or trailing separator leaves.
  */
 //@ requires 0 <= k && k <= segments.length
@@ -45,7 +45,7 @@ export function above(segments: readonly string[], k: number): boolean {
 
 /**
  * Whether a subpath of a folder the floor guards, such as home, names that
- * folder or one above it (#633): it is empty, it ends where it started
+ * folder or one above it: it is empty, it ends where it started
  * (`.`, `x/..`), or it climbs above the folder on the way (`../x`).
  */
 //@ ensures \result <==> reach(segments, segments.length) <= 0 || above(segments, segments.length)

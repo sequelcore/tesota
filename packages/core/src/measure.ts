@@ -12,7 +12,7 @@ export const loopRounds = 50;
 /** Tool rounds in the resumed session: six entries each, about 1,000 in all. */
 const resumeRounds = 166;
 
-/** A verifier that settles each run at once, so the measurement times the engine's settlement and not a check (#439). */
+/** A verifier that settles each run at once, so the measurement times the engine's settlement and not a check. */
 const settles: ExtensionFactory = (pi) => { pi.on("agent_before_settle", () => undefined); };
 
 /** A scripted model, added to `models`, for `rounds` rounds of write and read, then an answer, with a verifier. */
@@ -54,14 +54,14 @@ async function measured(rounds: number, measure: (session: EngineSession, run: (
 const tenths = (ms: number): number => Math.round(ms * 10) / 10;
 
 /**
- * The loop's own cost, for the budget check (#435): a scripted model drives
+ * The loop's own cost, for the budget check: a scripted model drives
  * `loopRounds` rounds of write and read in a session that records and syncs
- * it as any session does (#437). What the system and the disk decide is
+ * it as any session does. What the system and the disk decide is
  * timed apart: the request's base, a snapshot of the new folder, paid once
  * a request, and each sync to the disk, which takes 0.3 ms on one machine
  * and 10 ms on another. Prints the run's milliseconds without them, the
  * base's, the median sync's, the number of syncs, which the code decides
- * and the disk does not, the settlement's (#439), from its first entry to
+ * and the disk does not, the settlement's, from its first entry to
  * the run's end without its syncs, and the process's resident memory as JSON.
  */
 export function measureLoop(): Promise<void> {
@@ -97,7 +97,7 @@ export function measureLoop(): Promise<void> {
 }
 
 /**
- * Resuming a session of about 1,000 entries (#437): reading, checking and
+ * Resuming a session of about 1,000 entries: reading, checking and
  * recovering its file and rebuilding its conversation. Prints the
  * milliseconds that took and the file's size as JSON.
  */

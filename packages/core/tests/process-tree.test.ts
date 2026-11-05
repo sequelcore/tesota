@@ -6,7 +6,7 @@ import { runProcess } from "../../../src/process.ts";
 
 /**
  * Stopping a run ends every process it started, even one whose parent has
- * already exited (#490): Git's bash runs a script through a process that
+ * already exited: Git's bash runs a script through a process that
  * exits, which leaves the script's processes with no living parent to find
  * them by. Here the first process starts a shell, `cmd` or `sh`, which starts
  * the last in the background and exits, as bash's does. The shell is not a

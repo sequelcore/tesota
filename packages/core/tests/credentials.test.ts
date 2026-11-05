@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileCredentialStore } from "../src/credentials.ts";
 
-/** The engine's credentials file (#443), always in a temporary folder. */
+/** The engine's credentials file, always in a temporary folder. */
 const fileIn = (): string => join(mkdtempSync(join(tmpdir(), "tesota-core-credentials-")), "auth.json");
 const oauth = (access: string) => ({ type: "oauth" as const, access, refresh: "refresh", expires: 1 });
 

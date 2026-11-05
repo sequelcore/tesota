@@ -21,7 +21,7 @@ export interface AgentRequest {
   readonly wait?: boolean;
 }
 
-/** What starts a session's children (#525): the agent types it knows, and how it starts one as a job of the run. */
+/** What starts a session's children: the agent types it knows, and how it starts one as a job of the run. */
 export interface AgentHost {
   /** The agent types, listed in the tool's description. */
   readonly catalog: string;
@@ -29,7 +29,7 @@ export interface AgentHost {
 }
 
 /**
- * The `agent` tool (#525): it starts a subagent, a session of its own with
+ * The `agent` tool: it starts a subagent, a session of its own with
  * its own context, on a task. It reads the session's folder, or writes in a
  * worktree of its own, so the call changes nothing in this session's folder,
  * and its own calls pass the session's permissions and hooks. In the

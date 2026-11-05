@@ -20,7 +20,7 @@ import { outputPrefix, platformShell } from "../src/tools/shell.ts";
 import { maxBytes } from "../src/truncate.ts";
 
 /**
- * Sessions and the request ledger (#437): resuming, on both engines; then
+ * Sessions and the request ledger: resuming, on both engines; then
  * what only `@tesota/core` promises: the ledger written before any tool
  * runs, recovery after the process was killed, one writer, and a file that
  * opens whole or not at all.
@@ -32,7 +32,7 @@ const folder = (prefix = "tesota-core-session-"): string => mkdtempSync(join(tmp
 
 /**
  * Polls until the child has written `file.txt` in `sessions` and the session file it names holds `text`, and returns that file's path.
- * Either file may be missing or partly written meanwhile (a race on Windows, #659), so a failed read polls again; only `limitMs` fails it.
+ * Either file may be missing or partly written meanwhile (a race on Windows), so a failed read polls again; only `limitMs` fails it.
  */
 async function sessionFileWith(sessions: string, text: string, limitMs = 15_000): Promise<string> {
   const pathFile = join(sessions, "file.txt");
@@ -135,7 +135,7 @@ describe("the request ledger", () => {
     git(repository, "add", "a.txt");
     git(repository, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "a");
     const head = git(repository, "rev-parse", "HEAD");
-    // Each ref's tip at admission that the base does not reach, whatever the remote is called (#599):
+    // Each ref's tip at admission that the base does not reach, whatever the remote is called:
     // a tag and a remote-tracking ref on the base's parent are left out, a branch and a remote-tracking ref beside it are kept.
     git(repository, "tag", "older", "HEAD");
     git(repository, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "b", "--allow-empty");
@@ -376,13 +376,13 @@ describe("recovery after the process was killed", () => {
       expect(resumed.outcome()).toBe("interrupted");
       const results = resumed.messages().filter((message) => message.role === "toolResult");
       expect(results.map((result) => [result.toolName, result.isError])).toEqual([["wait", true], ["write", true]]);
-      // `wait` is a custom tool: declaring read access is no guarantee of no effect (#647).
+      // `wait` is a custom tool: declaring read access is no guarantee of no effect.
       expect(results[0]?.text).toContain("Outcome unknown");
       expect(results[1]?.text).toContain("Not run");
       expect(existsSync(join(cwd, "never.txt"))).toBe(false);
       expect(resumed.ledger()).toMatchObject([{ run: 1, text: "go" }]);
       const once = entriesOf(file);
-      // `wait` may change files as the gate decides it, whatever access it declares, so the run gets a receipt that verified nothing (#599).
+      // `wait` may change files as the gate decides it, whatever access it declares, so the run gets a receipt that verified nothing.
       const tail = ["reconciliation", "reconciliation", "custom_message", "run_end"];
       expect(once.slice(-tail.length).map((entry) => entry.type)).toEqual(tail);
       await resumed.dispose();
@@ -392,7 +392,7 @@ describe("recovery after the process was killed", () => {
     });
   }
 
-  // One rule decides, on both sides, whether a started call may have changed files (#599): the gate's `toolMayChangeFiles`.
+  // One rule decides, on both sides, whether a started call may have changed files: the gate's `toolMayChangeFiles`.
   test.each([
     ["a read", "read", "read", { name: "read", nativeQuestion: false, readOnly: false }],
     ["a question", "ask_user", "read", { name: "ask_user", nativeQuestion: true, readOnly: false }],
@@ -539,7 +539,7 @@ describe("the session file", () => {
     expect(() => openSession(file, scriptless())).toThrow(SessionFileError);
   });
 
-  /** A system message as a session records one (#779). */
+  /** A system message as a session records one. */
   const systemEntry = { type: "system", message: { role: "system", content: "", timestamp: 0 } };
 
   test("the system prompt belongs to the session: before any request, between runs and at the end, never to a run (#779)", async () => {

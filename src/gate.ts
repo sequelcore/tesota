@@ -188,10 +188,10 @@ function commandIdentity({ command, declaration }: CommandRun): string {
 }
 
 /**
- * The test rung (#342), once no proof goes back: the commands of the projects
+ * The test rung, once no proof goes back: the commands of the projects
  * that own the changed files (`suggestChecks`, `owningProjects`) run on the
  * change. A command that fails runs on the base too (`runCommands`), and a
- * failure the base already had stays from the agent (#726, `commandVerdict`);
+ * failure the base already had stays from the agent (`commandVerdict`);
  * any other goes back until it repeats one already sent back (`testFailure`). When every
  * command passes, each changed or added test runs over the request's base,
  * which shows whether it exercises the change.
@@ -204,7 +204,7 @@ async function testRung(root: string, base: string | null, changed: readonly str
   const tests = (await checks().runCommands(root, projects, changed, signal, ops, env, against)).map((run) => ({ ...run,
     verdict: commandVerdict(run.evidence.outcome, testFailure(run), sentBack.get(commandIdentity(run)) ?? [], run.origin?.cause === "preexisting") }));
   const passed = tests.every(({ evidence }) => evidence.outcome === "passed");
-  // A snapshot or a fixture counts as a test for weakened evidence, but is not one a runner can run alone (#615).
+  // A snapshot or a fixture counts as a test for weakened evidence, but is not one a runner can run alone.
   const runnable = changed.filter((path) => checks().isTestPath(path) && checks().isSourcePath(path));
   const present = (await Promise.all(runnable.map(async (path) => await readIfPresent(join(root, path)) === undefined ? [] : [path]))).flat();
   const exercises = attributable && passed && base !== null ? await checks().exerciseTests(root, base, present, changed, projects, signal, ops, env) : [];
@@ -372,7 +372,7 @@ export interface Tally {
  * the operator's request, before anything settles. While a run settles it is proving,
  * testing or measuring contracts; it has `sent_back` failures while the
  * agent answers them, and is `settled` once the run ends with a receipt, or
- * `unchanged` once it ends having changed no file (#536).
+ * `unchanged` once it ends having changed no file.
  */
 export type GateStatus =
   | { readonly step: "ready"; readonly readiness: Readiness }
@@ -394,7 +394,7 @@ function tally(proofs: UnitEvidence["proofs"], tests?: UnitEvidence["tests"], co
 
 /** The gate's status and who listens to it; the gate alone changes it. */
 export class GateProgress {
-  /** The operations the gate and its runners publish (#590); the status line reads them. */
+  /** The operations the gate and its runners publish; the status line reads them. */
   readonly operations: GateOperations = new GateOperations();
   #readiness: Readiness = "nothing";
   #status: GateStatus = { step: "ready", readiness: "nothing" };
@@ -427,7 +427,7 @@ export class GateProgress {
     if (isReceipt(receipt)) this.publish({ step: "settled", receipt });
   }
 
-  /** A run that settled having changed no file (#536): nothing to verify, and the operator can see so. */
+  /** A run that settled having changed no file: nothing to verify, and the operator can see so. */
   unchanged(): void { this.publish({ step: "unchanged" }); }
 
   /** Back to ready, as on the operator's next request. */
@@ -443,7 +443,7 @@ export class GateProgress {
 }
 
 /**
- * The gate (#339): before a completed run settles, it proves every changed
+ * The gate: before a completed run settles, it proves every changed
  * file with contracts. A failed or vacuous proof goes back to the agent and
  * the run continues, until the agent repeats any failure the gate already
  * sent back for that file (`gateVerdict`). Then the test rung runs
@@ -461,14 +461,14 @@ export class GateProgress {
  * never current-checkout checks.
  * A commit hides nothing; a steer or follow-up sent while the agent works belongs to
  * the request already running. Outside a Git repository the base is
- * Tesota's snapshot of the folder (`takeSnapshot`, #384); where it takes
+ * Tesota's snapshot of the folder (`takeSnapshot`); where it takes
  * none, a request that ran a tool that may change files ends with a receipt
  * that says why nothing was verified. In a folder of repositories that is in
  * none, each repository and each other folder the request changed goes
  * through these steps from its own base and folder, each round gathering
  * what goes back across them, and the receipt holds each one as a unit.
  * On `@tesota/core` the gate is the session's verifier and reads the
- * request, its amendments and its bases from the ledger (`recorded`, #439)
+ * request, its amendments and its bases from the ledger (`recorded`)
  * instead of capturing them; on Pi it captures them on the operator's input.
  * A run that ends before it completes, after a tool that may change files,
  * settles with a receipt that says nothing was verified and why.
@@ -515,7 +515,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
   const judging = (folder = ""): JudgmentContext => ({ folder, requests: judgingRequests, record: (judgment) => { requestJudgments.push(judgment); } });
 
   let clarifications: readonly Clarification[] = [];
-  /** The subagents the request started (#525), as the ledger recorded their ends. */
+  /** The subagents the request started, as the ledger recorded their ends. */
   let children: readonly ReceiptChild[] = [];
   let floorRefusals: readonly FloorRefusal[] = [];
   let externalEffects: readonly ExternalEffect[] = [];
@@ -552,7 +552,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     floorRefusals = [];
     externalEffects = [];
     start = undefined;
-    // A request that continues one that ended on its question (#651) is measured from that one's start: what it changed is its own.
+    // A request that continues one that ended on its question is measured from that one's start: what it changed is its own.
     const restored = restoredStart(recorded?.()?.continues?.start);
     if (restored !== undefined) {
       fingerprints = Promise.resolve(restored);
@@ -593,7 +593,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     requestJudgments = [];
     const request = recorded?.();
     if (request !== undefined) {
-      // Only a receipt that verified changes ends the chain, not a tool-free answer (#627).
+      // Only a receipt that verified changes ends the chain, not a tool-free answer.
       judgingRequests = judgedRequests(request, requestNumber);
       requests = judgingRequests.flatMap(({ text }) => text);
       clarifications = request.inputs.flatMap((input) => input.kind === "clarification" ? [input.clarification] : []);
@@ -610,7 +610,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
       const result = await verify(event, ctx);
       closed = result?.continue === true ? "returned_to_agent"
         : event.outcome !== "completed" || ctx.signal?.aborted === true ? "stopped" : "settled";
-      // A run that ends on its question keeps its start fingerprints, for the run that answers it to restore (#651).
+      // A run that ends on its question keeps its start fingerprints, for the run that answers it to restore.
       const prints = event.outcome === "completed" && event.reason !== undefined && result?.continue !== true ? await fingerprints : undefined;
       return prints === undefined ? result : { ...result, entries: [...result?.entries ?? [], savedStart(prints)] };
     } finally { progress.operations.closeAttempt(closed); }
@@ -621,7 +621,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
       return stopped(ctx, reason ?? (event.outcome === "aborted" ? "the operator stopped the run before Tesota verified it"
         : "the run failed before Tesota verified it"));
     }
-    // Verification is an Effect the operator's stop interrupts (#408): no later step starts, and the receipt says it stopped.
+    // Verification is an Effect the operator's stop interrupts: no later step starts, and the receipt says it stopped.
     try {
       return await effect().runPromise(settle(ctx, event.reason === undefined ? {} : { unresolvedQuestion: event.reason }), ctx.signal === undefined ? {} : { signal: ctx.signal });
     } catch (error) {
@@ -635,7 +635,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
   /**
    * A run that ended before verification finished: after a tool that may
    * change files, a receipt that verified nothing, why, and an inventory of
-   * what the run left (#599), read and never checked, or why it could not be read.
+   * what the run left, read and never checked, or why it could not be read.
    */
   const stopped = async (ctx: ExtensionContext, reason: string): Promise<SettleResult | undefined> => {
     if (!verificationRequired(mayHaveChanged, requiredModel !== undefined)) {
@@ -922,7 +922,7 @@ interface Start {
 }
 
 /**
- * A request as the engine's ledger records it (#439), before any tool ran:
+ * A request as the engine's ledger records it, before any tool ran:
  * its text and ordered inputs, when it started, and each unit's base, a
  * repository's commit, a snapshot, or why there is neither.
  */
@@ -931,16 +931,16 @@ export interface RecordedRequest {
   readonly text: string;
   readonly at: string;
   readonly inputs: readonly RequestInput[];
-  /** The subagents the run started and how each ended (#525). */
+  /** The subagents the run started and how each ended. */
   readonly children?: readonly ReceiptChild[];
-  /** The calls Tesota's floor refused in the run (#622). */
+  /** The calls Tesota's floor refused in the run. */
   readonly refusals?: readonly FloorRefusal[];
   readonly externalEffects?: readonly ExternalEffect[];
   readonly references?: readonly import("./request-references.js").RequestReference[];
   readonly base: { readonly units: readonly RecordedUnit[]; readonly checks?: readonly UnitCheckPlan[]; readonly requiredModel?: ModelSelection };
-  /** The earlier request this one continues (#651), and what the gate saved as it ended on its question (`savedStart`). */
+  /** The earlier request this one continues, and what the gate saved as it ended on its question (`savedStart`). */
   readonly continues?: { readonly run: number; readonly start?: unknown };
-  /** Earlier requests since the last non-stopped receipt (#627), oldest first, judged with it. */
+  /** Earlier requests since the last non-stopped receipt, oldest first, judged with it. */
   readonly unverifiedRequests?: readonly (Pick<RecordedRequest, "text" | "inputs" | "references"> & { readonly run: number })[];
 }
 
@@ -963,7 +963,7 @@ type RecordedUnit =
 
 /**
  * The `custom` entry the gate records as a run ends on an unresolved
- * question (#651): the start fingerprints it measured the request from, by
+ * question: the start fingerprints it measured the request from, by
  * folder, which the run that continues the request restores (`restoredStart`).
  */
 const requestStartType = "tesota-request-start";
@@ -1076,14 +1076,14 @@ async function changesFromBase(root: string, base: string | null): Promise<{
   return paths === undefined ? undefined : { paths: paths.all, changes: await fileChanges(root, base, paths.present) };
 }
 
-/** How long a stopped run's inventory may read Git (#599) before the receipt says it ran past its limit. */
+/** How long a stopped run's inventory may read Git before the receipt says it ran past its limit. */
 export const STOP_INVENTORY_TIME_LIMIT_MS: number = 30_000;
 
 /** What a stopped run left in one unit, or why it could not be read. */
 type Inventory = Pick<UnitEvidence, "changed" | "lines" | "reason"> & Partial<Pick<UnitEvidence, "inherited" | "unmeasured" | "startState" | "endState">>;
 
 /**
- * What a stopped run left in the unit at `folder` (#599), read and never
+ * What a stopped run left in the unit at `folder`, read and never
  * run: each path changed, deleted or untracked as the request's captures
  * attribute it, with its final blob and the captures' limits; `unreadable`,
  * with why, when Git cannot tell, never an empty list. `signal` stops its Git.
@@ -1107,7 +1107,7 @@ async function leftChanged(cwd: string, folder: string, base: string | null, fin
   return { ...facts, changed, lines: await checks().changeLines(root, base, changed.map(({ path }) => path), signal) };
 }
 
-/** What a stopped run left (#599): the one unit's inventory, or each unit of a folder of repositories that changed or could not be read. */
+/** What a stopped run left: the one unit's inventory, or each unit of a folder of repositories that changed or could not be read. */
 async function stoppedInventory(cwd: string, begun: Start | undefined, initial: ReadonlyMap<string, Fingerprint> | undefined, at: string,
   signal: AbortSignal): Promise<Inventory | Pick<Receipt, "units" | "snapshot" | "tooLarge">> {
   const units = begun?.units ?? [];
@@ -1226,7 +1226,7 @@ function proofFiles(proofs: UnitEvidence["proofs"]): string[] {
 /**
  * What the run left in `unit`: its inventory and, since proving regenerates
  * each proof in place after the inventory was read, the files of `proofs`
- * that differ from the base (#737).
+ * that differ from the base.
  */
 async function leftIn(unit: ChangedUnit, proofs: UnitEvidence["proofs"]): Promise<string[]> {
   const proving = new Set(proofFiles(proofs));

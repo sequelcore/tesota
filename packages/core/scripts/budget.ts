@@ -5,7 +5,7 @@ import { withinBudget, withinBudgetAfterRetry } from "../src/budget-rule.ts";
 import { build } from "./build.ts";
 
 /**
- * Performance budgets (#433, #435, #437), checked on every pull request
+ * Performance budgets, checked on every pull request
  * like fx's: the engine is compiled as a release builds it (`build.ts`), its
  * `--version` started repeatedly, its scripted loop run (`--measure-loop`,
  * 50 rounds of write and read, with its request's base and its syncs to the
@@ -14,12 +14,12 @@ import { build } from "./build.ts";
  * median time and its largest resident memory, the median base and sync,
  * the largest number of syncs, the median settlement, the median resume and the largest session
  * file are compared with the limits in `budgets.json` for this platform; a measurement without a limit there is reported only.
- * An exceeded budget is retried once; a measurement fails only when both attempts exceed its limit (#462).
+ * An exceeded budget is retried once; a measurement fails only when both attempts exceed its limit.
  * The first frame divided by the same attempt's median startup is a measurement of its own, which Windows limits
  * closely, since a slow runner there slows both; its first frame keeps a looser limit, for a regression that
- * slows startup and the first frame together (#556). Linux limits the first frame divided by the same attempt's median
+ * slows startup and the first frame together. Linux limits the first frame divided by the same attempt's median
  * resume instead, which tracks it there more closely than startup, with the same kind of looser limit in milliseconds.
- * Linux's loop uses the same resume control (#783), with an absolute backstop for a slowdown shared by both.
+ * Linux's loop uses the same resume control, with an absolute backstop for a slowdown shared by both.
  * `--report` prints them all without failing, to set or revise a limit.
  */
 
@@ -110,7 +110,7 @@ function measure(): Measurements {
       firstFrameMs,
       firstFrameRatio: Math.round(firstFrameMs / startupMs * 100) / 100,
       firstFrameResumeRatio: Math.round(firstFrameMs / resumeMs * 100) / 100,
-      // The median, not the largest: one run's memory varies by about 13 MB, and a regression moves every run (#462).
+      // The median, not the largest: one run's memory varies by about 13 MB, and a regression moves every run.
       shellRssBytes: median(shells.map((shell) => shell.shellRssBytes)),
     };
   } finally {

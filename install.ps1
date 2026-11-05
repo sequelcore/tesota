@@ -1,4 +1,4 @@
-# Installs tesota on Windows from its GitHub Releases (#372), or updates it when run again:
+# Installs tesota on Windows from its GitHub Releases, or updates it when run again:
 #
 #   irm https://raw.githubusercontent.com/sequelcore/tesota/main/install.ps1 | iex
 #   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/sequelcore/tesota/main/install.ps1))) 0.1.0-alpha.1

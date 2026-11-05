@@ -5,9 +5,9 @@ import manifest from "../package.json" with { type: "json" };
  * The `tesota` command. It answers `--version` before loading anything
  * else, so startup stays within its budget as the engine grows; each other
  * command loads only what it needs. With no argument it opens the shell in
- * the current folder (#444); `-p` runs one request without it, and
- * `receipt` writes the last receipt for a pull request (#463), and
- * `accounts` adds, lists and removes the operator's accounts (#642). The
+ * the current folder; `-p` runs one request without it, and
+ * `receipt` writes the last receipt for a pull request, and
+ * `accounts` adds, lists and removes the operator's accounts. The
  * `--measure-*` commands are what the budget check runs, and `__lsc` is
  * LemmaScript for the verifier in a binary (`lsc.ts`).
  */
@@ -95,7 +95,7 @@ else if (command === "--measure-loop" || command === "--measure-resume") {
 else if (command === "--measure-shell") exitWith(import("./shell/measure-shell.ts").then(({ measureShell }) => measureShell()));
 else if (command === "graph") exitWith(import("../../../src/model-view-process.ts").then(({ modelViewCommand }) => modelViewCommand(rest)));
 else if (command === "__model-view") {
-  // A chart reading is the project's code: the worker runs it only if the operator trusts it as it is now (#761).
+  // A chart reading is the project's code: the worker runs it only if the operator trusts it as it is now.
   exitWith(Promise.all([import("../../../src/model-view-worker.ts"), import("./trust.ts")])
     .then(([{ modelViewWorker }, { chartTrust, trusted }]) => modelViewWorker((root, file, hash) => trusted(root, chartTrust(file), hash))));
 }

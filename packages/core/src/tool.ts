@@ -18,15 +18,15 @@ export interface EngineTool<Parameters extends TSchema = TSchema> {
   readonly name: string;
   readonly description: string;
   readonly parameters: Parameters;
-  /** What the system prompt says of the tool while it is active (#441). */
+  /** What the system prompt says of the tool while it is active. */
   readonly promptSnippet?: string;
-  /** What a call does, for permissions (#449): only reads, writes or edits files, or runs something; runs when not said. */
+  /** What a call does, for permissions: only reads, writes or edits files, or runs something; runs when not said. */
   readonly access?: "read" | "write" | "run";
   /** MCP identity and the operator's receipt declaration; server annotations confer no authority. */
   readonly mcp?: { readonly server: string; readonly tool: string; readonly readOnly: boolean };
-  /** Its rules for the system prompt while it is active; a function is read on every request (#779). */
+  /** Its rules for the system prompt while it is active; a function is read on every request. */
   readonly promptGuidelines?: readonly string[] | (() => readonly string[]);
-  /** A command as this shell's own parser reads it, for the floor (#697); nothing when it can't read it. */
+  /** A command as this shell's own parser reads it, for the floor; nothing when it can't read it. */
   parse?(command: string): Promise<readonly ParsedCommand[] | undefined>;
   execute(args: Static<Parameters>, signal: AbortSignal, callId: string): Promise<ToolOutput>;
 }

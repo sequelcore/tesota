@@ -9,7 +9,7 @@ import { statementResult } from "./verification/verdict-rule.js";
  * session in the project settled with, as Markdown for the pull request's
  * description or a comment, or as JSON for CI. The JSON is an unsigned
  * in-toto Statement shaped as the agentic process evidence proposal
- * (in-toto/attestation#600, specified in jfrog/agentic-process-evidence)
+ * (specified in jfrog/agentic-process-evidence)
  * names its fields; the receipt itself goes in the predicate's `custom`, the
  * place the proposal leaves for what one kind of process records.
  */
@@ -35,7 +35,7 @@ export async function lastReceipt(sessions: SessionStore, cwd: string): Promise<
 }
 
 /**
- * In a repository of a folder of repositories (#384), the part of the last
+ * In a repository of a folder of repositories, the part of the last
  * receipt a session in that folder settled with that covers this repository;
  * nothing when it covers none.
  */

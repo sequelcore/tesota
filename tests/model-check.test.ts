@@ -217,7 +217,7 @@ it.skipIf(!withTlc)("model-checks a model whose planted fault breaks its invaria
 }, 120_000);
 
 it.skipIf(!withTlc)("never calls a model stale when the request wrote it with its code and it passed against the code as left", async () => {
-  // #555: the model was confirmed against the commit at that point, then the code it covers was fixed in the same request.
+  // The model's confirmed commit predates the covered code's change in this request.
   const { root } = repository((commit) => ({ "models/Counter.tla": spec("Counter", header(commit)), "models/Counter.cfg": config(true),
     "models/CounterNoLock.cfg": config(false) }));
   write(root, { "src/counter.ts": "export async function increment(): Promise<void> { await Promise.resolve(); }\n" });

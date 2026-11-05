@@ -10,7 +10,7 @@ import { type Access, judge } from "../src/permissions.ts";
 import { createSession, type EngineSession, openSession } from "../src/session.ts";
 import { accepts } from "./scripted.ts";
 
-/** Each session's scratch folder (#653): where its file tools may write beside its folder, never part of its change. */
+/** Each session's scratch folder: where its file tools may write beside its folder, never part of its change. */
 const folder = (prefix: string): string => realpathSync.native(mkdtempSync(join(tmpdir(), prefix)));
 const call = (name: string, args: JsonObject): ToolCall => ({ type: "toolCall", id: "c", name, arguments: args });
 /** The system prompt as Pi's scripted model is given it, among the messages. */

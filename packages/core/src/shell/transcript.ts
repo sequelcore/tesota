@@ -6,7 +6,7 @@ import type { ShellTheme } from "../../../../src/theme.ts";
 import { terminalText } from "../../../../src/terminal-text.ts";
 import { isStanding, standingWords } from "../../../../src/receipt.ts";
 
-/** How extensions draw their messages and tool calls (#446), and whether drawings are expanded. */
+/** How extensions draw their messages and tool calls, and whether drawings are expanded. */
 export interface Drawings {
   readonly renderers: ReadonlyMap<string, MessageRenderer>;
   readonly tools: ReadonlyMap<string, ToolDrawing>;
@@ -83,7 +83,7 @@ function summary(call: ToolCall): string {
   return text(args["path"] ?? args["command"] ?? args["description"]);
 }
 
-/** A subagent's line under the call that started it (#525): its type, model and depth, and where it stands. */
+/** A subagent's line under the call that started it: its type, model and depth, and where it stands. */
 function childLine(details: unknown, theme: ShellTheme): string | undefined {
   if (typeof details !== "object" || details === null) return undefined;
   const { type, model, depth, writes } = details as Record<string, unknown>;
@@ -119,7 +119,7 @@ class CallView extends Container {
   private readonly drawings: Drawings;
   private readonly startedAt = Date.now();
   private durationMs: number | undefined;
-  /** The subagent the call started (#525), as its job last said. */
+  /** The subagent the call started, as its job last said. */
   private child: unknown;
   constructor(call: ToolCall, theme: ShellTheme, drawings: Drawings) {
     super();
@@ -128,13 +128,13 @@ class CallView extends Container {
     this.drawings = drawings;
     this.draw();
   }
-  /** The subagent the call started, as its job now says (#525). */
+  /** The subagent the call started, as its job now says. */
   job(details: unknown): void {
     this.child = details;
     this.draw();
   }
   finish(result: ToolResultMessage): void {
-    // The pending-question notice owns the operator's question. Keep model instructions out of the view (#713).
+    // The pending-question notice owns the operator's question. Keep model instructions out of the view.
     this.result = this.call.name === "ask_user" && result.details === "question-limit" ? { ...result, content: [] } : result;
     // A call that waited for its subagent carries its end; one in the background only started it.
     if (result.details !== undefined && this.call.name === "agent") this.child = result.details;
@@ -165,7 +165,7 @@ class CallView extends Container {
     }
     if (lines.length > 0) this.addChild(prefixedText(lines.join("\n"), "  "));
   }
-  /** The line of the subagent the call started, when it started one (#525). */
+  /** The line of the subagent the call started, when it started one. */
   private drawChild(): void {
     const child = childLine(this.child, this.theme);
     if (child !== undefined) this.addChild(cached((width) => [truncateToWidth(`${MARGIN}  ${child}`, width)]));
@@ -187,7 +187,7 @@ class CallView extends Container {
   }
 }
 
-/** A background subagent's end (#525): one line, and its report once expanded. */
+/** A background subagent's end: one line, and its report once expanded. */
 function jobView(message: CustomMessage, theme: ShellTheme, drawings: Drawings): Component {
   const details = (message.details ?? {}) as Record<string, unknown>;
   const title = `${theme.fg("dim", "↳")} ${theme.bold(theme.fg("toolTitle", "subagent"))} ${theme.fg("muted", String(details["description"] ?? ""))}`
@@ -200,7 +200,7 @@ function jobView(message: CustomMessage, theme: ShellTheme, drawings: Drawings):
   return box;
 }
 
-/** A message a settle handler added: as its extension draws it (#446), or as plain text when it draws none. */
+/** A message a settle handler added: as its extension draws it, or as plain text when it draws none. */
 function customView(message: CustomMessage, theme: ShellTheme, drawings: Drawings): Component {
   if (message.customType === jobType) return jobView(message, theme, drawings);
   const renderer = drawings.renderers.get(message.customType);
@@ -211,7 +211,7 @@ function customView(message: CustomMessage, theme: ShellTheme, drawings: Drawing
 }
 
 /**
- * The conversation as the shell draws it (#444): each message once it
+ * The conversation as the shell draws it: each message once it
  * enters, the reply as it streams, and each call from its start to its
  * result. Built again from the history when a session is resumed.
  */
@@ -251,7 +251,7 @@ export class Transcript extends Container {
     this.addChild(view);
   }
 
-  /** A subagent's job, as it now stands, under the call that started it (#525). */
+  /** A subagent's job, as it now stands, under the call that started it. */
   job(callId: string, details: unknown): void {
     this.calls.get(callId)?.job(details);
   }

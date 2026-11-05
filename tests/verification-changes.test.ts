@@ -79,7 +79,7 @@ const hunk = (path: string, lines: string[]): FileChange => {
 };
 
 it("does not flag removed test lines whose replacements only gain arguments, properties or parameters (#578, #583)", async () => {
-  // PR #578: a helper's parameter list and destructuring each gained one option.
+  // A helper's parameter list and destructuring each gain one option in this fixture.
   const shell = hunk("packages/core/tests/shell.test.ts", [
     " function shellOn(script: readonly ScriptStep[], mode: TuiMode = \"fullscreen\", size: [number, number] = [80, 24],",
     "   extra: { tokensPerSecond?: number; copy?: (text: string) => Promise<boolean>; commands?: readonly SlashCommand[]; surface?: Surface;",
@@ -100,7 +100,7 @@ it("does not flag removed test lines whose replacements only gain arguments, pro
     "   return { terminal, session, shell };",
     " }",
   ]);
-  // PR #583: calls that gained an argument.
+  // Calls that gain an argument in this fixture.
   const claudeCode = hunk("packages/core/tests/claude-code.test.ts", [
     " function provider(start: StartQuery) {",
     "   const models = createModels();",
@@ -157,7 +157,7 @@ it("flags an in-place edit that changes an assertion, its expected value, a skip
     ["elsewhere", ["-setup(a);", " check(a);", "+setup(a, b);"]],
   ];
   const changes = cases.map(([name, lines]) => hunk(`tests/${name}.test.ts`, lines));
-  // Each is flagged; what it says of each test is the subject of the tests below (#646).
+  // Each is flagged; what it says of each test is the subject of the tests below.
   expect((await weakenedEvidence(changes)).map(({ path, kind }) => ({ path, kind })))
     .toEqual(cases.map(([name]) => ({ path: `tests/${name}.test.ts`, kind: "edited_test" })));
 });

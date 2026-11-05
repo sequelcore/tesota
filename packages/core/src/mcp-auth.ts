@@ -13,7 +13,7 @@ import { parseJson } from "../../../src/json.ts";
 import { writeWholeJson } from "./whole-file.ts";
 
 /**
- * OAuth sign-in for remote MCP servers (#459), as Pi's coding agent signs in
+ * OAuth sign-in for remote MCP servers, as Pi's coding agent signs in
  * (`extensions/mcp/oauth.ts`), smaller: no Client ID Metadata Documents and no
  * configured authorization server. A connection never opens a browser: it
  * sends the stored token and refreshes it; when it cannot, it fails as
@@ -45,7 +45,7 @@ function callbackFor(oauth: McpOAuthConfig): { host: string; redirectHost: strin
 const authFile = (home: string): string => join(home, "mcp-auth.json");
 /** A server's credentials are its name's and its URL's: servers sharing a URL keep separate accounts. */
 const keyOf = (server: string, url: string): string => `${server}|${new URL(url).href}`;
-/** The account's lock, held by whoever changes its tokens over the network or deletes them, in this shell or another (#542). */
+/** The account's lock, held by whoever changes its tokens over the network or deletes them, in this shell or another. */
 const accountLock = (server: string, url: string, home: string): string =>
   `${authFile(home)}.${createHash("sha256").update(keyOf(server, url)).digest("hex").slice(0, 16)}.refresh`;
 

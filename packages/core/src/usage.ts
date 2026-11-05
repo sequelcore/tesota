@@ -6,7 +6,7 @@ import type { AccountRow } from "./accounts.ts";
 import { filledSegments, remainingHundredths, usageReader } from "./usage-rule.ts";
 
 /**
- * How much each account has left (#184, #260): the plan's limit windows as
+ * How much each account has left: the plan's limit windows as
  * Claude Code's own usage report and Codex's usage endpoint give them. Only
  * these two providers have a source; saved readings hold meters and notes,
  * bound to a one-way fingerprint of whom they were read for, never a token,

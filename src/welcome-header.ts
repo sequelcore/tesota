@@ -23,7 +23,7 @@ export interface WelcomeHeaderOptions {
 }
 
 /**
- * The welcome screen (#749): Tesota's wordmark, its version and folder, and a
+ * The welcome screen: Tesota's wordmark, its version and folder, and a
  * greeting, centered by the shell with the input under it until the first
  * message. Nothing is drawn as a header; the model and folder stay in the footer.
  */

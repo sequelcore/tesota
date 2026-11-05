@@ -209,7 +209,7 @@ it("counts what the checks established and never a model's opinion, as the recei
 
 it("says there was nothing to verify when the change was comments alone, and only when nothing else is listed", () => {
   const comments: Receipt = { ...emptyReceipt, commentsOnly: true };
-  // Nothing verified a change of comments alone, so it is not checked as verified (#668).
+  // Nothing verified a change of comments alone, so it is not checked as verified.
   expect(words({ step: "settled", receipt: comments })).toBe("○ receipt · nothing to verify, comments only");
   expect(words({ step: "settled", receipt: comments }, "short")).toBe("○ receipt · nothing to verify");
   expect(words({ step: "settled", receipt: comments }, "glyphs")).toBe("○ · no code");

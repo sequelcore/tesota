@@ -503,7 +503,7 @@ function localWork(root: string, action: string): void {
   if (action === "amend") { git(root, "add", "-A"); git(root, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--amend", "--no-edit"); }
 }
 
-/** The request's own history: pushing it or merging a branch the request created keeps credit (#599). */
+/** The request's own history: pushing it or merging a branch the request created keeps credit. */
 const credited = new Set(["commit", "unchanged", "push", "subagent", "tag"]);
 
 it.each(["merge", "merge-deleted", "remote", "fetch", "url", "switch", "rebase", "amend", "mixed", "pruned", "commit", "unchanged", "push", "subagent", "tag"])("attributes %s history and exports the settled checkout (#599)", async (action) => {
@@ -1626,7 +1626,7 @@ it("settles a change of comments and blank lines alone with a receipt and footer
   const settled = entry(await run.settle());
   expect(facts(settled.content)).toBe("  no code       nothing to verify: the changes are comments or blank lines only\n  changed lines implementation +3 -0");
   expect((settled.details as Receipt).commentsOnly).toBe(true);
-  // Nothing verified it, so the footer does not mark it verified (#668).
+  // Nothing verified it, so the footer does not mark it verified.
   expect(evidenceText(evidenceParts(run.progress.status), "full")).toBe("○ receipt · nothing to verify, comments only");
 });
 
@@ -1686,11 +1686,11 @@ it("puts each change that may weaken the evidence in the receipt, committed or n
     "  may weaken    tests/old.test.ts: deletes a test file",
     "  may weaken    tests/rule.test.ts: edits a test file; read from the diff, a heuristic flag, not a verdict",
   ].map((line) => `${line}`));
-  // How the edit may weaken each test, under its flag (#646).
+  // How the edit may weaken each test, under its flag.
   expect(facts(settled.content)).toContain("read from the diff, a heuristic flag, not a verdict\n                f: skips it (it.skip)\n");
   expect((settled.details as Receipt).specificationEvidence.weakened).toContainEqual(
     { path: "tests/old.test.ts", kind: "deleted_test" });
-  // The proof holds only given the assumptions added to its source and its .dfy, not those of another file (#399).
+  // The proof holds only given the assumptions added to its source and its .dfy, not those of another file.
   expect(facts(settled.content)).toContain("  proved        src/rule.ts, trusting 3 unproved parts the change added");
 });
 
@@ -1732,7 +1732,7 @@ it("runs the project's tests and keeps exercise after the agent commits",  async
   expect(settled?.continue).toBeUndefined();
   const changed = ["src/price.mjs", "test/__snapshots__/price.test.mjs.snap", "test/fixtures/prices.json", "test/negative.test.mjs",
     "test/positive.test.mjs"];
-  // The snapshot and the fixture are no tests a runner runs alone, so they get no line of their own on the base (#615).
+  // The snapshot and the fixture are no tests a runner runs alone, so they get no line of their own on the base.
   expect(facts(entry(settled).content)).toBe([
     "  passed        bun run test",
     "  notices change test/negative.test.mjs: fails on the base, passes with the change; by the whole check, `bun run test`; added in this request",
@@ -1924,7 +1924,7 @@ function workspace(): string {
 it("verifies each repository the request changed in a folder of repositories, from its own base with its own commands", async () => {
   const root = workspace();
   const rulesBase = await headCommit(join(root, "rules"));
-  // A branch that exists at admission, with a commit of its own, that the request merges in (#599).
+  // A branch that exists at admission, with a commit of its own, that the request merges in.
   const published = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", "published"],
     { cwd: join(root, "rules"), encoding: "utf8" }).stdout.trim();
   git(join(root, "rules"), "branch", "published", published);
