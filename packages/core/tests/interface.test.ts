@@ -111,7 +111,7 @@ describe("Tesota's interface on the engine", () => {
     // Drawn from the orb the theme gives: its first working frame's pixels, top and bottom, are truecolor.
     const frame = workingOrb(shellTheme("dark", "truecolor")).phases.working.frames[0]!;
     expect(frame.map((line) => stripTerminalSequences(line))).toEqual(["▀▀▀▀", "▀▀▀▀"]);
-    await terminal.untilGone("Working", 20_000);
+    await terminal.untilGone("Working");
     await quit(terminal, running);
   }, 30_000);
 

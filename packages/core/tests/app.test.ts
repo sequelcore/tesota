@@ -1171,7 +1171,7 @@ describe("tesota-core", () => {
     expect(await terminal.until("This project's MCP servers would start")).toContain("theirs");
     terminal.type(enter);
     send(terminal, "/mcp reconnect theirs");
-    await terminal.until("theirs: connected.", 15_000);
+    await terminal.until("theirs: connected.");
     send(terminal, "/mcp");
     const listed = await terminal.until("MCP servers");
     expect(listed).toContain("mine");
