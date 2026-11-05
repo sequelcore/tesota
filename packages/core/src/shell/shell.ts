@@ -19,6 +19,7 @@ import type { QuestionOutcome, QuestionSubmit } from "../questions.ts";
 import { createQuestionDraft, type QuestionDraft, QuestionForm } from "./question.ts";
 import { framed, frameTitle, type FrameTone } from "./frame.ts";
 import { terminalText } from "../../../../src/terminal-text.ts";
+import { WarningsView, withWarningNotice } from "./warnings.ts";
 
 const queueReplyKey = { key: "alt+enter", label: "Alt+Enter" } as const;
 const stopRunKey = { key: "escape", label: "Esc" } as const;
@@ -143,6 +144,10 @@ export interface Shell {
   busy(state: "working" | "settling" | undefined): void;
   /** Writes a line of the shell's own into the conversation. */
   note(text: string, tone?: "muted" | "error" | "warning"): void;
+  /** Retains a nonblocking diagnostic for this session, with a passive footer notice. */
+  warn(id: string, details: string): void;
+  /** Opens retained diagnostics without changing the current draft. */
+  showWarnings(): void;
   /** Draws the footer again, as `status` now says it. */
   redraw(): void;
   /** Gives the terminal to another program for as long as `work` runs, such as Claude Code's sign-in (#642), then draws the shell again. */
@@ -168,6 +173,12 @@ export interface Shell {
 export function startShell(options: ShellOptions): Shell {
   const { theme, terminal } = options;
   let session = options.session;
+  const warnings = new WeakMap<EngineSession, { readonly active: Map<string, string>; readonly dismissed: Map<string, string> }>();
+  const warningsFor = (owner: EngineSession) => {
+    let state = warnings.get(owner);
+    if (state === undefined) { state = { active: new Map(), dismissed: new Map() }; warnings.set(owner, state); }
+    return state;
+  };
   let busy = false;
   const copy = options.copy ?? (async (text: string) => copyToClipboard(text, (data) => terminal.write(data)));
   const altOptions: TuiAltScreenOptions = {
@@ -237,6 +248,13 @@ export function startShell(options: ShellOptions): Shell {
   const footerSlot = new Container();
   const footer = new Text("", 1, 0);
   const drawFooter = (): void => { footer.setText(theme.fg("dim", options.status())); };
+  const warningFooter: Component = {
+    render: (width) => {
+      const lines = footerSlot.render(width);
+      return covering === undefined ? withWarningNotice(lines, warningsFor(session).active.size, width, theme) : lines;
+    },
+    invalidate: () => { footerSlot.invalidate(); },
+  };
   drawFooter();
   // While a question waits in the input's place the run waits for the operator, as the footer says, so it does not
   // also show as working: the question leads, directly under the conversation.
@@ -252,13 +270,13 @@ export function startShell(options: ShellOptions): Shell {
     if (activity || handedOver || stage === undefined) return undefined;
     const block = stage.block(width);
     const free = terminal.rows - document.render(width).length
-      - [...docked, footerSlot].reduce((rows, component) => rows + component.render(width).length, 0);
+      - [...docked, warningFooter].reduce((rows, component) => rows + component.render(width).length, 0);
     if (block.length === 0 || block.length > free) return undefined;
     const below = Math.floor((free - block.length) / 2);
     return { above: free - block.length - below, block, below };
   };
   const lift: Component = { render: (width) => Array<string>(welcome(width)?.below ?? 0).fill(""), invalidate: () => undefined };
-  const dock: readonly Component[] = [...docked, lift, footerSlot];
+  const dock: readonly Component[] = [...docked, lift, warningFooter];
   // This decoration belongs to the live viewport, not the document exported to scrollback.
   const liveDocument = new Container();
   liveDocument.addChild(document);
@@ -273,7 +291,7 @@ export function startShell(options: ShellOptions): Shell {
     tui.setLayoutRoot(new VStack([
       { component: new ScrollView(liveDocument, { follow: "end", primary: true, overscroll: "chain" }), basis: 0, grow: 1, shrink: 1, minSize: 1 },
       // The footer never gives up its row: what waits for the operator, and the mode, show however tall a question is.
-      { component: new VStack(dock.map((component) => ({ component, shrink: component === footerSlot ? 0 : 1, minSize: 0 }))), basis: "auto", grow: 0, shrink: 1,
+      { component: new VStack(dock.map((component) => ({ component, shrink: component === warningFooter ? 0 : 1, minSize: 0 }))), basis: "auto", grow: 0, shrink: 1,
         minSize: 1 },
     ]));
   } else {
@@ -286,6 +304,24 @@ export function startShell(options: ShellOptions): Shell {
   /** What `overlay` shows over the shell: while it does, a question waits in the input's place under it without the keyboard. */
   let overlayBody: (Component & { dispose?: () => void }) | undefined;
   let hideOverlay: (() => void) | undefined;
+  let warningView: WarningsView | undefined;
+  let hideWarnings: (() => void) | undefined;
+  const showWarnings = (): void => {
+    if (hideWarnings !== undefined) { hideWarnings(); return; }
+    if (covering !== undefined) return;
+    const state = warningsFor(session);
+    warningView = new WarningsView({
+      entries: [...state.active].map(([id, details]) => ({ id, details })), theme, rows: () => terminal.rows,
+      dismiss: ({ id, details }) => {
+        if (state.active.get(id) !== details) return;
+        state.active.delete(id);
+        state.dismissed.set(id, details);
+      },
+      copy, redraw: () => { tui.requestRender(); }, close: () => { hideWarnings?.(); },
+      disposed: () => { warningView = undefined; hideWarnings = undefined; },
+    });
+    hideWarnings = shell.overlay(warningView);
+  };
   /** The keyboard back to the latest question, or the editor, unless an overlay has it. */
   const refocus = (): void => {
     if (overlayBody !== undefined) return;
@@ -616,6 +652,15 @@ export function startShell(options: ShellOptions): Shell {
     return { consume: true };
   });
   tui.addInputListener((data) => {
+    if (warningView !== undefined) {
+      warningView.handleInput(data);
+      tui.requestRender();
+      return { consume: true };
+    }
+    if (matchesKey(data, "f2") && covering === undefined) { showWarnings(); return { consume: true }; }
+    return undefined;
+  });
+  tui.addInputListener((data) => {
     if (matchesKey(data, "ctrl+c")) {
       if (visibleClarification !== undefined) { void session.abort(); return { consume: true }; }
       if (editor.getText() !== "") editor.setText("");
@@ -682,7 +727,7 @@ export function startShell(options: ShellOptions): Shell {
     });
   }
 
-  return {
+  const shell: Shell = {
     pick: (title, items) => {
       const list = new BandedList([...items], Math.min(items.length, 12), theme);
       return dialog<string>(heading(title), list, (settle) => {
@@ -715,6 +760,7 @@ export function startShell(options: ShellOptions): Shell {
       });
     },
     show(next, nextSurface, state) {
+      hideWarnings?.();
       detachClarification();
       unsubscribe();
       drafts.set(session, editor.getText());
@@ -800,6 +846,15 @@ export function startShell(options: ShellOptions): Shell {
     },
     busy: (state) => { working(state); tui.requestRender(); },
     note,
+    warn(id, details) {
+      const state = warningsFor(session);
+      const text = terminalText(details);
+      if (state.dismissed.get(id) === text) return;
+      state.dismissed.delete(id);
+      state.active.set(id, text);
+      tui.requestRender();
+    },
+    showWarnings,
     redraw: () => { drawFooter(); tui.requestRender(); },
     handOver: async (work) => {
       handedOver = true;
@@ -818,4 +873,5 @@ export function startShell(options: ShellOptions): Shell {
     stop,
     stopped,
   };
+  return shell;
 }

@@ -81,6 +81,12 @@ type, model, depth and state; Ctrl+O shows its report. `/agents` lists
 them under the sessions. Each is a session of its own that `/resume` opens
 once it ends.
 
+Use `/agents types` to inspect the definitions loaded in the attached session,
+or `/agents types reviewer` for one type. Each entry shows its source file and
+default model, labeled **configured** or **inherited** from that session.
+An invocation's `model` overrides this default. Availability is checked when
+the subagent starts; inspecting a definition starts no subagent.
+
 ## Agent types
 
 A Markdown file with frontmatter, in Claude Code's format:
@@ -100,12 +106,18 @@ You review a change. Read the diff, then report each defect with its file and li
 | --- | --- |
 | `name` | For `type`; the file's name when not given |
 | `description` | When to use it; a file without one is left out |
-| `model` | `provider/id`; anything else, such as `sonnet` or `inherit`, leaves it to the call or session |
+| `model` | `provider/id`, or `inherit` (the default) |
 | `writes` | `true` for a writer |
 | `background` | `false` to wait for it (`is_background` too) |
 
-The body joins the subagent's instructions; other fields are ignored. A
-type whose `model` isn't `provider/id` still loads, and the shell says once
-which model it runs on instead. Tesota reads `~/.agents/agents`, then
+The body joins the subagent's instructions; other fields are ignored, including
+model keys owned by other harnesses, such as `claude.model` and `codex.model`.
+An omitted `model`, or `model: inherit`, inherits the session's model quietly.
+An unsupported native value, such as `model: sonnet`, still loads and inherits.
+The shell retains its diagnostic behind a footer warning count. F2 or
+`/warnings` opens the details; `/agents types` also shows the ignored value,
+source file and repair. Print mode writes a short warning to stderr.
+
+Tesota reads `~/.agents/agents`, then
 `~/.tesota/agents`, then each project's `.agents/agents` from the root
 down; the nearer wins by name, as with [skills](instructions-and-skills.md#skills).

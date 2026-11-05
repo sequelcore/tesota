@@ -2,7 +2,7 @@ import { readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
-import { catalog, frontmatter, frontmatterFields, projectFolders, readText } from "./instructions.ts";
+import { catalog, frontmatterFields, projectFolders, readText } from "./instructions.ts";
 
 /**
  * An agent type (#525): a Markdown file in an agents folder, in Claude
@@ -12,10 +12,10 @@ export interface AgentType {
   readonly name: string;
   readonly description: string;
   readonly path: string;
-  /** The model it runs on, as `provider/id`; a Claude Code alias such as `sonnet` or `inherit` leaves it to the call or the parent. */
+  /** A configured `provider/id`; omission and `inherit` leave selection to the call or parent. */
   readonly model?: string;
-  /** A model it names that Tesota does not run (#568): its `model` when not `provider/id`, or other tools' keys such as `claude.model`. */
-  readonly unusedModel?: string;
+  /** An unsupported native `model` value; other harnesses' metadata is ignored (#794). */
+  readonly unsupportedModel?: string;
   /** `writes: true`: it changes files, in a worktree of its own. */
   readonly writes?: true;
   /** `background: false`: the call waits for it; Claude Code's `background` and pstack's `is_background` both say so. */
@@ -36,13 +36,10 @@ export function agentTypesIn(folder: string): AgentType[] {
     if (read === undefined || description === "") return [];
     const { fields } = read;
     const model = fields.get("model") ?? "";
-    const found = frontmatter(content ?? "");
-    const others = (found?.lines.slice(1, found.end) ?? []).flatMap((line) => /^([\w-]+\.model):\s*\S/u.exec(line)?.[1] ?? []);
-    const unusedModel = model.includes("/") || model === "inherit" ? undefined
-      : model !== "" ? `model: ${model}` : others.length > 0 ? others.join(", ") : undefined;
+    const unsupportedModel = model.includes("/") || model === "inherit" || model === "" ? undefined : model;
     const background = fields.get("background") ?? fields.get("is_background");
     return [{ name: fields.get("name") || basename(name, ".md"), description, path, instructions: read.body,
-      ...model.includes("/") ? { model } : {}, ...unusedModel === undefined ? {} : { unusedModel },
+      ...model.includes("/") ? { model } : {}, ...unsupportedModel === undefined ? {} : { unsupportedModel },
       ...fields.get("writes") === "true" ? { writes: true } : {},
       ...background === "false" ? { background: false } : {} }];
   });
@@ -67,14 +64,18 @@ export function agentCatalog(types: readonly AgentType[], contextWindow: number 
     ({ name, description, after: writes === true ? " (writes)" : "" })), "agent types", contextWindow);
 }
 
-/**
- * What the operator is told once of the types whose model Tesota does not
- * run (#568): they run on `model`, the session's, unless the call names one;
- * none when every type's model is usable.
- */
-export function unusedModels(types: readonly AgentType[], model: string): string | undefined {
-  const named = types.flatMap(({ name, unusedModel }) => unusedModel === undefined ? [] : [`${name} (${unusedModel})`]);
-  if (named.length === 0) return undefined;
-  return `Agent type${named.length === 1 ? "" : "s"} ${named.join(", ")} run${named.length === 1 ? "s" : ""} on the session's model, ${model}, `
-    + "unless the call names one: Tesota takes a type's model only as provider/id.";
+/** A short startup diagnostic; role-specific details stay in /agents types (#794). */
+export function agentModelWarning(types: readonly AgentType[]): string | undefined {
+  const count = types.filter(({ unsupportedModel }) => unsupportedModel !== undefined).length;
+  if (count === 0) return undefined;
+  return `${count} agent type${count === 1 ? " has" : "s have"} an unsupported model. See /agents types.`;
+}
+
+/** The loaded definition and its default model; availability is checked when a child starts. */
+export function agentTypeDetails(type: AgentType, inheritedModel: string | undefined): string {
+  return [`Agent type ${type.name}`, type.description,
+    `Model: ${type.model ?? inheritedModel ?? "none selected"} (${type.model === undefined ? "inherited" : "configured"})`,
+    `Source: ${type.path}`,
+    ...type.unsupportedModel === undefined ? [] : [`Ignored model: ${type.unsupportedModel}. Set model: provider/id or inherit.`],
+    "Invocation model overrides this default; availability is checked when started."].join("\n");
 }

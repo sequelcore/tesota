@@ -222,6 +222,8 @@ export interface Continuation {
 
 /** The engine's session as the loop runs it: the contract's, its conversation, and its events. */
 export interface LoopSession extends Session {
+  /** The model this session uses, including the default inherited by its children. */
+  readonly model: Model<Api>;
   /** The contract's prompt; `continues` starts a run that continues an earlier one (#651) instead of taking a new base. */
   prompt(text: string, options?: PromptOptions & { readonly continues?: Continuation }): Promise<void>;
   /** The conversation in order, as the model and the shell see it. */
@@ -1414,6 +1416,7 @@ export function createLoop(options: LoopOptions): LoopSession {
   }
 
   return {
+    model: options.model,
     async prompt(text, { streamingBehavior, source = "interactive", continues } = {}) {
       if (questionFailure !== undefined) throw questionFailure;
       if (disposed !== undefined) throw new Error(disposedReason);
