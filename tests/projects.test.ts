@@ -144,7 +144,7 @@ it("gives Tesota's engine tests to packages/core and root files to the root (#63
     .toMatchObject([{ folder: "packages/core", commands: [{ command: "npm run check", folder: "packages/core" }] }]);
   expect(owningProjects(projects, ["tests/projects.test.ts"]).map(({ folder }) => folder)).toEqual([""]);
   expect(packageTest(root, "packages/core")).toEqual({
-    command: "cd packages/core && npm run test --", script: "bun scripts/isolated.ts bun test --timeout 30000",
+    command: "cd packages/core && npm run test --", script: "bun scripts/isolated.ts bun scripts/tests.ts",
   });
 });
 
