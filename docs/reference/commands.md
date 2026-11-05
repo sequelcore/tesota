@@ -153,10 +153,10 @@ submit the batch.
 
 | Key | Action |
 | --- | --- |
-| Tab, Shift+Tab, ←, → | Switch Usage and Accounts tabs |
+| Tab, Shift+Tab, ←, → | Switch Usage, Accounts and Roles tabs |
 | `r` | Read usage again |
-| ↑ ↓ | Scroll Usage or select an account on Accounts |
-| Page Up, Page Down | Scroll Usage by five rows or select the previous or next account on Accounts |
+| ↑ ↓ | Scroll, or select an account on Accounts |
+| Page Up, Page Down | Scroll by five rows, or select the previous or next account on Accounts |
 | Enter | Manage a declared account on Accounts: sign in again or remove it |
 | `a` | Add an account on Accounts |
 | Esc | Close the panel |

@@ -537,6 +537,24 @@ describe("tesota-core", () => {
     } finally { terminal.type("\x1b"); send(terminal, "/quit"); await running; }
   });
 
+  test("the usage panel's Roles tab shows the model each role runs on and where it is chosen, from the settings and agent types", async () => {
+    const { terminal, running } = await app([], { model: "faux/faux-1", settingsFile: { model: "faux/faux-1", claimcheckModel: "faux/faux-2" },
+      types: { explorer: "---\nname: explorer\ndescription: Explores\nmodel: faux/faux-2\n---\nExplore.\n",
+        helper: "---\nname: helper\ndescription: Helps\n---\nHelp.\n" } });
+    try {
+      send(terminal, "/usage");
+      await terminal.until("[ Usage ]");
+      terminal.type("\x1b[Z");
+      const screen = (await terminal.until("Least left")).split("\n");
+      const row = (role: string): string => screen.find((line) => line.includes(` ${role} `)) ?? "";
+      expect(row("this session")).toMatch(/faux-1 +\/model +faux/u);
+      expect(row("open cases")).toMatch(/faux-1 +inherited +faux/u);
+      expect(row("ClaimCheck")).toMatch(/faux-2 +setting claimcheckModel +faux/u);
+      expect(row("explorer")).toMatch(/faux-2 +type file +faux/u);
+      expect(row("helper")).toMatch(/faux-1 +inherited +faux/u);
+    } finally { terminal.type("\x1b"); send(terminal, "/quit"); await running; }
+  });
+
   test("/usage on OpenAI's ChatGPT sign-in says its limits are not reported, marked as this session", async () => {
     const { terminal, running } = await app([], { served: ["gpt-6.1-sol"], model: "openai/gpt-6.1-sol" });
     try {
