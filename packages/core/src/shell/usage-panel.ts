@@ -1,11 +1,15 @@
 import { type Component, type Focusable, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { ShellTheme } from "../../../../src/theme.ts";
 import type { AccountRow } from "../accounts.ts";
+import type { RoleRow } from "../roles.ts";
 import { type AccountUsage, bar, span, USAGE_SOURCES_NOTE, type UsageMeter, type UsageReading } from "../usage.ts";
 import { meterTone, shownPercent } from "../usage-rule.ts";
 
-export type UsageTab = "usage" | "accounts";
-const tabs: readonly { readonly tab: UsageTab; readonly title: string }[] = [{ tab: "usage", title: "Usage" }, { tab: "accounts", title: "Accounts" }];
+export type UsageTab = "usage" | "accounts" | "roles";
+const tabs: readonly { readonly tab: UsageTab; readonly title: string }[] = [{ tab: "usage", title: "Usage" }, { tab: "accounts", title: "Accounts" },
+  { tab: "roles", title: "Roles" }];
+export const ROLES_NOTE: string = "Change a verification role's model with its flag or setting (openCasesModel, claimcheckModel), an agent type's in its file "
+  + "(/agents types), and the session's with /model.";
 
 /** What the operator can do from the panel; managing an account closes it first, since the choice that follows is the shell's own. */
 export interface UsageActions {
@@ -29,6 +33,8 @@ export interface UsageView {
   read(accounts: readonly AccountRow[], onEach: (usage: AccountUsage) => void, signal: AbortSignal): Promise<unknown>;
   /** Whether OpenAI is signed in with ChatGPT (OAuth, not an API key), whose limits no source reads. */
   openaiChatGPT(): Promise<boolean>;
+  /** Each role with the model it runs on, read when the panel opens. */
+  roles(): readonly RoleRow[];
 }
 
 /** The `openai` provider id, on which a session can draw on ChatGPT without any account whose limits the panel reads. */
@@ -54,12 +60,15 @@ const providerNames: Readonly<Record<AccountRow["provider"], string>> = { "claud
  * footer; and three rows of the session above.
  */
 const CHROME_ROWS = 10;
+
+/** A role's row on the Roles tab, each cell painted. */
+interface RoleCells { readonly role: string; readonly model: string; readonly from: string; readonly account: string; readonly left: string }
 const SEGMENTS = [20, 10, 5] as const;
 
 /**
- * The shell's usage panel: how much each account has left, and the accounts
- * themselves, in two tabs of a dialog in the input's place, under the
- * session, which keeps running above it.
+ * The shell's usage panel: how much each account has left, the accounts
+ * themselves, and the account each role draws on, in three tabs of a dialog
+ * in the input's place, under the session, which keeps running above it.
  * It opens at once on the saved readings and replaces each as it is read;
  * nothing in it is written to the session's transcript.
  */
@@ -72,6 +81,7 @@ export class UsagePanel implements Component, Focusable {
   #problem: string | undefined;
   #usage = new Map<string, AccountUsage>();
   #openaiChatGPT = false;
+  #roles: readonly RoleRow[];
   #selected = 0;
   #scroll = 0;
   /** What stops the current round of reads: a new round, or closing the panel. */
@@ -81,6 +91,7 @@ export class UsagePanel implements Component, Focusable {
     this.#options = options;
     this.#now = options.now ?? Date.now;
     this.#tab = options.tab ?? "usage";
+    this.#roles = options.view.roles();
   }
 
   get tab(): UsageTab { return this.#tab; }
@@ -131,8 +142,11 @@ export class UsagePanel implements Component, Focusable {
   handleInput(data: string): void {
     const { actions } = this.#options;
     if (matchesKey(data, "escape")) { actions.close(); return; }
-    if (matchesKey(data, "tab") || matchesKey(data, "right") || matchesKey(data, "shift+tab") || matchesKey(data, "left")) {
-      this.#tab = this.#tab === "usage" ? "accounts" : "usage";
+    const turn = matchesKey(data, "tab") || matchesKey(data, "right") ? 1 : matchesKey(data, "shift+tab") || matchesKey(data, "left") ? -1 : 0;
+    if (turn !== 0) {
+      const at = tabs.findIndex(({ tab }) => tab === this.#tab);
+      this.#tab = tabs[(at + turn + tabs.length) % tabs.length]?.tab ?? "usage";
+      this.#scroll = 0;
       this.#options.redraw();
       return;
     }
@@ -158,9 +172,10 @@ export class UsagePanel implements Component, Focusable {
     const inner = Math.max(10, width);
     const usage = this.#usageBody(inner);
     const accounts = this.#accountsList(inner);
+    const roles = this.#rolesBody(inner);
     const room = Math.max(3, this.#options.rows() - CHROME_ROWS);
-    // As tall as the taller tab, so switching never moves the frame, and no taller than the terminal allows.
-    const height = Math.min(room, Math.max(usage.length, accounts.length));
+    // As tall as the tallest tab, so switching never moves the frame, and no taller than the terminal allows.
+    const height = Math.min(room, Math.max(usage.length, accounts.length, roles.length));
     let body: string[];
     let more = "";
     if (this.#tab === "accounts") {
@@ -170,9 +185,10 @@ export class UsagePanel implements Component, Focusable {
       body = accounts.slice(offset, offset + height);
       more = accounts.length > offset + height ? `  ↓ ${accounts.length - offset - height} more` : "";
     } else {
-      this.#scroll = Math.min(this.#scroll, Math.max(0, usage.length - height));
-      body = usage.slice(this.#scroll, this.#scroll + height);
-      more = usage.length > this.#scroll + height ? `  ↓ ${usage.length - this.#scroll - height} more` : "";
+      const shown = this.#tab === "roles" ? roles : usage;
+      this.#scroll = Math.min(this.#scroll, Math.max(0, shown.length - height));
+      body = shown.slice(this.#scroll, this.#scroll + height);
+      more = shown.length > this.#scroll + height ? `  ↓ ${shown.length - this.#scroll - height} more` : "";
     }
     // The dialog's frame gives the title; the hint is the last row.
     const lines = [this.#tabRow(inner), theme.fg("dim", "─".repeat(inner)), ...body,
@@ -196,7 +212,7 @@ export class UsagePanel implements Component, Focusable {
     const row = tabs.map(({ tab, title }) => tab === this.#tab ? theme.bg("selectedBg", theme.bold(theme.fg("text", `[ ${title} ]`)))
       : theme.fg("muted", `  ${title}  `)).join(" ");
     const waiting = [...this.#usage.values()].filter((usage) => usage.state === "reading").length;
-    const state = this.#tab === "usage" && waiting > 0 ? theme.fg("dim", `reading ${this.#usage.size - waiting} of ${this.#usage.size}…`) : "";
+    const state = this.#tab !== "accounts" && waiting > 0 ? theme.fg("dim", `reading ${this.#usage.size - waiting} of ${this.#usage.size}…`) : "";
     const gap = inner - visibleWidth(row) - visibleWidth(state);
     return gap >= 2 ? `${row}${" ".repeat(gap)}${state}` : row;
   }
@@ -291,6 +307,61 @@ export class UsagePanel implements Component, Focusable {
 
   #mark(account: AccountRow, session: string | undefined): string {
     return account.id === session ? this.#options.theme.fg("accent", " · this session") : "";
+  }
+
+  // ---- the Roles tab
+
+  /**
+   * A table of each role: the model it runs on, where that is chosen, the
+   * account it draws on, and that account's least-left window; the session
+   * first, then the verification roles and the agent types under their own
+   * headings. Where the table is wider than the panel, each role takes two lines.
+   */
+  #rolesBody(inner: number): string[] {
+    const { theme } = this.#options;
+    const cells = this.#roles.map((row) => this.#roleCells(row));
+    const width = (pick: (cell: RoleCells) => string, title: string): number => Math.max(title.length, ...cells.map((cell) => visibleWidth(pick(cell)))) + 2;
+    const widths = [width((cell) => cell.role, "Role"), width((cell) => cell.model, "Model"), width((cell) => cell.from, "From"),
+      width((cell) => cell.account, "Account")] as const;
+    const wide = 2 + widths.reduce((sum, each) => sum + each, 0) + Math.max(10, ...cells.map((cell) => visibleWidth(cell.left))) <= inner;
+    const pad = (text: string, to: number): string => text + " ".repeat(Math.max(0, to - visibleWidth(text)));
+    const line = (cell: RoleCells): string[] => wide
+      ? [`  ${pad(cell.role, widths[0])}${pad(cell.model, widths[1])}${pad(cell.from, widths[2])}${pad(cell.account, widths[3])}${cell.left}`]
+      : [`  ${pad(cell.role, widths[0])}${cell.model}`, `    ${[cell.from, cell.account, cell.left].filter((each) => each !== "").join(theme.fg("muted", " · "))}`];
+    const heading = wide ? [theme.fg("muted", `  ${"Role".padEnd(widths[0])}${"Model".padEnd(widths[1])}${"From".padEnd(widths[2])}${"Account".padEnd(widths[3])}Least left`)] : [];
+    const group = (name: RoleRow["group"], title: string): string[] => {
+      const rows = cells.filter((_, at) => this.#roles[at]?.group === name);
+      return rows.length === 0 ? [] : ["", theme.fg("muted", title), ...rows.flatMap(line)];
+    };
+    return [...heading, ...cells.filter((_, at) => this.#roles[at]?.group === "session").flatMap(line),
+      ...group("verification", "Verification"), ...group("agent", "Agent types"), "", ...wrapTextWithAnsi(theme.fg("muted", ROLES_NOTE), inner)];
+  }
+
+  #roleCells(row: RoleRow): RoleCells {
+    const { theme } = this.#options;
+    const from = theme.fg("muted", row.from);
+    if (row.model === "" || row.model === "off") {
+      return { role: row.role, model: theme.fg("muted", row.model === "" ? "none selected" : "off"), from, account: "", left: "" };
+    }
+    const at = row.model.indexOf("/");
+    const account = at < 0 ? row.model : row.model.slice(0, at);
+    return { role: row.role, model: at < 0 ? row.model : row.model.slice(at + 1), from, account, left: this.#leastLeft(account) };
+  }
+
+  /** The account's window with the least left, as its meter is painted; nothing for a provider no account reads. */
+  #leastLeft(id: string): string {
+    const { theme } = this.#options;
+    const row = this.#accounts?.find((each) => each.id === id);
+    if (row === undefined) return "";
+    const own = this.#usage.get(id);
+    const usage = own?.sameAccountAs === undefined ? own : this.#usage.get(own.sameAccountAs) ?? own;
+    const reading = usage === undefined ? undefined : this.#reading(usage);
+    const least = reading?.meters.reduce<UsageMeter | undefined>((low, meter) => low === undefined || meter.hundredthsLeft < low.hundredthsLeft ? meter : low, undefined);
+    if (least === undefined) return theme.fg("muted", usage === undefined || usage.state === "reading" ? "reading…" : "—");
+    const tone = meterTone(least.hundredthsLeft);
+    const text = `${shownPercent(least.hundredthsLeft)}% ${least.label}`;
+    const stale = usage?.state === "reading" || usage?.state === "last_known";
+    return stale ? theme.fg("dim", text) : theme.fg(tone === "out" ? "error" : tone === "low" ? "warning" : "accent", text);
   }
 
   // ---- the Accounts tab

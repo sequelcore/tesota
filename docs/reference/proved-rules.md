@@ -20,7 +20,7 @@ Run `bun run formal:check` to check the full list.
 
 | File | What it decides | Re-prove |
 | --- | --- | --- |
-| [`src/verification/role-model-rule.ts`](../../src/verification/role-model-rule.ts) | Which verification model wins: nonempty flag, then setting, then session | `lsc check --backend=dafny src/verification/role-model-rule.ts` |
+| [`src/verification/role-model-rule.ts`](../../src/verification/role-model-rule.ts) | Which verification model wins, and where it comes from: nonempty flag, then setting, then session | `lsc check --backend=dafny src/verification/role-model-rule.ts` |
 | [`src/verification/check-origin-rule.ts`](../../src/verification/check-origin-rule.ts) | Failure attribution, observed fixes, source assertions and report completeness | `lsc check --backend=dafny src/verification/check-origin-rule.ts` |
 | [`src/verification/comment-line-rule.ts`](../../src/verification/comment-line-rule.ts) | Whether a parsed line contains only a comment | `lsc check --backend=dafny src/verification/comment-line-rule.ts` |
 | [`src/verification/proof-cover-rule.ts`](../../src/verification/proof-cover-rule.ts) | Whether a changed line lies within a proved, unnarrowed contract | `lsc check --backend=dafny src/verification/proof-cover-rule.ts` |

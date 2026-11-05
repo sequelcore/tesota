@@ -23,6 +23,7 @@ import { loadRules } from "../permissions.ts";
 import { askedSessions, createSession, type EngineSession, firstRequest, openSession, sessionsFolder, type Verifier } from "../session.ts";
 import { checkoutRoot } from "../../../../src/checkout-root.ts";
 import { anyHooks, type Hooks, joinHooks } from "../hooks.ts";
+import { roleRows } from "../roles.ts";
 import { lastFloorNotice, peekSessionFile } from "../session-file.ts";
 import { readStandards } from "../standards.ts";
 import { chartTrust, trust, trusted } from "../trust.ts";
@@ -485,7 +486,9 @@ export async function runApp(options: AppOptions): Promise<void> {
     const view: UsageView = { accounts: (signal, onUpdate) => accountRows(hands, model?.provider, { concurrency: checksAtOnce, signal, onUpdate }),
       pending: (accounts) => pendingUsage(accounts),
       read: (accounts, onEach, signal) => readUsage(accounts, options.usage ?? usageSources(models), { onEach, signal }),
-      openaiChatGPT: async () => (await models.checkAuth("openai"))?.type === "oauth" };
+      openaiChatGPT: async () => (await models.checkAuth("openai"))?.type === "oauth",
+      roles: () => roleRows(model === undefined ? undefined : label(attached.session.model), readSettings(settingsPath).settings, options.flags ?? {},
+        attached.session.types) };
     const panel = new UsagePanel({ theme, view, tab, session: () => model?.provider, rows: () => terminal.rows, redraw: () => { shell.redraw(); },
       actions: { close: () => { hide(); }, manage: (id) => { hide(); void manageAccount(id); }, add: () => { hide(); void addAnAccount(); } } });
     hide = shell.panel("Usage", panel);

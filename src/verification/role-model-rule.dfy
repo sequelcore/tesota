@@ -17,3 +17,21 @@ lemma roleModel_ensures(flag: string, setting: string, session: string)
   ensures ((flag == "") ==> (setting == "") ==> (roleModel(flag, setting, session) == session))
 {
 }
+
+function roleSource(flag: string, setting: string): string
+{
+  if (flag != "") then
+    "flag"
+  else
+    if (setting != "") then
+      "setting"
+    else
+      "session"
+}
+
+lemma roleSource_ensures(flag: string, setting: string)
+  ensures ((flag != "") ==> (roleSource(flag, setting) == "flag"))
+  ensures ((flag == "") ==> (setting != "") ==> (roleSource(flag, setting) == "setting"))
+  ensures ((flag == "") ==> (setting == "") ==> (roleSource(flag, setting) == "session"))
+{
+}

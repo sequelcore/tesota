@@ -86,7 +86,10 @@ Tesota never switches accounts at a limit: the run ends and you choose.
 
 `/usage` and `/accounts` open the usage panel. Usage shows a meter per
 limit window with what's left and when it resets; Accounts signs them in
-again, removes or adds (`a`). `r` reads the limits again. Only
+again, removes or adds (`a`). Roles lists the session, the verification
+roles and the agent types, each with the model it runs on, where that is
+chosen, its account and that account's least-left window; you change them
+where they are chosen. `r` reads the limits again. Only
 `claude-code` and `openai-codex` (OpenAI Codex (legacy) in `/login`) report
 them; readings are kept in `~/.tesota/usage.json`, without credentials.
 
