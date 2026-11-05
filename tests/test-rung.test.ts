@@ -323,7 +323,7 @@ it("names the real packages/core wrapper instead of probing its tests with root 
   const [exercise] = await exerciseTests(root, base, [path], [path], suggestChecks(root), AbortSignal.abort());
   expect(exercise).toMatchObject({ sensitivity: "unknown" });
   expect(exercise?.reason).toContain("by the whole check, `cd packages/core &&");
-  expect(exercise?.reason).toContain("test script `bun scripts/isolated.ts bun test --timeout 30000` cannot be probed per file");
+  expect(exercise?.reason).toContain("test script `bun scripts/isolated.ts bun scripts/tests.ts` cannot be probed per file");
 });
 
 it("does not credit a test added to a project with no tests when the test itself cannot run", async () => {
