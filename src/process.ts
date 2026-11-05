@@ -39,8 +39,10 @@ const closeGraceMs = 2_000;
 
 /**
  * Stop a process and every process it started: `taskkill /T` on Windows, the
- * process group elsewhere. Resolves once `taskkill` has finished, so a
- * stopped run reports only after its processes are gone.
+ * process group elsewhere. Resolves once `taskkill` has finished, or once
+ * no process of the group is left, so a stopped run reports only after its
+ * processes are gone. A killed process can still run for a moment after
+ * the signal, and the child's streams can close before it ends.
  */
 function stopTree(pid: number): Promise<void> {
   if (process.platform === "win32") {
@@ -49,8 +51,22 @@ function stopTree(pid: number): Promise<void> {
         { stdio: "ignore", windowsHide: true }).once("error", () => { done(); }).once("exit", () => { done(); });
     });
   }
-  try { process.kill(-pid, "SIGKILL"); } catch { try { process.kill(pid, "SIGKILL"); } catch { /* already gone */ } }
-  return Promise.resolve();
+  try { process.kill(-pid, "SIGKILL"); } catch {
+    try { process.kill(pid, "SIGKILL"); } catch { /* already gone */ }
+    return Promise.resolve();
+  }
+  return groupGone(pid, performance.now() + closeGraceMs);
+}
+
+/** Resolves once process group `pid` has no process left, or at `deadline`; checks between turns of the event loop, not on a timer. */
+function groupGone(pid: number, deadline: number): Promise<void> {
+  return new Promise((done) => {
+    const check = () => {
+      try { process.kill(-pid, 0); } catch { done(); return; }
+      if (performance.now() >= deadline) done(); else setImmediate(check);
+    };
+    check();
+  });
 }
 
 /** kernel32's job functions as Bun's FFI binds them. */
