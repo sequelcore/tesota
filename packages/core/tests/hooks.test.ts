@@ -163,6 +163,15 @@ describe("trusting a project's hooks", () => {
     expect(trusted(root, "hooks", hash, home)).toBe(true);
     expect(trusted(root, "mcp", hash, home)).toBe(true);
   });
+
+  test("makes the home's folder when nothing has made it yet", () => {
+    const home = join(folder("tesota-core-hooks-user-"), ".tesota");
+    const root = folder("tesota-core-hooks-project-");
+    const hash = trustHash(pre("guard"));
+    trust(root, "hooks", hash, home);
+    expect(trusted(root, "hooks", hash, home)).toBe(true);
+    expect(readFileSync(join(home, "trust.json"), "utf8")).toContain(hash);
+  });
 });
 
 describe("hooks in a session", () => {
