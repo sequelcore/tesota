@@ -93,7 +93,7 @@ it("offers prove from the start where Dafny is on the PATH, and its rules once t
   const root = folder();
   writeFileSync(join(root, "plain.ts"), "export const a = 1;\n");
   const started = await session(root, { dafny: true });
-  expect(started.active()).toEqual(["read", "bash", "prove"]);
+  expect(started.active()).toEqual(["read", "bash", "prove", "check_model"]);
   expect(started.rules()).toBe("");
   writeFileSync(join(root, "rule.ts"), contract);
   started.result("write", "rule.ts");
@@ -104,10 +104,10 @@ it("offers prove from the start where Dafny is on the PATH, and its rules once t
 it("offers prove with its rules from the start in a project with contracts, and not in one without", async () => {
   const root = folder();
   writeFileSync(join(root, "plain.ts"), "export const a = 1;\n");
-  expect((await session(root)).active()).toEqual(["read", "bash"]);
+  expect((await session(root)).active()).toEqual(["read", "bash", "check_model"]);
   writeFileSync(join(root, "rule.ts"), contract);
   const started = await session(root);
-  expect(started.active()).toEqual(["read", "bash", "prove"]);
+  expect(started.active()).toEqual(["read", "bash", "prove", "check_model"]);
   expect(started.rules()).toContain("never remove or loosen a contract");
 });
 
@@ -122,11 +122,11 @@ it("without Dafny, offers prove once the agent writes or edits a contract into a
   writeFileSync(join(root, "rule.ts"), contract);
   started.result("write", "rule.ts", true);
   started.result("read", "rule.ts");
-  expect(started.active()).toEqual(["read", "bash"]);
+  expect(started.active()).toEqual(["read", "bash", "check_model"]);
   started.result("write", "rule.ts");
-  expect(started.active()).toEqual(["read", "bash", "prove"]);
+  expect(started.active()).toEqual(["read", "bash", "check_model", "prove"]);
   started.result("edit", "rule.ts");
-  expect(started.active()).toEqual(["read", "bash", "prove"]);
+  expect(started.active()).toEqual(["read", "bash", "check_model", "prove"]);
 });
 
 it("proves only TypeScript files with annotations inside the project", async () => {

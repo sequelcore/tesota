@@ -51,10 +51,8 @@ Direction, without dates. The plan lives in
   ([#796](https://github.com/sequelcore/tesota/issues/796)).
 - **Background commands that stop before verification**
   ([#524](https://github.com/sequelcore/tesota/issues/524)).
-- **Fewer prerequisites:** the verification toolchain offered on first use,
-  and checking models without Java
-  ([#688](https://github.com/sequelcore/tesota/issues/688),
-  [#738](https://github.com/sequelcore/tesota/issues/738)).
+- **Fewer prerequisites:** the verification toolchain offered on first use
+  ([#688](https://github.com/sequelcore/tesota/issues/688)).
 - Open [bugs](https://github.com/sequelcore/tesota/issues?q=is%3Aissue+is%3Aopen+label%3Abug).
 
 The engine gets what verification needs and fixes to its bugs. Features

@@ -737,7 +737,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
           continue;
         }
         progress.publish({ step: "checking", path: key, startedAt: performance.now(), tally: tallied });
-        const check = yield* step((signal) => checks().checkModel(unit.root, plan.path, unit.changed, signal, undefined,
+        const check = yield* step((signal) => checks().checkModel(unit.root, plan.path, unit.changed, signal,
           progress.operations.forUnit(unit.folder), env, sessionFile === undefined ? undefined : { sessionFile }));
         current.modelsChecked.set(key, check);
         if (check.evidence.outcome === "passed") modelsPassed.set(key, check);

@@ -21,6 +21,14 @@ requests and issues in [sequelcore/tesota](https://github.com/sequelcore/tesota)
   restricted children and request judgments as attributed third-party context.
   Receipts record its source, digest and gaps (#637).
 
+### Changed
+
+- TLA+ models are checked with tla-ts, which Tesota includes, instead of Java
+  and `tla2tools.jar`: neither is needed any more. `tesota doctor` reports
+  tla-ts in place of Java and TLC. Counterexample steps name their arguments,
+  such as `Read(1)`, and a model that leaves no state graph shows the graph as
+  unavailable. Quint models still need Quint and Java (#824).
+
 ### Fixed
 
 - Plain Bun, Vitest and Jest scripts produce fresh reports on both revisions

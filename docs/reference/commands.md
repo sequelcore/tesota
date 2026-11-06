@@ -35,21 +35,21 @@ tesota doctor
 tesota doctor --json
 ```
 
-Lists Dafny with LemmaScript, Java with TLC, Quint, Git, Claude Code (each
+Lists Dafny with LemmaScript, tla-ts, Quint, Git, Claude Code (each
 account) and every chat provider with a local sign-in or key: its status,
 path, version, probe result, what the receipt loses without it, and a
 repair command from [Installation](installation.md#repair-commands). Git,
-Dafny, Java with TLC and a model provider are **core**; Quint and each
+Dafny, tla-ts and a model provider are **core**; Quint and each
 single provider are **optional**. JSON has the same report:
 `capabilities` (`id`, `requirement`, `status`, `path`, `version`, `smoke`,
-`consequence`, `repair`, and `entryPoint` for LemmaScript and TLC),
+`consequence`, `repair`, and `entryPoint` for LemmaScript and tla-ts),
 `warnings` and `exitCode`.
 
 - **available:** the version, help or sign-in probe passed.
 - **unavailable:** not found, no provider available, or Quint on Windows,
   where Apalache can't start.
 - **failed:** found, but the probe failed, timed out, or found an
-  unsupported version (Dafny must be 4, Java at least 11).
+  unsupported version (Dafny must be 4).
 
 Each probe has five seconds and runs in turn. Doctor never installs
 anything, runs tests, proofs or model checks, or sends a model request.

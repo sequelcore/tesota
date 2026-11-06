@@ -149,7 +149,10 @@ export async function captureGraph(dotFile: string, output: string, binding: Gra
     } catch (error) { return { status, reason: `${reason}; manifest could not be written: ${String(error)}` }; }
   };
   try {
-    if (!outputComplete || (await stat(dotFile)).size > limits.bytes || Buffer.byteLength(output) > limits.bytes) {
+    // tla-ts writes no graph when it stops before exploring, as on a syntax error, or when the run is stopped.
+    const size = await stat(dotFile).then(({ size: bytes }) => bytes, () => undefined);
+    if (size === undefined) return await failure("unavailable", "The checker wrote no state graph: it stopped before exploring, or the run was stopped");
+    if (!outputComplete || size > limits.bytes || Buffer.byteLength(output) > limits.bytes) {
       return await failure("limited", "Graph or TLC output exceeds capture byte limit");
     }
     if ([...output.matchAll(/^Error: (.+)$/gmu)].some((error) => !/^Invariant \w+ is violated(?:\.| by the initial state:)|^The behavior up to this point is:/u.test(error[1] ?? ""))) {

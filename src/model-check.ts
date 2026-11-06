@@ -1,13 +1,15 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join, posix } from "node:path";
+import { dirname, join, posix } from "node:path";
+import tlaTs from "tla-ts/package.json" with { type: "json" };
+import { inBinary } from "./binary.js";
 import { StringDecoder } from "node:string_decoder";
 import { type Evidence, contentHash } from "./evidence.js";
 import { git } from "./git.js";
 import { configOf, inProject, modelOwnFiles } from "./model-files.js";
 import { captureGraph, graphContentHash, graphLimits, type GraphCapture, type GraphOptions } from "./model-graph.js";
 import { stateVariables } from "./model-state.js";
-import { tesotaHome } from "./home.js";
 import { noOperations, type OperationResult, type OperationSink, type OperationSpec } from "./operations.js";
 import { runProcess } from "./process.js";
 import { counterexampleSteps } from "./receipt.js";
@@ -23,12 +25,21 @@ export const MODEL_MARKER = "tesota-model";
 
 /** TLC's time limit per run, the proof timeout; a deadlocking fault gets one more run within the same limits. */
 const timeoutMs = 5 * 60_000;
-/** The heap each TLC run may take, as accepted on 2026-10-21. */
+/** The heap each TLC run Quint starts may take, as accepted on 2026-10-21. */
 const maxHeap = "-Xmx2g";
 
-/** Where Tesota finds TLC: `tla2tools.jar` in its tools folder (docs/reference/installation.md). */
-export function tlaToolsJar(): string {
-  return join(tesotaHome(), "tools", "tla2tools.jar");
+/** The TLC implementation Tesota checks TLA+ models with, as the receipt names it. */
+export const tlaChecker: string = `tla-ts ${tlaTs.version}`;
+
+/**
+ * tla-ts's TLC-compatible command, run as its own process so a timeout or a
+ * stop ends it: from a checkout, its script on the runtime running Tesota; in
+ * a binary, which embeds tla-ts, the binary's own `__tla-ts` command.
+ */
+export function tlaTsCommand(): { executable: string; args: readonly string[] } {
+  if (inBinary) return { executable: process.execPath, args: ["__tla-ts"] };
+  const require = createRequire(import.meta.url);
+  return { executable: process.execPath, args: [join(dirname(require.resolve("tla-ts/package.json")), "dist", "cli.js")] };
 }
 
 /** A file a model covers, relative to the project root, and the functions in it the model describes. */
@@ -146,7 +157,7 @@ export async function findModels(root: string): Promise<string[]> {
 function checkTarget(model: string, file: string): string {
   if (language(model) === "quint") return `quint verify --backend=tlc ${file}`;
   const [spec, config] = file.endsWith(".cfg") ? [model, file] : [file, configOf(file)];
-  return `java tlc2.TLC -config ${config} ${spec}`;
+  return `tla-ts tlc2.TLC -config ${config} ${spec}`;
 }
 
 /** How a model run ended, as an operation's result: a violation is a failed run. */
@@ -244,7 +255,7 @@ interface CheckerRun {
 }
 
 function captureOf(run: CheckerRun): GraphCapture {
-  return run.capture ?? { status: "unavailable", reason: "Graph capture requires a session file and a TLC run; Quint graph extraction is unavailable" };
+  return run.capture ?? { status: "unavailable", reason: "Graph capture requires a session file and a TLA+ run; Quint graph extraction is unavailable" };
 }
 
 function distinctStates(output: string): number {
@@ -253,17 +264,14 @@ function distinctStates(output: string): number {
 }
 
 /**
- * TLC on a TLA+ specification of the project at `root`: its configuration,
- * with the header's invariants added so they are what TLC checks, written to
- * a temporary folder that also holds TLC's state and the standard modules it
- * extracts, removed after. A missing Java or TLC is a run that did not start.
+ * tla-ts, with TLC's arguments, on a TLA+ specification of the project at
+ * `root`: its configuration, with the header's invariants added so they are
+ * what it checks, written to a temporary folder that also holds its state,
+ * removed after.
  */
-async function runTlc(root: string, spec: string, config: string, invariants: readonly string[], jar: string,
+async function runTlc(root: string, spec: string, config: string, invariants: readonly string[],
   signal: AbortSignal, capture?: GraphOptions, evidenceHash = "", deadlockCheck = true): Promise<CheckerRun> {
   const started = Date.now();
-  if (await readIfPresent(jar) === undefined) {
-    return { run: "not_started", durationMs: 0, trace: "", output: `TLC is not installed: Tesota looks for tla2tools.jar at ${jar}.` };
-  }
   const directory = await mkdtemp(join(tmpdir(), "tesota-tlc-"));
   try {
     const written = join(directory, posix.basename(config));
@@ -278,13 +286,15 @@ async function runTlc(root: string, spec: string, config: string, invariants: re
     let reportTail = "";
     let violated = false;
     let deadlocked = false;
-    // From the specification's folder, where TLC finds the modules it extends. One worker, as TLC's documentation
+    // From the specification's folder, where it finds the modules it extends. One worker, as TLC's documentation
     // advises for small models: with several, which error a run reports first, such as a deadlock or a broken
     // invariant, can change between runs, and the deadlock retry and the verdict depend on it.
-    const args = [maxHeap, "-XX:+UseParallelGC", `-Djava.io.tmpdir=${directory}`, "-cp", jar, "tlc2.TLC",
+    const command = tlaTsCommand();
+    // As TLC's Java command line, which is how tla-ts takes a temporary folder: it keeps its compile cache there.
+    const args = [...command.args, `-Djava.io.tmpdir=${directory}`, "tlc2.TLC",
       "-workers", "1", "-metadir", join(directory, "states"), "-dump", "dot,actionlabels", dotFile,
       ...capture?.continue === true ? ["-continue"] : [], ...deadlockCheck ? [] : ["-deadlock"], "-config", written, posix.basename(spec)];
-    const ran = await runProcess("java", args, join(root, posix.dirname(spec)),
+    const ran = await runProcess(command.executable, args, join(root, posix.dirname(spec)),
     signal, timeoutMs, undefined, { onStdout: (chunk) => {
       const decoded = decoder.write(chunk);
       reportTail += decoded;
@@ -294,11 +304,11 @@ async function runTlc(root: string, spec: string, config: string, invariants: re
       outputBytes += chunk.length;
       if (outputBytes <= (capture?.limits?.bytes ?? graphLimits.bytes)) capturedOutput += decoded;
     } });
-    const output = ran.ended === "not_started" ? `Java could not start, so TLC did not run: ${ran.output}` : ran.output;
+    const output = ran.ended === "not_started" ? `tla-ts could not start, so the model was not checked: ${ran.output}` : ran.output;
     return { run: reportedTlcRun(tlcRun(ran.ended === "cancelled", ran.ended === "timed_out", ran.ended !== "not_started", ran.exitCode ?? -1,
       distinctStates(output)), violated, deadlocked), output, trace: ran.stdout, durationMs: Date.now() - started,
       ...capture === undefined ? {} : { capture: await captureGraph(dotFile, capturedOutput, { sessionFile: capture.sessionFile, root, model: spec, config,
-          command: ["java", ...args], startedAt: new Date(started).toISOString(), finishedAt: new Date().toISOString(),
+          command: [command.executable, ...args], startedAt: new Date(started).toISOString(), finishedAt: new Date().toISOString(),
           processEnded: ran.ended, evidenceOutputHash: graphContentHash(output), modelHash: graphContentHash(modelSource), configHash: graphContentHash(configSource),
           effectiveConfigHash: graphContentHash(effectiveConfig), evidenceHash, exitCode: ran.exitCode }, capture, outputBytes <= (capture.limits?.bytes ?? graphLimits.bytes)) } };
   } finally { await rm(directory, { recursive: true, force: true }); }
@@ -338,11 +348,11 @@ async function runQuint(root: string, model: string, invariants: readonly string
 }
 
 /** One checker run of a model or a fault, in the model's language: a TLA+ fault may be another configuration of the same specification. */
-function check(root: string, model: string, file: string, invariants: readonly string[], jar: string, signal: AbortSignal,
+function check(root: string, model: string, file: string, invariants: readonly string[], signal: AbortSignal,
   capture?: GraphOptions, evidenceHash?: string, deadlockCheck = true): Promise<CheckerRun> {
   if (language(model) === "quint") return runQuint(root, file, invariants, signal);
-  return file.endsWith(".cfg") ? runTlc(root, model, file, invariants, jar, signal, capture, evidenceHash, deadlockCheck)
-    : runTlc(root, file, configOf(file), invariants, jar, signal, capture, evidenceHash, deadlockCheck);
+  return file.endsWith(".cfg") ? runTlc(root, model, file, invariants, signal, capture, evidenceHash, deadlockCheck)
+    : runTlc(root, file, configOf(file), invariants, signal, capture, evidenceHash, deadlockCheck);
 }
 
 /** A planted fault's check: how it ended, what that shows, and what the checker printed. */
@@ -356,14 +366,14 @@ export interface FaultCheck extends ModelFault {
 }
 
 /** Check a fault, retrying a deadlock alone without the deadlock check under identical limits. */
-async function checkFault(root: string, path: string, fault: ModelFault, invariants: readonly string[], jar: string,
+async function checkFault(root: string, path: string, fault: ModelFault, invariants: readonly string[],
   signal: AbortSignal, ops: OperationSink, spec: OperationSpec, planned: string | undefined,
   capture: GraphOptions | undefined, evidenceHash: string): Promise<FaultCheck> {
-  const ran = await ops.run(spec, () => check(root, path, fault.path, invariants, jar, signal, capture, evidenceHash),
+  const ran = await ops.run(spec, () => check(root, path, fault.path, invariants, signal, capture, evidenceHash),
     ({ run }) => modelRunResult(run), planned);
   const retrySpec: OperationSpec = { ...spec, target: `${checkTarget(path, fault.path)} -deadlock` };
   const retry = ran.run !== "deadlocked" ? undefined : await ops.run(retrySpec,
-    () => check(root, path, fault.path, invariants, jar, signal, capture, evidenceHash, false),
+    () => check(root, path, fault.path, invariants, signal, capture, evidenceHash, false),
     ({ run }) => modelRunResult(run));
   const final = retry ?? ran;
   return { ...fault, verdict: faultVerdict(final.run, retry !== undefined),
@@ -429,13 +439,13 @@ export async function modelContent(root: string, path: string, header: ModelHead
 /**
  * Check the model at `path` of the project at `root`, which the request
  * changed together with `changed`: TLC on the model and, once it passes, on
- * each planted fault, each run within the proof timeout and a 2 GB heap;
+ * each planted fault, each run within the proof timeout;
  * then the replay its header names, if any. A header that misses a part
  * fails without running anything. The evidence binds the model, its
  * faults and its covered files as they were before the check.
  */
 export async function checkModel(root: string, path: string, changed: readonly string[], signal: AbortSignal,
-  jar: string = tlaToolsJar(), ops: OperationSink = noOperations, env?: Environment, capture?: GraphOptions): Promise<ModelCheck> {
+  ops: OperationSink = noOperations, env?: Environment, capture?: GraphOptions): Promise<ModelCheck> {
   const started = Date.now();
   const source = await readIfPresent(join(root, path)) ?? "";
   const header = modelHeader(source) ?? { covers: [], invariants: [], atomic: [], omits: [], faults: [] };
@@ -448,7 +458,8 @@ export async function checkModel(root: string, path: string, changed: readonly s
   // Judged once the check ends: a model written with its code that passed is measured against the code as the request leaves it.
   const stalenessOf = (outcome: ProofOutcome): Staleness =>
     staleness(withCode, outcome, since !== undefined, covered.map((file) => since?.includes(file) ?? true));
-  const claim = `TLC checks that ${header.invariants.join(", ") || "the model's invariants"} hold in every reachable state of ${path}` +
+  const checker = language(path) === "quint" ? "TLC, through Quint," : `${tlaChecker}, a TLC implementation,`;
+  const claim = `${checker} checks that ${header.invariants.join(", ") || "the model's invariants"} hold in every reachable state of ${path}` +
     `${header.faults.length === 0 ? "" : `, and that each of its ${header.faults.length} planted faults breaks one`}.`;
   const evidence = (main: CheckerRun, faults: readonly FaultCheck[]): Evidence => ({ verifier: "tlc", claim, limits,
     outcome: modelOutcome(main.run, faults.map(({ verdict }) => verdict)), output: main.output, durationMs: Date.now() - started,
@@ -467,11 +478,11 @@ export async function checkModel(root: string, path: string, changed: readonly s
   const replaySpec: OperationSpec | undefined = header.replay === undefined ? undefined
     : { method: "model_replay", unit: "", target: header.replay, parent: mainId };
   const replayId = replaySpec === undefined ? undefined : ops.plan(replaySpec);
-  const main = await ops.run(mainSpec, () => check(root, path, path, header.invariants, jar, signal, capture, contentHash(content)), ({ run }) => modelRunResult(run), mainId);
+  const main = await ops.run(mainSpec, () => check(root, path, path, header.invariants, signal, capture, contentHash(content)), ({ run }) => modelRunResult(run), mainId);
   const faults: FaultCheck[] = [];
   if (main.run === "passed") {
     for (const [k, fault] of header.faults.entries()) {
-      faults.push(await checkFault(root, path, fault, header.invariants, jar, signal, ops,
+      faults.push(await checkFault(root, path, fault, header.invariants, signal, ops,
         faultSpecs[k] ?? mainSpec, faultIds[k], capture, contentHash(content)));
     }
   }

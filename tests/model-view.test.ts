@@ -103,17 +103,15 @@ it("chooses the ordered header projection, then pc, then minimum nonconstant car
 });
 
 it("conserves the real continued 320-state graph under every ordered projection", async () => {
-  const { existsSync } = await import("node:fs");
-  const operator = JSON.parse(process.env["TESOTA_TEST_OPERATOR_HOME"] ?? "{}") as { HOME?: string; USERPROFILE?: string };
-  const jar = join(operator.USERPROFILE ?? operator.HOME ?? "", ".tesota", "tools", "tla2tools.jar");
-  expect(existsSync(jar), "real TLC is required for this acceptance test").toBe(true);
   const { runProcess } = await import("../src/process.js");
+  const { tlaTsCommand } = await import("../src/model-check.js");
+  const tlaTs = tlaTsCommand();
   const { readFile, copyFile } = await import("node:fs/promises");
   const root = await mkdtemp(join(tmpdir(), "tesota-view-tlc-"));
   try {
     for (const ext of ["tla", "cfg"]) await copyFile(new URL(`./fixtures/model-view/HostSessions.${ext}`, import.meta.url), join(root, `HostSessions.${ext}`));
     const chunks: Buffer[] = [];
-    const run = await runProcess("java", ["-cp", jar, "tlc2.TLC", "-workers", "1", "-continue", "-dump", "dot,actionlabels", "reached.dot", "HostSessions"], root, new AbortController().signal, 60_000, chunk => chunks.push(chunk));
+    const run = await runProcess(tlaTs.executable, [...tlaTs.args, "tlc2.TLC", "-workers", "1", "-continue", "-dump", "dot,actionlabels", "reached.dot", "HostSessions"], root, new AbortController().signal, 60_000, chunk => chunks.push(chunk));
     expect(run.exitCode).toBe(0);
     const output = Buffer.concat(chunks).toString("utf8");
     const capture = await captureGraph(join(root, "reached.dot"), output, {
