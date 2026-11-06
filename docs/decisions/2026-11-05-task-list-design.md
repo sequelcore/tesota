@@ -16,8 +16,8 @@ plan mode, receipt changes, and forced updates. Child sessions do not mutate the
 parent's list. The parent can describe delegated work as an ordinary item.
 
 Refactor alpha directly: no aliases, dual writers, adapters, or second store.
-Propose format 8: new builds refuse version 7 untouched; old builds refuse
-version 8. Approve this consequence before implementation.
+The session format stays at version 7: task state is derived from entries the
+journal already records, so no entry changes shape.
 
 ## Requirements and proposed bounds
 
@@ -54,7 +54,7 @@ PostgreSQL, queues, and sidecar files solve no current requirement.
 | `tools/index.ts` and loop tool registration | Register a session-bound `update_tasks` tool when enabled; no extension or verifier ownership |
 | `loop.ts` | Commit accepted results, preserve sequential order, include task state in compacted context |
 | `session.ts` | Seed the same reducer during replay; resolve transitive continuation links |
-| `session-file.ts` | Format 8 compaction references, existing writer, validation, sync, and corruption handling |
+| `session-file.ts` | No change; existing writer, validation, sync, and corruption handling |
 | `shell/shell.ts` and `shell/transcript.ts` | Draw committed snapshots, using existing Ctrl+O expansion and terminal escaping |
 | `settings.ts` and entry-point wiring | Proposed boolean `taskList`, default false; top-level terminal and print use the same policy |
 | Verification layer | No task-status input, evidence field, settlement shortcut, or receipt schema change |
@@ -123,19 +123,18 @@ Reject missing, forward, or cyclic links as unavailable. Malformed task data
 makes the projection unavailable, never empty or an older snapshot. A subsequent
 valid full replacement restores availability; the tool remains usable.
 
-The tool computes a candidate without mutating canonical state. Append and sync
-its result inside `runCalls.answer`, inserting `writer.sync()` between
-`writer.append()` and `add(result)`. Only then update the projection and notify
-listeners. If append or sync throws, set a batch-local `failedCommit` flag;
-interruption cleanup checks it and returns without another `answer`. Stop through
-the poisoned-session path without retrying or writing a contradictory result. Written bytes may
-survive despite failed sync: replay may show an unacknowledged update. No
-acknowledged success precedes durability.
+The tool computes a candidate without mutating canonical state. For a task
+result only, `runCalls.answer` calls `writer.sync()` after `writer.append()` and
+before `add(result)`; other tool results keep their current durability. Only
+then update the projection and notify listeners. If append or sync throws, the
+session writer is poisoned: every later append and sync throws the same error,
+so no contradictory result can be written. The run stops through that existing
+path without retrying. Written bytes may survive despite a failed sync: replay
+may show an unacknowledged update. No acknowledged success precedes durability.
 
 `runCalls` is sequential: updates commit in call order. Identical replacements
 produce identical state, with both calls recorded. Add no queue or lock.
-Preserve this contract if concurrency changes. Sequential execution supersedes
-the earlier research inference of a race from unrelated concurrent handlers.
+Preserve this contract if concurrency changes.
 
 ## Request boundaries and restoration
 
@@ -152,26 +151,26 @@ the earlier research inference of a race from unrelated concurrent handlers.
 Approve the last rule as a first-version limitation. New requests may create
 lists from visible history, but inherit neither scope nor verification base.
 
-Format 8 compaction entries require `taskList`: `{run, callId}` for the latest
-successful ancestor-chain result, null for absent or disabled, or
-`{unavailable: true}` for invalid state. Invalid references render unavailable;
-invalid journal envelopes follow normal refusal. The full journal retains commits.
+Compaction entries keep their current shape. The state a compaction restores is
+derived from the journal entries before it: the latest successful result along
+the run's ancestor chain, none, or unavailable. Live compaction and replay see
+the same preceding entries and apply the same reducer, so both select the same
+state. The full journal retains every commit.
 
 Pass resolved state to `compactedHead` as a separately labeled, agent-authored,
 unverified section, never operator instructions. Include that section in the
 smaller-head check, `tokensAfter`, overflow reserve, and `/context` accounting.
-Live compaction and replay use the same builder. One compaction record pins
-summary, retained tail, and task selection together; a torn record uses existing
-recovery. No separate repair window exists. If both the selected call's matching
-arguments and successful result remain in the tail, the section references
-them without repeating titles; otherwise it includes the full snapshot. Render
-solely from the recorded field, never the current setting. Historical results
-grant no current scope.
+Live compaction and replay use the same builder. A torn compaction record uses
+existing recovery; nothing task-specific is recorded with it. If both the
+selected call's matching arguments and successful result remain in the tail,
+the section references them without repeating titles; otherwise it includes the
+full snapshot. Restoration depends on the journal alone, never on the current
+setting. Historical results grant no current scope.
 
 Keep Progress and Open items in the summary: they carry evidence, decisions,
 and unknowns. The request ledger governs scope, task state governs list metadata,
-and checks govern verification. The format-versioned builder records what the
-model sees through journal data; no provider-only injection is introduced.
+and checks govern verification. The builder derives what the model sees from
+journal data; no provider-only injection is introduced.
 
 At enabled admission, the session callback supplies ancestor lineage and state:
 snapshot, none, or unavailable. Record one internal `custom_message` naming
@@ -200,7 +199,7 @@ Children omit the tool. Print records state without a tray.
 | Interrupted call before result | No new commit; existing recovery reconciles call |
 | Disk or sync failure | Existing poisoned-session path; stop, do not acknowledge success |
 | Corrupt journal | Existing refusal or torn-tail repair rules; no task-specific guessing |
-| Lost or contradictory summary | Resolve pinned snapshot with unverified label; retain request authority |
+| Lost or contradictory summary | Restore the derived snapshot with unverified label; retain request authority |
 | Stale model claims | Operator can inspect transcript; no automatic correctness inference |
 | Slow or failed provider | Existing retry and stop policy; list remains a saved claim |
 | Shell failure | Rebuild projection on reopen; no effect on verification |
@@ -218,8 +217,7 @@ illustrative 8 KiB snapshot appears in arguments and result details; assuming
 2 KiB envelope overhead gives 18 KiB/update. Ten updates/day for 220 days gives
 38.7 MiB/year, 116 MiB over three years. At 16 KiB twice plus 2 KiB overhead,
 100 updates/day gives 0.713 GiB/year, 2.14 GiB over three years. Continuation
-notices add another snapshot; compaction adds a small reference, not another
-stored list. Other transcript data is additional. These are workload estimates,
+notices add another snapshot; compaction stores nothing new. Other transcript data is additional. These are workload estimates,
 not storage ceilings. Retention and actual frequency remain unknown.
 
 Full replacement costs O(items) per update. Context pays for historical call
@@ -230,17 +228,18 @@ failure path without dropping tasks to manufacture room.
 
 Ship through the existing alpha binary process after acceptance. Proposed
 default-off rollout adds no new running component. Turning the setting off
-removes the tool and stops adding task notices or restoration sections; the
-format 8 reader retains historical display. Already recorded messages remain
-historical context, as for other inactive tools. Test provider acceptance of
-historical calls to now-unoffered tools. Rolling back to format 7 cannot reopen
-format 8 sessions; files remain untouched. Save copies before release testing;
-there is no conversion or silent downgrade.
+removes the tool and stops adding task notices; sessions that already hold a
+list still restore it after compaction and display it on reopen. Already
+recorded messages remain historical context, as for other inactive tools. Test
+provider acceptance of historical calls to now-unoffered tools. A build without
+the feature still opens these sessions: it shows task calls as ordinary history
+and restores no task section, so its compacted head differs from the one the
+model saw.
 
 Implementation must test sequential replacements, validation, permission denial,
 amendments and continuations, new requests, interrupted commits, malformed
 metadata, chained continuations, repeated compaction, full-head token accounting,
-and torn compaction records. A completed list with failing verification must
+torn compaction records, and a replayed compacted head equal to the live one. A completed list with failing verification must
 still fail; unfinished items must not prevent normal settlement. Prove precise
 new selection and validation rules under the repository's LemmaScript policy.
 
@@ -265,14 +264,12 @@ a general reliability claim.
 
 Research and source limits are recorded in the
 [issue comment](https://github.com/sequelcore/tesota/issues/521#issuecomment-6674637859).
-Reports establish questions, not causal benefit. Review objections and responses
-are recorded in the [ADR](2026-11-05-task-list.md#review-disposition).
+Reports establish questions, not causal benefit.
 
 ## Unresolved owner decisions
 
 - Approve request-lineage scope and the stopped-run continuation limitation,
   or require explicit generic continuation as part of this feature?
-- Approve format 8 refusal of older sessions, default-off rollout, payload
-  bounds, and read-mode access?
+- Approve default-off rollout, payload bounds, and read-mode access?
 - Accept primary-focus semantics and omission without cancellation reasons?
 - What paid trial budget and overhead limits should govern default adoption?
