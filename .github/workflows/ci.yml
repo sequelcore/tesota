@@ -85,8 +85,20 @@ jobs:
         if: matrix.shard == 1
       # Separate runners give each serial shard its own home and snapshot store.
       - run: bun --no-env-file run --cwd packages/core test --shard=${{ matrix.shard }}/2
-      - run: bun --no-env-file run --cwd packages/core budget
+      # Measured against the commit the change is made on: a pull request's base, the merge queue's, or the push's
+      # previous commit; a tag has none, so its parent. The shallow checkout fetches it.
+      - name: budget
         if: matrix.shard == 1
+        shell: bash
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+        run: |
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            git fetch --no-tags --deepen=1 origin && BASE=$(git rev-parse HEAD~1)
+          else
+            git fetch --no-tags --depth=1 origin "$BASE"
+          fi
+          bun --no-env-file run --cwd packages/core budget --base "$BASE"
       - run: bun packages/core/src/main.ts --version
         if: matrix.shard == 1
   proofs:

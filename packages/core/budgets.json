@@ -1,8 +1,14 @@
 {
-  "linux": { "startupMs": 8, "binaryBytes": 102000000, "loopMs": 240, "loopResumeRatio": 14, "loopRssBytes": 86000000,
-    "baseMs": 30, "syncCount": 106, "settleMs": 1.5, "resumeMs": 18, "sessionBytes": 745000,
-    "firstFrameMs": 200, "firstFrameResumeRatio": 16.5, "shellRssBytes": 135000000 },
-  "win32": { "startupMs": 40, "binaryBytes": 106000000, "loopMs": 300, "loopRssBytes": 74000000,
-    "baseMs": 600, "syncCount": 106, "settleMs": 1.5, "resumeMs": 35, "sessionBytes": 745000,
-    "firstFrameMs": 250, "firstFrameRatio": 12, "shellRssBytes": 115000000 }
+  "linux": {
+    "limits": { "startupMs": 10, "binaryBytes": 102000000, "loopMs": 240, "loopRssBytes": 86000000,
+      "baseMs": 37, "syncCount": 106, "settleMs": 1.5, "resumeMs": 26, "sessionBytes": 745000,
+      "firstFrameMs": 220, "shellRssBytes": 135000000 },
+    "versusBase": { "startupMs": 1.25, "loopMs": 1.25, "resumeMs": 1.25, "firstFrameMs": 1.25 }
+  },
+  "win32": {
+    "limits": { "startupMs": 40, "binaryBytes": 106000000, "loopMs": 690, "loopRssBytes": 74000000,
+      "baseMs": 760, "syncCount": 106, "settleMs": 1.75, "resumeMs": 35, "sessionBytes": 745000,
+      "firstFrameMs": 360, "shellRssBytes": 115000000 },
+    "versusBase": { "startupMs": 1.25, "loopMs": 1.25, "resumeMs": 1.25, "firstFrameMs": 1.25 }
+  }
 }

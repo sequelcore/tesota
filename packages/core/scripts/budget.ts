@@ -1,33 +1,34 @@
-import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { withinBudget, withinBudgetAfterRetry } from "../src/budget-rule.ts";
 import { build } from "./build.ts";
 
 /**
- * Performance budgets, checked on every pull request
- * like fx's: the engine is compiled as a release builds it (`build.ts`), its
- * `--version` started repeatedly, its scripted loop run (`--measure-loop`,
- * 50 rounds of write and read, with its request's base and its syncs to the
- * disk timed apart), and a session of about 1,000 entries resumed
- * (`--measure-resume`). The median startup, the binary's size, the loop's
- * median time and its largest resident memory, the median base and sync,
- * the largest number of syncs, the median settlement, the median resume and the largest session
- * file are compared with the limits in `budgets.json` for this platform; a measurement without a limit there is reported only.
- * An exceeded budget is retried once; a measurement fails only when both attempts exceed its limit.
- * The first frame divided by the same attempt's median startup is a measurement of its own, which Windows limits
- * closely, since a slow runner there slows both; its first frame keeps a looser limit, for a regression that
- * slows startup and the first frame together. Linux limits the first frame divided by the same attempt's median
- * resume instead, which tracks it there more closely than startup, with the same kind of looser limit in milliseconds.
- * Linux's loop uses the same resume control, with an absolute backstop for a slowdown shared by both.
- * `--report` prints them all without failing, to set or revise a limit.
+ * Performance budgets, checked on every pull request like fx's. The engine
+ * is compiled as a release builds it (`build.ts`), and so is the base the
+ * change is measured against (`--base`, by default where the branch left
+ * `origin/dev`), with the base's own build script. Both are then measured in
+ * alternating rounds on the same machine: `--version` started repeatedly,
+ * the scripted loop run (`--measure-loop`, 50 rounds of write and read, with
+ * its request's base and its syncs to the disk timed apart), a session of
+ * about 1,000 entries resumed (`--measure-resume`), and the shell's first
+ * frame drawn (`--measure-shell`).
+ *
+ * Each timed measurement in `versusBase` fails when the change's median is
+ * more than that many times the base's: a slow runner slows both, so their
+ * ratio stays put while either one alone moves. Every measurement in
+ * `limits` also keeps an absolute limit: exact ones such as the binary's
+ * size and the syncs, and loose backstops on the times, so slowdowns too
+ * small to fail one change can't add up unnoticed. A failed check is
+ * measured again, both binaries, and fails only when both attempts fail.
+ * `--report` prints everything without failing, to set or revise a limit.
  */
 
 export interface Measurements {
   readonly startupMs: number;
   readonly binaryBytes: number;
   readonly loopMs: number;
-  readonly loopResumeRatio: number;
   readonly loopRssBytes: number;
   readonly baseMs: number;
   readonly syncMs: number;
@@ -35,16 +36,24 @@ export interface Measurements {
   readonly settleMs: number;
   readonly resumeMs: number;
   readonly firstFrameMs: number;
-  readonly firstFrameRatio: number;
-  readonly firstFrameResumeRatio: number;
   readonly shellRssBytes: number;
   readonly sessionBytes: number;
 }
 export type Limits = { readonly [Name in keyof Measurements]?: number | null };
+/** A platform's budget: absolute limits, and how many times the base's median each timed measurement may take. */
+export interface Budget {
+  readonly limits: Limits;
+  readonly versusBase: Limits;
+}
+/** Both binaries' measurements from one attempt. */
+export interface Attempt {
+  readonly change: Measurements;
+  readonly base: Measurements;
+}
 
 const warmups = 3;
-const samples = 21;
-const loopRuns = 5;
+const rounds = 7;
+const startsPerRound = 3;
 
 /** The middle value, the statistic least moved by a slow outlier on a shared CI runner. */
 export function median(values: readonly number[]): number {
@@ -68,87 +77,170 @@ export function overBudget(measured: Measurements, limits: Limits, retry?: Measu
   });
 }
 
+/** How many times the base's value the change's is, to the hundredth. */
+export function ratio(change: number, base: number): number {
+  return Math.round(change / base * 100) / 100;
+}
+
+/** Each timed measurement more than its limit times the base's, in this attempt and the retry if there is one. */
+export function slowerThanBase(attempt: Attempt, limits: Limits, retry?: Attempt): string[] {
+  const ratios = (of: Attempt) => Object.fromEntries((Object.keys(limits) as (keyof Measurements)[])
+    .map((name) => [name, ratio(of.change[name], of.base[name])])) as unknown as Measurements;
+  const describe = (of: Attempt, name: keyof Measurements) => `${of.change[name]} against the base's ${of.base[name]}`;
+  return overBudget(ratios(attempt), limits, retry === undefined ? undefined : ratios(retry)).map((line) => {
+    const name = line.slice(0, line.indexOf(":")) as keyof Measurements;
+    return `${line} times the base (${describe(attempt, name)}${retry === undefined ? "" : `, then ${describe(retry, name)}`})`;
+  });
+}
+
 function started(binary: string, argument: string): string {
   const result = Bun.spawnSync([binary, argument], { stdout: "pipe", stderr: "pipe" });
   if (result.exitCode !== 0) throw new Error(`${binary} ${argument} failed:\n${result.stderr.toString()}`);
   return result.stdout.toString();
 }
 
-function measure(): Measurements {
-  const folder = mkdtempSync(join(tmpdir(), "tesota-core-budget-"));
+interface Samples {
+  readonly starts: number[];
+  readonly loops: { loopMs: number; baseMs: number; syncMs: number; syncCount: number; settleMs: number; loopRssBytes: number }[];
+  readonly resumes: { resumeMs: number; sessionBytes: number }[];
+  readonly shells: { firstFrameMs: number; shellRssBytes: number }[];
+}
+
+function sampleOnce(binary: string, into: Samples): void {
+  for (let start = 0; start < startsPerRound; start++) {
+    const begun = performance.now();
+    started(binary, "--version");
+    into.starts.push(performance.now() - begun);
+  }
+  into.loops.push(JSON.parse(started(binary, "--measure-loop")));
+  into.resumes.push(JSON.parse(started(binary, "--measure-resume")));
+  into.shells.push(JSON.parse(started(binary, "--measure-shell")));
+}
+
+function summarized(binary: string, samples: Samples): Measurements {
+  const { starts, loops, resumes, shells } = samples;
+  return {
+    startupMs: Math.round(median(starts) * 10) / 10,
+    binaryBytes: statSync(binary).size,
+    loopMs: median(loops.map((loop) => loop.loopMs)),
+    loopRssBytes: Math.max(...loops.map((loop) => loop.loopRssBytes)),
+    baseMs: median(loops.map((loop) => loop.baseMs)),
+    syncMs: median(loops.map((loop) => loop.syncMs)),
+    syncCount: Math.max(...loops.map((loop) => loop.syncCount)),
+    settleMs: median(loops.map((loop) => loop.settleMs)),
+    resumeMs: median(resumes.map((resume) => resume.resumeMs)),
+    sessionBytes: Math.max(...resumes.map((resume) => resume.sessionBytes)),
+    firstFrameMs: median(shells.map((shell) => shell.firstFrameMs)),
+    // The median, not the largest: one run's memory varies by about 13 MB, and a regression moves every run.
+    shellRssBytes: median(shells.map((shell) => shell.shellRssBytes)),
+  };
+}
+
+/** One attempt: both binaries warmed up, then measured in rounds whose order alternates, so neither always goes first. */
+export function measure(change: string, base: string): Attempt {
+  for (let run = 0; run < warmups; run++) { started(change, "--version"); started(base, "--version"); }
+  const samples = { change: { starts: [], loops: [], resumes: [], shells: [] } as Samples,
+    base: { starts: [], loops: [], resumes: [], shells: [] } as Samples };
+  for (let round = 0; round < rounds; round++) {
+    const order = round % 2 === 0 ? (["change", "base"] as const) : (["base", "change"] as const);
+    for (const side of order) sampleOnce(side === "change" ? change : base, samples[side]);
+  }
+  return { change: summarized(change, samples.change), base: summarized(base, samples.base) };
+}
+
+const repository = join(import.meta.dir, "..", "..", "..");
+
+function git(args: readonly string[]): string {
+  const result = Bun.spawnSync(["git", ...args], { cwd: repository, stdout: "pipe", stderr: "pipe" });
+  if (result.exitCode !== 0) throw new Error(`git ${args.join(" ")} failed:\n${result.stderr.toString()}`);
+  return result.stdout.toString().trim();
+}
+
+const same = (a: string, b: string) => existsSync(a) && existsSync(b) && readFileSync(a).equals(readFileSync(b));
+
+/**
+ * The base's binary, compiled by the base's own `build.ts` in a worktree of
+ * `revision`. The base borrows this checkout's installed packages and
+ * ripgrep when its lockfile and ripgrep pin are the same, and installs its
+ * own otherwise. The links are removed before the worktree, never what they
+ * point to.
+ */
+function buildBase(revision: string, outfile: string, folder: string): void {
+  const tree = join(folder, "base");
+  git(["worktree", "add", "--detach", tree, revision]);
+  const links: string[] = [];
+  const link = (from: string, to: string) => { symlinkSync(from, to, "junction"); links.push(to); };
   try {
-    const binary = join(folder, process.platform === "win32" ? "tesota-core.exe" : "tesota-core");
-    build(binary);
-    const times: number[] = [];
-    for (let run = 0; run < warmups + samples; run++) {
-      const begun = performance.now();
-      started(binary, "--version");
-      if (run >= warmups) times.push(performance.now() - begun);
+    if (same(join(repository, "bun.lock"), join(tree, "bun.lock"))) {
+      link(join(repository, "node_modules"), join(tree, "node_modules"));
+      if (existsSync(join(repository, "packages", "core", "node_modules"))) {
+        link(join(repository, "packages", "core", "node_modules"), join(tree, "packages", "core", "node_modules"));
+      }
+    } else {
+      const install = Bun.spawnSync(["bun", "install", "--frozen-lockfile", "--ignore-scripts"], { cwd: tree, stdout: "ignore", stderr: "pipe" });
+      if (install.exitCode !== 0) throw new Error(`The base's bun install failed:\n${install.stderr.toString()}`);
     }
-    const loops = Array.from({ length: loopRuns }, () =>
-      JSON.parse(started(binary, "--measure-loop")) as { loopMs: number; baseMs: number; syncMs: number; syncCount: number; settleMs: number; loopRssBytes: number });
-    const resumes = Array.from({ length: loopRuns }, () =>
-      JSON.parse(started(binary, "--measure-resume")) as { resumeMs: number; sessionBytes: number });
-    const shells = Array.from({ length: loopRuns }, () =>
-      JSON.parse(started(binary, "--measure-shell")) as { firstFrameMs: number; shellRssBytes: number });
-    const startupMs = Math.round(median(times) * 10) / 10;
-    const firstFrameMs = median(shells.map((shell) => shell.firstFrameMs));
-    const resumeMs = median(resumes.map((resume) => resume.resumeMs));
-    const loopMs = median(loops.map((loop) => loop.loopMs));
-    return {
-      startupMs,
-      binaryBytes: statSync(binary).size,
-      loopMs,
-      loopResumeRatio: Math.round(loopMs / resumeMs * 100) / 100,
-      loopRssBytes: Math.max(...loops.map((loop) => loop.loopRssBytes)),
-      baseMs: median(loops.map((loop) => loop.baseMs)),
-      syncMs: median(loops.map((loop) => loop.syncMs)),
-      syncCount: Math.max(...loops.map((loop) => loop.syncCount)),
-      settleMs: median(loops.map((loop) => loop.settleMs)),
-      resumeMs,
-      sessionBytes: Math.max(...resumes.map((resume) => resume.sessionBytes)),
-      firstFrameMs,
-      firstFrameRatio: Math.round(firstFrameMs / startupMs * 100) / 100,
-      firstFrameResumeRatio: Math.round(firstFrameMs / resumeMs * 100) / 100,
-      // The median, not the largest: one run's memory varies by about 13 MB, and a regression moves every run.
-      shellRssBytes: median(shells.map((shell) => shell.shellRssBytes)),
-    };
+    const pin = join("packages", "core", "src", "ripgrep.ts");
+    if (same(join(repository, pin), join(tree, pin))) link(join(repository, "vendor"), join(tree, "vendor"));
+    else {
+      const vendor = Bun.spawnSync(["bun", "run", "vendor"], { cwd: tree, stdout: "ignore", stderr: "pipe" });
+      if (vendor.exitCode !== 0) throw new Error(`The base's ripgrep could not be fetched:\n${vendor.stderr.toString()}`);
+    }
+    const script = `import { build } from ${JSON.stringify(join(tree, "packages", "core", "scripts", "build.ts"))}; build(${JSON.stringify(outfile)});`;
+    const built = Bun.spawnSync(["bun", "-e", script], { cwd: tree, stdout: "ignore", stderr: "pipe" });
+    if (built.exitCode !== 0) throw new Error(`The base ${revision} did not build:\n${built.stderr.toString()}`);
   } finally {
-    rmSync(folder, { recursive: true, force: true, maxRetries: 3 });
+    for (const path of links) unlinkSync(path);
+    git(["worktree", "remove", "--force", tree]);
   }
 }
 
-function printReport(measured: Measurements): void {
-  console.log(`Budget on ${process.platform}: startup ${measured.startupMs} ms (median of ${samples}), binary ${measured.binaryBytes} bytes, `
-    + `loop ${measured.loopMs} ms (median of ${loopRuns}, ${measured.loopResumeRatio} times resume), loop memory ${measured.loopRssBytes} bytes, `
-    + `base ${measured.baseMs} ms (median of ${loopRuns}), sync ${measured.syncMs} ms (median), syncs ${measured.syncCount}, settle ${measured.settleMs} ms (median of ${loopRuns}), `
-    + `resume ${measured.resumeMs} ms (median of ${loopRuns}), session ${measured.sessionBytes} bytes, `
-    + `first frame ${measured.firstFrameMs} ms (median of ${loopRuns}, ${measured.firstFrameRatio} times startup, ${measured.firstFrameResumeRatio} times resume), shell memory ${measured.shellRssBytes} bytes (median of ${loopRuns})`);
+function printReport(attempt: Attempt, versusBase: Limits): void {
+  const line = (of: Measurements) => `startup ${of.startupMs} ms, binary ${of.binaryBytes} bytes, loop ${of.loopMs} ms, `
+    + `loop memory ${of.loopRssBytes} bytes, base ${of.baseMs} ms, sync ${of.syncMs} ms, syncs ${of.syncCount}, settle ${of.settleMs} ms, `
+    + `resume ${of.resumeMs} ms, session ${of.sessionBytes} bytes, first frame ${of.firstFrameMs} ms, shell memory ${of.shellRssBytes} bytes`;
+  console.log(`Budget on ${process.platform}, medians of ${rounds} alternating rounds (startup of ${rounds * startsPerRound}):`);
+  console.log(`  change: ${line(attempt.change)}`);
+  console.log(`  base:   ${line(attempt.base)}`);
+  const names = Object.keys(versusBase) as (keyof Measurements)[];
+  console.log(`  change/base: ${names.map((name) => `${name} ${ratio(attempt.change[name], attempt.base[name])}`).join(", ")}`);
+}
+
+function failures(budget: Budget, attempt: Attempt, retry?: Attempt): string[] {
+  return [...overBudget(attempt.change, budget.limits, retry?.change), ...slowerThanBase(attempt, budget.versusBase, retry)];
 }
 
 if (import.meta.main) {
   const report = process.argv.includes("--report");
-  const budgets = JSON.parse(readFileSync(join(import.meta.dir, "..", "budgets.json"), "utf8")) as Record<string, Limits | undefined>;
-  const limits = budgets[process.platform];
-  const measured = measure();
-  printReport(measured);
-  if (limits === undefined) {
-    console.log(`No budgets for ${process.platform}; CI checks Linux and Windows.`);
-  } else {
-    let over = overBudget(measured, limits);
-    if (over.length > 0 && !report) {
-      console.log("Budget exceeded; measuring everything again before deciding.");
-      const retry = measure();
-      printReport(retry);
-      over = overBudget(measured, limits, retry);
-      for (const name of Object.keys(limits) as (keyof Measurements)[]) {
-        const limit = limits[name];
-        if (limit === undefined || limit === null) continue;
-        if (withinBudget(measured[name], limit) === withinBudget(retry[name], limit)) continue;
-        console.log(`Note: ${name}: ${measured[name]} then ${retry[name]} is over its limit of ${limit} in only one attempt.`);
+  const given = process.argv.indexOf("--base");
+  const revision = given === -1 ? git(["merge-base", "HEAD", "origin/dev"]) : process.argv[given + 1];
+  if (revision === undefined || revision === "") throw new Error("Usage: bun scripts/budget.ts [--report] [--base <revision>]");
+  const budgets = JSON.parse(readFileSync(join(import.meta.dir, "..", "budgets.json"), "utf8")) as Record<string, Budget | undefined>;
+  const budget = budgets[process.platform];
+  const folder = mkdtempSync(join(tmpdir(), "tesota-core-budget-"));
+  try {
+    const change = join(folder, process.platform === "win32" ? "tesota-core.exe" : "tesota-core");
+    const base = join(folder, process.platform === "win32" ? "tesota-base.exe" : "tesota-base");
+    build(change);
+    buildBase(revision, base, folder);
+    console.log(`Measuring this checkout against the base ${git(["rev-parse", "--short", revision])}.`);
+    const versusBase = budget?.versusBase ?? {};
+    const first = measure(change, base);
+    printReport(first, versusBase);
+    if (budget === undefined) {
+      console.log(`No budgets for ${process.platform}; CI checks Linux and Windows.`);
+    } else {
+      let over = failures(budget, first);
+      if (over.length > 0 && !report) {
+        console.log("Budget exceeded; measuring both binaries again before deciding.");
+        const retry = measure(change, base);
+        printReport(retry, versusBase);
+        over = failures(budget, first, retry);
       }
+      for (const line of over) console.error(`Over budget: ${line}`);
+      if (over.length > 0 && !report) process.exitCode = 1;
     }
-    for (const line of over) console.error(`Over budget: ${line}`);
-    if (over.length > 0 && !report) process.exitCode = 1;
+  } finally {
+    rmSync(folder, { recursive: true, force: true, maxRetries: 3 });
   }
 }
