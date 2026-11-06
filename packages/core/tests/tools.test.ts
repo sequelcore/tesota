@@ -19,10 +19,24 @@ const running: { readonly stop: AbortController; readonly done: Promise<unknown>
  * Stops the test's runs and waits for them to end, then removes its folders: on Windows a process keeps its
  * working folder busy, so removing it while the command runs fails with EBUSY.
  */
+// Both bounds stay under the 30 s test timeout together, so a hang names its step; a first Windows PowerShell
+// start takes seconds.
+const startMs = 15_000;
+const cleanUpMs = 10_000;
 async function cleanUp(): Promise<void> {
   const runs = running.splice(0);
   for (const each of runs) each.stop.abort();
-  await Promise.allSettled(runs.map((each) => each.done));
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      Promise.allSettled(runs.map((each) => each.done)),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => { reject(new Error(`cleanUp() did not stop the commands within ${cleanUpMs} ms`)); }, cleanUpMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
   for (const folder of folders.splice(0)) rmSync(folder, { recursive: true, force: true, maxRetries: 3 });
 }
 afterEach(cleanUp);
@@ -108,7 +122,11 @@ for (const shell of shells()) {
       const tool = shellTool(cwd, shell, folder);
       const command = shell.tool === "powershell" ? "New-Item started -ItemType File | Out-Null; Start-Sleep 30" : "touch started; sleep 30";
       void run(tool, { command });
-      while (!existsSync(join(cwd, "started"))) await Bun.sleep(20);
+      const deadline = performance.now() + startMs;
+      while (!existsSync(join(cwd, "started"))) {
+        if (performance.now() >= deadline) throw new Error(`${shell.label} did not create the started file within ${startMs} ms`);
+        await Bun.sleep(20);
+      }
       await cleanUp();
       expect(existsSync(cwd)).toBe(false);
     });
