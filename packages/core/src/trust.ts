@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFileSync, realpathSync } from "node:fs";
+import { mkdirSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
 import { withLock } from "./session-lock.ts";
@@ -46,6 +46,8 @@ export function trusted(root: string, kind: Trusted, hash: string, home: string 
 /** Records that the operator trusts the `kind` of the project at `root` as it is now, keeping what else of it they trust. */
 export function trust(root: string, kind: Trusted, hash: string, home: string = tesotaHome()): void {
   // Read, changed and written under a lock, so two shells trusting at once each keep the other's.
+  // The lock is beside the file, so a first trust makes their folder.
+  mkdirSync(home, { recursive: true, mode: 0o700 });
   withLock(`${trustFile(home)}.lock`, () => {
     let file: Record<string, unknown> = {};
     try {
