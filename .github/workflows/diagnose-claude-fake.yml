@@ -1,0 +1,32 @@
+name: Diagnose the Claude Code fake on macOS
+# Temporary, for #799: never merged; the pull request that carries it is closed with its result.
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  fake-start:
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: package.json
+          package-manager-cache: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - run: sw_vers; uname -m; bun --version
+      - name: Start a freshly compiled fake, 40 rounds
+        run: bun .github/diagnose/fake-start.ts 40
+      - name: The test file alone, 25 runs, each with a new fake
+        run: |
+          for i in $(seq 1 25); do
+            start=$(date +%s)
+            if (cd packages/core && perl -e 'alarm 90; exec @ARGV' bun --no-env-file run test ./tests/claude-isolation.test.ts > "$RUNNER_TEMP/run-$i.log" 2>&1); then r=pass; else r=fail; fi
+            echo "run $i: $r in $(( $(date +%s) - start )) s"
+            [ "$r" = fail ] && grep -E '^\(fail\)|timed out' "$RUNNER_TEMP/run-$i.log" | head -5
+          done
+          true
