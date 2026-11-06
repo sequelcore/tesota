@@ -53,3 +53,16 @@ tightened.
 The other limits were already above 1.5 times their largest measurement
 and stay as they were. The ratios to startup and to resume, which stood in
 for a base before there was one, are removed.
+
+## Binary size with Bun 1.4.4
+
+Bun 1.4.4, which fixes the Brotli decoder flaw CVE-2026-111497, makes the
+compiled binary larger with no change to Tesota's code. The owner approved
+new size limits on 2026-11-06 with the usual headroom of under 1%:
+
+| Platform | Bun 1.4.2 on `dev` (`c0980703`) | Bun 1.4.4 (#833) | Limit |
+| --- | --- | --- | --- |
+| Linux | 101,410,272 bytes | 129,218,736 bytes | 130,000,000 bytes |
+| Windows | 104,991,232 bytes | 134,175,744 bytes | 135,000,000 bytes |
+
+The times in the same runs stayed within 1.07 times their base.
