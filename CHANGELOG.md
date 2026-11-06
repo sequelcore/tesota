@@ -34,6 +34,11 @@ requests and issues in [sequelcore/tesota](https://github.com/sequelcore/tesota)
 - Plain Bun, Vitest and Jest scripts produce fresh reports on both revisions
   for failure attribution; unreported runner errors remain unknown (#728).
 
+### Security
+
+- Binaries are built with Bun 1.4.4, whose Brotli decoder fixes the
+  out-of-bounds write CVE-2026-111497 that Bun 1.4.2 contained (#833).
+
 ## [0.1.0-alpha.9] - 2026-10-30
 
 ### Added
