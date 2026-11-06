@@ -1,6 +1,8 @@
 import type { Terminal } from "@earendil-works/pi-tui";
 import xterm from "@xterm/headless";
 
+const screenWaitMs = 20_000;
+
 /**
  * A terminal the shell draws into for tests, emulated by xterm.js as
  * Pi's own tests do (pi-tui's `test/virtual-terminal.ts`): what it shows is
@@ -79,8 +81,11 @@ export class VirtualTerminal implements Terminal {
     const buffer = this.xterm.buffer.active;
     return Array.from({ length: this.height }, (_, row) => buffer.getLine(buffer.viewportY + row)?.translateToString(true) ?? "");
   }
-  /** What the screen shows once it shows `text`; fails naming what it showed instead. */
-  async until(text: string, timeoutMs = 5000): Promise<string> {
+  /**
+   * What the screen shows once it shows `text`; fails naming what it showed instead. The limit only bounds a failure:
+   * under load a run that starts a session on Windows CI takes several seconds, and the test's own timeout is 30 s.
+   */
+  async until(text: string, timeoutMs: number = screenWaitMs): Promise<string> {
     const deadline = Date.now() + timeoutMs;
     for (;;) {
       const screen = (await this.screen()).join("\n");
@@ -90,7 +95,7 @@ export class VirtualTerminal implements Terminal {
     }
   }
   /** What the screen shows once it no longer shows `text`; fails naming what it showed instead. */
-  async untilGone(text: string, timeoutMs = 5000): Promise<string> {
+  async untilGone(text: string, timeoutMs: number = screenWaitMs): Promise<string> {
     const deadline = Date.now() + timeoutMs;
     for (;;) {
       const screen = (await this.screen()).join("\n");

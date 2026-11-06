@@ -608,7 +608,7 @@ describe("the shell", () => {
     terminal.type("first");
     terminal.type(enter);
     await settled(session);
-    expect(await terminal.until("line 79 of a long answer", 10_000)).toContain("scripted model");
+    expect(await terminal.until("line 79 of a long answer")).toContain("scripted model");
     terminal.type("second");
     terminal.type(enter);
     await terminal.until("Working");
