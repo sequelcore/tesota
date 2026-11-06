@@ -1,44 +1,55 @@
-# Linux loop budget
+# Budget limits and their evidence
 
-The loop is limited to 14 times the same attempt's resume, with a 240 ms
-absolute backstop. Both attempts must exceed a limit to fail. The owner
-approved these limits on 2026-11-01 for
-[#783](https://github.com/sequelcore/tesota/issues/783).
+The limits in [budgets.json](budgets.json), and the measurements they came
+from. The owner approves each change to them.
 
-## Evidence
+## Against the base
 
-First-attempt logs from the latest 40 CI runs yielded 48 Linux measurements,
-including each budget's internal retry. The current measured path, from
-run 41095288991 onward, had 25 measurements across 17 runs. Its loop/resume
-ratios ranged from 10.377 to 13.225. All pass the new limits; all reject
-a simulated 50% loop-only slowdown. This replay selected the limits. It is
-not a held-out check or evidence of future runner stability.
+The check builds the commit a change is made on and measures it beside the
+change, in 7 alternating rounds on the same runner (`scripts/budget.ts`).
+A time in `versusBase` fails when the change's median is more than 1.25
+times the base's, in both of two attempts. The same rule as for any limit
+(`src/budget-rule.ts`) is applied to the ratio.
 
-Representative first attempts, including the budget's internal retry:
+The tolerance comes from A/A runs: [#819](https://github.com/sequelcore/tesota/pull/819)
+changes no engine code, so every budget job on it compares two identical
+engines. Change/base ratios, from that pull request's CI run
+42142550434 rerun to 8 attempts (each job counted once), and 3 local runs:
 
-| CI run | Loop, ms | Resume, ms | Loop/resume |
+| Platform | Samples | Startup | Loop | Resume | First frame |
+| --- | --- | --- | --- | --- | --- |
+| Ubuntu, CI | 4 | 0.92–1.05 | 0.99–1.00 | 0.99–1.01 | 0.99–1.01 |
+| Windows, CI | 5 | 0.91–1.01 | 0.85–1.02 | 0.91–1.08 | 0.94–1.01 |
+| Windows, local | 3 | 0.95–1.01 | 0.91–1.05 | 1.02–1.08 | 0.97–1.02 |
+
+The widest drift between identical code was 15%, the Windows loop at
+0.85. The same Windows loop measured 139 to 459 ms in absolute terms on
+unchanged code between 11-01 and 11-06, so the ratio removes most of the
+runner's variance. A slowdown of more than 25% in one of these four times
+fails. Twelve samples are few: if the drift proves wider on CI, that
+measurement's tolerance is revised from new A/A runs, not guessed.
+
+## Absolute limits
+
+Size, memory and the count of syncs vary little between runs and keep
+exact limits. The times keep backstops, so slowdowns too small to fail one
+change can't add up unnoticed across many. Each backstop is at least 1.5
+times the largest value CI measured on `dev` and its pull requests between
+11-01 and 11-06: the budget line of every engine shard 1 job in the last
+200 CI runs, 58 attempts on Windows and 54 on Linux. No limit was
+tightened.
+
+| Platform | Measurement | Largest measured | Limit |
 | --- | --- | --- | --- |
-| [41095288991](https://github.com/sequelcore/tesota/actions/runs/41095288991) | 131.8, 126.3 | 10.9, 11.5 | 12.092, 10.983 |
-| [41127736709](https://github.com/sequelcore/tesota/actions/runs/41127736709) | 120.4, 121.9 | 10.2, 11.3 | 11.804, 10.788 |
-| [41131604704](https://github.com/sequelcore/tesota/actions/runs/41131604704) | 147.7, 154.8 | 12.5, 11.9 | 11.816, 13.008 |
-| [41137648288](https://github.com/sequelcore/tesota/actions/runs/41137648288) | 124.7, 124.5 | 10.2, 10.1 | 12.225, 12.327 |
-| [41255446876](https://github.com/sequelcore/tesota/actions/runs/41255446876) | 128.4, 132.3 | 11.1, 11.1 | 11.568, 11.919 |
-| [41138682660](https://github.com/sequelcore/tesota/actions/runs/41138682660) | 79.9 | 7.7 | 10.377 |
-| [41118122175](https://github.com/sequelcore/tesota/actions/runs/41118122175) | 93.9 | 7.1 | 13.225 |
+| Windows | loop | 458.9 ms | 690 ms |
+| Windows | base | 505.5 ms | 760 ms |
+| Windows | settle | 1.15 ms | 1.75 ms |
+| Windows | first frame | 237.1 ms | 360 ms |
+| Linux | startup | 6.3 ms | 10 ms |
+| Linux | base | 24.1 ms | 37 ms |
+| Linux | resume | 16.9 ms | 26 ms |
+| Linux | first frame | 145.8 ms | 220 ms |
 
-Reproduce the inputs with `gh run view <id> --attempt 1 --log`, taking each
-`Budget on linux:` line. `tests/budget.test.ts` retains two false failures,
-their simulated regressions and the absolute backstop as regression cases.
-
-Resume controls shared runner speed; the absolute loop and resume limits
-guard slowdowns shared by both. Their different workloads and filesystem
-costs remain limits of the comparison. New CI runs must still demonstrate
-stability.
-
-A compiled Linux diagnostic under WSL ran the same 50-round scripted session,
-with a delay around each real tool call in the slower arm. Three alternating
-pairs after warm-up measured median loop/resume ratios of 12.06 normally and
-21.24 with the delay. The actual median loop slowdown was 61%, from 125.5 to
-201.8 ms. The new ratio rejects that slowdown below the absolute backstop.
-This small local experiment supports regression sensitivity; it does not
-establish CI stability or a precise 50% detection threshold.
+The other limits were already above 1.5 times their largest measurement
+and stay as they were. The ratios to startup and to resume, which stood in
+for a base before there was one, are removed.

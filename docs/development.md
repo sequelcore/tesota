@@ -98,19 +98,16 @@ delete a `.dfy`; that discards its proof additions.
 
 ## Performance budgets
 
-The budget check compiles the engine as a release would and fails a pull
-request when a measurement exceeds its limit in
-[budgets.json](../packages/core/budgets.json) in both of two attempts:
-startup, binary size, the scripted loop's time and memory, the base, syncs
-to disk, settlement, resuming a 1,000-entry session and its size, the
+The budget check compiles the engine as a release would, and the commit it
+changes with that commit's own build, then measures both in alternating
+rounds: startup, binary size, the scripted loop's time and memory, the base,
+syncs to disk, settlement, resuming a 1,000-entry session and its size, the
 shell's first frame, and its memory with pi-ai's whole provider catalog
-loaded. On Windows the first frame is limited relative to the same
-attempt's startup, and on Linux to its resume, with a looser limit in
-milliseconds behind both. New limits come from measurements and need the
-owner's approval.
-
-Linux's loop uses the same resume control; its
-[limits and evidence](../packages/core/budgets.md) live beside the budget.
+loaded. A pull request fails when, in both of two attempts, a time exceeds
+its multiple of the base's or any measurement its absolute limit in
+[budgets.json](../packages/core/budgets.json). New limits come from
+measurements and need the owner's approval; their
+[evidence](../packages/core/budgets.md) lives beside the budget.
 
 ## Binaries
 

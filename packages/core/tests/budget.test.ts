@@ -1,19 +1,39 @@
 import { expect, test } from "bun:test";
-import { type Measurements, median, overBudget } from "../scripts/budget.ts";
+import { type Measurements, median, overBudget, ratio, slowerThanBase } from "../scripts/budget.ts";
 import budgets from "../budgets.json" with { type: "json" };
 
-const measured = (values: Partial<Measurements>): Measurements => ({ startupMs: 0, binaryBytes: 0, loopMs: 0, loopResumeRatio: 0, loopRssBytes: 0, baseMs: 0, syncMs: 0, syncCount: 0, settleMs: 0, resumeMs: 0, sessionBytes: 0, firstFrameMs: 0, firstFrameRatio: 0, firstFrameResumeRatio: 0, shellRssBytes: 0, ...values });
+const measured = (values: Partial<Measurements>): Measurements => ({ startupMs: 0, binaryBytes: 0, loopMs: 0, loopRssBytes: 0, baseMs: 0, syncMs: 0, syncCount: 0, settleMs: 0, resumeMs: 0, sessionBytes: 0, firstFrameMs: 0, shellRssBytes: 0, ...values });
+const attempt = (change: Partial<Measurements>, base: Partial<Measurements>) => ({ change: measured(change), base: measured(base) });
 
-test("Linux loop noise passes while a fifty-percent loop-only regression fails (#783)", () => {
-  // First attempts of CI runs 41137648288 and 41131604704: unchanged measured path, two failures each.
-  for (const [first, second, resumeFirst, resumeSecond] of [[124.7, 124.5, 10.2, 10.1], [147.7, 154.8, 12.5, 11.9]] as const) {
-    const attempt = (loopMs: number, resumeMs: number) => measured({ loopMs, resumeMs, loopResumeRatio: loopMs / resumeMs });
-    expect(overBudget(attempt(first, resumeFirst), budgets.linux, attempt(second, resumeSecond))).toEqual([]);
-    expect(overBudget(attempt(first * 1.5, resumeFirst), budgets.linux, attempt(second * 1.5, resumeSecond)))
-      .toContainEqual(expect.stringContaining("loopResumeRatio"));
+test("a slow Windows runner passes while a change that slows the loop by half fails", () => {
+  // CI's Windows loop ranged from 139 to 459 ms on unchanged code; both binaries run on the same runner.
+  const limits = { loopMs: budgets.win32.versusBase.loopMs };
+  for (const loopMs of [139, 218, 459]) {
+    expect(slowerThanBase(attempt({ loopMs }, { loopMs }), limits)).toEqual([]);
+    expect(slowerThanBase(attempt({ loopMs: loopMs * 1.5 }, { loopMs }), limits))
+      .toEqual([expect.stringContaining("loopMs: 1.5 is over its limit of 1.25 times the base")]);
   }
-  expect(overBudget(measured({ loopMs: 241, loopResumeRatio: 10 }), budgets.linux))
-    .toContainEqual(expect.stringContaining("loopMs"));
+});
+
+test("a change as fast as its base, or faster, keeps to the comparison", () => {
+  const limits = { loopMs: 1.25, firstFrameMs: 1.25 };
+  expect(slowerThanBase(attempt({ loopMs: 125, firstFrameMs: 80 }, { loopMs: 100, firstFrameMs: 100 }), limits)).toEqual([]);
+});
+
+test("a change slower than its base in one attempt only passes after the retry", () => {
+  const limits = { loopMs: 1.25 };
+  expect(slowerThanBase(attempt({ loopMs: 140 }, { loopMs: 100 }), limits, attempt({ loopMs: 110 }, { loopMs: 100 }))).toEqual([]);
+  expect(slowerThanBase(attempt({ loopMs: 140 }, { loopMs: 100 }), limits, attempt({ loopMs: 150 }, { loopMs: 110 })))
+    .toEqual(["loopMs: 1.4 then 1.36 is over its limit of 1.25 times the base (140 against the base's 100, then 150 against the base's 110)"]);
+});
+
+test("the ratio to the base is to the hundredth", () => {
+  expect(ratio(150, 100)).toBe(1.5);
+  expect(ratio(100, 300)).toBe(0.33);
+});
+
+test("an absolute backstop fails a slowdown shared by both binaries", () => {
+  expect(overBudget(measured({ loopMs: 241 }), budgets.linux.limits)).toContainEqual(expect.stringContaining("loopMs"));
 });
 
 test("the median is the middle sample, whatever order the samples came in", () => {
@@ -61,10 +81,4 @@ test("a retry cannot pass a measurement with no limit set", () => {
 test("each measurement can pass in a different attempt", () => {
   expect(overBudget(measured({ firstFrameMs: 197.4, startupMs: 50 }), { firstFrameMs: 180, startupMs: 50 },
     measured({ firstFrameMs: 180, startupMs: 50.1 }))).toEqual([]);
-});
-
-test("a first frame slowed with the startup keeps to a limit on their ratio, and one slowed alone does not", () => {
-  expect(overBudget(measured({ startupMs: 17.5, firstFrameMs: 200.1, firstFrameRatio: 11.43 }), { firstFrameRatio: 12 })).toEqual([]);
-  expect(overBudget(measured({ startupMs: 10, firstFrameMs: 130, firstFrameRatio: 13 }), { firstFrameRatio: 12 }))
-    .toEqual(["firstFrameRatio: 13 is over its limit of 12"]);
 });
