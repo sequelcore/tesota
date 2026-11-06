@@ -3,7 +3,7 @@ import { doctorExitCode, doctorStatus } from "./doctor-rule.ts";
 import { existsSync } from "node:fs";
 import { stripVTControlCharacters } from "node:util";
 import manifest from "../package.json" with { type: "json" };
-import { tlaTsCommand } from "../../../src/model-check.ts";
+import { tlaChecker, tlaTsCommand } from "../../../src/model-check.ts";
 import { lscCommand } from "../../../src/verification/lemmascript-verifier.ts";
 import { fileCredentialStore } from "./credentials.ts";
 import { engineModels } from "./model-access.ts";
@@ -107,7 +107,8 @@ export async function doctorReport(): Promise<{ capabilities: Diagnosis[]; warni
     const tlaTs = tlaTsCommand();
     const result = await probe({ id: "tla-ts", requirement: "core", ...tlaTs, args: [...tlaTs.args, "-help"], consequence: modelLoss,
       repair: repairCommand("tla-ts"), successExitCode: 1, accepts: /Usage: tla-ts /u });
-    capabilities.push({ ...result, entryPoint: tlaTs.args.join(" ") });
+    // tla-ts prints no version of its own outside a check, so the row names the one Tesota bundles once it answers.
+    capabilities.push({ ...result, version: result.status === "available" ? tlaChecker : null, entryPoint: tlaTs.args.join(" ") });
   } catch {
     capabilities.push({ id: "tla-ts", requirement: "core", status: "unavailable", path: null, version: null,
       smoke: { ended: "not_started", exitCode: null, output: "tla-ts entry point not found." }, consequence: modelLoss, repair: repairCommand("tla-ts") });
