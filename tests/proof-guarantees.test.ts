@@ -4,7 +4,7 @@ import { GateOperations } from "../src/operations.js";
 import { renderReceipt } from "../src/receipt.js";
 import { emptyReceipt } from "./receipts.js";
 
-/** Every mutant fails its proof: what mutation finds is under test in proof-mutation.test.ts. */
+/** Every mutant fails its proof: what mutation finds is under test in the proof-mutation tests. */
 vi.mock("../src/verification/lemmascript-verifier.js", async (original) => ({
   ...await original<typeof import("../src/verification/lemmascript-verifier.js")>(),
   proveSource: () => Promise.resolve("failed"),
