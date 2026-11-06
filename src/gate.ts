@@ -86,10 +86,7 @@ function diffFrom(base: string, ...options: string[]): string[] {
  * (`undefined`), or once `signal` stops Git.
  */
 export async function changedFiles(root: string, base: string | null, signal?: AbortSignal): Promise<string[] | undefined> {
-  const tracked = base === null ? await gitPaths(root, ["ls-files", "--cached"], signal)
-    : await gitPaths(root, diffFrom(base, "--name-only", "--diff-filter=d"), signal);
-  const untracked = await gitPaths(root, ["ls-files", "--others", "--exclude-standard"], signal);
-  return tracked === undefined || untracked === undefined ? undefined : [...new Set([...tracked, ...untracked])].sort();
+  return (await pathsFromBase(root, base, signal))?.present;
 }
 
 /**
@@ -112,30 +109,39 @@ async function readIfPresent(path: string): Promise<string | undefined> {
 
 const statuses: Readonly<Record<string, ChangeStatus>> = { A: "added", D: "deleted" };
 
-/** The diff from `base` and its files, or why the gate cannot read it. */
-async function diffFromBase(root: string, base: string): Promise<ChangedFile[] | Exclude<UnitEvidence["weakened"], readonly unknown[]>> {
-  const listed = await gitOutput(root, [...diffFrom(base, "--name-status"), "-z"]);
-  const diff = await gitOutput(root, diffFrom(base, "--unified=0"));
-  if (listed === "too_large" || diff === "too_large") return "too_large";
-  if (listed === undefined || diff === undefined) return "unreadable";
-  const fields = listed.split("\0");
-  const changes: Pick<ChangedFile, "path" | "status">[] = [];
+/** A tracked file that differs from the base, with how. */
+type ListedFile = Pick<ChangedFile, "path" | "status">;
+
+/** Each tracked file that differs from the commit `base`, relative to the project, with its status; nothing when Git cannot tell. */
+async function listedFromBase(root: string, base: string, signal?: AbortSignal): Promise<ListedFile[] | undefined> {
+  const fields = (await git(root, [...diffFrom(base, "--name-status"), "-z"], undefined, signal))?.split("\0");
+  if (fields === undefined) return undefined;
+  const listed: ListedFile[] = [];
   for (let k = 0; k + 1 < fields.length; k += 2) {
-    changes.push({ path: fields[k + 1] ?? "", status: statuses[fields[k] ?? ""] ?? "modified" });
+    listed.push({ path: fields[k + 1] ?? "", status: statuses[fields[k] ?? ""] ?? "modified" });
   }
-  return changedLines(diff, changes);
+  return listed;
+}
+
+/** The diff from `base` of the files `listed` from it, or why the gate cannot read it. */
+async function diffFromBase(root: string, base: string, listed: readonly ListedFile[]):
+  Promise<ChangedFile[] | Exclude<UnitEvidence["weakened"], readonly unknown[]>> {
+  const diff = await gitOutput(root, diffFrom(base, "--unified=0"));
+  if (diff === "too_large") return "too_large";
+  if (diff === undefined) return "unreadable";
+  return changedLines(diff, listed);
 }
 
 /**
  * Each changed file's lines from `base`, with its content where the
  * weakening rules need it (`needsContent`) and the comment-only lines a
  * grammar reads in it (`withGrammarComments`), or why the change could not be
- * read. A changed file the base lacks, untracked or before the first commit,
- * counts as added whole.
+ * read. `listed` are the tracked files that differ from `base`. A changed
+ * file the base lacks, untracked or before the first commit, counts as added whole.
  */
-async function fileChanges(root: string, base: string | null, changed: readonly string[]):
+async function fileChanges(root: string, base: string | null, changed: readonly string[], listed: readonly ListedFile[]):
   Promise<FileChange[] | Exclude<UnitEvidence["weakened"], readonly unknown[]>> {
-  const diffed = base === null ? [] : await diffFromBase(root, base);
+  const diffed = base === null ? [] : await diffFromBase(root, base, listed);
   if (typeof diffed === "string") return diffed;
   const inDiff = new Set(diffed.map(({ path }) => path));
   // A proof's last generated program: `lsc regen` rewrites it from the source and drops from the proof what it no longer generates.
@@ -1062,11 +1068,20 @@ interface ChangedUnit {
   readonly endState?: Receipt["endState"];
 }
 
-/** The paths that differ from H: those present, untracked included, and with them the deleted; nothing when Git cannot tell. */
-async function pathsFromBase(root: string, base: string | null, signal?: AbortSignal): Promise<{ present: string[]; all: string[] } | undefined> {
-  const present = await changedFiles(root, base, signal);
-  const deleted = base === null ? [] : await gitPaths(root, diffFrom(base, "--name-only", "--diff-filter=D"), signal);
-  return present === undefined || deleted === undefined ? undefined : { present, all: [...new Set([...present, ...deleted])].sort() };
+/**
+ * The paths that differ from H: those present, untracked included, and with them the deleted, from one listing
+ * of the tracked ones (`listed`); every tracked file, as added, when H is null. Nothing when Git cannot tell.
+ */
+async function pathsFromBase(root: string, base: string | null, signal?: AbortSignal):
+  Promise<{ present: string[]; all: string[]; listed: ListedFile[] } | undefined> {
+  const listed = base === null
+    ? (await gitPaths(root, ["ls-files", "--cached"], signal))?.map((path): ListedFile => ({ path, status: "added" }))
+    : await listedFromBase(root, base, signal);
+  const untracked = await gitPaths(root, ["ls-files", "--others", "--exclude-standard"], signal);
+  if (listed === undefined || untracked === undefined) return undefined;
+  const present = listed.filter(({ status }) => status !== "deleted").map(({ path }) => path);
+  return { present: [...new Set([...present, ...untracked])].sort(),
+    all: [...new Set([...listed.map(({ path }) => path), ...untracked])].sort(), listed };
 }
 
 /** The whole diff against H, including deletions, for weakening even where attribution excludes inherited paths. */
@@ -1074,7 +1089,7 @@ async function changesFromBase(root: string, base: string | null): Promise<{
   paths: string[]; changes: Awaited<ReturnType<typeof fileChanges>>;
 } | undefined> {
   const paths = await pathsFromBase(root, base);
-  return paths === undefined ? undefined : { paths: paths.all, changes: await fileChanges(root, base, paths.present) };
+  return paths === undefined ? undefined : { paths: paths.all, changes: await fileChanges(root, base, paths.present, paths.listed) };
 }
 
 /** How long a stopped run's inventory may read Git before the receipt says it ran past its limit. */
@@ -1147,7 +1162,8 @@ async function fingerprintedUnit(root: string, base: string | null, start: Finge
   let end = await captureFingerprint(root, signal);
   const committed = end.status !== "known" || end.head === null ? []
     : base === null ? await gitPaths(root, ["ls-tree", "-r", "--name-only", end.head], signal)
-      : await gitPaths(root, [...diffFrom(base, "--name-only"), end.head], signal);
+      // A commit compared with itself has no changes.
+      : end.head === base ? [] : await gitPaths(root, [...diffFrom(base, "--name-only"), end.head], signal);
   if (committed === undefined) end = { status: "unknown", reason: "Git could not read the files committed since the admission base" };
   const compared = compareFingerprints(start, end, committed ?? []);
   const history = end.status === "known" && end.head !== base ? await historyFacts(root, base, start, end, startedAt, refs, signal) : undefined;

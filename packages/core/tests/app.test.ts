@@ -1119,7 +1119,10 @@ describe("tesota-core", () => {
     expect(rows.at(-1)).toContain("◌ waiting for you");
     // A digit answers at once.
     terminal.type("1");
-    const answered = (await terminal.until("written")).split("\n");
+    // The receipt that ends the run is taller than 30 rows and scrolls the reply away, so the run's end is read on a screen that holds both.
+    terminal.resize(100, 80);
+    const answered = (await terminal.until("Acceptance remains with the reviewer.")).split("\n");
+    expect(answered.join("\n")).toContain("written");
     expect(answered.some((row) => row.includes("/ for commands"))).toBe(true);
     expect(answered.at(-1)).not.toContain("waiting for you");
     expect(existsSync(join(cwd, "allowed.txt"))).toBe(true);
