@@ -233,8 +233,9 @@ const guardMissing = (): string => `a subagent that writes needs Git 2.54 or lat
 /** The options a child of `parent` opens with. */
 function childOptions(parent: Parent, child: { readonly header: NonNullable<SessionHeader["parent"]>; readonly writes: boolean;
   readonly model: Model<Api>; readonly type: AgentType | undefined; readonly guarded: boolean }): SessionOptions {
+  // A child keeps no task list: the parent's list describes delegated work as its own items.
   const { permissions, mcp, questions: _questions, surface: _surface, instructions: _instructions, tools: _tools, child: _child,
-    ...inherited } = parent.options;
+    taskList: _taskList, ...inherited } = parent.options;
   const { cwd, checkout } = parent.workspace;
   const worktree = (id: string): Workspace => newWorktree(cwd, id, `${cwd} is not a Git repository with a commit, so a subagent `
     + "that writes has no worktree of its own to work in.");

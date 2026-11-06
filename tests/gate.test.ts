@@ -193,6 +193,7 @@ it("records the proof files its own proving wrote, so a commit holding them expo
 it("asking a question alone cannot change project files, while unknown tools remain eligible", () => {
   expect(toolMayChangeFiles("ask_user", true, false)).toBe(false);
   expect(toolMayChangeFiles("ask_user", false, false)).toBe(true);
+  expect(toolMayChangeFiles("update_tasks", false, false)).toBe(false);
   expect(toolMayChangeFiles("unknown_tool", false, false)).toBe(true);
   expect(toolMayChangeFiles("agent", false, true)).toBe(false);
 });

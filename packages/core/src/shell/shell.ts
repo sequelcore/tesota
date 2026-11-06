@@ -14,6 +14,7 @@ import { expandKey, type Surface } from "./surface.ts";
 import { listRow, type ShellTheme } from "../../../../src/theme.ts";
 import type { ClarificationQuestion } from "../../../../src/clarification.ts";
 import { Transcript } from "./transcript.ts";
+import { tasksRow } from "./tasks-row.ts";
 import { WorkingStatus } from "./working-status.ts";
 import type { QuestionOutcome, QuestionSubmit } from "../questions.ts";
 import { createQuestionDraft, type QuestionDraft, QuestionForm } from "./question.ts";
@@ -259,8 +260,11 @@ export function startShell(options: ShellOptions): Shell {
   // While a question waits in the input's place the run waits for the operator, as the footer says, so it does not
   // also show as working: the question leads, directly under the conversation.
   const statusRow: Component = { render: (width) => questions.length > 0 ? [] : status.render(width), invalidate: () => { status.invalidate(); } };
+  // Read from the shown session, as the question it ended on is, so a reload or a switch keeps it; a waiting question hides it.
+  const taskRow: Component = { render: (width) => questions.length > 0 ? [] : tasksRow(session.tasks(), busy, expanded, theme, width),
+    invalidate: () => undefined };
   // A blank row always above the input, so the conversation's last card never touches it.
-  const docked: readonly Component[] = [new Spacer(1), pending, statusRow, editorSlot];
+  const docked: readonly Component[] = [new Spacer(1), pending, taskRow, statusRow, editorSlot];
   /**
    * The empty screen: the header's welcome block with the input right under it, the pair centered in the rows
    * the document and dock leave, and the footer kept at the bottom; none once there is activity or it does not fit.
@@ -543,7 +547,8 @@ export function startShell(options: ShellOptions): Shell {
     else if (event.type === "compacted") {
       loader.show("working", "Working…");
       note(`Compacted the conversation: about ${event.tokensBefore.toLocaleString("en")} tokens to ${event.tokensAfter.toLocaleString("en")}.`);
-    } else endedRun(event);
+    } else if (event.type === "ended") endedRun(event);
+    // The task row reads the session as it draws: a "tasks" event only redraws.
     tui.requestRender();
   };
   let unsubscribe = session.subscribe(onEvent);

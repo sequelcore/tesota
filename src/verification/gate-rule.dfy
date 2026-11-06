@@ -16,11 +16,11 @@ lemma verificationRequired_ensures(changed: bool, selected: bool)
 
 function toolMayChangeFiles(toolName: string, nativeQuestion: bool, readOnly: bool): bool
 {
-  (((((!(nativeQuestion) && !(readOnly)) && (toolName != "read")) && (toolName != "grep")) && (toolName != "find")) && (toolName != "ls"))
+  ((((((!(nativeQuestion) && !(readOnly)) && (toolName != "read")) && (toolName != "grep")) && (toolName != "find")) && (toolName != "ls")) && (toolName != "update_tasks"))
 }
 
 lemma toolMayChangeFiles_ensures(toolName: string, nativeQuestion: bool, readOnly: bool)
-  ensures (toolMayChangeFiles(toolName, nativeQuestion, readOnly) <==> (((((!(nativeQuestion) && !(readOnly)) && (toolName != "read")) && (toolName != "grep")) && (toolName != "find")) && (toolName != "ls")))
+  ensures (toolMayChangeFiles(toolName, nativeQuestion, readOnly) <==> ((((((!(nativeQuestion) && !(readOnly)) && (toolName != "read")) && (toolName != "grep")) && (toolName != "find")) && (toolName != "ls")) && (toolName != "update_tasks")))
 {
 }
 

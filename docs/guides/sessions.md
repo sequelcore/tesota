@@ -72,6 +72,18 @@ run. The footer counts the sessions waiting for you.
 
 Its keys are in [Commands and keys](../reference/commands.md#dashboard).
 
+## The agent's task list
+
+With `"taskList": true` in your [settings](../reference/configuration.md),
+the agent can keep a list of the steps of a request. A row above the input
+shows how many steps it marked done and, while it works, the step it is on;
+Ctrl+O lists every step. The list is the agent's claim: a step marked done
+proves nothing, and verification checks the change either way.
+
+The list belongs to its request. It survives compaction and reopening the
+session. A reply to a question the run ended on keeps it; any other new
+request starts with none, including "continue" after you stopped a run.
+
 ## Long conversations
 
 Near the model's context window, Tesota summarizes the older part and keeps
