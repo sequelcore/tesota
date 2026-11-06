@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { doctorCommand, formatDoctorReport, probe, repairCommand, type Diagnosis } from "../src/doctor.ts";
+import { tlaChecker } from "../../../src/model-check.ts";
 import { copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -114,7 +115,7 @@ test("the CLI reports missing tools as JSON without writing to a fresh home or p
     expect(result.exitCode).toBe(report.exitCode);
     expect(report.capabilities.find(({ id }) => id === "dafny")?.status).toBe("unavailable");
     expect(report.capabilities.find(({ id }) => id === "git")?.path).toBeNull();
-    expect(report.capabilities.find(({ id }) => id === "tla-ts")?.status).toBe("available");
+    expect(report.capabilities.find(({ id }) => id === "tla-ts")).toMatchObject({ status: "available", version: tlaChecker });
     expect(report.capabilities.find(({ id }) => id === "lsc")?.status).toBe("available");
     expect(report.capabilities.find(({ id }) => id === "claude-code")).toBeDefined();
     expect(readdirSync(home)).toEqual([]);
