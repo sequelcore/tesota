@@ -37,7 +37,7 @@ requests and issues in [sequelcore/tesota](https://github.com/sequelcore/tesota)
 ### Security
 
 - Binaries are built with Bun 1.4.4, whose Brotli decoder fixes the
-  out-of-bounds write CVE-2026-111497 that Bun 1.4.2 contained.
+  out-of-bounds write CVE-2026-111497 that Bun 1.4.2 contained (#833).
 
 ## [0.1.0-alpha.9] - 2026-10-30
 
