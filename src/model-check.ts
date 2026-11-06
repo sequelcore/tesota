@@ -278,9 +278,11 @@ async function runTlc(root: string, spec: string, config: string, invariants: re
     let reportTail = "";
     let violated = false;
     let deadlocked = false;
-    // From the specification's folder, where TLC finds the modules it extends.
+    // From the specification's folder, where TLC finds the modules it extends. One worker, as TLC's documentation
+    // advises for small models: with several, which error a run reports first, such as a deadlock or a broken
+    // invariant, can change between runs, and the deadlock retry and the verdict depend on it.
     const args = [maxHeap, "-XX:+UseParallelGC", `-Djava.io.tmpdir=${directory}`, "-cp", jar, "tlc2.TLC",
-      "-workers", "auto", "-metadir", join(directory, "states"), "-dump", "dot,actionlabels", dotFile,
+      "-workers", "1", "-metadir", join(directory, "states"), "-dump", "dot,actionlabels", dotFile,
       ...capture?.continue === true ? ["-continue"] : [], ...deadlockCheck ? [] : ["-deadlock"], "-config", written, posix.basename(spec)];
     const ran = await runProcess("java", args, join(root, posix.dirname(spec)),
     signal, timeoutMs, undefined, { onStdout: (chunk) => {
