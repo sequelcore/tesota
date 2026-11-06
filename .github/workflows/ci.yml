@@ -83,7 +83,7 @@ jobs:
       - run: bun run vendor
       - run: bun --no-env-file run --cwd packages/core typecheck
         if: matrix.shard == 1
-      # Separate runners give each serial shard its own home and snapshot store.
+      # Each runner takes half the files, which it runs as parallel shards with a home of their own (scripts/tests.ts).
       - run: bun --no-env-file run --cwd packages/core test --shard=${{ matrix.shard }}/2
       # Measured against the commit the change is made on: a pull request's base, the merge queue's, or the push's
       # previous commit; a tag has none, so its parent. The shallow checkout fetches it.
