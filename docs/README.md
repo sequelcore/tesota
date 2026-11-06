@@ -40,6 +40,9 @@ what it tested, and what nothing checked.
 
 ## Project
 
+[A task list during execution](decisions/2026-11-05-task-list-design.md)
+records its design and [decision](decisions/2026-11-05-task-list.md).
+
 [Request checks, source exercise and receipt v3](decisions/2026-11-02-evidence-v3-design.md)
 records their system design and [decision](decisions/2026-11-02-evidence-v3.md).
 
