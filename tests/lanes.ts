@@ -45,7 +45,9 @@ export const lanes = {
     "model-html.test.ts",
     "model-tool.test.ts",
     "model-view.test.ts",
-    "proof-mutation.test.ts",
+    "proof-mutation-equivalence.test.ts",
+    "proof-mutation-registered.test.ts",
+    "proof-mutation-strength.test.ts",
     "prove-tool.test.ts",
   ],
 } as const;
