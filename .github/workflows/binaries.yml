@@ -81,12 +81,13 @@ jobs:
             docker run --rm -v "$PWD/dist:/dist" alpine:3.22 sh -euc "apk add --no-cache libstdc++ libgcc >/dev/null; echo tesota-$binary: \$(/dist/tesota-$binary --version)"
           done
       # The install scripts download from a local server holding the built files, as they would from the release.
+      # Python takes 7 to 10 s to answer on a cold Windows runner; the wait ends as soon as it does.
       - name: Serve the built files
         shell: bash
         run: |
           python=$(command -v python3 || command -v python)
           (cd dist && "$python" -m http.server 8137 >/dev/null 2>&1 &)
-          for _ in $(seq 20); do curl -fsS -o /dev/null http://127.0.0.1:8137/SHA256SUMS && exit 0; sleep 0.5; done
+          for _ in $(seq 120); do curl -fsS -o /dev/null http://127.0.0.1:8137/SHA256SUMS && exit 0; sleep 0.5; done
           exit 1
       - name: The install script installs and updates tesota
         if: runner.os != 'Windows'

@@ -246,12 +246,13 @@ describe("a local server", () => {
   });
 
   test("a request already stopped does not wait for a server still connecting", async () => {
-    const servers = started([local("silent", { args: ["-e", "setInterval(() => {}, 1000)"] })], { waitMs: 500 });
+    // A wait far longer than any slow runner's delay, so returning well before it shows the request did not wait.
+    const servers = started([local("silent", { args: ["-e", "setInterval(() => {}, 1000)"] })], { waitMs: 20_000 });
     const stop = new AbortController();
     stop.abort();
     const begun = Date.now();
     await servers.ready(stop.signal);
-    expect(Date.now() - begun).toBeLessThan(100);
+    expect(Date.now() - begun).toBeLessThan(5_000);
     expect(servers.status()[0]?.state).toBe("connecting");
   });
 
@@ -262,8 +263,10 @@ describe("a local server", () => {
       env: { TESOTA_MCP_PID: pidFile },
     })]);
     // The child has received initialize but never answers it: close must stop a real connection in progress.
-    for (let tries = 0; !existsSync(pidFile) && tries < 100; tries++) await Bun.sleep(20);
+    // The file exists a moment before its PID is written: read early, it gives 0, which every process.kill accepts.
+    for (let tries = 0; (!existsSync(pidFile) || readFileSync(pidFile, "utf8") === "") && tries < 100; tries++) await Bun.sleep(20);
     const pid = Number(readFileSync(pidFile, "utf8"));
+    expect(pid).toBeGreaterThan(0);
     expect(() => process.kill(pid, 0)).not.toThrow();
     expect(servers.status()[0]?.state).toBe("connecting");
     const begun = Date.now();
