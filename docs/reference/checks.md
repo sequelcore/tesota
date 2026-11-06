@@ -108,8 +108,8 @@ change. Changed dependency manifests or lockfiles leave the result unknown.
 
 ## Design models
 
-TLC explores every reachable state of the configured model; its
-constants, constraints or a depth limit set the bounds. The `tesota-model`
+TLC explores every reachable state of the configured model with one
+worker; constants, constraints or depth limits bound it. The `tesota-model`
 header names the covered code, invariants, atomic steps, omissions and
 planted faults. A model is checked when its files, faults or covered code
 change; a passing check is reused for the same content.

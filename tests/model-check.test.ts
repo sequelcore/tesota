@@ -423,6 +423,9 @@ it.skipIf(!withTlc)("catches a declared invariant on the deadlock retry and capt
   expect(check.faults[0]?.capture?.status).toBe("captured");
   const manifest = JSON.parse(readFileSync(check.faults[0]?.capture?.manifest ?? "", "utf8"));
   expect(manifest.binding.command).toContain("-deadlock");
+  // This model both deadlocks and breaks Safety: with one worker TLC reports the deadlock first on every run.
+  const command: string[] = manifest.binding.command;
+  expect(command[command.indexOf("-workers") + 1]).toBe("1");
   expect(modelFinding({ ...check, verdict: "proved" }).more.join("\n")).toContain("a declared property broke: caught");
 }, 120_000);
 
