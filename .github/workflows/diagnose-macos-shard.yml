@@ -1,0 +1,51 @@
+name: Diagnose the macOS engine shard
+# Temporary, for #799: never merged; the pull request that carries it is closed with its result.
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  shard:
+    strategy:
+      fail-fast: false
+      matrix:
+        repeat: [1, 2, 3, 4, 5, 6, 7, 8]
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: package.json
+          package-manager-cache: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "25"
+      - name: TLC
+        shell: bash
+        run: |
+          mkdir -p ~/.tesota/tools
+          curl -fsSL -o ~/.tesota/tools/tla2tools.jar https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar
+          echo "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88  $HOME/.tesota/tools/tla2tools.jar" | shasum -a 256 -c -
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - run: bun run vendor
+      - name: Engine shard 2, with the Claude fake's processes recorded every 5 s
+        shell: bash
+        run: |
+          (while true; do echo "== $(date -u +%T)"; ps -axo pid,ppid,stat,etime,command | grep -iE 'claude|tesota-core-isolated' | grep -v grep; sleep 5; done) > "$RUNNER_TEMP/ps.log" 2>&1 &
+          watcher=$!
+          set +e
+          bun --no-env-file run --cwd packages/core test --shard=2/2 > "$RUNNER_TEMP/test.log" 2>&1
+          code=$?
+          kill $watcher
+          grep -E '^\(fail\)|timed out|^ *[0-9]+ (pass|fail)$|^Ran ' "$RUNNER_TEMP/test.log"
+          if grep -q '^(fail)' "$RUNNER_TEMP/test.log"; then
+            echo "--- processes while it ran:"; cat "$RUNNER_TEMP/ps.log"
+            echo "--- before each failure:"; grep -B40 '^(fail)' "$RUNNER_TEMP/test.log" | grep -vE '^\((pass|skip)\)'
+          fi
+          exit $code
