@@ -116,8 +116,9 @@ request obligations do not change. IDs and deletion rejection have no consumer.
 The native result is a short acknowledgement with no details. A successful
 result commits the list in its matching call's arguments; existing entries
 already identify run and call. Intent, assistant text, failed calls, and context
-notices commit nothing. MCP tool names carry the `mcp__` prefix, and a native
-tool already wins a name clash, so the name needs no reservation. The session layer follows transitive
+notices commit nothing. Replay recognizes updates by the `update_tasks` name,
+so extensions may not register it even when the feature is off; MCP names
+already carry the `mcp__` prefix. The session layer follows transitive
 `continues` links; latest means last successful result across that chain.
 Reject missing, forward, or cyclic links as unavailable. Malformed task data
 makes the projection unavailable, never empty or an older snapshot. A subsequent
