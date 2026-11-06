@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import type { Hooks } from "../src/hooks.ts";
 import type { McpTools } from "../src/loop.ts";
 import { type McpServers, startMcp } from "../src/mcp.ts";
+import { signIn, signOut } from "../src/mcp-auth.ts";
 import { type McpServerConfig, projectServers, readMcpConfig, readOAuthConfig, toolNames } from "../src/mcp-config.ts";
 import { createSession, type EngineSession } from "../src/session.ts";
 import type { EngineTool } from "../src/tool.ts";
@@ -329,6 +330,23 @@ describe("a remote server", () => {
   const browser = (page: URL): void => {
     void fetch(page, { redirect: "manual" }).then((answer) => fetch(answer.headers.get("location") ?? ""));
   };
+
+  test("signing out succeeds when the home does not exist yet", async () => {
+    const home = join(folder("tesota-core-mcp-home-"), ".tesota");
+    expect(existsSync(home)).toBe(false);
+    await signOut("docs", "https://example.test/mcp", home);
+    expect(existsSync(home)).toBe(true);
+  });
+
+  test("signing in stores a token when the home does not exist yet", async () => {
+    const server = await remote(true);
+    const home = join(folder("tesota-core-mcp-home-"), ".tesota");
+    expect(existsSync(home)).toBe(false);
+    await signIn("issues", server.url, {}, browser, new AbortController().signal, home);
+    expect(JSON.parse(readFileSync(join(home, "mcp-auth.json"), "utf8"))).toMatchObject({
+      [`issues|${server.url}`]: { tokens: { access_token: "access-1" } },
+    });
+  });
 
   test("with its own Authorization header it connects without sign-in, and one it refuses failed", async () => {
     const server = await remote(false);
