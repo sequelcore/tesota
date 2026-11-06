@@ -10,7 +10,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "bun scripts/isolated.ts bun scripts/tests.ts",
+    "test": "bun scripts/tests.ts",
     "budget": "bun scripts/isolated.ts bun scripts/budget.ts",
     "screenshots": "bun scripts/screenshots.ts",
     "check": "bun run typecheck && bun run test && bun run budget"
