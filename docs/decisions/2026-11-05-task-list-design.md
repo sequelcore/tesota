@@ -1,6 +1,6 @@
 # A task list during execution
 
-**Status:** Accepted by the owner on 2026-11-05; not implemented.
+**Status:** Accepted by the owner on 2026-11-05; implemented behind the off-by-default `taskList` setting.
 **Date:** 2026-11-05. **Baseline:** `2766d3a21d4868badbb34f45fddc3fa728be4019`.
 **Work:** [#521](https://github.com/sequelcore/tesota/issues/521).
 **Decision:** [ADR](2026-11-05-task-list.md).
@@ -36,7 +36,7 @@ journal already records, so no entry changes shape.
 | Privacy | Same session storage and selected model providers; no automatic export or publication |
 | Operation | Operator runs CLI and manages session retention; Sequel maintains releases |
 
-Bounds are owner choices, not measured optima. Payload limits bound task count.
+Bounds are owner choices, not measured optima.
 The
 [roadmap](../../ROADMAP.md) still puts verification first.
 
@@ -57,12 +57,11 @@ PostgreSQL, queues, and sidecar files solve no current requirement.
 | `session-file.ts` | No change; existing writer, validation, sync, and corruption handling |
 | `shell/shell.ts` and `shell/transcript.ts` | Draw committed snapshots, using existing Ctrl+O expansion and terminal escaping |
 | `settings.ts` and entry-point wiring | Boolean `taskList`, default false; top-level terminal and print use the same policy |
-| Verification layer | No task-status input, evidence field, settlement shortcut, or receipt schema change |
+| Verification layer | `update_tasks` joins the tools that change no files; no task-status input, evidence field, settlement shortcut, or receipt schema change |
 
 Live updates and replay share one engine policy, importing neither shell nor
-verifier. Session admission supplies the loop with resolved lineage and initial
-state through a concrete internal callback; expose projection on EngineSession.
-Add no event bus or storage port.
+verifier. Replay builds the task book that seeds the loop, which keeps it
+current; expose projection on EngineSession. Add no event bus or storage port.
 
 ### Context and containers
 
@@ -173,7 +172,7 @@ and unknowns. The request ledger governs scope, task state governs list metadata
 and checks govern verification. The builder derives what the model sees from
 journal data; no provider-only injection is introduced.
 
-At enabled admission, the session callback supplies ancestor lineage and state:
+At enabled admission, the task book gives the ancestor lineage's state:
 snapshot, none, or unavailable. When the state is a snapshot or unavailable,
 record one internal `custom_message` naming lineage and state, after all
 admission entries but before their sync; a request that inherits no list
