@@ -8,8 +8,9 @@ import manifest from "../package.json" with { type: "json" };
  * the current folder; `-p` runs one request without it, and
  * `receipt` writes the last receipt for a pull request, and
  * `accounts` adds, lists and removes the operator's accounts. The
- * `--measure-*` commands are what the budget check runs, and `__lsc` is
- * LemmaScript for the verifier in a binary (`lsc.ts`).
+ * `--measure-*` commands are what the budget check runs, `__lsc` is
+ * LemmaScript for the verifier in a binary (`lsc.ts`), and `__tla-ts` is
+ * tla-ts for the model check in a binary (`tla-ts.ts`).
  */
 
 /** The verifier's flags (`gate.ts`), taken wherever they come, for the shell and `-p`. */
@@ -103,6 +104,12 @@ else if (command === "__lsc") {
   import("./lsc.ts").then(({ runLsc }) => runLsc(rest)).catch((error: unknown) => {
     console.error(error);
     process.exitCode = 1;
+  });
+}
+else if (command === "__tla-ts") {
+  import("./tla-ts.ts").then(({ runTlaTs }) => runTlaTs(rest)).catch((error: unknown) => {
+    console.error(error);
+    process.exitCode = 255;
   });
 }
 else {

@@ -10,8 +10,8 @@ Use one for shared counters, locks, retries or concurrent file writes.
 ```mermaid
 flowchart LR
   fn["TypeScript function with //@ contracts"] --> lsc["LemmaScript"] --> dafny["Dafny"] --> proved{"Proved or not"}
-  tla["TLA+ design model"] --> tlc["TLC"]
-  qnt["Quint design model"] -- "translated by Apalache" --> tlc
+  tla["TLA+ design model"] --> tlc["TLC (tla-ts, included)"]
+  qnt["Quint design model"] -- "translated by Apalache, run by Java TLC" --> tlc
   tlc --> states{"States explored: invariants hold, or a counterexample"}
   proved --> receipt["Receipt"]
   states --> receipt
@@ -114,14 +114,15 @@ path outside the project isn't read.
 
 When a request changes a model or a file it covers, Tesota checks it once
 before the run ends: the model, then its faults, then `replay`, each with
-five minutes, and TLC with 2 GB of memory. The agent gets a `check_model`
-tool while it works. A counterexample goes back as numbered steps; a fault
+five minutes. TLA+ models run on the included
+[tla-ts](https://github.com/aidenybai/tla-ts), a TLC without Java. The agent
+gets a `check_model` tool while it works. A counterexample goes back as numbered steps; a fault
 that passes goes back as too weak; a model written without a header goes
-back once with the format. Without Java or TLC the receipt says it wasn't
-checked ([Installation](../reference/installation.md#tools)).
+back once with the format.
 
-Quint typechecks first, then needs Apalache to translate for TLC, which
-Windows can't start; write models there in TLA+.
+Quint typechecks first, then needs Apalache and Java to run TLC, which
+Windows can't start; write models there in TLA+. Without them the receipt
+says why ([Installation](../reference/installation.md#tools)).
 
 [Pin inputs](../receipt-v3.md#required-model): `--require-model <path>`.
 
@@ -134,7 +135,7 @@ Windows can't start; write models there in TLA+.
 | Model fails | A declared property or assertion breaks, or the main run deadlocks; the steps follow |
 | Model too weak | A planted fault passes or is broken; unfinished retries leave a gap |
 | Model not checkable | TLC couldn't read it |
-| Model not checked | Java, TLC or Quint is missing, it ran out of time, or it has no header |
+| Model not checked | Quint or Java is missing, it timed out, or it has no header |
 | Model possibly stale | Covered code changed since `confirmed`, without the model |
 | Model staleness unknown | No `confirmed`, or a commit the repository doesn't have |
 

@@ -24,7 +24,6 @@ are optional; Tesota creates state files as needed.
 | `worktrees/` | The Git worktrees of [sessions](../guides/sessions.md) that run beside another |
 | `snapshots/` | Tesota's snapshots of folders in no repository |
 | `workspaces/` | Operating-system locks reserving checkouts for sessions |
-| `tools/tla2tools.jar` | TLC for [design model checks](../guides/model-checking.md); you put it there |
 
 No tool call may read or change `auth.json` or `mcp-auth.json`.
 

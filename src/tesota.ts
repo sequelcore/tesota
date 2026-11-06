@@ -5,7 +5,7 @@ import { EvidenceFooter } from "./footer.js";
 import { type RecordedRequest, registerGate } from "./gate.js";
 import { registerMessages } from "./messages.js";
 import { findModels } from "./model-check.js";
-import { hasTlc, MODEL_GUIDELINES, modelTool } from "./model-tool.js";
+import { MODEL_GUIDELINES, modelTool } from "./model-tool.js";
 import { onPath, suggestChecks } from "./projects.js";
 import { annotated, hasContracts, PROVE_GUIDELINES, proveTool } from "./prove-tool.js";
 import { readiness } from "./verification/footer-rule.js";
@@ -51,10 +51,8 @@ export default function tesota(pi: ExtensionAPI, recorded?: () => RecordedReques
     ctx.ui.setWorkingDetail(progress.operations);
     rules.prove = contracts;
     if (contracts || onPath("dafny")) offer(proveTool.name);
-    if (hasTlc()) {
-      rules.model = (await findModels(ctx.cwd)).length > 0;
-      offer(modelTool.name);
-    }
+    rules.model = (await findModels(ctx.cwd)).length > 0;
+    offer(modelTool.name);
   });
   // The first contract or model the agent writes brings its tool's rules, and `prove` where it was not offered yet.
   pi.on("tool_result", (event, ctx) => {

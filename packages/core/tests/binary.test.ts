@@ -89,6 +89,22 @@ test("the engine's binary starts, and runs LemmaScript it embeds", () => {
   expect(JSON.parse(info.stdout)).toMatchObject({ schema: 1, functions: [{ name: "clamp" }] });
 }, 120_000);
 
+test("the engine's binary model-checks TLA+ with the tla-ts it embeds, with no Java on the PATH", () => {
+  const binary = join(folder("tesota-core-binary-"), executable("tesota"));
+  build(binary);
+  const project = folder("tesota-core-binary-model-");
+  writeFileSync(join(project, "Spec.tla"), "---- MODULE Spec ----\nEXTENDS Naturals\nVARIABLE x\nInit == x = 0\n" +
+    "Next == x < 5 /\\ x' = x + 1\nSpec == Init /\\ [][Next]_x\nNotTwo == x /= 2\nNotFour == x /= 4\n====\n");
+  writeFileSync(join(project, "Spec.cfg"), "SPECIFICATION Spec\nINVARIANT NotTwo\nINVARIANT NotFour\nCHECK_DEADLOCK FALSE\n");
+  const run = spawnSync(binary, ["__tla-ts", `-Djava.io.tmpdir=${folder("tesota-core-binary-tmp-")}`, "tlc2.TLC", "-workers", "1",
+    "-continue", "-config", "Spec.cfg", "Spec.tla"], { cwd: project, encoding: "utf8", env: { ...process.env, PATH: "" } });
+  expect(run.status).toBe(0);
+  expect(run.stdout).toContain("TLC2 Version");
+  expect(run.stdout).toContain("Invariant NotTwo is violated.");
+  expect(run.stdout).toContain("Invariant NotFour is violated.");
+  expect(run.stdout).toContain("6 distinct states found");
+}, 120_000);
+
 test("the binary doctor embeds repairs and probes LemmaScript without writing outside the checkout", () => {
   const binary = join(folder("tesota-doctor-binary-"), executable("tesota"));
   build(binary);
@@ -100,6 +116,7 @@ test("the binary doctor embeds repairs and probes LemmaScript without writing ou
   const report = JSON.parse(run.stdout) as { exitCode: number; capabilities: { id: string; status: string; entryPoint?: string; repair: string }[] };
   expect(report.exitCode).toBe(2);
   expect(report.capabilities.find(({ id }) => id === "lsc")).toMatchObject({ status: "available", entryPoint: "__lsc" });
+  expect(report.capabilities.find(({ id }) => id === "tla-ts")).toMatchObject({ status: "available", entryPoint: "__tla-ts" });
   expect(report.capabilities.find(({ id }) => id === "git")?.repair.length).toBeGreaterThan(0);
   expect(readdirSync(project)).toEqual([]);
 }, 120_000);

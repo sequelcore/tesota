@@ -191,7 +191,8 @@ function buildBase(revision: string, outfile: string, folder: string): void {
     if (built.exitCode !== 0) throw new Error(`The base ${revision} did not build:\n${built.stderr.toString()}`);
   } finally {
     for (const path of links) unlinkSync(path);
-    git(["worktree", "remove", "--force", tree]);
+    // A base that installs its own packages has paths past Windows' 260 characters under the temporary folder.
+    git(["-c", "core.longpaths=true", "worktree", "remove", "--force", tree]);
   }
 }
 

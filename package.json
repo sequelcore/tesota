@@ -29,6 +29,7 @@
     "effect": "4.0.5",
     "lemmascript": "0.6.5",
     "pele": "1.12.0",
+    "tla-ts": "0.0.8-dev.8067c48",
     "ts-morph": "25.0.1",
     "web-tree-sitter": "0.27.0"
   },
@@ -50,6 +51,7 @@
     "packages/*"
   ],
   "patchedDependencies": {
-    "lemmascript@0.6.5": "patches/lemmascript@0.6.5.patch"
+    "lemmascript@0.6.5": "patches/lemmascript@0.6.5.patch",
+    "tla-ts@0.0.8-dev.8067c48": "patches/tla-ts@0.0.8-dev.8067c48.patch"
   }
 }

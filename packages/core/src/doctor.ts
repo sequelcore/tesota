@@ -3,7 +3,7 @@ import { doctorExitCode, doctorStatus } from "./doctor-rule.ts";
 import { existsSync } from "node:fs";
 import { stripVTControlCharacters } from "node:util";
 import manifest from "../package.json" with { type: "json" };
-import { tlaToolsJar } from "../../../src/model-check.ts";
+import { tlaTsCommand } from "../../../src/model-check.ts";
 import { lscCommand } from "../../../src/verification/lemmascript-verifier.ts";
 import { fileCredentialStore } from "./credentials.ts";
 import { engineModels } from "./model-access.ts";
@@ -63,7 +63,7 @@ export function repairCommand(id: string, platform: NodeJS.Platform = process.pl
 }
 
 const proofLoss = "Not proved: LemmaScript contracts cannot be proved.";
-const modelLoss = "Model not checked: design models cannot be model-checked.";
+const modelLoss = "Model not checked: TLA+ design models cannot be model-checked.";
 const providerLoss = "Not verified: no run with this provider until its sign-in works; other providers are unaffected.";
 
 async function claudeDiagnosis(id: string): Promise<Diagnosis> {
@@ -87,8 +87,6 @@ export async function doctorReport(): Promise<{ capabilities: Diagnosis[]; warni
   const capabilities: Diagnosis[] = [];
   for (const spec of [
     { id: "dafny", requirement: "core" as const, executable: "dafny", args: ["--version"], consequence: proofLoss, accepts: /(?:^|\s)4\./u },
-    { id: "java", requirement: "core" as const, executable: "java", args: ["-version"], consequence: modelLoss,
-      accepts: /version "(?:1[1-9]|[2-9]\d|\d{3,})[."]/u },
     { id: "git", requirement: "core" as const, executable: "git", args: ["--version"], consequence: "Not verified: changes cannot be measured against a Git base or snapshot." },
     { id: "quint", requirement: "optional" as const, executable: "quint", args: ["--version"], consequence: "Model not checked: Quint models cannot be checked; TLA+ is unaffected." },
   ]) capabilities.push(await probe({ ...spec, repair: repairCommand(spec.id) }));
@@ -105,14 +103,14 @@ export async function doctorReport(): Promise<{ capabilities: Diagnosis[]; warni
     capabilities.push({ id: "lsc", requirement: "core", status: "unavailable", path: null, version: null,
       smoke: { ended: "not_started", exitCode: null, output: "LemmaScript entry point not found." }, consequence: proofLoss, repair: repairCommand("lsc") });
   }
-  const jar = tlaToolsJar();
-  if (!existsSync(jar)) {
-    capabilities.push({ id: "tlc", requirement: "core", status: "unavailable", path: processExecutable("java") ?? null, entryPoint: jar, version: null,
-      smoke: { ended: "not_started", exitCode: null, output: "TLC jar not found." }, consequence: modelLoss, repair: repairCommand("tlc") });
-  } else {
-    const tlc = await probe({ id: "tlc", requirement: "core", executable: "java", args: ["-cp", jar, "tlc2.TLC", "-help"], consequence: modelLoss,
-      repair: repairCommand("tlc"), successExitCode: 1, accepts: /TLC - provides model checking.*Version \d/u });
-    capabilities.push({ ...tlc, entryPoint: jar });
+  try {
+    const tlaTs = tlaTsCommand();
+    const result = await probe({ id: "tla-ts", requirement: "core", ...tlaTs, args: [...tlaTs.args, "-help"], consequence: modelLoss,
+      repair: repairCommand("tla-ts"), successExitCode: 1, accepts: /Usage: tla-ts /u });
+    capabilities.push({ ...result, entryPoint: tlaTs.args.join(" ") });
+  } catch {
+    capabilities.push({ id: "tla-ts", requirement: "core", status: "unavailable", path: null, version: null,
+      smoke: { ended: "not_started", exitCode: null, output: "tla-ts entry point not found." }, consequence: modelLoss, repair: repairCommand("tla-ts") });
   }
   const providers: Diagnosis[] = [await claudeDiagnosis("claude-code")];
   const settingsPath = join(tesotaHome(), "settings.json");
@@ -157,7 +155,7 @@ export async function doctorReport(): Promise<{ capabilities: Diagnosis[]; warni
 export async function doctorCommand(args: readonly string[], output: { out(text: string): void; error(text: string): void }): Promise<number> {
   if (args.length > 1 || (args.length === 1 && args[0] !== "--json")) {
     const help = args.length === 1 && (args[0] === "--help" || args[0] === "-h");
-    (help ? output.out : output.error)("Use: tesota doctor [--json]\nRead-only local probes, five seconds each. Core: Git, Dafny with lsc, Java with TLC, model provider (at least one provider row available). Optional: Quint and individual provider rows, including Claude Code accounts.\nExit: 0 no failures or unavailable core capabilities, 1 any failed tool/provider (including optional), 2 core capability unavailable without failures, 3 usage error. Unavailable optional tools do not affect the exit code, nor do warnings such as unknown settings keys.\n");
+    (help ? output.out : output.error)("Use: tesota doctor [--json]\nRead-only local probes, five seconds each. Core: Git, Dafny with lsc, tla-ts (included), model provider (at least one provider row available). Optional: Quint and individual provider rows, including Claude Code accounts.\nExit: 0 no failures or unavailable core capabilities, 1 any failed tool/provider (including optional), 2 core capability unavailable without failures, 3 usage error. Unavailable optional tools do not affect the exit code, nor do warnings such as unknown settings keys.\n");
     return help ? 0 : 3;
   }
   const report = await doctorReport();
