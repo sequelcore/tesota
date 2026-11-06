@@ -37,13 +37,15 @@ const enter = "\r";
 
 function shellOn(script: readonly ScriptStep[], mode: TuiMode = "fullscreen", size: [number, number] = [80, 24],
   extra: { tokensPerSecond?: number; copy?: (text: string) => Promise<boolean>; readClipboard?: () => Promise<string | null | undefined>; commands?: readonly SlashCommand[]; surface?: Surface;
-    questions?: SessionOptions["questions"]; cwd?: string; command?: (text: string) => Promise<boolean>; answersQueriesAfterMs?: number; agents?: () => void } = {}) {
+    questions?: SessionOptions["questions"]; cwd?: string; command?: (text: string) => Promise<boolean>; answersQueriesAfterMs?: number; agents?: () => void;
+    taskList?: boolean } = {}) {
   const faux = fauxProvider({ tokensPerSecond: extra.tokensPerSecond ?? 400 });
   faux.setResponses(script.map(scriptedReply));
   const models = createModels();
   models.setProvider(faux.provider);
-  const { cwd = folder("tesota-core-shell-"), answersQueriesAfterMs, ...options } = extra;
-  const session = createSession({ cwd, folder: folder("tesota-core-sessions-"), models, model: faux.getModel(), verifier: accepts, ...extra.questions === undefined ? {} : { questions: extra.questions } });
+  const { cwd = folder("tesota-core-shell-"), answersQueriesAfterMs, taskList, ...options } = extra;
+  const session = createSession({ cwd, folder: folder("tesota-core-sessions-"), models, model: faux.getModel(), verifier: accepts,
+    ...extra.questions === undefined ? {} : { questions: extra.questions }, ...taskList === undefined ? {} : { taskList } });
   const terminal = new VirtualTerminal(...size);
   terminal.answersQueriesAfterMs = answersQueriesAfterMs;
   const shell = startShell({ terminal, mode, fullRepaint: false, theme: shellTheme("dark", "truecolor"), session,
@@ -1358,4 +1360,52 @@ test("inline handoff clears the welcome before another program writes", async ()
   await terminal.until(greeting);
   shell.stop();
   expect(shown(await terminal.scrollback())).not.toContain(greeting);
+});
+
+describe("the agent's task list", () => {
+  const plan = [
+    { title: "Inspect session recovery", status: "completed" },
+    { title: "Implement task restoration", status: "in_progress" },
+    { title: "Check the real terminal \u001b[31mpath\u001b[0m", status: "pending" },
+  ];
+  const update = { tool: "update_tasks", args: { tasks: plan } };
+
+  test("while the run goes, one row above the input names the focus and the claimed count", async () => {
+    const { terminal, session } = shellOn([update, "Working through the list now. ".repeat(20)], "fullscreen", [80, 24],
+      { taskList: true, tokensPerSecond: 40 });
+    void session.prompt("Restore the list.");
+    const screen = await terminal.until("now: Implement task restoration");
+    expect(screen).toContain("Agent task list · 1/3 marked done");
+    const rows = screen.split("\n");
+    expect(rows.findIndex((line) => line.includes("Agent task list"))).toBeLessThan(rows.findIndex((line) => line.includes("Working")));
+    await settled(session);
+  });
+
+  test("once the run ends the list shows as saved, Ctrl+O lists every task, and titles are drawn as text", async () => {
+    const { terminal, session } = shellOn([update, "Done for now."], "fullscreen", [80, 24], { taskList: true });
+    await session.prompt("Restore the list.");
+    const collapsed = await terminal.until("Saved agent task list · 1/3 marked done · Ctrl+O to expand");
+    expect(collapsed).not.toContain("now:");
+    terminal.type("\x0f");
+    const expanded = await terminal.until("in progress  Implement task restoration");
+    expect(expanded).toContain("completed    Inspect session recovery");
+    // The title's color codes are stripped, not drawn.
+    expect(expanded).toContain("pending      Check the real terminal path");
+    terminal.type("\x0f");
+    await terminal.untilGone("in progress  Implement task restoration");
+  });
+
+  test("a waiting question leads alone, and a new request clears the row", async () => {
+    const { terminal, session, shell } = shellOn([update, "Saved.", "A new request."], "fullscreen", [100, 30], { taskList: true });
+    await session.prompt("Restore the list.");
+    await terminal.until("Saved agent task list");
+    const answer = shell.ask("Which path should the agent take?");
+    expect(await terminal.until("Which path should the agent take?")).not.toContain("task list");
+    terminal.type("conservative");
+    terminal.type(enter);
+    expect(await answer).toBe("conservative");
+    await terminal.until("Saved agent task list");
+    await session.prompt("Something else.");
+    await terminal.untilGone("Saved agent task list");
+  });
 });

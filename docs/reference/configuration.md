@@ -50,6 +50,7 @@ No tool call may read or change `auth.json` or `mcp-auth.json`.
 | `tuiMode` | `fullscreen` (default), `inline`; takes effect on next start. Windows over SSH uses inline | `/settings` |
 | `agentLimit` | How many [subagents](../guides/subagents.md) run at once across a session and its subagents: 1 to 16, 4 by default | You |
 | `subagentBranchGuard` | Whether Git keeps a [subagent that writes](../guides/subagents.md) off every branch but its own: `require` (default), `warn`, `off` | You |
+| `taskList` | Whether the agent keeps a [task list](../guides/sessions.md#the-agents-task-list): `true` or `false` (default) | You |
 | `hooks` | See [Hooks](../guides/hooks.md); read separately from the settings above | You |
 | `deviceId` | Installation UUID used by some sign-in flows | Generated when needed |
 

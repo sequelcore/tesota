@@ -20,6 +20,7 @@ import {
 } from "./loop.ts";
 import type { PromptEntry } from "./prompt.ts";
 import { agentTool } from "./tools/agent.ts";
+import { taskBook } from "./tasks.ts";
 import { noEffect, notRun, outcomeUnknown, repairs } from "./reconcile-rule.ts";
 import {
   type Behavior, createSessionFile, floorRefusals, type Origin, readSessionFile, type Repair, type SessionEntry, sessionFormat, sessionVersion,
@@ -342,8 +343,10 @@ function unsettledReceipt(entries: readonly SessionEntry[], run: number): Sessio
  * compaction, and the system messages since it, each after the
  * message it followed.
  */
-function conversation(entries: readonly SessionEntry[]): Pick<LoopState, "history" | "ledger" | "compacted" | "prompt"> {
+function conversation(entries: readonly SessionEntry[]): Pick<LoopState, "history" | "ledger" | "compacted" | "prompt" | "tasks"> {
   const history: HistoryMessage[] = [];
+  /** The runs' task lists as each entry left them, so a compaction restores the list the loop restored then. */
+  const tasks = taskBook(continuesType);
   let prompt: PromptEntry[] = [];
   /** A system message comes after the message the conversation ended with then; the leading one after none. */
   const system = (message: Extract<SessionEntry, { readonly type: "system" }>["message"]): void => {
@@ -409,6 +412,7 @@ function conversation(entries: readonly SessionEntry[]): Pick<LoopState, "histor
     }
   };
   for (const [order, entry] of entries.entries()) {
+    tasks.apply(entry);
     if (entry.type === "request") {
       const asked: HistoryMessage = { role: "user", content: entry.text, timestamp: Date.parse(entry.at) };
       ledger = entry.skill === undefined ? [asked] : [asked, skillMessage(entry.skill, Date.parse(entry.at))];
@@ -425,7 +429,7 @@ function conversation(entries: readonly SessionEntry[]): Pick<LoopState, "histor
     else if (entry.type === "compaction") {
       const files = { read: entry.read, changed: entry.changed };
       const cut = Math.max(0, history.length - entry.kept);
-      history.splice(0, cut, compactedHead(ledger, entry.summary, files, history.slice(cut)));
+      history.splice(0, cut, compactedHead(ledger, entry.summary, files, history.slice(cut), tasks.state(entry.run)));
       compacted = { summary: entry.summary, files, counted: history.length };
       prompt = [];
     } else if (entry.type === "system") system(entry.message);
@@ -440,7 +444,7 @@ function conversation(entries: readonly SessionEntry[]): Pick<LoopState, "histor
     else if (entry.type === "job_end") { if (background.get(entry.job) === true) history.push(jobMessage(entry.text, entry.details, 0)); }
     else custom(entry, order);
   }
-  return { history, ledger, prompt, ...compacted === undefined ? {} : { compacted } };
+  return { history, ledger, prompt, tasks, ...compacted === undefined ? {} : { compacted } };
 }
 
 /**

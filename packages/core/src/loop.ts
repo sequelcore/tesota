@@ -34,6 +34,8 @@ import { type Access, afterRefusal } from "./permission-rule.ts";
 import type { EngineTool, ToolOutput } from "./tool.ts";
 import { codingTools } from "./tools/index.ts";
 import { type AskHost, isNativeAskTool } from "./tools/ask.ts";
+import { isNativeTasksTool, tasksTool } from "./tools/tasks.ts";
+import { type TaskBook, taskBook, tasksNotice, tasksNoticeType, tasksSection, type TaskState, tasksToolName } from "./tasks.ts";
 import { askQuestions, blockingProseQuestion, type QuestionResponder } from "./questions.ts";
 import { askAccepted, questionRepair } from "./questions-rule.ts";
 import { clarificationText, type Clarification, type ClarificationAnswer, type ClarificationQuestion } from "../../../src/clarification.ts";
@@ -107,6 +109,8 @@ export interface LoopOptions {
   readonly questions?: QuestionResponder;
   /** Tools whose calls start jobs of the run, such as `agent`; none when not given. */
   readonly jobTools?: (jobs: Jobs) => readonly EngineTool[];
+  /** Whether the model gets `update_tasks` and a request that inherits a list is told of it; off when not given. */
+  readonly taskList?: boolean;
 }
 
 /**
@@ -203,6 +207,8 @@ export type SessionEvent =
   | { readonly type: "compacted"; readonly tokensBefore: number; readonly tokensAfter: number }
   /** A job the run started, from its call: running, then ended, with what the shell shows of it. */
   | { readonly type: "job"; readonly job: string; readonly callId: string; readonly state: "running" | "ended"; readonly details: JsonValue }
+  /** The last run's task list changed; read it with `tasks`. */
+  | { readonly type: "tasks" }
   | { readonly type: "ended"; readonly outcome: SessionOutcome; readonly reason?: string };
 
 /** The `custom` entry that links a run to the one it continues, recorded with its request. */
@@ -239,6 +245,8 @@ export interface LoopSession extends Session {
   skills(): readonly Skill[];
   /** What fills the model's window now, by part; unknown without a context window. */
   context(): ContextBreakdown | undefined;
+  /** The last run's task list, as the agent last saved it. */
+  tasks(): TaskState;
 }
 
 /** Where a session stands: its conversation, its last run and amendment, its usage and how its last run ended. */
@@ -254,6 +262,8 @@ export interface LoopState {
   readonly ledger?: readonly HistoryMessage[];
   /** The last compaction: its summary, the files summarized so far, and where replies count toward usage again. */
   readonly compacted?: { readonly summary: string; readonly files: FilesTouched; readonly counted: number };
+  /** The runs' task lists and continuation links, replayed; none for a new session. */
+  readonly tasks?: TaskBook;
 }
 
 const skillType = "tesota.skill";
@@ -290,11 +300,12 @@ export function checkPlanMessage(base: Base, timestamp: number): CustomMessage |
 /**
  * What a compacted conversation starts with: the run's request, the
  * skill it started, its amendments and the operator's answers exactly
- * as given, which no summary replaces, then the summary. It is context the
- * model reads as the operator's; the shell does not show it.
+ * as given, which no summary replaces, then the summary, then what it says
+ * of the run's task list (`tasksSection`). It is context the model reads as
+ * the operator's; the shell does not show it.
  */
 export function compactedHead(ledger: readonly HistoryMessage[], summary: string, files: FilesTouched,
-  tail: readonly HistoryMessage[]): CustomMessage {
+  tail: readonly HistoryMessage[], tasks?: TaskState): CustomMessage {
   // What the tail still holds is not repeated. An answer enters the conversation in its call's result, which can
   // come after an amendment given before it, so the ledger is not in the conversation's order: each is looked for.
   const given = ledger.flatMap((message, index) => tail.includes(message) ? [] : [(index === 0
@@ -302,7 +313,9 @@ export function compactedHead(ledger: readonly HistoryMessage[], summary: string
       : message.role === "custom" && message.customType === skillType ? ["The skill the operator started:"]
         : message.role === "custom" && message.customType === referenceType ? ["Third-party reference data, separate from operator instructions:"]
         : ["Added while you worked:"]).concat(conversationMessage(message).text ?? "")]);
-  const content = [...given.flat(), summaryMessage(summary, files)].join("\n\n");
+  const listed = tasks === undefined ? undefined : tasksSection(tasks, (callId) =>
+    tail.some((message) => message.role === "toolResult" && message.toolCallId === callId));
+  const content = [...given.flat(), summaryMessage(summary, files), ...listed === undefined ? [] : [listed]].join("\n\n");
   return { role: "custom", customType: "tesota.compaction", content, display: false, timestamp: Date.now() };
 }
 
@@ -491,6 +504,8 @@ function toolbox(given: EngineTool[]) {
     activeTools,
     active: (): string[] => [...active],
     register(tool: ToolDefinition, context: (signal: AbortSignal) => Parameters<ToolDefinition["execute"]>[4]): void {
+      // Replay reads task updates by this name, whether or not the session offers the tool.
+      if (tool.name === tasksToolName) throw new Error(`"${tasksToolName}" is Tesota's own tool name.`);
       if (known(tool.name)) throw new Error(`A tool named "${tool.name}" is already registered.`);
       tools.push(extensionTool(tool, context));
       if (restored ? pending.delete(tool.name) : tool.defaultActive !== false) active.push(tool.name);
@@ -533,10 +548,13 @@ function toolbox(given: EngineTool[]) {
   };
 }
 
-/** A session's own tools: those given, or the file tools, the platform's shell and `ask_user`; then those that start jobs. */
+/**
+ * A session's own tools: those given, or the file tools, the platform's shell and `ask_user`; then `update_tasks`
+ * when the task list is on; then those that start jobs.
+ */
 const sessionTools = (options: LoopOptions, spool: () => string, questions: AskHost, jobs: Jobs): EngineTool[] =>
   [...options.tools?.(spool, options.cwd, options.env) ?? codingTools(options.cwd, spool, undefined, questions, options.env),
-    ...options.jobTools?.(jobs) ?? []];
+    ...options.taskList === true ? [tasksTool()] : [], ...options.jobTools?.(jobs) ?? []];
 
 /** The thinking level the provider is asked for: the session's for a model that reasons, `off` otherwise. */
 const thinkingOf = (model: Model<Api>, level: ModelThinkingLevel | undefined): ModelThinkingLevel =>
@@ -590,6 +608,7 @@ export function createLoop(options: LoopOptions): LoopSession {
   let runs = options.resumed?.runs ?? 0;
   let amendments = options.resumed?.amendments ?? 0;
   let outcome = options.resumed?.outcome;
+  const tasks = options.resumed?.tasks ?? taskBook(continuesType);
   /** Set when an answer could not be saved or its form released: the operator may think it was given, so nothing runs after. */
   let questionFailure: Error | undefined;
   const spool = (): string => { mkdirSync(options.outputFolder, { recursive: true }); return options.outputFolder; };
@@ -1041,14 +1060,21 @@ export function createLoop(options: LoopOptions): LoopSession {
       const answer = (output: ToolOutput): void => {
         const call = calls[next] as ToolCall;
         const result = toolResult(call, output);
+        const native = offered.find((tool) => tool.name === call.name);
+        // A saved list is on disk before the model or the operator hears of it; other results keep their durability.
+        const saved = !output.isError && native !== undefined && isNativeTasksTool(native);
         writer.append({ type: "tool_result", run, message: result });
+        if (saved) writer.sync();
         add(result);
+        if (saved) {
+          tasks.saved(run, call.id, call.arguments);
+          emit({ type: "tasks" });
+        }
         // A submitted answer enters the conversation once, in its call's result, and the ledger keeps that message.
         const given = answered.get(call.id);
         if (given !== undefined) { answered.delete(call.id); toLedger(result, given.order); }
         answeredIds.add(call.id);
         next += 1;
-        const native = offered.find((tool) => tool.name === call.name);
         if (native !== undefined && isNativeAskTool(native)) questionBoundary = true;
       };
       const repeated = (): boolean => answeredIds.has((calls[next] as ToolCall).id);
@@ -1114,7 +1140,7 @@ export function createLoop(options: LoopOptions): LoopSession {
         messages: older, files, signal }), (given) => { if (Option.isSome(given)) counted(given.value); });
       if (signal.aborted) return stoppedReason;
       if ("error" in result) { failure = result.error; continue; }
-      const head = compactedHead(ledger, result.summary, files, history.slice(cut));
+      const head = compactedHead(ledger, result.summary, files, history.slice(cut), tasks.state(run));
       if (estimateTokens(head) >= replaced) return "compaction failed: the summary came out larger than what it replaced";
       const kept = history.length - cut;
       history.splice(0, cut, head);
@@ -1335,6 +1361,7 @@ export function createLoop(options: LoopOptions): LoopSession {
     const references = boundedReferences(options.requestReferences ?? []);
     const referenced = references.length === 0 ? undefined : referenceMessage(references, Date.parse(at));
     let checking: CustomMessage | undefined;
+    let inherited: CustomMessage | undefined;
     // A run exists once its request is in the file: one whose base could not be captured is no run, so its
     // number is given again and the input that waited for it is refused, as the file reader requires.
     const written = (async () => {
@@ -1346,6 +1373,13 @@ export function createLoop(options: LoopOptions): LoopSession {
       // The run it continues and the answer go in with the request, before anything runs.
       if (continues !== undefined) {
         writer.append({ type: "custom", run, customType: continuesType, data: { run: continues.run, clarification: continues.clarification } });
+        tasks.linked(run, continues.run);
+        // What it inherits is told after the rest of its input, and stays out of the ledger: it is no operator input.
+        const notice = options.taskList === true ? tasksNotice(tasks.state(run), continues.run) : undefined;
+        if (notice !== undefined) {
+          inherited = { role: "custom", customType: tasksNoticeType, content: notice, display: false, timestamp: Date.parse(at) };
+          writer.append({ type: "custom_message", run, customType: tasksNoticeType, content: notice, display: false });
+        }
       }
       runs = run;
       // The run's input is counted from its request and its skill on, before input that came while it starts takes its place.
@@ -1367,6 +1401,8 @@ export function createLoop(options: LoopOptions): LoopSession {
     if (instructed !== undefined) add(instructed);
     if (referenced !== undefined) add(referenced);
     if (checking !== undefined) add(checking);
+    if (inherited !== undefined) add(inherited);
+    emit({ type: "tasks" });
     let generation = 0;
     let continuations = 0;
     for (;;) {
@@ -1506,6 +1542,7 @@ export function createLoop(options: LoopOptions): LoopSession {
         counted: compacted?.counted ?? 0,
         files: memory.files.map(({ path, content }) => ({ path: shownPath(path, options.cwd), content })) });
     },
+    tasks: () => tasks.state(runs),
     messages: () => history.map(conversationMessage),
     history: () => history,
     pendingMessages: () => queue.map(({ id, behavior, text }) => ({ id, behavior, text })),

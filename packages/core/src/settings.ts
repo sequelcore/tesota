@@ -41,6 +41,8 @@ export interface Settings {
    * so, `off` never guards; `require` when not set.
    */
   readonly subagentBranchGuard?: GuardSetting;
+  /** Whether the agent keeps a task list the shell shows; off when not set. */
+  readonly taskList?: boolean;
 }
 
 const modelName = (value: unknown): boolean => typeof value === "string" && /^[^/\s]+\/\S+$/u.test(value);
@@ -80,6 +82,7 @@ const checks: { readonly [Name in keyof Settings]-?: (value: unknown) => boolean
   deviceId: (value) => typeof value === "string" && uuid.test(value),
   agentLimit: (value) => Number.isInteger(value) && (value as number) >= 1 && (value as number) <= 16,
   subagentBranchGuard: (value) => guardSettings.has(value as string),
+  taskList: (value) => typeof value === "boolean",
 };
 
 /** The settings read back, the names of those that were invalid and left out, and the keys Tesota does not read. */

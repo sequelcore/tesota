@@ -213,7 +213,8 @@ export async function runApp(options: AppOptions): Promise<void> {
     } }, questions: questionsFor(live),
     ...settings.thinkingLevel === undefined ? {} : { thinkingLevel: settings.thinkingLevel },
     ...settings.agentLimit === undefined ? {} : { agentLimit: settings.agentLimit },
-    ...settings.subagentBranchGuard === undefined ? {} : { branchGuard: settings.subagentBranchGuard } });
+    ...settings.subagentBranchGuard === undefined ? {} : { branchGuard: settings.subagentBranchGuard },
+    ...settings.taskList === undefined ? {} : { taskList: settings.taskList } });
   /** A session the shell runs, made by `open` with its own surface, and followed for the dashboard. */
   const live = (open: (made: Live) => EngineSession): Live => {
     const made = { surface: createSurface(theme), state: "idle", startedAt: Date.now(), waiting: [], pendingQuestions: 0 } as unknown as Live;

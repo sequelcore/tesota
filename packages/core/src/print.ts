@@ -149,11 +149,12 @@ function ending(outcome: string | undefined, file: string): string {
     + (pendingQuestion(entries) === undefined ? "" : `${awaitingNotice(entries)}\nAwaiting your answer: tesota -p --resume ${basename(file, ".jsonl")} "<answer>"\n`);
 }
 
-/** What the operator's settings choose for a session: its thinking, how many subagents run at once, and their branch guard. */
-function chosenOptions(settings: Settings): Pick<OpenOptions, "thinkingLevel" | "agentLimit" | "branchGuard"> {
+/** What the operator's settings choose for a session: its thinking, how many subagents run at once, their branch guard, and the task list. */
+function chosenOptions(settings: Settings): Pick<OpenOptions, "thinkingLevel" | "agentLimit" | "branchGuard" | "taskList"> {
   return { ...settings.thinkingLevel === undefined ? {} : { thinkingLevel: settings.thinkingLevel },
     ...settings.agentLimit === undefined ? {} : { agentLimit: settings.agentLimit },
-    ...settings.subagentBranchGuard === undefined ? {} : { branchGuard: settings.subagentBranchGuard } };
+    ...settings.subagentBranchGuard === undefined ? {} : { branchGuard: settings.subagentBranchGuard },
+    ...settings.taskList === undefined ? {} : { taskList: settings.taskList } };
 }
 
 /**
