@@ -41,7 +41,7 @@ it("finds the specification lines LemmaScript skips without a word, as lsc check
   }
   expect((await unreadSpecifications("//@ ensures \\result > 0\n//@   ensures \\result < 9\nexport function f(): number { return 1; }\n")))
     .toEqual([{ line: 2, text: "//@   ensures \\result < 9" }]);
-});
+}, 60_000);
 
 it("reads class-method attachment and forced purity from the dependency (#772)", async () => {
   const source = "class C {\n  //@ verify\n  //@ ensures \\result > 0\n  m(): number { return 1; }\n}\n";

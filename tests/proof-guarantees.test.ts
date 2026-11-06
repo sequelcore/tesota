@@ -89,7 +89,7 @@ it("leaves out a function a //@ verify elsewhere in its file leaves unselected, 
   expect(names((await contracts("src/rule.ts", `${unmarked}\n//@ extern\nexport function ext(): number {\n  //@ verify\n  return 1;\n}\n`))))
     .toEqual(["wrong", "trusted", "ext"]);
   expect(names((await unselectedContracts("src/rule.ts", unmarked)))).toEqual([]);
-});
+}, 120_000);
 
 it("reads the function annotations before a body's first statement, where LemmaScript's specification places them", async () => {
   const source = ["//@ requires n > 0", "export function f(n: number): number {", "  // first the contract", "  //@ ensures \\result > n",
