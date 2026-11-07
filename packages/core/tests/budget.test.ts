@@ -1,6 +1,52 @@
 import { expect, test } from "bun:test";
-import { type Measurements, median, overBudget, ratio, slowerThanBase } from "../scripts/budget.ts";
+import { type Budget, exceptionLines, type Limits, type Measurements, median, overBudget, ratio, slowerThanBase, versusBaseFor } from "../scripts/budget.ts";
 import budgets from "../budgets.json" with { type: "json" };
+
+const alpha9 = "74e4f0b829c34a51da79007a337ec67a44153b35";
+const windows = budgets.win32 as Budget;
+const linux = budgets.linux as Budget;
+/** One measurement's limit alone; a missing one reads as no limit set, which fails. */
+const only = (limits: Limits, name: keyof Measurements): Limits => ({ [name]: limits[name] ?? null });
+
+test("Windows resume against alpha.9 at alpha.10 is held to 1.40, and every other ratio to 1.25", () => {
+  const { limits, applied } = versusBaseFor(windows, alpha9, "0.1.0-alpha.10");
+  expect(limits).toEqual({ startupMs: 1.25, loopMs: 1.25, resumeMs: 1.4, firstFrameMs: 1.25 });
+  expect(applied.map((exception) => exception.issue)).toEqual(["#848"]);
+  // The two attempts the exception was approved from pass; a slower resume still fails.
+  const measuredAttempts = [attempt({ resumeMs: 22 }, { resumeMs: 17.1 }), attempt({ resumeMs: 21 }, { resumeMs: 15.4 })] as const;
+  expect(slowerThanBase(measuredAttempts[0], only(limits, "resumeMs"), measuredAttempts[1])).toEqual([]);
+  expect(slowerThanBase(attempt({ resumeMs: 22 }, { resumeMs: 15 }), only(limits, "resumeMs"), attempt({ resumeMs: 22 }, { resumeMs: 15 })))
+    .toEqual([expect.stringContaining("resumeMs: 1.47 then 1.47 is over its limit of 1.4")]);
+  expect(slowerThanBase(attempt({ loopMs: 130 }, { loopMs: 100 }), only(limits, "loopMs"), attempt({ loopMs: 130 }, { loopMs: 100 })))
+    .toEqual([expect.stringContaining("loopMs: 1.3 then 1.3 is over its limit of 1.25")]);
+});
+
+test("the exception applies to no other version, base, platform or measurement", () => {
+  const usual = (budget: Budget, base: string, version: string) => {
+    const { limits, applied } = versusBaseFor(budget, base, version);
+    expect(applied).toEqual([]);
+    expect(limits).toEqual(budget.versusBase);
+  };
+  usual(windows, alpha9, "0.1.0-alpha.11");
+  usual(windows, alpha9, "0.1.0-alpha.9");
+  usual(windows, "9c05be22863d07e12a8f4a90672720c927cd5ae3", "0.1.0-alpha.10");
+  usual(windows, "74e4f0b8", "0.1.0-alpha.10");
+  usual(linux, alpha9, "0.1.0-alpha.10");
+  const other = { ...windows, versusBase: { loopMs: 1.25 } };
+  usual(other, alpha9, "0.1.0-alpha.10");
+});
+
+test("an applied exception is stated, with each measurement only it allows, and never as the usual budget", () => {
+  const { applied } = versusBaseFor(windows, alpha9, "0.1.0-alpha.10");
+  const overUsual = slowerThanBase(attempt({ resumeMs: 22 }, { resumeMs: 17.1 }), only(windows.versusBase, "resumeMs"),
+    attempt({ resumeMs: 21 }, { resumeMs: 15.4 }));
+  const lines = exceptionLines(applied, windows.versusBase, overUsual);
+  expect(lines).toEqual([
+    expect.stringMatching(/^Exception applied: resumeMs may be 1\.4 times the base instead of 1\.25, for 0\.1\.0-alpha\.10 against 74e4f0b8.*Approved 2026-11-06 by the owner; removed by #848\.$/),
+    "Over the usual budget, allowed only by the exception: resumeMs: 1.29 then 1.36 is over its limit of 1.25 times the base (22 against the base's 17.1, then 21 against the base's 15.4)",
+  ]);
+  expect(exceptionLines([], windows.versusBase, overUsual)).toEqual([]);
+});
 
 const measured = (values: Partial<Measurements>): Measurements => ({ startupMs: 0, binaryBytes: 0, loopMs: 0, loopRssBytes: 0, baseMs: 0, syncMs: 0, syncCount: 0, settleMs: 0, resumeMs: 0, sessionBytes: 0, firstFrameMs: 0, shellRssBytes: 0, ...values });
 const attempt = (change: Partial<Measurements>, base: Partial<Measurements>) => ({ change: measured(change), base: measured(base) });
