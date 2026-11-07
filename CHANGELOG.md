@@ -5,7 +5,7 @@ Each release of Tesota, newest first. The format follows
 the first stable release are prereleases. Numbers in parentheses are pull
 requests and issues in [sequelcore/tesota](https://github.com/sequelcore/tesota).
 
-## Unreleased
+## [0.1.0-alpha.10] - 2026-11-06
 
 ### Added
 
@@ -20,8 +20,32 @@ requests and issues in [sequelcore/tesota](https://github.com/sequelcore/tesota)
 - Issue text already read through supported GitHub CLI commands reaches
   restricted children and request judgments as attributed third-party context.
   Receipts record its source, digest and gaps (#637).
+- Receipts record MCP calls that may write, with the server, tool, an
+  argument digest and the outcome, even when no file changed; such calls keep
+  the result incomplete. A server's `readOnlyTools` list excludes tools (#788).
+- `--require-model <path>` fixes a model, its configuration and its fault
+  inputs for the whole session, so replacing or dropping a negative control
+  returns once for repair and then stays a receipt gap (#791).
+- A Roles tab in the usage panel lists each role and agent type with its
+  model, where that model is chosen, and its account's remaining window.
+  Tab, Shift+Tab, ← and → cycle the three tabs (#672).
+- An agent task list, off by default behind the `taskList` setting: the
+  agent keeps it with `update_tasks`, the shell shows one row above the
+  input, and Ctrl+O lists every task (#521).
+- `/agents types [name]` shows the loaded agent types, their default model
+  and where it comes from (#794).
 
 ### Changed
+
+- The system prompt lives in the transcript: one leading system message,
+  with later changes appended instead of rewriting it, so the cache survives
+  a tool turning on mid-run. From the start the agent knows what Tesota can
+  verify (#779).
+- Configuration warnings no longer print at startup: the footer counts them,
+  and F2 or `/warnings` opens the details (#794).
+- Proof scope comes from LemmaScript's own extraction, so specifications it
+  didn't attach and its abstraction limits show in the tool and the
+  receipt (#788).
 
 - TLA+ models are checked with tla-ts, which Tesota includes, instead of Java
   and `tla2tools.jar`: neither is needed any more. `tesota doctor` reports
@@ -33,6 +57,18 @@ requests and issues in [sequelcore/tesota](https://github.com/sequelcore/tesota)
 
 - Plain Bun, Vitest and Jest scripts produce fresh reports on both revisions
   for failure attribution; unreported runner errors remain unknown (#728).
+- A completed run that changed no file says so: `Completed; no file changed.`
+  in print mode, `○ no file changed` in the shell's footer (#536).
+- Keys in `settings.json` that Tesota doesn't read are named once, in the
+  shell, print mode and `tesota doctor`, with a suggestion for a near
+  miss (#714).
+- Skills installed as directory symlinks or Windows junctions are
+  discovered (#786).
+- Trusting a project and MCP sign-in work when `~/.tesota` doesn't exist
+  yet (#808, #815).
+- TLC runs with one worker, so a model check reports the same result every
+  run (#812).
+- A project check that timed out no longer runs again on the base (#788).
 
 ### Security
 
@@ -379,6 +415,7 @@ The first published prerelease.
   (#492).
 - One folder's snapshots are taken one at a time across processes (#477).
 
+[0.1.0-alpha.10]: https://github.com/sequelcore/tesota/releases/tag/v0.1.0-alpha.10
 [0.1.0-alpha.9]: https://github.com/sequelcore/tesota/releases/tag/v0.1.0-alpha.9
 [0.1.0-alpha.8]: https://github.com/sequelcore/tesota/releases/tag/v0.1.0-alpha.8
 [0.1.0-alpha.7]: https://github.com/sequelcore/tesota/releases/tag/v0.1.0-alpha.7
