@@ -10,7 +10,7 @@ import { readSessionFile } from "../src/session-file.ts";
 import { writeSettings } from "../src/settings.ts";
 import { scriptedReply } from "./scripted.ts";
 
-/** Which model `tesota -p -c` and `--resume` continue on (#651). */
+/** Which model `tesota -p -c` and `--resume` continue on. */
 const folder = (prefix: string): string => mkdtempSync(join(tmpdir(), prefix));
 
 function repository(): string {

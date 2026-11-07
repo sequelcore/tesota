@@ -8,7 +8,8 @@ import { PARTIAL_EXPLORATION, stateCount } from "./model-view.js";
 import type { SentBack } from "./gate.js";
 import type { LedgerRow } from "./operations.js";
 import { ACCEPTANCE, commandFinding, contractFinding, DETAILS, type Finding, isReceipt, methodWidth, modelFinding, OPINIONS, proofFinding,
-  type Receipt, type ReceiptGraph, type ReceiptGraphMessage, receiptChildLines, receiptClarificationLines, receiptRefusalLines, receiptDetailLines, receiptSummary, type SummaryGroup } from "./receipt.js";
+  type Receipt, type ReceiptGraph, type ReceiptGraphMessage, receiptChildLines, receiptClarificationLines, receiptRefusalLines, receiptDetailLines,
+  receiptRequestContextLines, receiptSpecificationLines, requestReviewLines, requiredModelFinding, receiptStanding, receiptSummary, type SummaryGroup } from "./receipt.js";
 
 /** How the shell asks a message to be drawn: expanded or not, and how far in. */
 type RenderOptions = Parameters<MessageRenderer>[1];
@@ -180,7 +181,7 @@ function countRow(theme: Theme, counts: string, tone: ThemeColor): string {
 }
 
 /**
- * The receipt as the request's one block (#591), drawn from its details as
+ * The receipt as the request's one block, drawn from its details as
  * the plain text is: the counts and the acceptance line, each method, what
  * needs review and the limits grouped by reason, the models' opinions apart
  * and never counted, then the request's context and the details. Ctrl+O
@@ -189,28 +190,35 @@ function countRow(theme: Theme, counts: string, tone: ThemeColor): string {
 function receiptCard(theme: Theme, receipt: Receipt, options: RenderOptions, graphs: readonly ReceiptGraph[] = []): Component {
   const summary = receiptSummary(receipt);
   const method = methodWidth(summary.methods);
-  const opinions = options.expanded ? summary.opinions : summary.opinions.filter(({ quiet }) => quiet !== true);
+  const opinions = summary.opinions;
   const context = [...receiptClarificationLines(receipt), ...receiptChildLines(receipt), ...receiptRefusalLines(receipt)];
   const dim = (lines: readonly string[], width: number): string[] =>
     lines.flatMap((line) => hang(terminalText(line), width, line.length - line.trimStart().length + 2)).map((row) => theme.fg("dim", row));
   return card(theme, options, (width) => {
     const found = groupRows(theme, [...summary.notes, ...summary.flags, ...summary.limits], width);
     return [theme.fg("customMessageLabel", bold("Tesota receipt")),
-      ...wrapUnder(countRow(theme, summary.counts, summary.tone), width, 0), ...wrapUnder(theme.fg("dim", ACCEPTANCE), width, 0), "",
+      ...wrapUnder(theme.fg("text", `Evidence standing: ${receiptStanding(receipt)}`), width, 0),
+      ...wrapUnder(countRow(theme, summary.counts, summary.tone), width, 0), "",
+      theme.fg("dim", bold("Request context")), ...dim(receiptRequestContextLines(receipt).slice(1), width), "",
+      theme.fg("dim", bold("Code evidence")),
       // A method that recorded nothing stays listed, dim: what wasn't checked is said, not stressed.
-      ...summary.methods.flatMap(({ glyph, method: name, text }) => glyph === "○"
+      ...summary.methods.filter(({ method: name }) => name !== "Contracts").flatMap(({ glyph, method: name, text }) => glyph === "○"
         ? wrapUnder(theme.fg("dim", `${glyph} ${name.padEnd(method)}${terminalText(text)}`), width, method + 2)
         : wrapUnder(`${tinted(theme, glyph)} ${theme.fg("text", name.padEnd(method))}${theme.fg("muted", terminalText(text))}`, width, method + 2)),
       ...graphs.flatMap(({ subject, capture }) => ["", ...hang(terminalText(subject), width, 0),
         ...graphPreviewRows(capture, width).map((line) => theme.fg("muted", line))]),
       ...found.length === 0 ? [] : ["", ...found],
-      ...opinions.length === 0 ? [] : ["", ...[...wrapUnder(theme.fg("dim", OPINIONS), width, 0), ...opinionRows(theme, opinions, width)]
-        .map((opinion) => ({ opinion }))],
+      "", theme.fg("dim", bold("Specification evidence")), ...dim(receiptSpecificationLines(receipt, options.expanded).slice(1), width),
+      ...summary.methods.filter(({ method: name }) => name === "Contracts").flatMap(({ glyph, method: name, text }) =>
+        wrapUnder(`${tinted(theme, glyph)} ${theme.fg("text", name.padEnd(method))}${theme.fg("muted", terminalText(text))}`, width, method + 2)),
+      "", ...[...wrapUnder(theme.fg("dim", OPINIONS), width, 0), ...dim(requestReviewLines(receipt), width), ...opinionRows(theme, opinions, width)]
+        .map((opinion) => ({ opinion })),
       "",
       ...options.expanded ? [theme.fg("dim", bold("▾ Details")), ...dim(receiptDetailLines(receipt), width)]
         : wrapUnder(theme.fg("dim", `▸ ${DETAILS}`), width, 2),
       ...summary.context === "" ? [] : options.expanded ? ["", theme.fg("dim", bold("▾ Context")), ...dim(context, width)]
-        : wrapUnder(theme.fg("dim", `▸ Context · ${summary.context}`), width, 2)];
+        : wrapUnder(theme.fg("dim", `▸ Context · ${summary.context}`), width, 2),
+      "", ...wrapUnder(theme.fg("dim", ACCEPTANCE), width, 0)];
   });
 }
 
@@ -221,7 +229,7 @@ const isLedger = (value: unknown): value is Ledger =>
   typeof value === "object" && value !== null && typeof Reflect.get(value, "ledger") === "function";
 
 /**
- * The request's block while the gate verifies (#591): what runs, what ended
+ * The request's block while the gate verifies: what runs, what ended
  * and how, each attempt that went back folded into a row; every check when
  * expanded. It reads the ledger each time it is drawn, so it stays live; the
  * receipt takes its place when the run settles.
@@ -235,6 +243,7 @@ function ledgerCard(theme: Theme, ledger: Ledger, options: RenderOptions): Compo
 }
 /** What a send-back round asks the agent to fix, as findings; a weak contract names the changes to its code that still prove. */
 function sentBackFindings(sent: SentBack): Finding[] {
+  if (sent.round === "selection") return [requiredModelFinding(sent.requiredModel)];
   if (sent.round === "proofs") return sent.proofs.map(({ path, evidence }) => proofFinding({ path, verdict: "send_back", evidence }));
   if (sent.round === "tests") return sent.commands.map((run) => commandFinding({ ...run, verdict: "send_back" }));
   if (sent.round === "models") {
@@ -247,6 +256,7 @@ function sentBackFindings(sent: SentBack): Finding[] {
 }
 
 function headline(sent: SentBack): string {
+  if (sent.round === "selection") return "the selected model inputs changed";
   if (sent.round === "proofs") return sent.proofs.length === 1 ? "a proof fails" : `${sent.proofs.length} proofs fail`;
   if (sent.round === "tests") return "the tests fail";
   if (sent.round === "models") return sent.models.length === 0 ? "a model declares no header" : sent.models.length === 1 ? "a model fails" : `${sent.models.length} models fail`;
@@ -282,11 +292,13 @@ function text(content: string | readonly { type: string; text?: string }[]): str
  */
 export function registerMessages(pi: ExtensionAPI): void {
   pi.registerMessageRenderer("tesota-receipt", (message, options, theme) =>
-    isReceipt(message.details) ? receiptCard(theme, message.details, options) : undefined);
+    message.details === undefined ? undefined : isReceipt(message.details) ? receiptCard(theme, message.details, options)
+      : card(theme, options, (width) => hang("Unsupported receipt format; this Tesota reads receipt v3 only.", width, 0)));
   pi.registerMessageRenderer("tesota-receipt-graphs", (message, options, theme) => {
     const details = message.details as ReceiptGraphMessage | undefined;
     return details !== undefined && isReceipt(details.receipt) && Array.isArray(details.graphs)
-      ? receiptCard(theme, details.receipt, options, details.graphs) : undefined;
+      ? receiptCard(theme, details.receipt, options, details.graphs)
+      : card(theme, options, (width) => hang("Unsupported receipt format; this Tesota reads receipt v3 only.", width, 0));
   });
   pi.registerMessageRenderer("tesota-ledger", (message, options, theme) =>
     isLedger(message.details) ? ledgerCard(theme, message.details, options) : undefined);

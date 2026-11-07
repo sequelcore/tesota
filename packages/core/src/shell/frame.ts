@@ -3,7 +3,7 @@ import type { ShellTheme } from "../../../../src/theme.ts";
 
 /**
  * The frame of everything that takes the input's place and waits for the
- * operator (#531): a bar down its left edge whose color says what it asks,
+ * operator: a bar down its left edge whose color says what it asks,
  * and one title style. Something to approve, a permission, is in the
  * warning color; something to answer or choose is in the accent.
  */

@@ -1,11 +1,10 @@
 import { expect, it, vi } from "vitest";
 import { changedContracts, contractStrength, contracts, unselectedContracts } from "../src/proof-guarantees.js";
 import { GateOperations } from "../src/operations.js";
-import { extracted } from "../src/verification/selection-rule.js";
 import { renderReceipt } from "../src/receipt.js";
 import { emptyReceipt } from "./receipts.js";
 
-/** Every mutant fails its proof: what mutation finds is under test in proof-mutation.test.ts. */
+/** Every mutant fails its proof: what mutation finds is under test in the proof-mutation tests. */
 vi.mock("../src/verification/lemmascript-verifier.js", async (original) => ({
   ...await original<typeof import("../src/verification/lemmascript-verifier.js")>(),
   proveSource: () => Promise.resolve("failed"),
@@ -33,8 +32,8 @@ const base = [
 const changed = base.replace("return 1;", "return 0;").replace("//@ ensures \\result >= 0\nexport function total",
   "//@ requires amount >= 0\n//@ ensures \\result === amount\nexport function total");
 
-it("reads each function's contract, not proof annotations inside bodies or unannotated functions", () => {
-  expect(contracts("src/rules.ts", base)).toMatchObject([
+it("reads each function's contract, not proof annotations inside bodies or unannotated functions", async () => {
+  expect((await contracts("src/rules.ts", base))).toMatchObject([
     { path: "src/rules.ts", name: "clamp", text: "//@ ensures \\result >= 0\nexport function clamp(value: number): number {",
       line: 1, endLine: 2, bodyEnd: 5, annotations: [{ line: 1, text: "//@ ensures \\result >= 0" }], readsAbove: true,
       parameters: ["value"] },
@@ -43,38 +42,30 @@ it("reads each function's contract, not proof annotations inside bodies or unann
   ]);
 });
 
-it("keeps a contract across comment lines before its function, as LemmaScript does, and drops it after a code line", () => {
+it("keeps a contract across comment lines before its function, as LemmaScript does, and drops it after a code line", async () => {
   const commented = "//@ ensures \\result > 0\n// reviewed\n\n/**\n * Doc.\n */\n/* reviewed\n   again\n*/\nexport function f(): number {\n" +
     "  return 1;\n}\n";
-  expect(contracts("src/rule.ts", commented)).toMatchObject([{ path: "src/rule.ts", name: "f",
+  expect((await contracts("src/rule.ts", commented))).toMatchObject([{ path: "src/rule.ts", name: "f",
     text: "//@ ensures \\result > 0\nexport function f(): number {", line: 1, endLine: 10, bodyEnd: 12 }]);
-  expect(contracts("src/rule.ts", commented.replace("// reviewed", "const k = 1;"))).toEqual([]);
+  expect((await contracts("src/rule.ts", commented.replace("// reviewed", "const k = 1;")))).toEqual([]);
 });
 
-it("leaves out a function LemmaScript skips, since nothing proves its contract", () => {
+it("leaves out a function LemmaScript skips, since nothing proves its contract", async () => {
   const source = "//@ skip\n//@ ensures \\result > 0\nexport function f(): number {\n  return 1;\n}\n\n//@ skip\n" +
     "//@ ensures \\result > 0\nexport const g = (): number => 1;\n\n//@ ensures \\result > 0\nexport function h(): number {\n" +
     "  //@ skip\n  const k = 1;\n  return 1;\n}\n";
-  expect(contracts("src/rule.ts", source).map(({ name }) => name)).toEqual(["h"]);
+  expect((await contracts("src/rule.ts", source)).map(({ name }) => name)).toEqual(["h"]);
 });
 
-it("extracts a function unless it is skipped, or the file selects others with //@ verify and it is neither selected nor trusted", () => {
-  expect(extracted(false, false, false, false)).toBe(true);
-  expect(extracted(false, false, true, true)).toBe(true);
-  expect(extracted(false, true, true, false)).toBe(true);
-  expect(extracted(false, false, true, false)).toBe(false);
-  expect(extracted(true, true, true, true)).toBe(false);
-});
-
-it("leaves out of a contract the specification lines LemmaScript skips, and has none when every line is skipped", () => {
+it("leaves out of a contract the specification lines LemmaScript skips, and has none when every line is skipped", async () => {
   const source = "//@ requires x >= 0\n//@   ensures \\result > 100\nexport function f(x: number): number {\n  return x;\n}\n\n" +
     "//@ensures \\result > 0\nexport function g(): number {\n  return 1;\n}\n";
-  const found = contracts("src/rule.ts", source);
+  const found = (await contracts("src/rule.ts", source));
   expect(found.map(({ name }) => name)).toEqual(["f"]);
   expect(found[0]?.annotations.map(({ text }) => text)).toEqual(["//@ requires x >= 0"]);
 });
 
-it("leaves out a function a //@ verify elsewhere in its file leaves unselected, as LemmaScript does", () => {
+it("leaves out a function a //@ verify elsewhere in its file leaves unselected, as LemmaScript does", async () => {
   const unmarked = "//@ ensures \\result > 100\nexport function wrong(x: number): number {\n  return 1;\n}\n\n" +
     "//@ extern\n//@ ensures \\result >= 0\nexport function trusted(x: number): number {\n  return Math.abs(x);\n}\n\n" +
     "//@ skip\n//@ ensures \\result > 0\nexport function skipped(): number {\n  return 1;\n}\n";
@@ -86,45 +77,45 @@ it("leaves out a function a //@ verify elsewhere in its file leaves unselected, 
     "//@ verify\n//@ ensures \\result >= 0\nexport const good = (x: number): number => x * x;\n",
   ];
   for (const first of selecting) {
-    expect(names(contracts("src/rule.ts", `${first}\n${unmarked}`)), first).toEqual(["good", "trusted"]);
-    expect(names(unselectedContracts("src/rule.ts", `${first}\n${unmarked}`)), first).toEqual(["wrong"]);
+    expect(names((await contracts("src/rule.ts", `${first}\n${unmarked}`))), first).toEqual(["good", "trusted"]);
+    expect(names((await unselectedContracts("src/rule.ts", `${first}\n${unmarked}`))), first).toEqual(["wrong"]);
   }
   // A class method or a top-level handler with //@ verify selects as well; a skipped or trusted one does not.
   for (const other of ["class C {\n  //@ verify\n  m(): number { return 1; }\n}\n", "app.get(\"/x\", () => {\n  //@ verify\n  return 1;\n});\n"]) {
-    expect(names(contracts("src/rule.ts", `${unmarked}\n${other}`)), other).toEqual(["trusted"]);
+    expect(names((await contracts("src/rule.ts", `${unmarked}\n${other}`))), other).toEqual(["trusted"]);
   }
-  expect(names(contracts("src/rule.ts", `${unmarked}\n//@ skip\nexport function off(): number {\n  //@ verify\n  return 1;\n}\n`)))
+  expect(names((await contracts("src/rule.ts", `${unmarked}\n//@ skip\nexport function off(): number {\n  //@ verify\n  return 1;\n}\n`))))
     .toEqual(["wrong", "trusted"]);
-  expect(names(contracts("src/rule.ts", `${unmarked}\n//@ extern\nexport function ext(): number {\n  //@ verify\n  return 1;\n}\n`)))
+  expect(names((await contracts("src/rule.ts", `${unmarked}\n//@ extern\nexport function ext(): number {\n  //@ verify\n  return 1;\n}\n`))))
     .toEqual(["wrong", "trusted", "ext"]);
-  expect(names(unselectedContracts("src/rule.ts", unmarked))).toEqual([]);
-});
+  expect(names((await unselectedContracts("src/rule.ts", unmarked)))).toEqual([]);
+}, 120_000);
 
-it("reads the function annotations before a body's first statement, where LemmaScript's specification places them", () => {
+it("reads the function annotations before a body's first statement, where LemmaScript's specification places them", async () => {
   const source = ["//@ requires n > 0", "export function f(n: number): number {", "  // first the contract", "  //@ ensures \\result > n",
     "  //@ assume n < 10", "  const k = n + 1;", "  //@ ensures \\result > 0", "  return k;", "}", "",
     "export function g({ n }: { n: number }): number {", "  //@ ensures \\result === n", "  return n;", "}", ""].join("\n");
-  expect(contracts("src/rule.ts", source)).toMatchObject([
+  expect((await contracts("src/rule.ts", source))).toMatchObject([
     { name: "f", line: 1, endLine: 2, bodyEnd: 9, annotations: [{ line: 1, text: "//@ requires n > 0" }, { line: 4, text: "//@ ensures \\result > n" }],
       text: "//@ requires n > 0\nexport function f(n: number): number {\n//@ ensures \\result > n", parameters: ["n"] },
     { name: "g", line: 11, endLine: 11, bodyEnd: 14, parameters: undefined },
   ]);
 });
 
-it("reads the contracts of default-exported functions and arrow functions, as LemmaScript extracts them", () => {
+it("reads the contracts of default-exported functions and arrow functions, as LemmaScript extracts them", async () => {
   // An arrow function with a block body has its contract read only inside the body, so h's above it is not one.
   const source = ["//@ ensures \\result > 0", "export default function f(): number {", "  return 1;", "}", "",
     "//@ ensures \\result === n + 1", "export const g = (n: number): number => n + 1;", "",
     "//@ ensures \\result >= 0", "const h = (n: number): number => {", "  return n < 0 ? 0 : n;", "};", "",
     "const i = (n: number): number => {", "  //@ ensures \\result >= 0", "  return n < 0 ? 0 : n;", "};", "",
     "//@ ensures \\result > 0", "const k = 1;", ""].join("\n");
-  expect(contracts("src/rule.ts", source).map(({ name, line, endLine, bodyEnd, readsAbove }) =>
+  expect((await contracts("src/rule.ts", source)).map(({ name, line, endLine, bodyEnd, readsAbove }) =>
     ({ name, line, endLine, bodyEnd, readsAbove }))).toEqual([
     { name: "f", line: 1, endLine: 2, bodyEnd: 4, readsAbove: true },
     { name: "g", line: 6, endLine: 7, bodyEnd: 7, readsAbove: true },
     { name: "i", line: 14, endLine: 14, bodyEnd: 17, readsAbove: false },
   ]);
-  const g = contracts("src/rule.ts", source)[1];
+  const g = (await contracts("src/rule.ts", source))[1];
   expect(g === undefined ? "" : source.slice(...g.body)).toBe("n + 1");
 });
 
@@ -136,43 +127,45 @@ it("measures the strength of a contract a comment separates from its function", 
   expect(strength.contracts[0]?.mutation.rejected).toBeGreaterThan(0);
 });
 
-it("finds where a function's body closes, past braces inside strings and comments", () => {
+it("finds where a function's body closes, past braces inside strings and comments", async () => {
   const source = "//@ ensures \\result >= 0\nexport function f(a: string): number {\n  const s = \"}\"; // }\n  if (a) {\n    return 1;\n  }\n" +
     "  return 0;\n}\nconst x = 1;\n";
-  expect(contracts("src/rule.ts", source)[0]?.bodyEnd).toBe(8);
+  expect((await contracts("src/rule.ts", source))[0]?.bodyEnd).toBe(8);
 });
 
-it("takes only the contracts the request added or changed, whatever their indentation", () => {
-  expect(changedContracts("src/rules.ts", changed, base).map(({ name }) => name)).toEqual(["total"]);
-  expect(changedContracts("src/rules.ts", base.replace("//@ ensures", "  //@ ensures"), base)).toEqual([]);
-  expect(changedContracts("src/rules.ts", changed, undefined).map(({ name }) => name)).toEqual(["clamp", "total"]);
+it("takes only the contracts the request added or changed, whatever their indentation", async () => {
+  expect((await changedContracts("src/rules.ts", changed, base)).map(({ name }) => name)).toEqual(["total"]);
+  expect((await changedContracts("src/rules.ts", base.replace("//@ ensures", "  //@ ensures"), base))).toEqual([]);
+  expect((await changedContracts("src/rules.ts", changed, undefined)).map(({ name }) => name)).toEqual(["clamp", "total"]);
 });
 
 it("mutates and has a model judge only the changed contracts, and labels the verdict a model's judgment", async () => {
   const complete = vi.fn((_model: unknown, context: { tools: { name: string }[] }) => Promise.resolve({ stopReason: "toolUse",
     content: [{ type: "toolCall", id: "1", name: context.tools[0]?.name, arguments: context.tools[0]?.name === "record_comparisons"
-      ? { comparisons: [{ function: 1, verdict: "partially_justified", explanation: "It excludes negative amounts." }] }
+      ? { comparisons: [{ function: 1, verdict: "partial_match", explanation: "It excludes negative amounts." }] }
       : { informalizations: [{ function: 1, preconditions: "amount >= 0", postcondition: "returns amount", strength: "moderate" }] } }] }));
   const ctx = { model: { provider: "provider", id: "model", contextWindow: 128_000, maxTokens: 4096 } as never, modelRegistry: { complete } as never };
   const strength = await contractStrength(ctx, ["total keeps negative amounts"], [{ path: "src/rules.ts", source: changed, baseSource: base }],
     new AbortController().signal);
-  expect(strength).toEqual({ claimcheck: { status: "judged", restatedBy: "provider/model", comparedBy: "provider/model" }, contracts: [{ path: "src/rules.ts", name: "total",
-    lines: ["//@ requires amount >= 0", "//@ ensures \\result === amount"], mutation: { rejected: 3, survived: [], inconclusive: 0, equivalent: 0 },
-    judgment: { verdict: "partially_justified", explanation: "It excludes negative amounts." },
-    restatement: { preconditions: "amount >= 0", postcondition: "returns amount" } }] });
-  expect(renderReceipt({ ...emptyReceipt, ...strength }))
-    .toContain("  model judged  by ClaimCheck on provider/model, one model for both requests, a model's judgment against the request, not a proof:\n" +
-      "                total in src/rules.ts covers only part of what was asked: It excludes negative amounts.\n" +
-      "                  restated without the request: assumes amount >= 0; guarantees returns amount");
+  expect(strength.contracts).toEqual([{ path: "src/rules.ts", name: "total",
+    lines: ["//@ requires amount >= 0", "//@ ensures \\result === amount"], mutation: { rejected: 3, survived: [], inconclusive: 0, equivalent: 0 } }]);
+  expect(strength.contractComparison).toMatchObject({ status: "completed", runs: [{ status: "completed", restatedBy: "provider/model", comparedBy: "provider/model" }],
+    contracts: [{ folder: "", path: "src/rules.ts", name: "total", text: expect.stringContaining("//@ requires amount >= 0"),
+      assessment: { verdict: "partial_match", explanation: "It excludes negative amounts." },
+      restatement: { preconditions: "amount >= 0", postcondition: "returns amount" } }] });
+  const receipt = { ...emptyReceipt, specificationEvidence: { ...emptyReceipt.specificationEvidence, contracts: strength.contracts },
+    requestReview: { ...emptyReceipt.requestReview, contractComparison: strength.contractComparison } };
+  expect(renderReceipt(receipt)).toContain("total in src/rules.ts: the model identified a partial match: It excludes negative amounts.");
+  expect(renderReceipt(receipt)).toContain("restated without the request: assumes amount >= 0; guarantees returns amount");
   expect(await contractStrength(ctx, [], [{ path: "src/rules.ts", source: base, baseSource: base }], new AbortController().signal))
-    .toEqual({ contracts: [] });
+    .toEqual({ contracts: [], contractComparison: { scope: "eligible_changed_contracts", status: "not_run", reason: "no eligible changed contract", contracts: [], runs: [] } });
   expect(complete).toHaveBeenCalledTimes(2);
 });
 
 it("publishes each contract's mutation and ClaimCheck as operations that ran at once (#590)", async () => {
   const complete = vi.fn((_model: unknown, context: { tools: { name: string }[] }) => Promise.resolve({ stopReason: "toolUse",
     content: [{ type: "toolCall", id: "1", name: context.tools[0]?.name, arguments: context.tools[0]?.name === "record_comparisons"
-      ? { comparisons: [{ function: 1, verdict: "justified", explanation: "Yes." }] }
+      ? { comparisons: [{ function: 1, verdict: "no_mismatch_identified", explanation: "Yes." }] }
       : { informalizations: [{ function: 1, preconditions: "amount >= 0", postcondition: "returns amount", strength: "moderate" }] } }] }));
   const ctx = { model: { provider: "provider", id: "model", contextWindow: 128_000, maxTokens: 4096 } as never, modelRegistry: { complete } as never };
   const ops = new GateOperations();
@@ -188,12 +181,12 @@ it("publishes each contract's mutation and ClaimCheck as operations that ran at 
 it("says when ClaimCheck judged nothing", async () => {
   const strength = await contractStrength({ model: undefined, modelRegistry: {} as never }, [],
     [{ path: "src/rules.ts", source: changed, baseSource: base }], new AbortController().signal);
-  expect(renderReceipt({ ...emptyReceipt, ...strength }))
-    .toContain("  not judged    whether the contracts express the request: ClaimCheck no model is selected");
+  expect(renderReceipt({ ...emptyReceipt, requestReview: { ...emptyReceipt.requestReview, contractComparison: strength.contractComparison } }))
+    .toContain("  model opinion Contract comparison not_run: no model is selected");
 });
 
 it("names each model when a second one restated", () => {
-  expect(renderReceipt({ ...emptyReceipt, contracts: [],
-    claimcheck: { status: "judged", restatedBy: "other/restater", comparedBy: "provider/model" } }))
-    .toContain("  model judged  by ClaimCheck on other/restater restating and provider/model comparing, a model's judgment");
+  expect(renderReceipt({ ...emptyReceipt, requestReview: { ...emptyReceipt.requestReview, contractComparison: { scope: "eligible_changed_contracts",
+    status: "completed", contracts: [], runs: [{ status: "completed", restatedBy: "other/restater", comparedBy: "provider/model" }] } } }))
+    .toContain("restatement model: other/restater; comparison model: provider/model");
 });

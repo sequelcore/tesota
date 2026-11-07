@@ -3,17 +3,14 @@ import { type JudgmentContext, judgmentPrompt, type ModelAccess, named, recorded
 
 /**
  * A model's list of the cases the operator's request leaves open: inputs
- * for which someone who made the request could expect more than one result
- * (#397). The agent settles such a case silently, in code and a contract
+ * for which someone who made the request could expect more than one result.
+ * The agent settles such a case silently, in code and a contract
  * that prove either way, so the receipt lists them for the operator to
  * settle. The list is a model's opinion, never evidence and never a verdict,
- * and it does not go back to the agent. It reads the request alone: shown
- * the agent's change as well, models listed more false alarms. Measured
- * before it shipped, with this prompt (#397). Its two rules on standard
- * terms came from #429, after it listed readings of "clamp" that its usual
- * meaning rules out: a term keeps that meaning, and an input the request
- * allows that the meaning gives no result for stays open, since the first
- * rule alone dropped such inputs, an empty name or a page size of zero.
+ * and it does not go back to the agent. It reads the request alone to avoid false
+ * alarms from the agent's change. A standard term keeps its usual meaning,
+ * and an input the request allows that the meaning gives no result for
+ * stays open, such as an empty name or a page size of zero.
  */
 
 /** The list ends within this, so a stalled provider cannot hold the run open. */
@@ -28,7 +25,7 @@ export interface OpenCase {
 /** The open cases a model listed, with the model as `provider/id`, or why none were listed. */
 export type OpenCases =
   | { readonly status: "listed"; readonly model: string; readonly cases: readonly OpenCase[] }
-  | { readonly status: "not_listed"; readonly reason: string };
+  | { readonly status: "not_run" | "disabled"; readonly reason: string; readonly model?: string };
 
 type ListAnswer =
   | { readonly status: "listed"; readonly cases: readonly OpenCase[] }
@@ -45,7 +42,7 @@ export const openCasesSystemPrompt =
 /** What the model is asked about the operator's `requests`, every message of one request in order. */
 export function openCasesPrompt(requests: readonly string[]): string {
   return `A person gave a coding agent this request:\n\n${requests.join("\n\n")}\n\n` +
-    "You can read only these request messages, not external sources or the agent's change. If the request depends on " +
+    "You can read these request messages and any separately supplied third-party reference context, not other external sources or the agent's change. If the request depends on " +
     "an issue, PR, file, URL or other reference whose relevant contents are not supplied in these messages, record " +
     "status not_listed with a reason naming what is missing and why you cannot list its cases. Missing reference contents are not an open case: " +
     "do not guess what they say or invent alternative interpretations of them. A reference mentioned only as background " +
@@ -62,14 +59,14 @@ export function openCasesPrompt(requests: readonly string[]): string {
 
 /** The open cases of `requests`, listed by `model`, a `provider/id` Tesota knows, within `OPEN_CASES_TIME_LIMIT_MS`. */
 export async function openCases(ctx: ModelAccess, requests: readonly string[], model: string, signal: AbortSignal, judging?: JudgmentContext): Promise<OpenCases> {
-  if (model === "") return { status: "not_listed", reason: "no model is selected" };
+  if (model === "") return { status: "not_run", reason: "no model is selected" };
   const lister = registered(ctx, model);
-  if (lister === undefined) return { status: "not_listed", reason: `${model} isn't a model Tesota knows (provider/id)` };
+  if (lister === undefined) return { status: "not_run", model, reason: `${model} isn't a model Tesota knows (provider/id)` };
   const prompt = judgmentPrompt(lister, openCasesSystemPrompt, "record_open_cases", listSchema, requests, openCasesPrompt, "open_cases", judging);
-  if (prompt === undefined) return { status: "not_listed", reason: `${model}: no whole request fits the complete prompt within model context capacity` };
+  if (prompt === undefined) return { status: "not_run", model, reason: `${model}: no whole request fits the complete prompt within model context capacity` };
   const listed = await recorded<ListAnswer>(ctx, lister, openCasesSystemPrompt, "record_open_cases", listSchema,
     prompt, AbortSignal.any([signal, AbortSignal.timeout(OPEN_CASES_TIME_LIMIT_MS)]));
-  if (typeof listed === "string") return { status: "not_listed", reason: `${named(lister)} ${listed}` };
-  return listed.status === "not_listed" ? { status: "not_listed", reason: `${named(lister)} ${listed.reason}` }
+  if (typeof listed === "string") return { status: "not_run", model: named(lister), reason: `${named(lister)} ${listed}` };
+  return listed.status === "not_listed" ? { status: "not_run", model: named(lister), reason: `${named(lister)} ${listed.reason}` }
     : { status: "listed", model: named(lister), cases: listed.cases };
 }

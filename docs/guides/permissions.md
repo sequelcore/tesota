@@ -50,10 +50,10 @@ Rules are JSON, `tool(pattern)` or a tool's name alone:
 | `<project>/.tesota/permissions.json` | The project's: only `ask` and `deny`, so a repository can tighten but never grant |
 
 - **Tools:** `read`, `ls`, `find`, `grep`, `write`, `edit`, `shell`
-  (PowerShell on Windows, bash elsewhere), `ask_user`, `agent`, `prove`,
+  (PowerShell on Windows, bash elsewhere), `ask_user`, `update_tasks`, `agent`, `prove`,
   `check_model`, and `mcp__<server>__<tool>`. A name with `*` isn't a
   rule, and stops the file from loading.
-- **Reads:** `read`, `ls`, `find`, `grep`, `ask_user`, `agent` and MCP
+- **Reads:** `read`, `ls`, `find`, `grep`, `ask_user`, `update_tasks`, `agent` and MCP
   resource tools, allowed in every mode unless a rule says otherwise. A
   subagent's calls pass the boundary again; an `ask_user` answer never
   allows a later call.

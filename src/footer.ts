@@ -54,12 +54,12 @@ function tallyParts({ proved, notProved, tests, weak }: Tally, assumed = 0): Evi
   ];
 }
 
-function lineCount(uncovered: Receipt["uncovered"]): number {
+function lineCount(uncovered: Receipt["codeEvidence"]["uncovered"]): number {
   return uncovered.reduce((sum, { lines }) => sum + lines.reduce((n, [start, end]) => n + end - start + 1, 0), 0);
 }
 
 /** The models' parts of the receipt's row: how many were model-checked, how many still fail, and how many may be stale. */
-function modelParts(models: NonNullable<Receipt["models"]>): EvidencePart[] {
+function modelParts(models: NonNullable<Receipt["codeEvidence"]["models"]>): EvidencePart[] {
   const checked = models.filter(({ verdict }) => verdict === "proved").length;
   // Only an observed violation fails (`modelEnd`); a model that couldn't be checked is one of the gaps counted as not checked.
   const fails = models.filter((model) => modelEnd(model) === "failed").length;
@@ -122,7 +122,7 @@ function receiptParts(settled: Receipt): EvidencePart[] {
   return [receiptHead(settled, findings, standing), ...listed, ...listed.length > 0 ? [] : nothingListed(settled, standing)];
 }
 
-/** Why the row lists nothing else (#668): a change of comments alone, nothing verified, or nothing changed. */
+/** Why the row lists nothing else: a change of comments alone, nothing verified, or nothing changed. */
 function nothingListed(settled: Receipt, standing: ReceiptStanding): EvidencePart[] {
   if (allEvidence(settled).commentsOnly === true) return [part("nothing to verify, comments only", "nothing to verify", "no code", "muted")];
   if (standing === "unverified") return [part(`unverified, ${unverifiedWhy(settled)}`, "unverified", "unverified", "warning")];
@@ -170,10 +170,12 @@ export function evidenceParts(status: GateStatus, now: number = performance.now(
       readinessWords[status.readiness]];
   }
   if (status.step === "settled") return receiptParts(status.receipt);
+  // Muted, never a warning: a question changes no file either.
+  if (status.step === "unchanged") return [part("○ no file changed", "○ no change", "○ none", "muted")];
   if (status.step === "sent_back") return [workingHeads.sent_back, ...tallyParts(status.tally)];
   const { minutes, seconds } = elapsedTime(Math.max(0, Math.floor(now - status.startedAt)));
   const elapsed = minutes === 0 ? `${seconds}s` : `${minutes}m ${String(seconds).padStart(2, "0")}s`;
-  // The status line beside the orb names the file or command running (#590); the footer keeps the step, its timer and the tally.
+  // The status line beside the orb names the file or command running; the footer keeps the step, its timer and the tally.
   const head = status.step === "proving" ? part("◐ proving", "◐ proving", "◐ proving", "accent") : workingHeads[status.step];
   return [part(`${head.full}${SEPARATOR}${elapsed}`, `${head.short}${SEPARATOR}${elapsed}`, head.glyphs, head.color),
     ...tallyParts(status.tally)];

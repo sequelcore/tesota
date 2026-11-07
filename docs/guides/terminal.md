@@ -46,12 +46,19 @@ reading the clipboard again.
   above it, labeled with when they will be delivered. Alt+Up (Alt+Q on
   Windows) returns them to the input to edit or withdraw; stopping the run
   restores them too. See [Commands and keys](../reference/commands.md#keys).
-- **The footer:** one row. On the left, what Tesota knows about the
+- **The footer:** evidence on one row. On the left, what Tesota knows about the
   request: what it can verify (`● ready · tests only`), the step and its
-  timer while it verifies, or the receipt in brief (`✓ receipt · 1 proved
-  · tests pass`). On the right, the folder and branch, the model, the
+  timer while it verifies, the receipt in brief (`✓ receipt · 1 proved
+  · tests pass`), or `○ no file changed` after a run that changed none.
+  On the right, the folder and branch, the model, the
   context window's use (`ctx 12%`), and statuses such as the permission
   mode and the sessions waiting for you.
+- **Warnings:** nonblocking configuration diagnostics stay behind
+  `⚠ 1 warning · F2 to view` in the footer's existing blank row. F2 or
+  `/warnings` opens their details without changing your draft. Use arrows
+  to choose or scroll, `c` to copy, `d` to dismiss, and Esc to return.
+  Closing keeps undismissed warnings. Command feedback and blocking errors
+  remain in the conversation.
 
 On a narrow terminal the folder goes first, then the model; then the
 evidence shortens, and the context's use goes last. The statuses always

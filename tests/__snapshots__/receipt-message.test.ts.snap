@@ -1,16 +1,107 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`stores and exports the requests each judge received and names context omissions (#627) 1`] = `
-"Tesota receipt
-No review flags · no verification limits
-Evidence, not approval: accepting the change is yours.
+exports[`keeps multiline paths and fences within details instead of creating HTML or headings 1`] = `
+"## Tesota receipt
 
+Evidence standing: unverified
+
+**No review flags · 2 verification limits**
+
+> Request context
+> No request messages recorded.
+
+**Code evidence**
+
+- ○ **Tested** — none recorded
+- ○ **Proved** — none recorded
+- ○ **Models** — none recorded
+
+- ○ No proof covers 2 changed files — Not checked by anything else.
+
+> Specification evidence
+
+**Request review — model opinion**
+
+Contract comparison: not\\_run; no eligible changed contract
+Open cases: not\\_run; request review was not run
+
+
+**Details**
+
+\`\`\`\`text
+  not verified  src/<rule>
+# heading.md: no verifier covers it
+  not verified  a\`\`\`b.md: no verifier covers it
+  not listed    the cases the request leaves open: request review was not run
+From the first commit · Tesota 0.1.0
+\`\`\`\`
+
+Acceptance remains with the reviewer."
+`;
+
+exports[`keeps unchecked paths inside fenced details, without interpreting Markdown 1`] = `
+"## Tesota receipt
+
+Evidence standing: unverified
+
+**No review flags · 1 verification limit**
+
+> Request context
+> No request messages recorded.
+
+**Code evidence**
+
+- ○ **Tested** — none recorded
+- ○ **Proved** — none recorded
+- ○ **Models** — none recorded
+
+- ○ No proof covers 1 changed file — Not checked by anything else.
+
+> Specification evidence
+
+**Request review — model opinion**
+
+Contract comparison: not\\_run; no eligible changed contract
+Open cases: not\\_run; request review was not run
+
+
+**Details**
+
+\`\`\`text
+  not verified  src/[rule]*.ts: no verifier covers it
+  not listed    the cases the request leaves open: request review was not run
+From the first commit · Tesota 0.1.0
+\`\`\`
+
+Acceptance remains with the reviewer."
+`;
+
+exports[`stores and exports exact stage context and explicit capacity omissions (#627) 1`] = `
+"Tesota receipt
+Evidence standing: unchanged
+No review flags · no verification limits
+
+Request context
+Request 1
+Original requirement
+Amendment
+
+Code evidence
 ○ Tested   none recorded
 ○ Proved   none recorded
 ○ Models   none recorded
 
+Specification evidence
+
+Request review — model opinion
+Contract comparison: not_run; no eligible changed contract
+Open cases: not_run; request review was not run
+
 Details
+  not listed    the cases the request leaves open: request review was not run
 ClaimCheck context: requests 1 and 3 · app
 ClaimCheck left out request 2: context capacity · app
-From the first commit · Tesota 0.1.0"
+From the first commit · Tesota 0.1.0
+
+Acceptance remains with the reviewer."
 `;

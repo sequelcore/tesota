@@ -1,3 +1,4 @@
+import { emptyReceipt } from "../../../tests/receipts.ts";
 import {
   createModels, fauxAssistantMessage, fauxProvider, InMemoryCredentialStore, type MutableModels, type OAuthCredential,
   type ProviderAuthInteraction,
@@ -18,17 +19,20 @@ import type { UsageSources } from "../src/usage.ts";
 import type { ScriptStep } from "./engine.ts";
 import { scriptedReply, signInWithChatGPT } from "./scripted.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
+import { readDeclaredChecks } from "../../../src/project-checks.ts";
+import { trusted } from "../src/trust.ts";
 
 /**
- * `tesota-core`'s commands (#444), typed into an emulated terminal as the
+ * `tesota-core`'s commands, typed into an emulated terminal as the
  * operator would, on a scripted provider and temporary settings and sessions.
  */
 const folder = (prefix: string): string => mkdtempSync(join(tmpdir(), prefix));
 const enter = "\r";
 
-/** The settings a test starts from, none when it asks for none. */
-function seedSettings(path: string, model: string | undefined, accounts: readonly Account[] | undefined): void {
-  if (model !== undefined || accounts !== undefined) writeSettings({ ...model === undefined ? {} : { model }, ...accounts === undefined ? {} : { accounts } }, path);
+/** The settings a test starts from, none when it asks for none; a file given as written is written as it is. */
+function seedSettings(path: string, model: string | undefined, accounts: readonly Account[] | undefined, file: object | undefined): void {
+  if (file !== undefined) writeFileSync(path, JSON.stringify(file));
+  else if (model !== undefined || accounts !== undefined) writeSettings({ ...model === undefined ? {} : { model }, ...accounts === undefined ? {} : { accounts } }, path);
 }
 
 /** A usage source with no reading to give. */
@@ -62,24 +66,38 @@ function scripted(replies: readonly ScriptStep[], twoModels: boolean): { models:
   return { models, credentials };
 }
 
-/** The scripted models for the app, or none when it builds its own (#743). */
+/** The scripted models for the app, or none when it builds its own. */
 const givenModels = (models: MutableModels, ownModels: boolean | undefined): { models?: MutableModels } => ownModels === true ? {} : { models };
 
+function seedProjectConfig(cwd: string, mcp: object | undefined, checks: object | undefined, types: Record<string, string> = {}): void {
+  for (const [name, value] of [["mcp.json", mcp], ["checks.json", checks]] as const) {
+    if (value === undefined) continue;
+    mkdirSync(join(cwd, ".tesota"), { recursive: true });
+    writeFileSync(join(cwd, ".tesota", name), JSON.stringify(value));
+  }
+  for (const [name, content] of Object.entries(types)) {
+    mkdirSync(join(cwd, ".agents", "agents"), { recursive: true });
+    writeFileSync(join(cwd, ".agents", "agents", `${name}.md`), content);
+  }
+}
+
 /** The app in a temporary folder, its settings and sessions there too, once it has drawn its first frame. */
-async function app(replies: readonly ScriptStep[] = [], { repository = false, earlier, earlierModel = "faux/faux-1", mcp, projectMcp, skills = {}, served, model, claudeCode, accounts, claude = { signIn: async () => undefined, status: async () => ({ loggedIn: false }) }, usage = noUsage, ownModels }:
-  { repository?: boolean;
-    /** An earlier session of the folder that worked in its checkout, asked this and answered "earlier answer" (#595). */
-    earlier?: string; earlierModel?: string; mcp?: object; projectMcp?: object; skills?: Record<string, string>;
-    /** Signed in to OpenAI with ChatGPT, which serves these models (#566), or whose list cannot be fetched. */
+async function app(replies: readonly ScriptStep[] = [], { repository = false, earlier, earlierModel = "faux/faux-1", mcp, projectMcp, projectChecks, skills = {}, types, served, model, claudeCode, accounts, claude = { signIn: async () => undefined, status: async () => ({ loggedIn: false }) }, usage = noUsage, ownModels, settingsFile }:
+  { repository?: boolean; projectChecks?: object;
+    /** An earlier session of the folder that worked in its checkout, asked this and answered "earlier answer". */
+    earlier?: string; earlierModel?: string; mcp?: object; projectMcp?: object; skills?: Record<string, string>; types?: Record<string, string>;
+    /** Signed in to OpenAI with ChatGPT, which serves these models, or whose list cannot be fetched. */
     served?: readonly string[] | "offline"; model?: string; accounts?: readonly Account[];
-    /** Claude through Claude Code (#546), signed in there or not. */
+    /** Claude through Claude Code, signed in there or not. */
     claudeCode?: "signed in" | "signed out";
-    /** Claude Code's sign-in and status in an account's folder (#642), faked. */
+    /** Claude Code's sign-in and status in an account's folder, faked. */
     claude?: AppOptions["claude"];
     /** Where the usage panel reads from, faked: it reads no real Claude Code or ChatGPT. */
     usage?: UsageSources;
-    /** The shell builds its own models over the test's credentials, as the operator's shell does (#743), instead of the scripted ones. */
-    ownModels?: boolean } = {}) {
+    /** The shell builds its own models over the test's credentials, as the operator's shell does, instead of the scripted ones. */
+    ownModels?: boolean;
+    /** The operator's settings file as written, keys Tesota does not read included. */
+    settingsFile?: object } = {}) {
   const terminal = new VirtualTerminal(100, 30);
   const { models, credentials } = scripted(replies, model === "faux/faux-2");
   if (claudeCode !== undefined) {
@@ -87,7 +105,7 @@ async function app(replies: readonly ScriptStep[] = [], { repository = false, ea
   }
   const signOut = served === undefined ? () => undefined : await signInWithChatGPT(models, credentials, served);
   const settingsPath = join(folder("tesota-core-app-settings-"), "settings.json");
-  seedSettings(settingsPath, model, accounts);
+  seedSettings(settingsPath, model, accounts, settingsFile);
   if (accounts !== undefined) {
     for (const provider of (await engineModels(credentials, accounts)).getProviders().filter(({ id }) => id.includes("@"))) models.setProvider(provider);
     for (const id of ["openai-codex", "openai-codex@work"]) await credentials.modify(id, async () =>
@@ -95,27 +113,24 @@ async function app(replies: readonly ScriptStep[] = [], { repository = false, ea
   }
   const sessions = folder("tesota-core-app-sessions-");
   const cwd = folder("tesota-core-app-");
-  // Further sessions need a Git repository with a commit, for their own worktrees (#453).
+  // Further sessions need a Git repository with a commit, for their own worktrees.
   if (repository) {
     writeFileSync(join(cwd, "README.md"), "# App\n");
     for (const args of [["init", "-q"], ["add", "-A"], ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base"]]) {
       spawnSync("git", args, { cwd });
     }
   }
-  // The operator's MCP servers beside their settings, and the project's in its .tesota folder (#459).
+  // The operator's MCP servers beside their settings, and the project's in its .tesota folder.
   if (mcp !== undefined) writeFileSync(join(dirname(settingsPath), "mcp.json"), JSON.stringify(mcp));
-  if (projectMcp !== undefined) {
-    mkdirSync(join(cwd, ".tesota"));
-    writeFileSync(join(cwd, ".tesota", "mcp.json"), JSON.stringify(projectMcp));
-  }
-  // The project's skills, by folder, each its SKILL.md (#540).
+  seedProjectConfig(cwd, projectMcp, projectChecks, types);
+  // The project's skills, by folder, each its SKILL.md.
   for (const [name, content] of Object.entries(skills)) {
     mkdirSync(join(cwd, ".agents", "skills", name), { recursive: true });
     writeFileSync(join(cwd, ".agents", "skills", name, "SKILL.md"), content);
   }
   if (earlier !== undefined) {
     const at = new Date(0).toISOString();
-    const header = { type: "session", format: "tesota-session", version: 6, id: "earlier", cwd, createdAt: at, checkout: cwd };
+    const header = { type: "session", format: "tesota-session", version: 7, id: "earlier", cwd, createdAt: at, checkout: cwd };
     writeFileSync(join(sessions, "earlier.jsonl"), [header,
       { type: "request", run: 1, text: earlier, origin: "interactive", at, base: { units: [] } },
       ...earlierModel === "" ? [] : [{ type: "assistant", run: 1, message: { ...fauxAssistantMessage("earlier answer"),
@@ -132,6 +147,20 @@ async function app(replies: readonly ScriptStep[] = [], { repository = false, ea
 }
 
 const send = (terminal: VirtualTerminal, text: string): void => { terminal.type(text); terminal.type(enter); };
+
+test.each([true, false])("the real startup picker records declared-check trust only after the operator selects it, approve=%s (#753)", async (approve) => {
+  const { terminal, cwd, running } = await app([], { projectChecks: { checks: [{ command: "node project-check.cjs", folder: "" }] } });
+  await terminal.until("This project's checks would run:");
+  const declaration = readDeclaredChecks(cwd);
+  if (declaration.status !== "read") throw new Error("invalid fixture");
+  expect(trusted(cwd, "checks", declaration.hash)).toBe(false);
+  if (!approve) terminal.type("\x1b[B");
+  terminal.type(enter);
+  await terminal.untilGone("This project's checks would run:");
+  expect(trusted(cwd, "checks", declaration.hash)).toBe(approve);
+  send(terminal, "/quit");
+  await running;
+});
 
 test.skipIf(process.platform !== "win32")("Windows without a known Terminal session does not show the obsolete paste warning (#718)", async () => {
   const previous = process.env["WT_SESSION"];
@@ -210,6 +239,98 @@ test("a question arriving behind the dashboard waits until the dashboard gives f
 });
 
 describe("tesota-core", () => {
+  test("foreign agent metadata does not interrupt startup (#794)", async () => {
+    const { terminal, running } = await app([], { model: "faux/faux-1", types: {
+      helper: "---\nname: helper\ndescription: Helps\nclaude.model: opus\ncodex.model: other\ntesota.model: faux/faux-2\n---\nHelp.\n",
+    } });
+    try {
+      expect((await terminal.scrollback()).join("\n")).not.toContain("claude.model");
+      expect(terminal.written).not.toContain("takes a type's model");
+    } finally {
+      send(terminal, "/quit");
+      await running;
+    }
+  });
+
+  test("/agents types inspects role models and sources without starting a child (#794)", async () => {
+    const { terminal, cwd, sessions, running } = await app([], { model: "faux/faux-2", types: {
+      helper: "---\nname: helper\ndescription: Helps\nclaude.model: opus\n---\nHelp.\n",
+      reviewer: "---\nname: reviewer\ndescription: Reviews\nmodel: faux/faux-1\n---\nReview.\n",
+    } });
+    try {
+      send(terminal, "/agents types helper");
+      const inherited = await terminal.until("Model: faux/faux-2 (inherited)");
+      expect(inherited.replace(/\s/gu, "")).toContain(join(cwd, ".agents", "agents", "helper.md").replace(/\s/gu, ""));
+      send(terminal, "/agents types reviewer");
+      const explicit = await terminal.until("Model: faux/faux-1 (configured)");
+      expect(explicit.replace(/\s/gu, "")).toContain(join(cwd, ".agents", "agents", "reviewer.md").replace(/\s/gu, ""));
+      expect(explicit).toContain("Invocation model overrides this default");
+      expect(readdirSync(sessions).filter((file) => file.endsWith(".jsonl"))).toHaveLength(1);
+    } finally {
+      terminal.type("\x1b");
+      send(terminal, "/quit");
+      await running;
+    }
+  });
+
+  test("native agent model warnings stay in the footer until F2 opens details (#794)", async () => {
+    const { terminal, cwd, running } = await app([], { model: "faux/faux-1", types: {
+      helper: "---\nname: helper\ndescription: Helps\nmodel: sonnet\n---\nHelp.\n",
+    } });
+    try {
+      const startup = await terminal.until("1 warning · F2 to view");
+      expect(startup).not.toContain("sonnet");
+      expect(startup).not.toContain("unsupported model");
+      terminal.type("draft stays here");
+      terminal.type("\x1bOQ");
+      const inspected = await terminal.until("Ignored model: sonnet. Set model: provider/id or inherit.");
+      expect(inspected).toContain("Model: faux/faux-1 (inherited)");
+      expect(inspected.replace(/\s/gu, "")).toContain(join(cwd, ".agents", "agents", "helper.md").replace(/\s/gu, ""));
+      terminal.type("\x1b");
+      await terminal.until("draft stays here");
+      terminal.type("\x03");
+      send(terminal, "/warnings");
+      await terminal.until("Ignored model: sonnet.");
+      terminal.type("d");
+      await terminal.untilGone("F2 to view");
+    } finally {
+      terminal.type("\x1b");
+      terminal.type("\x03");
+      send(terminal, "/quit");
+      await running;
+    }
+  });
+
+  test("agent inspection reports empty, unknown and malformed requests (#794)", async () => {
+    const { terminal, running } = await app();
+    try {
+      send(terminal, "/agents types");
+      await terminal.until("No agent types loaded in this session.");
+      send(terminal, "/agents types missing");
+      await terminal.until("No agent type missing in this session.");
+      send(terminal, "/agents types one two");
+      await terminal.until("Use: /agents [types [name]]");
+    } finally {
+      send(terminal, "/quit");
+      await running;
+    }
+  });
+
+  test("retained agent warnings do not present an unselected model as inherited (#794)", async () => {
+    const { terminal, running } = await app([], { types: {
+      helper: "---\nname: helper\ndescription: Helps\nmodel: sonnet\n---\nHelp.\n",
+    } });
+    try {
+      await terminal.until("1 warning · F2 to view");
+      terminal.type("\x1bOQ");
+      await terminal.until("Model: none selected (inherited)");
+    } finally {
+      terminal.type("\x1b");
+      send(terminal, "/quit");
+      await running;
+    }
+  });
+
   test("/ lists the commands with descriptions, and the list scrolls to /quit", async () => {
     const { terminal, running } = await app();
     try {
@@ -416,6 +537,24 @@ describe("tesota-core", () => {
     } finally { terminal.type("\x1b"); send(terminal, "/quit"); await running; }
   });
 
+  test("the usage panel's Roles tab shows the model each role runs on and where it is chosen, from the settings and agent types", async () => {
+    const { terminal, running } = await app([], { model: "faux/faux-1", settingsFile: { model: "faux/faux-1", claimcheckModel: "faux/faux-2" },
+      types: { explorer: "---\nname: explorer\ndescription: Explores\nmodel: faux/faux-2\n---\nExplore.\n",
+        helper: "---\nname: helper\ndescription: Helps\n---\nHelp.\n" } });
+    try {
+      send(terminal, "/usage");
+      await terminal.until("[ Usage ]");
+      terminal.type("\x1b[Z");
+      const screen = (await terminal.until("Least left")).split("\n");
+      const row = (role: string): string => screen.find((line) => line.includes(` ${role} `)) ?? "";
+      expect(row("this session")).toMatch(/faux-1 +\/model +faux/u);
+      expect(row("open cases")).toMatch(/faux-1 +inherited +faux/u);
+      expect(row("ClaimCheck")).toMatch(/faux-2 +setting claimcheckModel +faux/u);
+      expect(row("explorer")).toMatch(/faux-2 +type file +faux/u);
+      expect(row("helper")).toMatch(/faux-1 +inherited +faux/u);
+    } finally { terminal.type("\x1b"); send(terminal, "/quit"); await running; }
+  });
+
   test("/usage on OpenAI's ChatGPT sign-in says its limits are not reported, marked as this session", async () => {
     const { terminal, running } = await app([], { served: ["gpt-6.1-sol"], model: "openai/gpt-6.1-sol" });
     try {
@@ -492,6 +631,21 @@ describe("tesota-core", () => {
     const screen = await terminal.until("was not checked");
     expect(screen).not.toContain("The saved model is not used");
     expect(screen.split("\n").at(-1)).toContain("gpt-6.1-sol");
+    send(terminal, "/quit");
+    await running;
+  });
+
+  test("unknown settings are retained behind the warning badge with their source (#714, #794)", async () => {
+    const { terminal, settingsPath, running } = await app([], { settingsFile: { tlcPath: "/tools/tla2tools.jar", hooks: {} } });
+    const startup = await terminal.until("1 warning · F2 to view");
+    expect(startup).not.toContain("tlcPath");
+    send(terminal, "/warnings");
+    // The note wraps where the path's length puts it, so it is read with the line breaks taken out; the link, last, never breaks.
+    await terminal.until("configuration.md#settingsjson");
+    const screen = (await terminal.screen()).join("").replace(/\s+/gu, "");
+    expect(screen.split("didnothing:tlcPath.").length).toBe(2);
+    expect(screen).toContain(`in${settingsPath.replace(/\s+/gu, "")},`);
+    terminal.type("\x1b");
     send(terminal, "/quit");
     await running;
   });
@@ -623,17 +777,17 @@ describe("tesota-core", () => {
       }
       const manifest = join(capture, "lights-complete.manifest.json");
       const at = new Date(0).toISOString();
-      writeFileSync(join(sessions, "graphs.jsonl"), [{ type: "session", format: "tesota-session", version: 6, id: "graphs", cwd, createdAt: at, checkout: cwd },
+      writeFileSync(join(sessions, "graphs.jsonl"), [{ type: "session", format: "tesota-session", version: 7, id: "graphs", cwd, createdAt: at, checkout: cwd },
         { type: "request", run: 1, text: "check the lights", origin: "interactive", at, base: { units: [] } },
         { type: "custom_message", run: 1, customType: "tesota-receipt-graphs", content: "the receipt", display: true,
-          details: { receipt: {}, graphs: [{ subject: "models/Lights.tla", capture: { status: "captured", manifest } }] } }]
+          details: { receipt: emptyReceipt, graphs: [{ subject: "models/Lights.tla", capture: { status: "captured", manifest } }] } }]
         .map((line) => JSON.stringify(line)).join("\n") + "\n");
       send(terminal, "/resume");
       await terminal.until("check the lights");
       terminal.type(enter);
-      await terminal.until("the receipt");
+      await terminal.until("Acceptance remains with the reviewer.");
       send(terminal, "/graph");
-      // A broken rule opens on the chart (#761).
+      // A broken rule opens on the chart.
       expect(await terminal.until("grouped by door > lamp")).toContain("Model chart · models/Lights.tla");
       terminal.type("o");
       const opened = await openedGraph;
@@ -668,15 +822,15 @@ describe("tesota-core", () => {
       writeFileSync(reading, `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(marker)}, "ran");\n` +
         "export function state(v: { lamp: string }): string { return v.lamp === \"on\" ? \"the lamp is lit\" : \"the lamp is dark\"; }\n");
       const at = new Date(0).toISOString();
-      writeFileSync(join(sessions, "reading.jsonl"), [{ type: "session", format: "tesota-session", version: 6, id: "reading", cwd, createdAt: at, checkout: cwd },
+      writeFileSync(join(sessions, "reading.jsonl"), [{ type: "session", format: "tesota-session", version: 7, id: "reading", cwd, createdAt: at, checkout: cwd },
         { type: "request", run: 1, text: "check the lights", origin: "interactive", at, base: { units: [] } },
         { type: "custom_message", run: 1, customType: "tesota-receipt-graphs", content: "the receipt", display: true,
-          details: { receipt: {}, graphs: [{ subject: "Lights.tla", capture: { status: "captured", manifest } }] } }]
+          details: { receipt: emptyReceipt, graphs: [{ subject: "Lights.tla", capture: { status: "captured", manifest } }] } }]
         .map((line) => JSON.stringify(line)).join("\n") + "\n");
       send(terminal, "/resume");
       await terminal.until("check the lights");
       terminal.type(enter);
-      await terminal.until("the receipt");
+      await terminal.until("Acceptance remains with the reviewer.");
 
       send(terminal, "/graph");
       expect(await terminal.until("This project's chart reading would run")).toContain("Lights.chart.ts");
@@ -711,12 +865,16 @@ describe("tesota-core", () => {
 
   test("/resume continues on the session's model rather than the shell's (#679)", async () => {
     const { terminal, sessions, running, settingsPath } = await app(["continued answer", "changed model answer"],
-      { earlier: "the earlier request", model: "faux/faux-2" });
+      { earlier: "the earlier request", model: "faux/faux-2", types: {
+        helper: "---\nname: helper\ndescription: Helps\n---\nHelp.\n",
+      } });
     try {
       send(terminal, "/resume");
       await terminal.until("the earlier request");
       terminal.type(enter);
       await terminal.until("earlier answer");
+      send(terminal, "/agents types helper");
+      await terminal.until("Model: faux/faux-1 (inherited)");
       send(terminal, "continue");
       await terminal.until("continued answer");
       await terminal.untilGone("Verifying");
@@ -729,6 +887,8 @@ describe("tesota-core", () => {
       terminal.type("\x1b[B");
       terminal.type(enter);
       await terminal.until("Model: faux/faux-2");
+      send(terminal, "/agents types helper");
+      await terminal.until("Model: faux/faux-2 (inherited)");
       send(terminal, "continue on the chosen model");
       await terminal.until("changed model answer");
       await terminal.untilGone("Verifying");
@@ -926,7 +1086,7 @@ describe("tesota-core", () => {
     terminal.type("\x1b[Z");
     await terminal.until("read only");
     expect(readSettings(settingsPath).settings.permissionMode).toBe("read");
-    // Another Tesota saves its model meanwhile; this one's next save keeps it (#453).
+    // Another Tesota saves its model meanwhile; this one's next save keeps it.
     writeSettings({ ...readSettings(settingsPath).settings, model: "faux/elsewhere" }, settingsPath);
     terminal.type("\x1b[Z");
     await terminal.untilGone("read only");
@@ -959,7 +1119,10 @@ describe("tesota-core", () => {
     expect(rows.at(-1)).toContain("◌ waiting for you");
     // A digit answers at once.
     terminal.type("1");
-    const answered = (await terminal.until("written")).split("\n");
+    // The receipt that ends the run is taller than 30 rows and scrolls the reply away, so the run's end is read on a screen that holds both.
+    terminal.resize(100, 80);
+    const answered = (await terminal.until("Acceptance remains with the reviewer.")).split("\n");
+    expect(answered.join("\n")).toContain("written");
     expect(answered.some((row) => row.includes("/ for commands"))).toBe(true);
     expect(answered.at(-1)).not.toContain("waiting for you");
     expect(existsSync(join(cwd, "allowed.txt"))).toBe(true);
@@ -986,13 +1149,32 @@ describe("tesota-core", () => {
     await running;
   });
 
+  test("/context shows what fills the model's window, part by part (#779)", async () => {
+    const { terminal, running } = await app(["hello"]);
+    send(terminal, "/model");
+    await terminal.until("Model");
+    terminal.type(enter);
+    await terminal.until("Model: ");
+    send(terminal, "say hello");
+    await terminal.until("hello");
+    await terminal.untilGone("Working…");
+    await terminal.untilGone("Verifying…");
+    send(terminal, "/context");
+    const shown = await terminal.until("Free");
+    // After a reply the total is what the provider counted, and what no part accounts for has its own line.
+    expect(shown).toMatch(/Context: [\d,]+ of [\d,]+ tokens \(\d+%\), counted by the provider at the last reply; parts estimated/u);
+    for (const part of ["System prompt", "Tools", "Memory files", "Skills", "Messages", "Not attributed"]) expect(shown).toContain(part);
+    send(terminal, "/quit");
+    await running;
+  });
+
   test("your MCP servers start, the project's once trusted, and /mcp lists them and reconnects one (#459)", async () => {
     const server = { command: process.execPath, args: [fileURLToPath(new URL("./mcp-server.mjs", import.meta.url))] };
     const { terminal, running } = await app([], { mcp: { mcpServers: { mine: server } }, projectMcp: { mcpServers: { theirs: server } } });
     expect(await terminal.until("This project's MCP servers would start")).toContain("theirs");
     terminal.type(enter);
     send(terminal, "/mcp reconnect theirs");
-    await terminal.until("theirs: connected.", 15_000);
+    await terminal.until("theirs: connected.");
     send(terminal, "/mcp");
     const listed = await terminal.until("MCP servers");
     expect(listed).toContain("mine");
@@ -1049,15 +1231,15 @@ test("plain graph worker error notices sanitize manifest-derived terminal contro
     const manifest = join(cwd, "missing\x1b]52;c;INJECT\x07.json");
     const at = new Date(0).toISOString();
     writeFileSync(join(sessions, "unsafe-graph.jsonl"), [
-      { type: "session", format: "tesota-session", version: 6, id: "unsafe-graph", cwd, createdAt: at, checkout: cwd },
+      { type: "session", format: "tesota-session", version: 7, id: "unsafe-graph", cwd, createdAt: at, checkout: cwd },
       { type: "request", run: 1, text: "unsafe graph notice", origin: "interactive", at, base: { units: [] } },
       { type: "custom_message", run: 1, customType: "tesota-receipt-graphs", content: "unsafe receipt", display: true,
-        details: { receipt: {}, graphs: [{ subject: "Lights", capture: { status: "captured", manifest } }] } },
+        details: { receipt: emptyReceipt, graphs: [{ subject: "Lights", capture: { status: "captured", manifest } }] } },
     ].map(line => JSON.stringify(line)).join("\n") + "\n");
     send(terminal, "/resume");
     await terminal.until("unsafe graph notice");
     terminal.type(enter);
-    await terminal.until("unsafe receipt");
+    await terminal.until("Acceptance remains with the reviewer.");
     terminal.written = "";
     send(terminal, "/graph --plain");
     await terminal.until("Model viewer worker");

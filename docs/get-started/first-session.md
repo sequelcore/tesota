@@ -44,19 +44,30 @@ A failure that repeats stops going back and is reported instead.
 
 ```text
 Tesota receipt
+Evidence standing: verified
 No review flags · no verification limits
-Evidence, not approval: accepting the change is yours.
 
+Request context
+Request 1: Take 10% off orders over 100, with a contract and a test for it.
+
+Code evidence
 ✓ Tested      npm test · 0:04
 ✓ Proved      src/discount.ts · 0:03
 ○ Models      none recorded
 ✓ Exercised   1 test file failed on the base and passed with the change
+
+Specification evidence
 ✓ Contracts   1 contract: every decided change broke its proof
+
+Request review — model opinion
+Contract comparison: completed
+Open cases: listed — none listed
+Acceptance remains with the reviewer.
 ```
 
-- **The first row** counts what needs you: flags, then limits, in amber.
-  `1 opinion to read` points at a model's opinion, not check evidence.
-  An open-cases refusal isn't an opinion; its reason stays in the details.
+- **Evidence standing** summarizes mechanical checks. Flags, limits and
+  opinions have separate counts. Request review states whether the model
+  comparison and open-case listing ran; an empty listing is not agreement.
 - **Each method** says what ran. `Exercised` means the new test fails
   without the change; `Contracts` means every small change Tesota made to
   the code broke the proof.

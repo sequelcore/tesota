@@ -5,7 +5,7 @@ import { runLsc } from "../src/lsc.ts";
 import { grepTool } from "../src/tools/grep.ts";
 
 /**
- * What `binary.test.ts` compiles beside the engine (#472): the verifier's
+ * What `binary.test.ts` compiles beside the engine: the verifier's
  * readers that load a file or a package at the gate, run from inside a
  * binary. With a folder it proves `clamp.ts` there and prints, as JSON, the
  * lines each parser reads as comments and the proof's outcome; as
@@ -19,7 +19,7 @@ else if (command !== undefined) {
     typescript: [...commentOnlyLines("a.ts", "// note\nconst a = 1;\n")],
     python: [...await grammarCommentLines("a.py", "# note\na = 1\n")],
     go: [...await grammarCommentLines("a.go", "// note\npackage a\n")],
-    proof: { outcome: proof.outcome, files: proof.files },
+    proof: { outcome: proof.outcome, files: proof.files, proofInfo: proof.proofInfo },
     search: await grepTool(command).execute({ pattern: "export function", glob: "*.ts" }, new AbortController().signal, "search"),
   }));
 }

@@ -14,14 +14,14 @@ import { engineRegistry, session } from "./engine-session.js";
 import { manifest, read, write } from "./sessions.js";
 
 /**
- * Slice 8's live evaluation (#350): each registered case runs in a fresh Git
- * repository in an engine session (`engine-session.ts`, #464), verified by
+ * The live evaluation: each registered case runs in a fresh Git
+ * repository in an engine session (`engine-session.ts`), verified by
  * Tesota or, in the `plain` arm, settling without it. The model comes from the
  * operator's Tesota sign-in: `OPENAI_API_KEY` is removed. Each run appends one
  * JSON line to `--out`, which a later call resumes from. No instructions of
  * the operator's or the project's are read; the `tesota` arm loads each skill
  * named in `--skills`, with the checkout's `lsc` on `PATH` so an agent a
- * skill tells to install it finds it instead (#387). `--thinking` sets the
+ * skill tells to install it finds it instead. `--thinking` sets the
  * reasoning effort, Pi's default when not given.
  * The `claimcheck` mode replays ClaimCheck, with the session's model alone and
  * with a second model, on the contracts the runs left and on the strengthen
@@ -56,32 +56,32 @@ interface LiveCase {
   readonly kept: readonly string[];
 }
 
-function fromProofCase(testCase: ProofCase): LiveCase {
+async function fromProofCase(testCase: ProofCase): Promise<LiveCase> {
   const buggy = testCase.path === undefined ? undefined : testCase.base[testCase.path];
-  const name = testCase.path === undefined || buggy === undefined ? undefined : contracts(testCase.path, buggy)[0]?.name;
+  const name = testCase.path === undefined || buggy === undefined ? undefined : (await contracts(testCase.path, buggy))[0]?.name;
   return { name: testCase.name, request: testCase.request, committed: testCase.base, untracked: {}, hiddenTest: testCase.hiddenTest,
     ...testCase.path === undefined ? {} : { path: testCase.path }, ...name === undefined ? {} : { function: name },
     ...buggy === undefined ? {} : { buggy }, kept: testCase.kept };
 }
 
 /**
- * A first-contract case (#387): its base, without a contract, is committed;
+ * A first-contract case: its base, without a contract, is committed;
  * the bug comes from the strengthen or proof case it was made from, whose
  * contract locates the same buggy body and names its function
  * (`withBuggyBody`).
  */
-function fromFirstContractCase(testCase: ProofCase | StrengthenCase): LiveCase {
+async function fromFirstContractCase(testCase: ProofCase | StrengthenCase): Promise<LiveCase> {
   const original = [...STRENGTHEN_CASES, ...PROOF_CASES].find((made) => testCase.name.startsWith(made.name));
   const buggy = testCase.path === undefined ? undefined : original?.base[testCase.path];
-  const name = testCase.path === undefined || buggy === undefined ? undefined : contracts(testCase.path, buggy)[0]?.name;
+  const name = testCase.path === undefined || buggy === undefined ? undefined : (await contracts(testCase.path, buggy))[0]?.name;
   return { name: testCase.name, request: testCase.request, committed: testCase.base, untracked: {}, hiddenTest: testCase.hiddenTest,
     ...testCase.path === undefined ? {} : { path: testCase.path }, ...name === undefined ? {} : { function: name },
     ...buggy === undefined ? {} : { buggy }, kept: [] };
 }
 
-/** An open case (#387): its base is committed, and its own `buggy` locates the bug under a contract of the stated behavior. */
-function fromOpenCase(testCase: OpenCase): LiveCase {
-  const name = contracts(testCase.path, testCase.buggy)[0]?.name;
+/** An open case: its base is committed, and its own `buggy` locates the bug under a contract of the stated behavior. */
+async function fromOpenCase(testCase: OpenCase): Promise<LiveCase> {
+  const name = (await contracts(testCase.path, testCase.buggy))[0]?.name;
   return { name: testCase.name, request: testCase.request, committed: testCase.base, untracked: {}, hiddenTest: testCase.hiddenTest,
     path: testCase.path, ...name === undefined ? {} : { function: name }, buggy: testCase.buggy, kept: [] };
 }
@@ -93,14 +93,14 @@ function fromStrengthenCase(testCase: StrengthenCase): LiveCase {
     hiddenTest: testCase.hiddenTest, path: testCase.path, function: testCase.function, buggy, kept: [] };
 }
 
-const sets: Readonly<Record<string, readonly LiveCase[]>> = {
-  proofs: PROOF_CASES.map(fromProofCase),
-  strengthen: STRENGTHEN_CASES.map(fromStrengthenCase),
-  "no-contracts": NO_CONTRACT_CASES.map(fromProofCase),
-  placement: PLACEMENT_CASES.map(fromProofCase),
-  "first-contract": FIRST_CONTRACT_CASES.map(fromFirstContractCase),
-  "first-proof": FIRST_PROOF_CASES.map(fromFirstContractCase),
-  "open-case": OPEN_CASES.map(fromOpenCase),
+const sets: Readonly<Record<string, () => Promise<readonly LiveCase[]>>> = {
+  proofs: () => Promise.all(PROOF_CASES.map(fromProofCase)),
+  strengthen: () => Promise.resolve(STRENGTHEN_CASES.map(fromStrengthenCase)),
+  "no-contracts": () => Promise.all(NO_CONTRACT_CASES.map(fromProofCase)),
+  placement: () => Promise.all(PLACEMENT_CASES.map(fromProofCase)),
+  "first-contract": () => Promise.all(FIRST_CONTRACT_CASES.map(fromFirstContractCase)),
+  "first-proof": () => Promise.all(FIRST_PROOF_CASES.map(fromFirstContractCase)),
+  "open-case": () => Promise.all(OPEN_CASES.map(fromOpenCase)),
 };
 
 /** The skill folders `--skills` names, each with the commit it was at when a Git checkout. */
@@ -127,7 +127,7 @@ function repository(root: string, testCase: LiveCase): string {
 /** Whether the registered bug's body fails the proof under the contract the run left: true when the contract rules it out. */
 async function rulesOut(testCase: LiveCase, after: string | undefined): Promise<boolean | null> {
   if (testCase.path === undefined || testCase.function === undefined || testCase.buggy === undefined || after === undefined) return null;
-  const source = withBuggyBody(testCase.buggy, after, testCase.path, testCase.function);
+  const source = (await withBuggyBody(testCase.buggy, after, testCase.path, testCase.function));
   if (source === undefined) return null;
   const outcome = await proveSource(basename(testCase.path), source, AbortSignal.timeout(300_000));
   return outcome === "failed" ? true : outcome === "passed" ? false : null;
@@ -145,19 +145,20 @@ async function liveRun(arm: string, set: string, testCase: LiveCase, run: number
   const facts = ended.facts ?? {};
   const receipt = facts["receipt"] as Receipt | undefined;
   const baseSource = testCase.path === undefined ? undefined : testCase.committed[testCase.path];
-  const judged: Contract[] = testCase.path === undefined || after === undefined ? [] : changedContracts(testCase.path, after, baseSource);
+  const judged: Contract[] = testCase.path === undefined || after === undefined ? [] : await changedContracts(testCase.path, after, baseSource);
   return {
     arm: armLabel(arm), skills: skillCommits, set, case: testCase.name, run, model, thinking, ended: ended.ended, exitCode: ended.exitCode,
     durationMs: ended.durationMs,
     ...ended.ended === "exited" && ended.exitCode === 0 ? {} : { output: ended.output.slice(-2000) },
     ...facts, receipt: undefined,
     receiptSummary: receipt === undefined ? undefined : {
-      proofs: receipt.proofs.map(({ path, verdict }) => ({ path, verdict })),
-      contracts: receipt.contracts.map(({ path, name, mutation, judgment }) => ({ path, name, survived: mutation.survived.length,
-        rejected: mutation.rejected, inconclusive: mutation.inconclusive, equivalent: mutation.equivalent, verdict: judgment?.verdict })),
-      claimcheck: receipt.claimcheck,
-      tests: receipt.tests.map(({ command, evidence, verdict }) => ({ command, outcome: evidence.outcome, verdict })),
-      exercises: receipt.exercises, weakened: receipt.weakened, unverified: receipt.unverified, uncovered: receipt.uncovered,
+      proofs: receipt.codeEvidence.proofs.map(({ path, verdict }) => ({ path, verdict })),
+      contracts: receipt.specificationEvidence.contracts.map(({ path, name, mutation }) => ({ path, name, survived: mutation.survived.length,
+        rejected: mutation.rejected, inconclusive: mutation.inconclusive, equivalent: mutation.equivalent })),
+      requestReview: receipt.requestReview,
+      tests: receipt.codeEvidence.tests.map(({ command, evidence, verdict }) => ({ command, outcome: evidence.outcome, verdict })),
+      exercises: receipt.codeEvidence.exercises, weakened: receipt.specificationEvidence.weakened,
+      unverified: receipt.codeEvidence.unverified, uncovered: receipt.codeEvidence.uncovered,
     },
     proved: proof?.outcome, resolved,
     weakened: testCase.path === undefined || baseSource === undefined && testCase.untracked[testCase.path] === undefined ? []
@@ -183,8 +184,9 @@ async function live(): Promise<void> {
   if (!["tesota", "plain"].includes(arm)) throw new Error("Use --arm=tesota or plain.");
   if (skills.length > 0 && arm !== "tesota") throw new Error("Only the tesota arm loads --skills.");
   const set = option("set") ?? "";
-  const chosen = sets[set];
-  if (chosen === undefined) throw new Error("Use --set=proofs, strengthen, no-contracts, placement, first-contract, first-proof or open-case.");
+  const build = sets[set];
+  if (build === undefined) throw new Error("Use --set=proofs, strengthen, no-contracts, placement, first-contract, first-proof or open-case.");
+  const chosen = await build();
   const names = option("cases")?.split(",");
   const cases = names === undefined ? chosen : chosen.filter((testCase) => names.includes(testCase.name));
   if (names !== undefined && cases.length !== names.length) throw new Error(`Unknown case among ${names.join(", ")}.`);
@@ -214,10 +216,10 @@ async function replay(): Promise<void> {
   const slash = model.indexOf("/");
   const judge = registry.find(model.slice(0, slash), model.slice(slash + 1));
   if (judge === undefined) throw new Error(`${model} is not among the engine's models.`);
-  const labelled: Judged[] = STRENGTHEN_CASES.flatMap((testCase) => [
+  const labelled: Judged[] = (await Promise.all(STRENGTHEN_CASES.map(async (testCase) => [
     { source: `weak base: ${testCase.name}`, request: testCase.request, expresses: false,
-      items: contracts(testCase.path, testCase.base[testCase.path] ?? "") },
-    { source: `reference: ${testCase.name}`, request: testCase.request, expresses: true, items: contracts(testCase.path, testCase.reference) }]);
+      items: await contracts(testCase.path, testCase.base[testCase.path] ?? "") },
+    { source: `reference: ${testCase.name}`, request: testCase.request, expresses: true, items: await contracts(testCase.path, testCase.reference) }]))).flat();
   const fromRuns: Judged[] = records().filter((record) => record["kind"] === undefined && (record["judgedContracts"] ?? []).length > 0)
     .map((record) => ({ source: `run: ${record["arm"]} ${record["case"]} ${record["run"]}`,
       request: [...PROOF_CASES, ...STRENGTHEN_CASES].find((testCase) => testCase.name === record["case"])?.request ?? "",
@@ -232,8 +234,8 @@ async function replay(): Promise<void> {
       const result = await claimCheck({ model: judge, modelRegistry: registry }, [item.request], item.items,
         AbortSignal.timeout(600_000), restateWith);
       append({ kind: "claimcheck", source: item.source, config, repeat: item.repeat, expresses: item.expresses, result });
-      process.stdout.write(`${item.source} ${config} ${item.repeat}: ${result.status === "judged"
-        ? result.judgments.map(({ verdict }) => verdict).join(", ") : result.reason}\n`);
+      process.stdout.write(`${item.source} ${config} ${item.repeat}: ${result.status === "completed"
+        ? (result.judgments ?? []).map((judgment) => judgment?.verdict ?? "unavailable").join(", ") : result.reason}\n`);
     }
   }
 }

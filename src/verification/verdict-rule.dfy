@@ -2,9 +2,65 @@
 
 datatype Standing = decide | gap | holds | opinion
 
-datatype ProofOutcome = passed | failed | vacuous | timed_out | cancelled | not_started
+datatype ProofOutcome = failed | passed | vacuous | timed_out | cancelled | not_started
 
 datatype ModelRun = passed | vacuous | timed_out | cancelled | not_started | assumption_failed | deadlocked | violated | malformed
+
+function sourceCredit(noticed: bool, passed: bool, current: bool): bool
+{
+  ((noticed && passed) && current)
+}
+
+lemma sourceCredit_ensures(noticed: bool, passed: bool, current: bool)
+  ensures (sourceCredit(noticed, passed, current) <==> ((noticed && passed) && current))
+{
+}
+
+function reviewStatus(total: int, completed: int, partial: int, disabled: int): string
+  requires (total >= 0)
+  requires (completed >= 0)
+  requires (partial >= 0)
+  requires (disabled >= 0)
+  requires (((completed + partial) + disabled) <= total)
+{
+  if ((total > 0) && (completed == total)) then
+    "completed"
+  else
+    if ((total > 0) && (disabled == total)) then
+      "disabled"
+    else
+      if ((partial > 0) || (completed > 0)) then
+        "partial"
+      else
+        "not_run"
+}
+
+lemma reviewStatus_ensures(total: int, completed: int, partial: int, disabled: int)
+  requires (total >= 0)
+  requires (completed >= 0)
+  requires (partial >= 0)
+  requires (disabled >= 0)
+  requires (((completed + partial) + disabled) <= total)
+  ensures ((reviewStatus(total, completed, partial, disabled) == "completed") <==> ((total > 0) && (completed == total)))
+  ensures ((reviewStatus(total, completed, partial, disabled) == "disabled") <==> ((total > 0) && (disabled == total)))
+  ensures ((reviewStatus(total, completed, partial, disabled) == "partial") <==> ((partial > 0) || ((completed > 0) && (completed < total))))
+  ensures ((reviewStatus(total, completed, partial, disabled) == "not_run") <==> (((completed == 0) && (partial == 0)) && ((total == 0) || (disabled < total))))
+{
+}
+
+function externalStanding(standing: string, effects: int): string
+{
+  if ((effects > 0) && (standing != "failed")) then
+    "incomplete"
+  else
+    standing
+}
+
+lemma externalStanding_ensures(standing: string, effects: int)
+  ensures ((effects > 0) ==> (standing != "failed") ==> (externalStanding(standing, effects) == "incomplete"))
+  ensures (((effects <= 0) || (standing == "failed")) ==> (externalStanding(standing, effects) == standing))
+{
+}
 
 function verdictTone(decisions: int, failed: bool, gaps: int): string
   requires (decisions >= 0)

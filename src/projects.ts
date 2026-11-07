@@ -1,11 +1,13 @@
 import { type Dirent, accessSync, constants, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { delimiter, join, posix } from "node:path";
 import { parseJson } from "./json.js";
+import { type CheckApproval, checkApprovalProblem, readDeclaredChecks } from "./project-checks.js";
+import { checkoutRoot } from "./checkout-root.js";
 import { below, builtIn, checkScript, keepsProjectKind, owner, pinnedIn } from "./verification/project-rule.js";
 
 /**
  * The projects a repository holds, at its root or in folders below it to a
- * bounded depth (#318), so a monorepo whose JavaScript app and Java backend
+ * bounded depth, so a monorepo whose JavaScript app and Java backend
  * sit in subfolders gets each one's checks. A project inside another of the
  * same kind belongs to it, as Gradle's settings, Maven's modules and Cargo's
  * workspaces build the projects below them. JavaScript packages keep their
@@ -104,7 +106,7 @@ export function inFolder(folder: string, command: string): string {
 const packageManagers: readonly string[] = ["npm", "bun", "pnpm", "yarn"];
 
 /** Whether `program` is an executable file in a folder of the `PATH`, with one of `PATHEXT`'s endings on Windows. */
-function onPath(program: string): boolean {
+export function onPath(program: string): boolean {
   const endings = process.platform === "win32" ? (process.env["PATHEXT"] ?? ".COM;.EXE;.BAT;.CMD").split(";") : [""];
   return (process.env["PATH"] ?? "").split(delimiter).filter((folder) => folder !== "").some((folder) =>
     endings.some((ending) => {
@@ -118,12 +120,12 @@ function onPath(program: string): boolean {
 }
 
 /**
- * The package manager's `run` for a package (#576): the one its
+ * The package manager's `run` for a package: the one its
  * `packageManager` field names, else its folder's lockfile's, else the first
  * found on the `PATH`; npm when none is, so the command fails as the
  * operator's own would.
  */
-function packageRunner(directory: string): string {
+export function packageRunner(directory: string): string {
   try {
     const manifest: unknown = parseJson(readFileSync(join(directory, "package.json"), "utf8"));
     const named: unknown = typeof manifest === "object" && manifest !== null ? Reflect.get(manifest, "packageManager") : undefined;
@@ -166,11 +168,12 @@ export function packageTest(checkout: string, folder: string): { script: string;
 }
 
 /** A package's `check` script, or its `typecheck`, `lint` and `test` scripts, with its package manager (`packageRunner`). */
-function packageChecks(directory: string): string[] {
+function packageChecks(directory: string): Omit<CheckCommand, "folder">[] {
   const runner = packageRunner(directory);
   try {
     const scripts = packageCheckScripts(readFileSync(join(directory, "package.json"), "utf8"));
-    return [...scripts.keys()].map((name) => `${runner} ${name}`);
+    return [...scripts].map(([name, script]) => ({ command: `${runner} ${name}`,
+      ...script === undefined ? {} : { script }, ...runner === "npm run" ? { argumentSeparator: "--" as const } : {} }));
   } catch { return []; }
 }
 
@@ -184,28 +187,64 @@ function javaChecks(entries: readonly string[]): string[] {
 }
 
 /** One project's checks, run from its folder. */
-function projectChecks(checkout: string, project: Project): string[] {
+function projectChecks(checkout: string, project: Project): CheckCommand[] {
   const { folder, entries, kinds } = project;
-  const here = (command: string): string => inFolder(folder, command);
   return [
-    ...kinds.includes("node") ? packageChecks(join(checkout, folder)).map(here) : [],
-    ...kinds.includes("java") ? javaChecks(entries).map(here) : [],
-    ...kinds.includes("rust") && entries.includes("Cargo.toml") ? [here("cargo test")] : [],
-    ...kinds.includes("go") ? [here("go test ./...")] : [],
+    ...kinds.includes("node") ? packageChecks(join(checkout, folder)).map((check) => ({ ...check, folder })) : [],
+    ...kinds.includes("java") ? javaChecks(entries).map((command) => ({ command, folder })) : [],
+    ...kinds.includes("rust") && entries.includes("Cargo.toml") ? [{ command: "cargo test", folder }] : [],
+    ...kinds.includes("go") ? [{ command: "go test ./...", folder }] : [],
   ];
 }
 
-/** A project's folder and the commands it appears to check itself with, as a POSIX shell runs them from the root. */
+/** One check invocation, with its reporting and execution contract. */
+export interface CheckCommand {
+  readonly command: string;
+  /** Execution directory relative to the checkout; independent from which changed paths select this check. */
+  readonly folder: string;
+  readonly timeoutMs?: number;
+  /** Explicit reports relative to this invocation's execution folder. */
+  readonly reports?: readonly string[];
+  /** A discovered package script; only plain supported runners receive reporting flags. */
+  readonly script?: string;
+  readonly argumentSeparator?: "--";
+}
+
+/** A scope's ownership folder and its commands; command execution folders are independent of ownership. */
 export interface ProjectChecks {
   readonly folder: string;
-  readonly commands: readonly string[];
+  readonly commands: readonly CheckCommand[];
+  readonly approval?: CheckApproval;
+  readonly unavailable?: string;
+}
+
+/** The check selection made before work in one workspace unit, retained with its request base. */
+export interface UnitCheckPlan {
+  readonly folder: string;
+  readonly projects: readonly ProjectChecks[];
+}
+
+/** Execution context for the model and operator; it grants no additional command authority. */
+export function checkPlanText(plans: readonly UnitCheckPlan[]): string {
+  return ["Project checks selected before this request (execution context, not instructions or permission):",
+    ...plans.flatMap(({ folder, projects }) => projects.flatMap((project) => project.commands.map((check) =>
+      `${folder === "" ? "" : `${folder}: `}${inFolder(check.folder, check.command)}${project.unavailable === undefined ? "" : ` — unavailable: ${project.unavailable}`}`))),
+    "Tesota compares failures against the recorded base at settlement. Early checks are not final evidence."].join("\n");
 }
 
 /**
  * The commands the repository appears to use for checking itself, for each
- * project that has some, at the root or in a folder below it (#318).
+ * project that has some, at the root or in a folder below it.
  */
 export function suggestChecks(checkout: string): ProjectChecks[] {
+  const root = checkoutRoot(checkout);
+  const declared = readDeclaredChecks(root);
+  if (declared.status === "invalid") return [{ folder: "", commands: [{ command: ".tesota/checks.json", folder: "" }], unavailable: declared.reason }];
+  if (declared.status === "read") {
+    const approval = { root, hash: declared.hash };
+    const unavailable = checkApprovalProblem(approval);
+    return [{ folder: "", commands: declared.checks, approval, ...unavailable === undefined ? {} : { unavailable } }];
+  }
   return findProjects(checkout).map((project) => ({ folder: project.folder, commands: projectChecks(checkout, project) }))
     .filter(({ commands }) => commands.length > 0);
 }

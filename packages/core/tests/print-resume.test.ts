@@ -14,7 +14,7 @@ import type { ScriptStep } from "./engine.ts";
 import { scriptedReply } from "./scripted.ts";
 
 /**
- * `tesota -p -c` and `tesota -p --resume <id>` (#651): a print run that
+ * `tesota -p -c` and `tesota -p --resume <id>`: a print run that
  * ended on an unresolved question continues with the answer, and any other
  * session takes the text as a follow-up.
  */
@@ -106,7 +106,7 @@ describe("resuming a print run that ended on a question", () => {
       if (file === undefined) throw new Error("No session was written");
       const id = basename(file, ".jsonl");
       expect(first.error).toContain(`Awaiting your answer: tesota -p --resume ${id} "<answer>"`);
-      // The question reads as a question, with its choices, not as JSON (#713).
+      // The question reads as a question, with its choices, not as JSON.
       expect(first.error).toContain("The agent wanted to ask you something before going on:\n  Which file name should I use?\n    - a.txt: Name it a.txt.");
       const before = statSync(file).size;
 
@@ -131,7 +131,7 @@ describe("resuming a print run that ended on a question", () => {
       expect(ofRun(entries, 2).filter((entry) => entry.type === "settled" && entry.phase === "verifier")).toHaveLength(1);
       const receipts = receiptsOf(entries, 2);
       expect(receipts).toHaveLength(1);
-      expect(receipts[0]).toMatchObject({ clarifications: [expect.objectContaining(clarification)] });
+      expect(receipts[0]).toMatchObject({ requestContext: { clarifications: [expect.objectContaining(clarification)] } });
       // What the run changed before its question is the request's own, since its start fingerprints were restored.
       expect(JSON.stringify((receipts[0] as { changed: unknown }).changed)).toContain("a.txt");
       expect(receipts[0]).not.toMatchObject({ inherited: [expect.objectContaining({ path: "a.txt" })] });
@@ -211,13 +211,26 @@ describe("the final line's standing (#668)", () => {
     expect(ended.error).toContain("Completed, unverified: the changes are comments or blank lines only; tesota receipt writes it");
   });
 
-  test("a read-only run, or a question, ends Completed, with nothing to verify", async () => {
+  test("a read-only run, a command that changes nothing, or a question, ends Completed and says no file changed (#536)", async () => {
     const cwd = repository();
     const read = await printer([{ tool: "read", args: { path: "README.md" } }, "It says project."])(["What does README.md say?"], cwd);
-    expect(read.error).toContain("Completed.\n");
+    const ran = await printer([{ tool: "bash", args: { command: "git status" } }, "I'll implement it next."])(["Add a flag"], cwd);
     const asked = await printer(["Two."])(["What is one plus one?"], cwd);
-    expect(asked.error).toContain("Completed.\n");
-    for (const { error } of [read, asked]) expect(error).not.toContain("verified");
+    for (const { error } of [read, ran, asked]) {
+      expect(error).toContain("Completed; no file changed.\n");
+      expect(error).not.toContain("verified");
+    }
+  });
+
+  test("a follow-up that changes nothing says so, not the standing of the run before it (#536)", async () => {
+    const cwd = repository();
+    const print = printer([{ tool: "write", args: { path: "notes.txt", content: "" } }, "Created notes.txt.", "It is empty."]);
+    expect((await print(["Create an empty file named notes.txt"], cwd)).error).toContain("Completed, unverified");
+    const [file] = sessionsOf(cwd);
+    if (file === undefined) throw new Error("No session was written");
+    const followUp = await print(["--resume", basename(file, ".jsonl"), "What does notes.txt hold?"], cwd);
+    expect(followUp.error).toContain("Completed; no file changed.\n");
+    expect(followUp.error).not.toContain("unverified");
   });
 });
 

@@ -6,7 +6,7 @@ import type { BranchEntry } from "../../../src/contract.ts";
 import type { SessionStore } from "../../../src/pull-request-receipt.ts";
 import { branchOf } from "./branch.ts";
 import { peekSessionFile, type SessionEntry } from "./session-file.ts";
-import { checkoutRoot } from "./workspace.ts";
+import { checkoutRoot } from "../../../src/checkout-root.ts";
 
 /** A folder by its one real name, in one case on Windows, to compare where sessions worked. */
 function same(folder: string): string {
@@ -17,7 +17,7 @@ function same(folder: string): string {
 
 /**
  * The name of the checkout folder whose sessions hold the work done in
- * `cwd`: its own in a checkout, and in a Tesota worktree (#453) the checkout
+ * `cwd`: its own in a checkout, and in a Tesota worktree the checkout
  * it was made from, where its session was opened and is kept.
  */
 function checkoutName(cwd: string): string {
@@ -45,7 +45,7 @@ function completedRuns(entries: readonly SessionEntry[]): SessionEntry[] {
 }
 
 /**
- * The engine's sessions as `tesota receipt` reads them (#463): those that
+ * The engine's sessions as `tesota receipt` reads them: those that
  * worked in this very folder, its checkout's or its worktree's, never
  * another's, and of each only the runs that completed. The sessions of a
  * project are kept under its folder's name and a hash of its path as it was

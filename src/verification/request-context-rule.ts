@@ -1,10 +1,16 @@
+/** A whole reference fits only within both the count and byte budgets; no partial requirement is supplied. */
+//@ requires count >= 0 && bytes >= 0 && size >= 0 && maxCount >= 0 && maxBytes >= 0
+//@ ensures \result <==> (count < maxCount && bytes + size <= maxBytes)
+export function referenceFits(count: number, bytes: number, size: number, maxCount: number, maxBytes: number): boolean {
+  return count < maxCount && bytes + size <= maxBytes;
+}
+
 /**
- * Which earlier requests a new request is judged with (#627), oldest first:
+ * Which earlier requests a new request is judged with, oldest first:
  * those after the last request whose changes were verified, as recorded by
  * a final successful settlement with a receipt, not merely a completed
- * answer. A stopped receipt is an
- * inventory, not verification. Returns the first included index, or the
- * length when the last request's changes were verified.
+ * answer. A stopped receipt is an inventory, not verification. Returns the
+ * first included index, or the length when the last request was verified.
  */
 //@ ensures 0 <= \result && \result <= verified.length
 //@ ensures forall(j: nat, \result <= j && j < verified.length ==> !verified[j])

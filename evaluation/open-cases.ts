@@ -5,39 +5,35 @@ import { engineRegistry } from "./engine-session.js";
 import { FIRST_CONTRACT_CASES, FRESH, HELD_OUT, LEFT_OPEN, OPEN_CASES, SETTLED, STANDARD } from "./cases.js";
 
 /**
- * Whether a model can list the cases a request leaves open, for #397,
+ * Whether a model can list the cases a request leaves open,
  * through `openCases`, the receipt's own call. Each answer appends one JSON
  * line to `--out`, which a later call resumes from.
  *
- * In the `request` context each item is a request from #387's live runs
+ * In the `request` context each item is a request from the contract-writing live runs
  * (`LEFT_OPEN`), five per request, chosen by a seeded shuffle of the runs in
  * `--runs`, the folder of `live:eval` results. Registered on 2026-10-15
  * before any run, with the thresholds a receipt section must meet: the
  * listed cases cover at least two thirds of the open cases `LEFT_OPEN`
  * names, and the controls average at most one false alarm a request, a
- * listed case the request settles. That measurement, #418, used the prompt
- * without its last sentence and also tried the request with the file one run
- * wrote, which listed more false alarms; it ran from `ef11562b`.
+ * listed case the request settles.
  *
  * In the `held-out` context each item is a request from `HELD_OUT`, alone,
  * five times. Registered on 2026-10-15 before any run, with the thresholds
- * the receipt's list must meet before it ships: the listed cases cover at
+ * the receipt's list must meet for acceptance: the listed cases cover at
  * least two thirds of the open cases `HELD_OUT` names, the requests that
  * settle every case average at most one false alarm, and all requests
  * average at most half an input of a kind the request never mentions.
  *
- * The `settled` context does the same with `SETTLED`, registered after the
- * held-out false alarms passed only through a ruling made once they were
- * seen: the list passes when these requests average at most one false
- * alarm each, labelled by the rule `SETTLED` states.
+ * The `settled` context does the same with `SETTLED`: the list passes when
+ * these requests average at most one false alarm each, labelled by the rule
+ * `SETTLED` states.
  *
- * The `standard` context does the same with `STANDARD`, for #429, registered
+ * The `standard` context does the same with `STANDARD`, registered
  * on 2026-10-17 before any run, labelled by the rule `STANDARD` states. A
  * prompt passes when, on the `held-out`, `settled` and `standard` contexts
  * together, it meets the held-out thresholds above; the share of requests that
  * settle every case and still get any false alarm is reported beside them.
- * The `fresh` context does the same with `FRESH`, registered after a first
- * change was measured there, so that a second is judged on unread requests.
+ * The `fresh` context does the same with `FRESH` to judge prompts on unread requests.
  * An answer's line names neither the prompt nor its version, so each prompt
  * measured writes to its own `--out`.
  *

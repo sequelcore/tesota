@@ -14,7 +14,7 @@ import { scriptedReply } from "./scripted.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
 
 /**
- * Tesota's own interface in the engine's shell (#446), as the operator sees
+ * Tesota's own interface in the engine's shell, as the operator sees
  * it: the welcome screen, the input band, the evidence
  * footer, the working orb, the receipt card, and the
  * theme for the terminal's background. Pi is not loaded for any of it.
@@ -92,7 +92,7 @@ describe("Tesota's interface on the engine", () => {
     expect(GREETINGS).toContain(screen[mark + 5]?.trim() ?? "");
     expect(screen.filter((line) => line.startsWith("› "))).toHaveLength(1);
     expect(screen.join("\n")).not.toContain("▌");
-    // The footer is one row: the evidence, and the permission mode (#449), a status it never drops; this temporary folder's long
+    // The footer is one row: the evidence, and the permission mode, a status it never drops; this temporary folder's long
     // path is the first thing it drops, so the branch shows only in a wider terminal.
     expect(screen.at(-1)).toContain("● ready");
     expect(screen.at(-1)).toContain("full access");
@@ -111,7 +111,7 @@ describe("Tesota's interface on the engine", () => {
     // Drawn from the orb the theme gives: its first working frame's pixels, top and bottom, are truecolor.
     const frame = workingOrb(shellTheme("dark", "truecolor")).phases.working.frames[0]!;
     expect(frame.map((line) => stripTerminalSequences(line))).toEqual(["▀▀▀▀", "▀▀▀▀"]);
-    await terminal.untilGone("Working", 20_000);
+    await terminal.untilGone("Working");
     await quit(terminal, running);
   }, 30_000);
 

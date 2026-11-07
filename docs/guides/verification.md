@@ -52,6 +52,11 @@ A proof can't see two calls interleaving; a design model can. See
 
 ## Test it: your commands
 
+The request records its check plan before the agent starts and shows it to
+you and the model. Settlement uses that selection and compares completed
+checks against the recorded base. A changed script or revoked trust cannot
+silently replace an admitted check. Timeouts are never rerun on the base.
+
 Tesota finds each project at the repository's root and up to three folders
 below, and runs:
 
@@ -69,8 +74,23 @@ they run in Git's bash. A changed test file runs alone through its
 package's `test` script when that's plain Bun, Vitest or Jest; otherwise
 the project's checks run, and the receipt names which.
 
+For supported targeted runners, Tesota also reverts changed source paths
+one at a time in disposable worktrees. Only attributable assertion failures
+give that path exercise credit. The extra measurement shares two minutes
+per repository and request; unsupported or unfinished paths stay explicitly
+unverified. Cleanup is awaited after cancellation. Your checkout is not
+used for reversions. Inherited edits, ignored inputs and
+unreadable base sources remain gaps.
+
 ### Sharper evidence: test reports
 
+For other toolchains or custom commands, declare
+[project checks](../reference/configuration.md#project-checks). Start the
+terminal and inspect the commands before trusting them. A changed declaration
+asks again; print mode uses existing trust.
+
+Plain Bun, Vitest and Jest scripts receive reporting flags automatically on
+the change and base. Unexplained runner errors keep failure attribution unknown.
 When your tests write a JUnit XML report under the project, Tesota knows
 which tests failed, so it can credit a new test even when others already
 fail. Gradle and Maven write one already. Elsewhere:
@@ -85,7 +105,7 @@ Both opinions use the session's model unless you name another:
 
 | Flag | Setting | Role |
 | --- | --- | --- |
-| `--claimcheck-model <provider>/<id>` | `claimcheckModel` | Restates each new contract without seeing your request |
+| `--claimcheck-model <provider>/<id>\|off` | `claimcheckModel` | Restates each new contract without seeing your request; `off` disables the comparison |
 | `--open-cases-model <provider>/<id>` | `openCasesModel` | Lists the cases your request leaves open; `off` turns it off |
 
 A flag wins over the [setting](../reference/configuration.md#settingsjson)

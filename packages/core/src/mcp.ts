@@ -16,7 +16,7 @@ import type { EngineTool, ToolOutput } from "./tool.ts";
 import { keepHead } from "./truncate.ts";
 
 /**
- * The MCP servers of one workspace (#459), on Pi's MCP client: each connects
+ * The MCP servers of one workspace, on Pi's MCP client: each connects
  * in the background as they start, and its tools reach the model as
  * `mcp__<server>__<tool>`, with the resource tools Codex, OpenCode and Pi
  * add. A first request waits up to 10 s for the servers still connecting;
@@ -120,7 +120,7 @@ export function startMcp(configs: readonly McpServerConfig[], options: McpOption
       ? { auth: storedAuth(config.name, config.url, config.oauth ?? {}, options.home) } : {} }));
   const started = Date.now();
   const waitMs = options.waitMs ?? 10_000;
-  // The spool outlives the process (#541): a resumed session's names must not reuse an earlier one's.
+  // The spool outlives the process: a resumed session's names must not reuse an earlier one's.
   const outputPrefix = `mcp-${randomUUID().slice(0, 8)}`;
   let outputs = 0;
   let closing = false;
@@ -216,6 +216,7 @@ export function startMcp(configs: readonly McpServerConfig[], options: McpOption
     const names = toolNames(offered.map(({ server, tool }) => ({ server: server.config.name, tool: tool.name })));
     return offered.map(({ server, tool }, index) => ({
       name: names[index] ?? tool.name,
+      mcp: { server: server.config.name, tool: tool.name, readOnly: server.config.readOnlyTools?.includes(tool.name) === true },
       description: tool.description ?? tool.title ?? tool.name,
       // Providers ask for an object schema, and some for one with `properties`.
       parameters: Type.Unsafe({ ...tool.inputSchema, type: "object", properties: tool.inputSchema["properties"] ?? {} }),
@@ -242,7 +243,7 @@ export function startMcp(configs: readonly McpServerConfig[], options: McpOption
     cursor: Type.Optional(Type.String({ description: "Where the server's last page ended (`nextCursor`); needs `server`." })),
   });
 
-  /** The resource tools Codex, OpenCode and Pi add (#459), while a server offers resources; they only read. */
+  /** The resource tools Codex, OpenCode and Pi add, while a server offers resources; they only read. */
   function resourceTools(spool: () => string): EngineTool[] {
     if (withResources(undefined).length === 0) return [];
     const pages = (what: "resources" | "resourceTemplates") =>

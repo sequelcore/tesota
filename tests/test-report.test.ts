@@ -10,6 +10,16 @@ import { baseTestStatus, checkOrigin, type CheckOutcome, type ReportedTest, test
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
+it("distinguishes assertion failures from named setup errors before source credit (#669)", () => {
+  const root = mkdtempSync(join(tmpdir(), "tesota-assertion-report-"));
+  roots.push(root);
+  writeFileSync(join(root, "results.xml"), '<testsuite tests="2" name="value.test.ts">' +
+    '<testcase name="assertion"><failure type="AssertionError"/></testcase>' +
+    '<testcase name="setup"><failure type="TypeError"/></testcase></testsuite>');
+  const report = readTestResults(root, ["results.xml"]);
+  expect(report?.assertionFailures).toEqual(new Set(["value.test.ts > assertion"]));
+});
+
 it("keeps Jest assertions in different files distinct and refuses malformed native reports", () => {
   const root = mkdtempSync(join(tmpdir(), "tesota-jest-report-"));
   roots.push(root);
@@ -25,7 +35,7 @@ it("keeps Jest assertions in different files distinct and refuses malformed nati
   ]);
   writeFileSync(join(root, "results.json"), JSON.stringify({ testResults: [{ name: join(real, "first.test.js"), assertionResults: [{ fullName: "adds", status: "unknown" }] }] }));
   expect(readTestResults(root, ["results.json"])).toBeUndefined();
-  // A report holding fewer tests than it counts was cut short, so none of it is evidence (#615).
+  // A report holding fewer tests than it counts was cut short, so none of it is evidence.
   writeFileSync(join(root, "results.json"), JSON.stringify({ ...report, numTotalTests: 3 }));
   expect(readTestResults(root, ["results.json"])).toBeUndefined();
   writeFileSync(join(root, "results.json"), JSON.stringify({ ...report, numTotalTests: 2 }));
@@ -43,6 +53,21 @@ it("reads a real Jest report of a checkout behind a link, as macOS and Windows t
   expect([...readTestResults(link, ["results.json"])?.tests ?? []]).toEqual([
     ["math.test.cjs > adds", "passed"], ["math.test.cjs > subtracts badly", "failed"], ["math.test.cjs > later", "skipped"],
   ]);
+});
+
+it("refuses Jest reports that leave suite/runtime or snapshot failures outside their assertions (#728)", () => {
+  const root = mkdtempSync(join(tmpdir(), "tesota-jest-errors-"));
+  roots.push(root);
+  const suite = { name: join(realpathSync.native(root), "legacy.test.js"), status: "failed",
+    assertionResults: [{ fullName: "legacy", status: "failed" }] };
+  for (const report of [
+    { numRuntimeErrorTestSuites: 1, testResults: [suite] },
+    { testResults: [suite, { name: join(root, "broken.test.js"), testExecError: { message: "Cannot find module" }, assertionResults: [] }] },
+    { snapshot: { failure: true }, testResults: [suite] },
+  ]) {
+    writeFileSync(join(root, "results.json"), JSON.stringify(report));
+    expect(readTestResults(root, ["results.json"])).toBeUndefined();
+  }
 });
 
 const outcomes: readonly CheckOutcome[] = ["passed", "failed", "timed_out", "cancelled", "not_started", "unconfirmed", "changed_files"];
@@ -197,9 +222,9 @@ it("merges a check's reports, and records where each test came from and which re
   expect(readTestResults(root, ["r/unit.xml", "r/workspace.xml"])).toEqual({
     tests: new Map([["s > a", "failed"], ["s > b", "passed"]]),
     sources: new Map([["s > a", ["r/unit.xml", "r/workspace.xml"]], ["s > b", ["r/workspace.xml"]]]),
-    read: new Set(["r/unit.xml", "r/workspace.xml"]) });
+    read: new Set(["r/unit.xml", "r/workspace.xml"]), assertionFailures: new Set() });
   expect(readTestResults(root, ["r/unit.xml", "r/missing.xml", "r/broken.xml"])).toEqual({
-    tests: new Map([["s > a", "failed"]]), sources: new Map([["s > a", ["r/unit.xml"]]]), read: new Set(["r/unit.xml"]) });
+    tests: new Map([["s > a", "failed"]]), sources: new Map([["s > a", ["r/unit.xml"]]]), read: new Set(["r/unit.xml"]), assertionFailures: new Set() });
   expect(readTestResults(root, ["r/missing.xml"])).toBeUndefined();
   expect(clearTestReports(root, ["r/unit.xml", "r/missing.xml"])).toEqual([]);
   expect(readTestResults(root, ["r/unit.xml"])).toBeUndefined();

@@ -4,6 +4,7 @@ import type { Contract } from "./proof-guarantees.js";
 import type { RequestJudgment } from "./receipt.js";
 import { contextUsage } from "./context-usage.js";
 import { fitsContext } from "./verification/request-context-rule.js";
+import { referenceContext, referenceProvenance, type RequestReference } from "./request-references.js";
 
 /**
  * ClaimCheck's round-trip method (metareflection/claimcheck, MIT), adapted to
@@ -26,8 +27,8 @@ const informalizationSchema: TSchema = Type.Object({ informalizations: Type.Arra
 })) });
 const comparisonSchema: TSchema = Type.Object({ comparisons: Type.Array(Type.Object({
   function: Type.Integer({ description: "The function's number in the list" }),
-  verdict: Type.Union([Type.Literal("justified"), Type.Literal("partially_justified"), Type.Literal("not_justified"),
-    Type.Literal("vacuous")]),
+  verdict: Type.Union([Type.Literal("no_mismatch_identified"), Type.Literal("partial_match"), Type.Literal("mismatch"),
+    Type.Literal("suspected_vacuity")]),
   explanation: Type.String(),
 })) });
 
@@ -42,11 +43,11 @@ export interface Informalization {
 /** Pass 2's judgment of the `function`th contract against the request. */
 export interface Comparison {
   readonly function: number;
-  readonly verdict: "justified" | "partially_justified" | "not_justified" | "vacuous";
+  readonly verdict: "no_mismatch_identified" | "partial_match" | "mismatch" | "suspected_vacuity";
   readonly explanation: string;
 }
 
-/** What a contract says in plain words, by a model that never saw the request: pass 1's reading, an opinion (#730). */
+/** What a contract says in plain words, by a model that never saw the request: pass 1's reading, an opinion. */
 export type Restatement = Pick<Informalization, "preconditions" | "postcondition">;
 
 /**
@@ -55,11 +56,16 @@ export type Restatement = Pick<Informalization, "preconditions" | "postcondition
  * `restatements` follow the order of the contracts. A restatement made
  * before the comparison failed is kept; one pass 1 left out is undefined.
  */
-export type ClaimCheck =
-  | { readonly status: "judged"; readonly restatedBy: string; readonly comparedBy: string;
-    readonly restatements: readonly (Restatement | undefined)[];
-    readonly judgments: readonly Pick<Comparison, "verdict" | "explanation">[] }
-  | { readonly status: "not_judged"; readonly reason: string; readonly restatements?: readonly (Restatement | undefined)[] };
+export interface ClaimCheck {
+  readonly status: "completed" | "partial" | "not_run" | "disabled";
+  readonly reason?: string;
+  readonly restatedBy?: string;
+  readonly comparedBy?: string;
+  readonly folder?: string;
+  readonly failedStage?: "restatement" | "comparison";
+  readonly restatements?: readonly (Restatement | undefined)[];
+  readonly judgments?: readonly (Pick<Comparison, "verdict" | "explanation"> | undefined)[];
+}
 
 function contractList(items: readonly Contract[]): string {
   return items.map((item, index) => `### Function ${index + 1}: ${item.name} (${item.path})\n\n\`\`\`typescript\n${item.text}\n\`\`\``).join("\n\n");
@@ -106,20 +112,23 @@ function restatementsOf(items: readonly Contract[], informalizations: readonly I
 }
 
 /** The judgments and restatements in the contracts' order; not judged when a contract was left without a comparison. */
-export function claimcheckResult(models: Pick<Extract<ClaimCheck, { status: "judged" }>, "restatedBy" | "comparedBy">,
+export function claimcheckResult(models: Pick<ClaimCheck, "restatedBy" | "comparedBy">,
   items: readonly Contract[], restatements: readonly (Restatement | undefined)[], comparisons: readonly Comparison[]): ClaimCheck {
   const judgments = items.map((_item, index) => comparisons.find((comparison) => comparison.function === index + 1));
   const missing = items.filter((_item, index) => judgments[index] === undefined);
-  if (missing.length > 0) return { status: "not_judged", reason: `no comparison for ${missing.map((item) => item.name).join(", ")}`, restatements };
-  return { status: "judged", ...models, restatements,
-    judgments: judgments.flatMap((judgment) => judgment === undefined ? [] : [{ verdict: judgment.verdict, explanation: judgment.explanation }]) };
+  const unrestated = items.filter((_item, index) => restatements[index] === undefined);
+  return { status: missing.length > 0 || unrestated.length > 0 ? "partial" : "completed", ...models, restatements,
+    ...missing.length === 0 && unrestated.length === 0 ? {} : { failedStage: missing.length > 0 ? "comparison" as const : "restatement" as const,
+      reason: [...missing.length === 0 ? [] : [`no comparison for ${missing.map((item) => item.name).join(", ")}`],
+        ...unrestated.length === 0 ? [] : [`no restatement for ${unrestated.map((item) => item.name).join(", ")}`]].join("; ") },
+    judgments: judgments.map((judgment) => judgment === undefined ? undefined : { verdict: judgment.verdict, explanation: judgment.explanation }) };
 }
 
 export type ModelAccess = Pick<ExtensionContext, "model" | "modelRegistry">;
 /** Whole operator requests, and where the gate records the context each judge actually received. */
 export interface JudgmentContext {
   readonly folder?: string;
-  readonly requests: RequestJudgment["requests"];
+  readonly requests: readonly { readonly run: number; readonly text: readonly string[]; readonly references?: readonly RequestReference[] }[];
   readonly record: (judgment: RequestJudgment) => void;
 }
 
@@ -147,17 +156,22 @@ function promptFits(model: NonNullable<ModelAccess["model"]>, system: string, na
 export function judgmentPrompt(model: NonNullable<ModelAccess["model"]>, system: string, name: string, parameters: TSchema,
   requests: readonly string[], build: (texts: readonly string[]) => string, method: RequestJudgment["method"], judging?: JudgmentContext): string | undefined {
   const groups = judging?.requests ?? requests.map((text, index) => ({ run: index + 1, text: [text] }));
+  const contextOf = (from: number): readonly RequestReference[] => groups.slice(from).flatMap((group) => "references" in group ? group.references ?? [] : []);
   let from = groups.length;
   let prompt: string | undefined;
   while (from > 0) {
-    const candidate = build(groups.slice(from - 1).flatMap(({ text }) => text));
+    const candidate = build(groups.slice(from - 1).flatMap(({ text }) => text)) + referenceContext(contextOf(from - 1));
     if (!promptFits(model, system, name, parameters, candidate)) break;
     prompt = candidate;
     from -= 1;
   }
   // No request is meaningful too: direct callers can have no saved operator input.
   if (groups.length === 0 && promptFits(model, system, name, parameters, build([]))) prompt = build([]);
-  judging?.record({ method, folder: judging.folder ?? "", requests: groups.slice(from), omitted: groups.slice(0, from).map(({ run }) => run) });
+  const references = [...referenceProvenance(contextOf(from)), ...groups.slice(0, from).flatMap((group) => "references" in group
+    ? (group.references ?? []).map((reference) => ({ status: "unavailable" as const, source: reference.source,
+      reason: "the whole request and its references exceed this model's context capacity" })) : [])];
+  judging?.record({ method, stage: method === "claimcheck" ? "comparison" : "open_cases", model: named(model), folder: judging.folder ?? "", requests: groups.slice(from).map(({ run, text }) => ({ run, text })),
+    omitted: groups.slice(0, from).map(({ run }) => run), ...references.length === 0 ? {} : { references } });
   return prompt;
 }
 
@@ -178,7 +192,7 @@ export async function recorded<T>(ctx: ModelAccess, model: NonNullable<ModelAcce
   const why = unanswered(reply, signal);
   if (why !== undefined) return why;
   const call = reply.content.find((part) => part.type === "toolCall" && part.name === name);
-  // TypeBox's checker takes about 100 ms and 24 MB to load, so it loads when a model first answers, not with Tesota (#446).
+  // TypeBox's checker takes about 100 ms and 24 MB to load, so it loads when a model first answers, not with Tesota.
   const { Value } = await import("typebox/value");
   return call?.type === "toolCall" && Value.Check(parameters, call.arguments) ? call.arguments as T : "the model did not record its answer";
 }
@@ -201,24 +215,26 @@ export function registered(ctx: ModelAccess, name: string): ModelAccess["model"]
  */
 export async function claimCheck(ctx: ModelAccess, requests: readonly string[], items: readonly Contract[],
   signal: AbortSignal, restateWith?: string, judging?: JudgmentContext): Promise<ClaimCheck> {
+  if (restateWith === "off") return { status: "disabled", reason: "contract comparison disabled by the operator" };
   const { model } = ctx;
-  if (model === undefined) return { status: "not_judged", reason: "no model is selected" };
+  if (model === undefined) return { status: "not_run", ...restateWith === undefined ? {} : { restatedBy: restateWith }, failedStage: "comparison", reason: "no model is selected" };
   const restater = restateWith === undefined ? model : registered(ctx, restateWith);
   if (restater === undefined) {
-    return { status: "not_judged", reason: `its restating model ${restateWith ?? ""} isn't a model Tesota knows (provider/id)` };
+    return { status: "not_run", restatedBy: restateWith ?? "", comparedBy: named(model), failedStage: "restatement", reason: `its restating model ${restateWith ?? ""} isn't a model Tesota knows (provider/id)` };
   }
   const limited = AbortSignal.any([signal, AbortSignal.timeout(CLAIMCHECK_TIME_LIMIT_MS)]);
+  judging?.record({ method: "claimcheck", stage: "restatement", model: named(restater), folder: judging.folder ?? "", requests: [], omitted: [] });
   const first = await recorded<{ informalizations: Informalization[] }>(ctx, restater, comparing, "record_informalizations",
     informalizationSchema, informalizePrompt(items), limited);
-  if (typeof first === "string") return { status: "not_judged", reason: `${named(restater)} ${first}` };
+  if (typeof first === "string") return { status: "not_run", restatedBy: named(restater), failedStage: "restatement", reason: `${named(restater)} ${first}` };
   const restatements = restatementsOf(items, first.informalizations);
   const prompt = judgmentPrompt(model, comparing, "record_comparisons", comparisonSchema, requests,
     (texts) => comparePrompt(texts, items, first.informalizations), "claimcheck", judging);
   if (prompt === undefined) {
-    return { status: "not_judged", reason: "no whole request fits the complete prompt within model context capacity", restatements };
+    return { status: "partial", restatedBy: named(restater), failedStage: "comparison", reason: "no whole request fits the complete prompt within model context capacity", restatements };
   }
   const second = await recorded<{ comparisons: Comparison[] }>(ctx, model, comparing, "record_comparisons", comparisonSchema,
     prompt, limited);
-  if (typeof second === "string") return { status: "not_judged", reason: `${named(model)} ${second}`, restatements };
+  if (typeof second === "string") return { status: "partial", restatedBy: named(restater), comparedBy: named(model), failedStage: "comparison", reason: `${named(model)} ${second}`, restatements };
   return claimcheckResult({ restatedBy: named(restater), comparedBy: named(model) }, items, restatements, second.comparisons);
 }

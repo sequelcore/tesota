@@ -1,13 +1,13 @@
 import type { WorkingDetail } from "./contract.js";
 
 /**
- * The gate's operations (#590): each proof, project command, test run on the
+ * The gate's operations: each proof, project command, test run on the
  * base, mutation, ClaimCheck call, model run, open-case listing and receipt
  * assembly, published by the code that runs it as it starts and as it ends.
  * Nothing is inferred from timings or output. Operations describe what ran;
  * they never decide a verdict or a send-back.
  */
-export type OperationMethod = "proof" | "command" | "base_command" | "exercise" | "base_control" | "mutation" | "claimcheck" | "model_main"
+export type OperationMethod = "proof" | "command" | "base_command" | "exercise" | "source_exercise" | "base_control" | "mutation" | "claimcheck" | "model_main"
   | "model_fault" | "model_replay" | "open_cases" | "receipt";
 
 /**
@@ -70,7 +70,7 @@ export const noOperations: OperationSink = {
 };
 
 const labels: Readonly<Record<OperationMethod, string>> = {
-  proof: "Proving", command: "Running project check", base_command: "Running the failing check on the base", exercise: "Checking test sensitivity",
+  proof: "Proving", command: "Running project check", base_command: "Comparing the admitted check on the base", exercise: "Checking test sensitivity", source_exercise: "Measuring source sensitivity",
   base_control: "Checking the base without the test", mutation: "Measuring contract strength", claimcheck: "Asking ClaimCheck",
   model_main: "Checking model", model_fault: "Checking planted fault", model_replay: "Replaying model against the code",
   open_cases: "Listing open cases", receipt: "Assembling receipt",
@@ -79,7 +79,7 @@ const labels: Readonly<Record<OperationMethod, string>> = {
 /** What each method ran, named for a row of the ledger once it ended: its glyph is that run's own result, never a verdict. */
 const ran: Readonly<Record<OperationMethod, string>> = {
   proof: "Proof", command: "Project check", base_command: "Project check on the base", exercise: "Base run with the test", base_control: "Base run without the test",
-  mutation: "Contract strength", claimcheck: "ClaimCheck", model_main: "Model", model_fault: "Model with planted fault",
+  source_exercise: "Source counterfactual", mutation: "Contract strength", claimcheck: "ClaimCheck", model_main: "Model", model_fault: "Model with planted fault",
   model_replay: "Model replay", open_cases: "Open cases", receipt: "Receipt",
 };
 
@@ -102,10 +102,11 @@ const observed: Readonly<Partial<Record<OperationMethod, Partial<Record<Operatio
   model_fault: { passed: ["✗", " · passed: fault not caught"], failed: ["○", " · model failed"] },
   base_command: { passed: ["○", " · passed on the base"], failed: ["○", " · failed on the base"] },
   exercise: { passed: ["○", " · passed on the base"], failed: ["○", " · failed on the base"] },
+  source_exercise: { passed: ["○", " · completed"], failed: ["○", " · test failure observed"] },
   base_control: { passed: ["○", " · passed on the base"], failed: ["○", " · failed on the base"] },
 };
 
-/** One row of the ledger (#591): a glyph, its words, and how far under an earlier attempt it sits. */
+/** One row of the ledger: a glyph, its words, and how far under an earlier attempt it sits. */
 export interface LedgerRow {
   readonly glyph: string;
   readonly text: string;
@@ -170,7 +171,7 @@ export class GateOperations implements WorkingDetail, OperationSink {
   operations(): readonly Operation[] { return this.#all; }
 
   /**
-   * What a stop cut short in the pass running (#599), named as the ledger
+   * What a stop cut short in the pass running, named as the ledger
    * names it: work that began and ended with no result of its own, and work
    * planned that never began.
    */
@@ -243,7 +244,7 @@ export class GateOperations implements WorkingDetail, OperationSink {
   }
 
   /**
-   * The request's checks as a ledger (#591): each attempt that went back to
+   * The request's checks as a ledger: each attempt that went back to
    * the agent folded into one row, then the latest attempt's ended checks,
    * the three latest when collapsed with a count of the earlier ones, then
    * what runs at `now`. Expanded, every check of every attempt.

@@ -6,7 +6,7 @@ import type { Finding } from "./finding-cases.js";
 import { read } from "./sessions.js";
 
 /**
- * What the findings evaluations (#375) share: the command line, the results
+ * What the findings evaluations share: the command line, the results
  * file, the reviewer's and Jev's questions, registered on 2026-10-10 before
  * any run, and a model's session.
  */
@@ -84,7 +84,7 @@ export async function agent(model: string, directory: string, tools: readonly st
 
 /**
  * Jev's role here, registered on 2026-10-11 before any run: triage of the gate, the costly and discretionary step,
- * as decision 035 used it for the answer check and #124 allows. It never judges whether a finding is true. Asked one
+ * with the same role as the answer check in decision 035. It never judges whether a finding is true. Asked one
  * question from the finding alone, a finding below `JEV_SKIP_BELOW` would skip the gate and reach the operator as
  * unverified, never removed; an error, a refusal or no answer decides nothing, so the gate runs. Pinned to the
  * version decision 035 qualified.

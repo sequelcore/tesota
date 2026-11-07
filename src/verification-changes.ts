@@ -226,7 +226,7 @@ function addedWeakening(file: FileChange, line: DiffLine, kind: AnnotationKind):
     ...trusted === undefined ? {} : { function: trusted } };
 }
 
-function annotationChanges(file: FileChange): Weakening[] {
+async function annotationChanges(file: FileChange, signal?: AbortSignal): Promise<Weakening[]> {
   const removed = matching(file.removed, ({ text }) => text, file.added.map(({ text }) => text)).flatMap(({ line, matched }) => {
     const kind = kindOf(file.path, line.text);
     return kind === undefined || !weakens(kind, true, matched, true) ? []
@@ -242,7 +242,7 @@ function annotationChanges(file: FileChange): Weakening[] {
     const had = (kind === "requires" || kind === "skip") && existed(file, line.number);
     return kind === undefined || !weakens(kind, false, matched, had) ? [] : [addedWeakening(file, line, kind)];
   });
-  return [...removed, ...added, ...axiomChanges(file), ...selectionChanges(file)];
+  return [...removed, ...added, ...axiomChanges(file), ...await selectionChanges(file, signal)];
 }
 
 /**
@@ -251,10 +251,10 @@ function annotationChanges(file: FileChange): Weakening[] {
  * added `//@ skip` on each, though no line of theirs says so. A base that was
  * not read counts as having proved them, as for a skip (`existed`).
  */
-function selectionChanges(file: FileChange): Weakening[] {
+async function selectionChanges(file: FileChange, signal?: AbortSignal): Promise<Weakening[]> {
   if (!file.path.endsWith(".ts") || file.status === "added" || file.content === undefined) return [];
-  const proved = file.baseContent === undefined ? undefined : new Set(contracts(file.path, file.baseContent).map(({ name }) => name));
-  return unselectedContracts(file.path, file.content).flatMap(({ name }) => !weakens("skip", false, false, proved?.has(name) ?? true) ? []
+  const proved = file.baseContent === undefined ? undefined : new Set((await contracts(file.path, file.baseContent, undefined, signal)).map(({ name }) => name));
+  return (await unselectedContracts(file.path, file.content, signal)).flatMap(({ name }) => !weakens("skip", false, false, proved?.has(name) ?? true) ? []
     : [{ path: file.path, kind: "added_skip", annotation: "//@ verify", function: name } as const]);
 }
 
@@ -440,11 +440,11 @@ function checkScriptChanges(file: FileChange): Weakening[] {
  * (`generated`). Read as if every line were added to a base that had
  * everything, since `prove` has no base to compare with.
  */
-export function provedOnTrust(files: readonly { readonly path: string; readonly content: string; readonly generated?: string }[]):
-  OnTrust[] {
-  return weakenedEvidence(files.map(({ path, content, generated }) => ({ path, status: "modified", removed: [], content, generated,
-    added: content.split(/\r?\n/u).map((text, k) => ({ number: k + 1, text })) })))
-    .filter((change): change is OnTrust => change.kind === "added_assume" || change.kind === "added_skip");
+export async function provedOnTrust(files: readonly { readonly path: string; readonly content: string; readonly generated?: string }[], signal?: AbortSignal):
+  Promise<OnTrust[]> {
+  return (await weakenedEvidence(files.map(({ path, content, generated }) => ({ path, status: "modified", removed: [], content, generated,
+    added: content.split(/\r?\n/u).map((text, k) => ({ number: k + 1, text })) })), signal)
+    ).filter((change): change is OnTrust => change.kind === "added_assume" || change.kind === "added_skip");
 }
 
 /** A line a proof takes on trust (`added_assume`) or that leaves something out of it (`added_skip`). */
@@ -454,6 +454,6 @@ export type OnTrust = Extract<Weakening, { readonly annotation: string }> & { re
  * The changes that may weaken the evidence, file by file. Fixed rules, so the
  * agent cannot argue a change out of the list.
  */
-export function weakenedEvidence(changes: readonly FileChange[]): Weakening[] {
-  return changes.flatMap((file) => [...annotationChanges(file), ...testChange(file), ...checkScriptChanges(file)]);
+export async function weakenedEvidence(changes: readonly FileChange[], signal?: AbortSignal): Promise<Weakening[]> {
+  return (await Promise.all(changes.map(async (file) => [...await annotationChanges(file, signal), ...testChange(file), ...checkScriptChanges(file)]))).flat();
 }

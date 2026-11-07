@@ -4,6 +4,7 @@ import { contracts } from "../src/proof-guarantees.js";
 import { openCases } from "../src/open-cases.js";
 import type { RequestJudgment } from "../src/receipt.js";
 import { contextUsage } from "../src/context-usage.js";
+import { referenceDigest, type RequestReference } from "../src/request-references.js";
 
 const source = [
   "//@ ensures denied ==> \\result === false",
@@ -15,10 +16,17 @@ const source = [
   "//@ ensures \\result >= 0",
   "function double(n: number): number { return n * 2; }",
 ].join("\n");
-const items = contracts("src/policy.ts", source);
+const items = (await contracts("src/policy.ts", source));
 const requests = ["Denied paths must always win over allowed ones."];
 const models = { restatedBy: "p/r", comparedBy: "p/c" };
-const justified = (fn: number): Comparison => ({ function: fn, verdict: "justified", explanation: "Matches." });
+const justified = (fn: number): Comparison => ({ function: fn, verdict: "no_mismatch_identified", explanation: "Matches." });
+
+it("keeps valid assessments but marks a missing first-pass restatement as partial (#731)", () => {
+  const result = claimcheckResult(models, items, [undefined, { preconditions: "n >= 0", postcondition: "result >= 0" }], [justified(1), justified(2)]);
+  expect(result.status).toBe("partial");
+  expect(result.failedStage).toBe("restatement");
+  expect(result.judgments?.[1]?.verdict).toBe("no_mismatch_identified");
+});
 
 /** A session whose model answers each request with `replies` in turn, recording what it was asked. */
 function session(...replies: object[]): { ctx: Parameters<typeof claimCheck>[0]; asked: string[]; models: string[] } {
@@ -36,6 +44,42 @@ function session(...replies: object[]): { ctx: Parameters<typeof claimCheck>[0];
 }
 
 const call = (name: string, args: object): object => ({ content: [{ type: "toolCall", id: "1", name, arguments: args }] });
+
+it("supplies issue snapshots to both judging roles, keeps the blind pass blind, and records provenance apart from operator requests (#637)", async () => {
+  const text = "Third-party issue: deny a blocked path even when allowed.";
+  const reference: RequestReference = { status: "read", source: "https://github.com/fixture/project/issues/637", callId: "read-637",
+    digest: referenceDigest(text), text };
+  const selections: RequestJudgment[] = [];
+  const judging = { requests: [{ run: 1, text: ["Fix #637."], references: [reference] }],
+    record: (selection: RequestJudgment) => { selections.push(selection); } };
+  const { ctx, asked } = session(informalized, call("record_comparisons", { comparisons: [justified(1), justified(2)] }),
+    call("record_open_cases", { status: "listed", cases: [] }));
+  ctx.modelRegistry.find = () => ctx.model;
+  await claimCheck(ctx, ["Fix #637."], items, new AbortController().signal, undefined, judging);
+  await openCases(ctx, ["Fix #637."], "provider/model", new AbortController().signal, judging);
+  expect(asked[0]).not.toContain(text);
+  expect(selections[0]).toEqual({ method: "claimcheck", stage: "restatement", model: "provider/model", folder: "", requests: [], omitted: [] });
+  expect(asked[1]).toContain(JSON.stringify(text));
+  expect(asked[2]).toContain(JSON.stringify(text));
+  expect(selections.filter(({ stage }) => stage !== "restatement").map(({ requests: given }) => given)).toEqual([[{ run: 1, text: ["Fix #637."] }], [{ run: 1, text: ["Fix #637."] }]]);
+  expect(selections.filter(({ stage }) => stage !== "restatement").map(({ references }) => references)).toEqual([0, 1].map(() => [{ status: "read", source: reference.source,
+    callId: reference.callId, digest: reference.digest }]));
+  expect(JSON.stringify(selections)).not.toContain(text);
+});
+
+it("records an explicit reference omission when the whole request and snapshot cannot fit (#637)", async () => {
+  const text = "x".repeat(80_000);
+  const { ctx, asked } = session();
+  ctx.modelRegistry.find = () => ({ ...ctx.model!, contextWindow: 4096, maxTokens: 256 });
+  const selections: RequestJudgment[] = [];
+  const result = await openCases(ctx, ["Fix #637."], "provider/model", new AbortController().signal, {
+    requests: [{ run: 1, text: ["Fix #637."], references: [{ status: "read", source: "https://github.com/fixture/project/issues/637",
+      callId: "read", digest: referenceDigest(text), text }] }], record: (selection) => { selections.push(selection); },
+  });
+  expect(result.status).toBe("not_run");
+  expect(asked).toEqual([]);
+  expect(selections[0]?.references).toMatchObject([{ status: "unavailable", reason: expect.stringContaining("context capacity") }]);
+});
 it("budgets complete judge prompts, keeps newest whole requests, and records every omission (#627)", async () => {
   const groups = Array.from({ length: 100 }, (_, index) => ({ run: index + 1, text: [`Requirement ${index + 1}: ${"x".repeat(20_000)}`] }));
   const selections: RequestJudgment[] = [];
@@ -52,7 +96,7 @@ it("budgets complete judge prompts, keeps newest whole requests, and records eve
   };
   ctx.modelRegistry.find = () => ({ ...model, id: "lister", contextWindow: 7000 });
   expect(await claimCheck(ctx, groups.flatMap(({ text }) => text), items, new AbortController().signal, undefined, judging))
-    .toMatchObject({ status: "judged" });
+    .toMatchObject({ status: "completed" });
   expect(await openCases(ctx, groups.flatMap(({ text }) => text), "provider/model", new AbortController().signal, judging))
     .toMatchObject({ status: "listed" });
   expect(asked).toHaveLength(3);
@@ -61,7 +105,7 @@ it("budgets complete judge prompts, keeps newest whole requests, and records eve
   expect(asked[1]).not.toContain("Requirement 98:");
   expect(asked[2]).toContain("Requirement 100:");
   expect(asked[2]).not.toContain("Requirement 99:");
-  expect(selections.map(({ method, requests, omitted }) => [method, requests.map(({ run }) => run), omitted])).toEqual([
+  expect(selections.filter(({ stage }) => stage !== "restatement").map(({ method, requests, omitted }) => [method, requests.map(({ run }) => run), omitted])).toEqual([
     ["claimcheck", [99, 100], Array.from({ length: 98 }, (_, index) => index + 1)],
     ["open_cases", [100], Array.from({ length: 99 }, (_, index) => index + 1)],
   ]);
@@ -74,14 +118,14 @@ it("does not send an oversized newest request, fixed envelope, or an input with 
   ctx.modelRegistry.find = () => small;
   const selections: RequestJudgment[] = [];
   const judging = { requests: [{ run: 7, text: ["x".repeat(20_000)] }], record: (selection: RequestJudgment) => { selections.push(selection); } };
-  expect(await openCases(ctx, [], "provider/model", new AbortController().signal, judging)).toMatchObject({ status: "not_listed" });
-  expect(selections).toEqual([{ method: "open_cases", folder: "", requests: [], omitted: [7] }]);
+  expect(await openCases(ctx, [], "provider/model", new AbortController().signal, judging)).toMatchObject({ status: "not_run" });
+  expect(selections).toEqual([{ method: "open_cases", stage: "open_cases", model: "provider/model", folder: "", requests: [], omitted: [7] }]);
   const tiny = { ...small, contextWindow: 128 };
   ctx.modelRegistry.find = () => tiny;
-  expect(await openCases(ctx, ["hi"], "provider/model", new AbortController().signal)).toMatchObject({ status: "not_listed" });
+  expect(await openCases(ctx, ["hi"], "provider/model", new AbortController().signal)).toMatchObject({ status: "not_run" });
   ctx.modelRegistry.find = () => ({ ...small, contextWindow: 0 });
-  expect(await openCases(ctx, ["hi"], "provider/model", new AbortController().signal)).toMatchObject({ status: "not_listed" });
-  expect(await claimCheck({ ...ctx, model: tiny }, ["hi"], items, new AbortController().signal)).toMatchObject({ status: "not_judged" });
+  expect(await openCases(ctx, ["hi"], "provider/model", new AbortController().signal)).toMatchObject({ status: "not_run" });
+  expect(await claimCheck({ ...ctx, model: tiny }, ["hi"], items, new AbortController().signal)).toMatchObject({ status: "not_run" });
   expect(asked).toEqual([]);
 });
 
@@ -103,20 +147,20 @@ it("restates contracts without ever showing the request, then compares them with
 
 const restatements = [{ preconditions: "none", postcondition: "denied gives false" }, { preconditions: "n >= 0", postcondition: "result >= 0" }];
 
-it("keeps the judgments in the contracts' order, and judges nothing when a contract was not compared", () => {
-  const vacuous: Comparison = { function: 2, verdict: "vacuous", explanation: "Always true for doubles of non-negatives." };
-  expect(claimcheckResult(models, items, restatements, [vacuous, justified(1)])).toEqual({ status: "judged", ...models, restatements, judgments: [
-    { verdict: "justified", explanation: "Matches." }, { verdict: "vacuous", explanation: "Always true for doubles of non-negatives." }] });
+it("keeps the judgments in the contracts' order, and retains individual assessments when another contract was not compared", () => {
+  const vacuous: Comparison = { function: 2, verdict: "suspected_vacuity", explanation: "Always true for doubles of non-negatives." };
+  expect(claimcheckResult(models, items, restatements, [vacuous, justified(1)])).toEqual({ status: "completed", ...models, restatements, judgments: [
+    { verdict: "no_mismatch_identified", explanation: "Matches." }, { verdict: "suspected_vacuity", explanation: "Always true for doubles of non-negatives." }] });
   expect(claimcheckResult(models, items, restatements, [justified(1)]))
-    .toEqual({ status: "not_judged", reason: "no comparison for double", restatements });
+    .toEqual({ status: "partial", ...models, failedStage: "comparison", reason: "no comparison for double", restatements, judgments: [{ verdict: "no_mismatch_identified", explanation: "Matches." }, undefined] });
 });
 
 it("asks the session's model in two requests, the first without the request, and names the model that judged", async () => {
   const { ctx, asked } = session(informalized, call("record_comparisons", { comparisons: [justified(1),
-    { function: 2, verdict: "partially_justified", explanation: "Says nothing of doubling." }] }));
-  expect(await claimCheck(ctx, requests, items, new AbortController().signal)).toEqual({ status: "judged",
+    { function: 2, verdict: "partial_match", explanation: "Says nothing of doubling." }] }));
+  expect(await claimCheck(ctx, requests, items, new AbortController().signal)).toEqual({ status: "completed",
     restatedBy: "provider/model", comparedBy: "provider/model", restatements,
-    judgments: [{ verdict: "justified", explanation: "Matches." }, { verdict: "partially_justified", explanation: "Says nothing of doubling." }] });
+    judgments: [{ verdict: "no_mismatch_identified", explanation: "Matches." }, { verdict: "partial_match", explanation: "Says nothing of doubling." }] });
   expect(asked).toHaveLength(2);
   expect(asked[0]).not.toContain(requests[0]);
   expect(asked[1]).toContain(requests[0]);
@@ -126,11 +170,11 @@ it("restates with the second model when one is set, and judges nothing when the 
   const comparisons = call("record_comparisons", { comparisons: [justified(1), justified(2)] });
   const second = session(informalized, comparisons);
   expect(await claimCheck(second.ctx, requests, items, new AbortController().signal, "other/restater"))
-    .toMatchObject({ status: "judged", restatedBy: "other/restater", comparedBy: "provider/model" });
+    .toMatchObject({ status: "completed", restatedBy: "other/restater", comparedBy: "provider/model" });
   expect(second.models).toEqual(["restater", "model"]);
   for (const setting of ["other/missing", "restater"]) {
     const missing = session(informalized, comparisons);
-    expect(await claimCheck(missing.ctx, requests, items, new AbortController().signal, setting)).toEqual({ status: "not_judged",
+    expect(await claimCheck(missing.ctx, requests, items, new AbortController().signal, setting)).toEqual({ status: "not_run", restatedBy: setting, comparedBy: "provider/model", failedStage: "restatement",
       reason: `its restating model ${setting} isn't a model Tesota knows (provider/id)` });
     expect(missing.asked).toEqual([]);
   }
@@ -139,18 +183,18 @@ it("restates with the second model when one is set, and judges nothing when the 
 it("judges nothing, and says why, without a model or a usable answer", async () => {
   const signal = new AbortController().signal;
   expect(await claimCheck({ model: undefined, modelRegistry: {} as never }, requests, items, signal))
-    .toEqual({ status: "not_judged", reason: "no model is selected" });
+    .toEqual({ status: "not_run", failedStage: "comparison", reason: "no model is selected" });
   expect(await claimCheck(session({ stopReason: "error", errorMessage: "rate limited" }).ctx, requests, items, signal))
-    .toEqual({ status: "not_judged", reason: "provider/model the model request failed: rate limited" });
+    .toEqual({ status: "not_run", restatedBy: "provider/model", failedStage: "restatement", reason: "provider/model the model request failed: rate limited" });
   expect(await claimCheck(session(new Error("offline")).ctx, requests, items, signal))
-    .toEqual({ status: "not_judged", reason: "provider/model the model request failed: offline" });
-  // A restatement made before the comparison failed is kept (#730).
+    .toEqual({ status: "not_run", restatedBy: "provider/model", failedStage: "restatement", reason: "provider/model the model request failed: offline" });
+  // A restatement made before the comparison failed is kept.
   expect(await claimCheck(session(informalized, call("record_comparisons", { comparisons: [{ function: 1, verdict: "fine" }] })).ctx,
-    requests, items, signal)).toEqual({ status: "not_judged", reason: "provider/model the model did not record its answer", restatements });
+    requests, items, signal)).toEqual({ status: "partial", restatedBy: "provider/model", comparedBy: "provider/model", failedStage: "comparison", reason: "provider/model the model did not record its answer", restatements });
   expect(await claimCheck(session({ content: [{ type: "text", text: "They look right." }] }).ctx, requests, items, signal))
-    .toEqual({ status: "not_judged", reason: "provider/model the model did not record its answer" });
+    .toEqual({ status: "not_run", restatedBy: "provider/model", failedStage: "restatement", reason: "provider/model the model did not record its answer" });
   const stopped = new AbortController();
   stopped.abort();
   expect(await claimCheck(session({ stopReason: "aborted" }).ctx, requests, items, stopped.signal))
-    .toEqual({ status: "not_judged", reason: "provider/model was stopped" });
+    .toEqual({ status: "not_run", restatedBy: "provider/model", failedStage: "restatement", reason: "provider/model was stopped" });
 });

@@ -1,6 +1,6 @@
 /**
- * Whether a step on Claude Code goes on in the query waiting on its calls
- * (#546): only on the same model, prompt and tools (`same`), when the reply
+ * Whether a step on Claude Code goes on in the query waiting on its calls:
+ * only on the same model, prompt and tools (`same`), when the reply
  * the engine kept made exactly the calls the query waits on (`pending`
  * against `made`, in order), and each of those calls has its result in the
  * engine's history (`answered`, by position in `pending`). Anything else

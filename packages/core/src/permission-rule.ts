@@ -1,4 +1,4 @@
-/** How freely the agent may act (#449): only read, ask before anything else, or act without asking. */
+/** How freely the agent may act: only read, ask before anything else, or act without asking. */
 export type Mode = "read" | "ask" | "full";
 
 /** What a tool call does: only reads, writes or edits files, or runs something. */
@@ -11,7 +11,7 @@ export type Decision = "allow" | "ask" | "deny";
 
 /**
  * The closed set of normalized command names whose literal quoted arguments
- * may be treated as data (#681). Callers must still reject execution options,
+ * may be treated as data. Callers must still reject execution options,
  * interpolation, ambiguous syntax and unrecognized pipeline consumers.
  */
 //@ ensures \result === (command === "rg" || command === "grep" || command === "select-string" || command === "echo")
@@ -20,7 +20,7 @@ export function isDataCommand(command: string): boolean {
 }
 
 /**
- * The strongest verdict among the rules that match a call (#449): a deny
+ * The strongest verdict among the rules that match a call: a deny
  * wins over an ask, which wins over an allow, so one rule can never loosen
  * what another tightens.
  */
@@ -46,7 +46,7 @@ export function strongest(matched: readonly RuleVerdict[]): RuleVerdict {
 }
 
 /**
- * Whether a tool call may run (#449). The floor refuses what no mode
+ * Whether a tool call may run. The floor refuses what no mode
  * allows; read only refuses everything that does not only read; then the
  * strongest matching rule decides; with none, full access allows, and ask
  * allows reading and asks the rest. A call that would ask, with no one
@@ -90,7 +90,7 @@ export function within(path: readonly string[], folder: readonly string[]): bool
 }
 
 /**
- * Whether the floor lets a file tool write at `path` (#449, #653): only in
+ * Whether the floor lets a file tool write at `path`: only in
  * the session's folder or its scratch folder, each a canonical path as its
  * names from the root.
  */
@@ -101,7 +101,7 @@ export function writable(path: readonly string[], folder: readonly string[], scr
 
 /**
  * A decision once Tesota's floor has refused a call earlier in the same
- * request (#622): a call that would be allowed and does more than read is
+ * request: a call that would be allowed and does more than read is
  * asked instead, or refused with no one `present`, since the floor is a net
  * over what calls name and another route can reach what it refused.
  * Nothing it refused or asked loosens.

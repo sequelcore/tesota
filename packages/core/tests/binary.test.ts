@@ -3,19 +3,18 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import manifest from "../package.json" with { type: "json" };
 import { build } from "../scripts/build.ts";
 
 /**
- * A binary verifies as the checkout does (#472): built as a release builds
+ * A binary verifies as the checkout does: built as a release builds
  * it, and run from a folder outside the checkout, where no package or file of
  * the repository can be found.
  */
 const roots: string[] = [];
 /**
- * Windows can keep a binary that just ran locked for longer than any short wait, as CI's runners do after building one
- * (EBUSY twice in the merge queue, #593, though no process is left). These folders are inside the isolated run's own
+ * Windows can keep a binary that just ran locked for longer than any short wait, even when no process is left. These folders are inside the isolated run's own
  * temporary folder, which `scripts/isolated.ts` removes when the run ends, so a folder Windows still holds is left to it.
  */
 afterEach(() => {
@@ -42,14 +41,35 @@ const clamp = "//@ requires low <= high\n//@ ensures low <= \\result && \\result
   "export function clamp(value: number, low: number, high: number): number {\n  if (value < low) return low;\n" +
   "  if (value > high) return high;\n  return value;\n}\n";
 
-test("the split engine bundle does not retain unused Effect APIs through the lazy gate", async () => {
+test("the split engine bundle keeps checks lazy and omits unused Effect APIs", async () => {
   const result = await Bun.build({ entrypoints: [join(import.meta.dir, "..", "src", "main.ts")],
-    target: "bun", format: "esm", splitting: true, minify: true });
+    target: "bun", format: "esm", splitting: true, minify: true, metafile: true });
   expect(result.success).toBe(true);
   const chunks = await Promise.all(result.outputs.map((output) => output.text()));
   // No consumer uses this API. Importing Effect's namespace dynamically makes Bun retain
-  // its export table and otherwise-unused code in chunks shared with shell startup (#532).
+  // its export table and otherwise-unused code in chunks shared with shell startup.
   expect(chunks.join("\n")).not.toContain("annotateLogsScoped");
+  const outputs = Object.entries(result.metafile?.outputs ?? {});
+  const entry = outputs.find(([, output]) => output.entryPoint?.replaceAll("\\", "/").endsWith("/shell/measure-shell.ts"));
+  if (entry === undefined) throw new Error("No compiled first-frame entry");
+  const graph = new Map(outputs.map(([path, output]) => [resolve(path), output]));
+  const pending = [resolve(entry[0])];
+  const visited = new Set<string>();
+  const eager = new Set<string>();
+  while (pending.length > 0) {
+    const path = pending.pop()!;
+    if (visited.has(path)) continue;
+    visited.add(path);
+    const output = graph.get(path);
+    if (output === undefined) throw new Error(`Missing compiled chunk ${path}`);
+    for (const input of Object.keys(output.inputs)) eager.add(input.replaceAll("\\", "/"));
+    for (const imported of output.imports) {
+      const target = resolve(dirname(path), imported.path);
+      if (imported.kind !== "dynamic-import" && graph.has(target)) pending.push(target);
+    }
+  }
+  // A shared shell helper must not pull gate-time parsers into first-frame chunks.
+  expect([...eager].filter((path) => /(?:^|\/)src\/verification-changes\.ts$|\/ts-morph\//u.test(path))).toEqual([]);
 });
 
 test("the engine's binary starts, and runs LemmaScript it embeds", () => {
@@ -63,6 +83,26 @@ test("the engine's binary starts, and runs LemmaScript it embeds", () => {
   const regen = run("__lsc", "regen", "--no-verify", "--backend=dafny", "clamp.ts");
   expect(regen.stderr).toBe("");
   expect(regen.stdout).toContain("clamp.dfy.gen");
+  const info = run("__lsc", "info", "--typed", "clamp.ts");
+  expect(info.status).toBe(0);
+  expect(info.stderr).toBe("");
+  expect(JSON.parse(info.stdout)).toMatchObject({ schema: 1, functions: [{ name: "clamp" }] });
+}, 120_000);
+
+test("the engine's binary model-checks TLA+ with the tla-ts it embeds, with no Java on the PATH", () => {
+  const binary = join(folder("tesota-core-binary-"), executable("tesota"));
+  build(binary);
+  const project = folder("tesota-core-binary-model-");
+  writeFileSync(join(project, "Spec.tla"), "---- MODULE Spec ----\nEXTENDS Naturals\nVARIABLE x\nInit == x = 0\n" +
+    "Next == x < 5 /\\ x' = x + 1\nSpec == Init /\\ [][Next]_x\nNotTwo == x /= 2\nNotFour == x /= 4\n====\n");
+  writeFileSync(join(project, "Spec.cfg"), "SPECIFICATION Spec\nINVARIANT NotTwo\nINVARIANT NotFour\nCHECK_DEADLOCK FALSE\n");
+  const run = spawnSync(binary, ["__tla-ts", `-Djava.io.tmpdir=${folder("tesota-core-binary-tmp-")}`, "tlc2.TLC", "-workers", "1",
+    "-continue", "-config", "Spec.cfg", "Spec.tla"], { cwd: project, encoding: "utf8", env: { ...process.env, PATH: "" } });
+  expect(run.status).toBe(0);
+  expect(run.stdout).toContain("TLC2 Version");
+  expect(run.stdout).toContain("Invariant NotTwo is violated.");
+  expect(run.stdout).toContain("Invariant NotFour is violated.");
+  expect(run.stdout).toContain("6 distinct states found");
 }, 120_000);
 
 test("the binary doctor embeds repairs and probes LemmaScript without writing outside the checkout", () => {
@@ -76,6 +116,7 @@ test("the binary doctor embeds repairs and probes LemmaScript without writing ou
   const report = JSON.parse(run.stdout) as { exitCode: number; capabilities: { id: string; status: string; entryPoint?: string; repair: string }[] };
   expect(report.exitCode).toBe(2);
   expect(report.capabilities.find(({ id }) => id === "lsc")).toMatchObject({ status: "available", entryPoint: "__lsc" });
+  expect(report.capabilities.find(({ id }) => id === "tla-ts")).toMatchObject({ status: "available", entryPoint: "__tla-ts" });
   expect(report.capabilities.find(({ id }) => id === "git")?.repair.length).toBeGreaterThan(0);
   expect(readdirSync(project)).toEqual([]);
 }, 120_000);
@@ -102,10 +143,14 @@ test("in a binary, the verifier reads TypeScript, Python and Go, and proves a co
   writeFileSync(join(project, "clamp.ts"), clamp);
   const run = spawnSync(binary, [project], { cwd: project, encoding: "utf8" });
   expect(run.stderr).toBe("");
-  const read = JSON.parse(run.stdout) as { typescript: number[]; python: number[]; go: number[]; proof: { outcome: string; files: string[] } };
+  const read = JSON.parse(run.stdout) as { typescript: number[]; python: number[]; go: number[];
+    proof: { outcome: string; files: string[]; proofInfo?: { status: string; semanticGap?: string } } };
   expect(read).toMatchObject({ typescript: [1], python: [1], go: [1] });
   expect(read).toMatchObject({ search: { isError: false, text: "clamp.ts:3:export function clamp(value: number, low: number, high: number): number {" } });
   expect(existsSync(join(process.env["TESOTA_ISOLATED"] ?? "", ".tesota", "ripgrep"))).toBe(true);
   expect(readdirSync(join(process.env["TESOTA_ISOLATED"] ?? "", ".tesota", "ripgrep"))).toHaveLength(1);
-  if (dafny) expect(read.proof).toEqual({ outcome: "passed", files: ["clamp.ts", "clamp.dfy"] });
+  if (dafny) {
+    expect(read.proof).toMatchObject({ outcome: "passed", files: ["clamp.ts", "clamp.dfy"], proofInfo: { status: "read" } });
+    expect(read.proof.proofInfo).not.toHaveProperty("semanticGap");
+  }
 }, 300_000);

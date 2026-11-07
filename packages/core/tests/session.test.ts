@@ -20,7 +20,7 @@ import { outputPrefix, platformShell } from "../src/tools/shell.ts";
 import { maxBytes } from "../src/truncate.ts";
 
 /**
- * Sessions and the request ledger (#437): resuming, on both engines; then
+ * Sessions and the request ledger: resuming, on both engines; then
  * what only `@tesota/core` promises: the ledger written before any tool
  * runs, recovery after the process was killed, one writer, and a file that
  * opens whole or not at all.
@@ -32,7 +32,7 @@ const folder = (prefix = "tesota-core-session-"): string => mkdtempSync(join(tmp
 
 /**
  * Polls until the child has written `file.txt` in `sessions` and the session file it names holds `text`, and returns that file's path.
- * Either file may be missing or partly written meanwhile (a race on Windows, #659), so a failed read polls again; only `limitMs` fails it.
+ * Either file may be missing or partly written meanwhile (a race on Windows), so a failed read polls again; only `limitMs` fails it.
  */
 async function sessionFileWith(sessions: string, text: string, limitMs = 15_000): Promise<string> {
   const pathFile = join(sessions, "file.txt");
@@ -92,6 +92,23 @@ const git = (cwd: string, ...args: string[]): string => {
 };
 
 describe("the request ledger", () => {
+  test("records and shows the admitted checks before generation and restores them on resume (#727)", async () => {
+    const cwd = folder();
+    writeFileSync(join(cwd, "package.json"), JSON.stringify({ packageManager: "bun@1.4.2", scripts: { test: "node original.cjs" } }));
+    let supplied = "";
+    const created = session([{ seen: (context) => { supplied = JSON.stringify(context.messages); }, reply: "done" }], { cwd });
+    await created.prompt("inspect this project");
+    expect(supplied).toContain("bun run test");
+    expect(created.ledger()[0]?.base.checks?.[0]?.projects[0]?.commands[0]?.script).toBe("node original.cjs");
+    const file = created.file;
+    await created.dispose();
+    writeFileSync(join(cwd, "package.json"), JSON.stringify({ scripts: { check: "node replacement.cjs" } }));
+    const resumed = openSession(file, scripted([]));
+    open.push(resumed);
+    expect(resumed.messages().find((message) => message.customType === "tesota-check-plan")?.text).toContain("bun run test");
+    expect(resumed.ledger()[0]?.base.checks?.[0]?.projects[0]?.commands[0]?.script).toBe("node original.cjs");
+  });
+
   test("the request, its origin and its base are on disk before the first tool runs", async () => {
     let seen = "";
     const probe: EngineTool = {
@@ -101,7 +118,7 @@ describe("the request ledger", () => {
     const created = session([{ tool: "probe", args: {} }, "done"], { tools: () => [probe] });
     await created.prompt("the exact request", { source: "rpc" });
     const lines = seen.trimEnd().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
-    expect(lines.map((line) => line["type"])).toEqual(["session", "request", "active_tools", "assistant", "permission", "call_intent"]);
+    expect(lines.map((line) => line["type"])).toEqual(["session", "request", "system", "assistant", "permission", "call_intent"]);
     expect(lines[1]).toMatchObject({ text: "the exact request", origin: "rpc", run: 1 });
     expect(lines.at(-1)).toMatchObject({ type: "call_intent", access: "run",
       tool: { name: "probe", nativeQuestion: false, readOnly: false } });
@@ -118,7 +135,7 @@ describe("the request ledger", () => {
     git(repository, "add", "a.txt");
     git(repository, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "a");
     const head = git(repository, "rev-parse", "HEAD");
-    // Each ref's tip at admission that the base does not reach, whatever the remote is called (#599):
+    // Each ref's tip at admission that the base does not reach, whatever the remote is called:
     // a tag and a remote-tracking ref on the base's parent are left out, a branch and a remote-tracking ref beside it are kept.
     git(repository, "tag", "older", "HEAD");
     git(repository, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "b", "--allow-empty");
@@ -288,6 +305,32 @@ test("an empty interrupted call does not recover an earlier long output with the
 });
 
 describe("recovery after the process was killed", () => {
+  test("an interrupted MCP call retains an unknown external effect in its recovery receipt (#751)", () => {
+    const effect = { server: "editor", tool: "save", callId: "c1", argumentsHash: "a".repeat(64), startedAt: new Date(0).toISOString() };
+    const entries = [
+      { type: "request", run: 1, text: "save", origin: "interactive", at: new Date(0).toISOString(),
+        base: { units: [{ folder: "", kind: "commit", commit: "0".repeat(40) }] } },
+      { type: "assistant", run: 1, message: { role: "assistant", content: [{ type: "toolCall", id: "c1", name: "mcp__editor__save", arguments: {} }] } },
+      { type: "call_intent", run: 1, callId: "c1", access: "run", tool: { name: "mcp__editor__save", nativeQuestion: false, readOnly: false },
+        externalEffect: effect },
+    ] as unknown as SessionEntry[];
+    const recovered = recovery(entries, () => undefined);
+    expect(recovered.flatMap((entry) => entryReceipt(entry) ?? [])).toMatchObject([{ externalEffects: [{ ...effect, outcome: "unknown" }] }]);
+  });
+
+  test("a declared-read custom call has an unknown effect in both its repair and receipt (#647)", () => {
+    const entries = [
+      { type: "request", run: 1, text: "go", origin: "interactive", at: new Date(0).toISOString(),
+        base: { units: [{ folder: "", kind: "commit", commit: "0".repeat(40) }] } },
+      { type: "assistant", run: 1, message: { role: "assistant", content: [{ type: "toolCall", id: "c1", name: "custom", arguments: {} }] } },
+      { type: "call_intent", run: 1, callId: "c1", access: "read", tool: { name: "custom", nativeQuestion: false, readOnly: false } },
+    ] as unknown as SessionEntry[];
+    const recovered = recovery(entries, () => undefined);
+    expect(recovered.find((entry) => entry.type === "reconciliation")).toMatchObject({ repair: "outcome_unknown" });
+    expect(recovered.flatMap((entry) => entryReceipt(entry) ?? [])).toHaveLength(1);
+    expect(recovery([...entries, ...recovered], () => undefined)).toEqual([]);
+  });
+
   test("a shell repair keeps what it printed and its file, and recovering twice adds nothing", async () => {
     const cwd = folder();
     const sessions = folder("tesota-core-sessions-");
@@ -333,13 +376,13 @@ describe("recovery after the process was killed", () => {
       expect(resumed.outcome()).toBe("interrupted");
       const results = resumed.messages().filter((message) => message.role === "toolResult");
       expect(results.map((result) => [result.toolName, result.isError])).toEqual([["wait", true], ["write", true]]);
-      expect(results[0]?.text).toContain(mode === "read" ? "Interrupted" : "Outcome unknown");
-      if (mode === "read") expect(results[0]?.text).toContain("It only reads, so it changed nothing");
+      // `wait` is a custom tool: declaring read access is no guarantee of no effect.
+      expect(results[0]?.text).toContain("Outcome unknown");
       expect(results[1]?.text).toContain("Not run");
       expect(existsSync(join(cwd, "never.txt"))).toBe(false);
       expect(resumed.ledger()).toMatchObject([{ run: 1, text: "go" }]);
       const once = entriesOf(file);
-      // `wait` may change files as the gate decides it, whatever access it declares, so the run gets a receipt that verified nothing (#599).
+      // `wait` may change files as the gate decides it, whatever access it declares, so the run gets a receipt that verified nothing.
       const tail = ["reconciliation", "reconciliation", "custom_message", "run_end"];
       expect(once.slice(-tail.length).map((entry) => entry.type)).toEqual(tail);
       await resumed.dispose();
@@ -349,7 +392,7 @@ describe("recovery after the process was killed", () => {
     });
   }
 
-  // One rule decides, on both sides, whether a started call may have changed files (#599): the gate's `toolMayChangeFiles`.
+  // One rule decides, on both sides, whether a started call may have changed files: the gate's `toolMayChangeFiles`.
   test.each([
     ["a read", "read", "read", { name: "read", nativeQuestion: false, readOnly: false }],
     ["a question", "ask_user", "read", { name: "ask_user", nativeQuestion: true, readOnly: false }],
@@ -369,7 +412,7 @@ describe("recovery after the process was killed", () => {
     // An entry without the call's tool can't be judged, so it counts as one that may have changed files.
     const mayChange = tool === undefined || toolMayChangeFiles(tool.name, tool.nativeQuestion, tool.readOnly);
     expect(receipts).toHaveLength(mayChange ? 1 : 0);
-    if (mayChange) expect(receipts[0]).toMatchObject({ changed: "unreadable", proofs: [], tests: [], stopped: expect.stringContaining("no check ran") });
+    if (mayChange) expect(receipts[0]).toMatchObject({ changed: "unreadable", stopped: expect.stringContaining("no check ran"), codeEvidence: { proofs: [], tests: [] } });
   });
 
   test("a reply cut off mid-stream leaves the request in the ledger and the run interrupted", async () => {
@@ -496,36 +539,39 @@ describe("the session file", () => {
     expect(() => openSession(file, scriptless())).toThrow(SessionFileError);
   });
 
-  test("the active tools belong to the session: before any request, between runs and at the end, never to a run (#441)", async () => {
+  /** A system message as a session records one. */
+  const systemEntry = { type: "system", message: { role: "system", content: "", timestamp: 0 } };
+
+  test("the system prompt belongs to the session: before any request, between runs and at the end, never to a run (#779)", async () => {
     const file = await finished();
     const lines = readFileSync(file, "utf8").trimEnd().split("\n");
-    const tools = JSON.stringify({ type: "active_tools", names: ["read"] });
+    const tools = JSON.stringify(systemEntry);
     writeFileSync(file, `${[lines[0], tools, ...lines.slice(1), tools].join("\n")}\n`);
     const resumed = openSession(file, scriptless());
     open.push(resumed);
     expect(resumed.outcome()).toBe("completed");
     await resumed.dispose();
-    appendFileSync(file, `${JSON.stringify({ type: "active_tools", run: 1, names: ["read"] })}\n`);
+    appendFileSync(file, `${JSON.stringify({ ...systemEntry, run: 1 })}\n`);
     expect(() => openSession(file, scriptless())).toThrow(SessionFileError);
   });
 
-  test("active tools recorded mid-run stay where they are when recovery ends the run", async () => {
+  test("a system message recorded mid-run stays where it is when recovery ends the run", async () => {
     const file = await finished();
     const lines = readFileSync(file, "utf8").trimEnd().split("\n");
     const ended = lines.findLastIndex((line) => line.includes("\"type\":\"settle\""));
-    writeFileSync(file, `${[...lines.slice(0, ended), JSON.stringify({ type: "active_tools", names: ["read"] })].join("\n")}\n`);
+    writeFileSync(file, `${[...lines.slice(0, ended), JSON.stringify(systemEntry)].join("\n")}\n`);
     const resumed = openSession(file, scriptless());
     open.push(resumed);
     expect(resumed.outcome()).toBe("interrupted");
-    expect(entriesOf(file).slice(-2).map((entry) => entry.type)).toEqual(["active_tools", "run_end"]);
+    expect(entriesOf(file).slice(-2).map((entry) => entry.type)).toEqual(["system", "run_end"]);
   });
 
   // Older formats are refused, not reinterpreted or migrated.
-  for (const version of [1, 2, 3, 4, 5]) {
+  for (const version of [1, 2, 3, 4, 5, 6]) {
     test(`a session of version ${version} refuses to open, naming it`, async () => {
       const file = await finished();
       const lines = readFileSync(file, "utf8").split("\n");
-      lines[0] = (lines[0] ?? "").replace("\"version\":6", `"version":${version}`);
+      lines[0] = (lines[0] ?? "").replace("\"version\":7", `"version":${version}`);
       const before = lines.join("\n");
       writeFileSync(file, before);
       expect(() => openSession(file, scriptless())).toThrow(`version ${version}`);
@@ -533,9 +579,9 @@ describe("the session file", () => {
     });
   }
 
-  test("version 6 reads, with the verifier's message in the conversation and its data outside it", () => {
-    const fixture = join(import.meta.dir, "fixtures", "session-v6.jsonl");
-    const copy = join(folder(), "session-v6.jsonl");
+  test("version 7 reads, with the verifier's message in the conversation and its data outside it", () => {
+    const fixture = join(import.meta.dir, "fixtures", "session-v7.jsonl");
+    const copy = join(folder(), "session-v7.jsonl");
     writeFileSync(copy, readFileSync(fixture));
     const resumed = openSession(copy, scriptless());
     open.push(resumed);

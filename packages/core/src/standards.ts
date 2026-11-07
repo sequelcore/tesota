@@ -3,13 +3,14 @@ import { dirname, join, resolve } from "node:path";
 import { type Hooks, readHooks } from "./hooks.ts";
 import { type McpConfig, type McpServerConfig, projectServers, readMcpConfig } from "./mcp-config.ts";
 import { trustHash, trusted } from "./trust.ts";
-import { checkoutRoot } from "./workspace.ts";
+import { checkoutRoot } from "../../../src/checkout-root.ts";
+import { type CheckDeclaration, readDeclaredChecks } from "../../../src/project-checks.ts";
 
 /** A file's hooks, or why they were left out. */
 export type HooksRead = Hooks | string;
 
 /**
- * The command hooks (#457) and MCP servers (#459) a session in `cwd` runs:
+ * The command hooks and MCP servers a session in `cwd` runs:
  * the operator's, beside their settings, and the project's, in its
  * `.tesota` folder, with whether the operator trusts the project's as they
  * are now. The shell asks about those not trusted; print mode leaves them out.
@@ -18,6 +19,7 @@ export interface Standards {
   readonly root: string;
   readonly ownHooks: HooksRead;
   readonly projectHooks: { readonly hooks: HooksRead; readonly hash: string; readonly trusted: boolean };
+  readonly checks: CheckDeclaration;
   readonly mcp: {
     readonly own: string;
     readonly project: string;
@@ -47,6 +49,7 @@ export function readStandards(cwd: string, settingsPath: string): Standards {
   return {
     root,
     ownHooks: readOr(settingsPath),
+    checks: readDeclaredChecks(root),
     projectHooks: { hooks: project, hash: hooksHash, trusted: typeof project !== "string" && trusted(root, "hooks", hooksHash) },
     mcp: { own, project: projectMcp, config, theirs, hash: mcpHash, trusted: theirs.length === 0 || trusted(root, "mcp", mcpHash) },
   };

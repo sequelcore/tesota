@@ -1,4 +1,4 @@
-import { createModels, fauxProvider } from "@earendil-works/pi-ai";
+import { createModels, fauxProvider, getCurrentTools, type SystemMessage } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import type { Hooks } from "../src/hooks.ts";
 import type { McpTools } from "../src/loop.ts";
 import { type McpServers, startMcp } from "../src/mcp.ts";
+import { signIn, signOut } from "../src/mcp-auth.ts";
 import { type McpServerConfig, projectServers, readMcpConfig, readOAuthConfig, toolNames } from "../src/mcp-config.ts";
 import { createSession, type EngineSession } from "../src/session.ts";
 import type { EngineTool } from "../src/tool.ts";
@@ -14,7 +15,7 @@ import { startHttpMcp } from "./mcp-http-server.ts";
 import { accepts, scriptedReply } from "./scripted.ts";
 import type { ScriptStep } from "./engine.ts";
 
-/** MCP servers (#459): their configuration, their tools' names, a real local and a real remote server, sign-in, and in a session. */
+/** MCP servers: their configuration, their tools' names, a real local and a real remote server, sign-in, and in a session. */
 const folder = (prefix: string): string => mkdtempSync(join(tmpdir(), prefix));
 const serverScript = fileURLToPath(new URL("./mcp-server.mjs", import.meta.url));
 const spool = (): string => folder("tesota-core-mcp-spool-");
@@ -46,6 +47,13 @@ describe("reading mcp.json", () => {
     return path;
   };
   const cwd = join(tmpdir(), "project");
+
+  test("read-only receipt declarations use exact server tool names and reject malformed lists (#751)", () => {
+    const own = write({ mcpServers: { docs: { command: "docs", readOnlyTools: ["fetch", "search"] } } });
+    expect(readMcpConfig(own, undefined, cwd, {}).servers).toMatchObject([{ readOnlyTools: ["fetch", "search"] }]);
+    const invalid = write({ mcpServers: { docs: { command: "docs", readOnlyTools: "*" } } });
+    expect(readMcpConfig(invalid, undefined, cwd, {})).toMatchObject({ servers: [], errors: [expect.stringContaining("readOnlyTools")] });
+  });
 
   test("a file that begins with a byte-order mark reads as any other (#470)", () => {
     const own = write(`\uFEFF${JSON.stringify({ mcpServers: { files: { command: "files" } } })}`);
@@ -239,12 +247,13 @@ describe("a local server", () => {
   });
 
   test("a request already stopped does not wait for a server still connecting", async () => {
-    const servers = started([local("silent", { args: ["-e", "setInterval(() => {}, 1000)"] })], { waitMs: 500 });
+    // A wait far longer than any slow runner's delay, so returning well before it shows the request did not wait.
+    const servers = started([local("silent", { args: ["-e", "setInterval(() => {}, 1000)"] })], { waitMs: 20_000 });
     const stop = new AbortController();
     stop.abort();
     const begun = Date.now();
     await servers.ready(stop.signal);
-    expect(Date.now() - begun).toBeLessThan(100);
+    expect(Date.now() - begun).toBeLessThan(5_000);
     expect(servers.status()[0]?.state).toBe("connecting");
   });
 
@@ -255,8 +264,10 @@ describe("a local server", () => {
       env: { TESOTA_MCP_PID: pidFile },
     })]);
     // The child has received initialize but never answers it: close must stop a real connection in progress.
-    for (let tries = 0; !existsSync(pidFile) && tries < 100; tries++) await Bun.sleep(20);
+    // The file exists a moment before its PID is written: read early, it gives 0, which every process.kill accepts.
+    for (let tries = 0; (!existsSync(pidFile) || readFileSync(pidFile, "utf8") === "") && tries < 100; tries++) await Bun.sleep(20);
     const pid = Number(readFileSync(pidFile, "utf8"));
+    expect(pid).toBeGreaterThan(0);
     expect(() => process.kill(pid, 0)).not.toThrow();
     expect(servers.status()[0]?.state).toBe("connecting");
     const begun = Date.now();
@@ -319,6 +330,23 @@ describe("a remote server", () => {
   const browser = (page: URL): void => {
     void fetch(page, { redirect: "manual" }).then((answer) => fetch(answer.headers.get("location") ?? ""));
   };
+
+  test("signing out succeeds when the home does not exist yet", async () => {
+    const home = join(folder("tesota-core-mcp-home-"), ".tesota");
+    expect(existsSync(home)).toBe(false);
+    await signOut("docs", "https://example.test/mcp", home);
+    expect(existsSync(home)).toBe(true);
+  });
+
+  test("signing in stores a token when the home does not exist yet", async () => {
+    const server = await remote(true);
+    const home = join(folder("tesota-core-mcp-home-"), ".tesota");
+    expect(existsSync(home)).toBe(false);
+    await signIn("issues", server.url, {}, browser, new AbortController().signal, home);
+    expect(JSON.parse(readFileSync(join(home, "mcp-auth.json"), "utf8"))).toMatchObject({
+      [`issues|${server.url}`]: { tokens: { access_token: "access-1" } },
+    });
+  });
 
   test("with its own Authorization header it connects without sign-in, and one it refuses failed", async () => {
     const server = await remote(false);
@@ -460,11 +488,11 @@ describe("MCP tools in a session", () => {
   const results = (created: EngineSession) => created.messages().filter((message) => message.role === "toolResult")
     .map((message) => ({ text: message.text, isError: message.isError }));
 
-  /** The tools the session last recorded as offered. */
+  /** The tools the session's recorded system messages last gave the model. */
   const offered = (created: EngineSession): string[] => {
-    const last = readFileSync(created.file, "utf8").trimEnd().split("\n").map((line) => JSON.parse(line) as { type: string; names?: string[] })
-      .findLast((entry) => entry.type === "active_tools");
-    return last?.names ?? [];
+    const entries = readFileSync(created.file, "utf8").trimEnd().split("\n").map((line) => JSON.parse(line) as { type: string; message?: SystemMessage });
+    return getCurrentTools(entries.flatMap(({ type, message }) => type === "system" && message !== undefined ? [message] : []))
+      .map(({ name }) => name);
   };
 
   test("the model is offered the servers' tools and calls them, and the session records them among its tools", async () => {

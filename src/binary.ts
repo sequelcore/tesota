@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 /**
- * Whether this code runs inside a binary `bun build --compile` made (#472).
+ * Whether this code runs inside a binary `bun build --compile` made.
  * Its modules live in Bun's embedded folder, `/$bunfs/root/` or
  * `B:\~BUN\root\`, where the files beside the code are the ones the build
  * embedded (`packages/core/scripts/build.ts`) and no package can be resolved.

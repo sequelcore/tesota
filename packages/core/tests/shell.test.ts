@@ -21,7 +21,7 @@ import { accepts, scriptedReply } from "./scripted.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
 
 /**
- * The engine's shell (#444), drawn into an emulated terminal: what the
+ * The engine's shell, drawn into an emulated terminal: what the
  * operator sees, typing as they would, in both modes.
  */
 const open: { session: EngineSession; shell: Shell }[] = [];
@@ -37,13 +37,15 @@ const enter = "\r";
 
 function shellOn(script: readonly ScriptStep[], mode: TuiMode = "fullscreen", size: [number, number] = [80, 24],
   extra: { tokensPerSecond?: number; copy?: (text: string) => Promise<boolean>; readClipboard?: () => Promise<string | null | undefined>; commands?: readonly SlashCommand[]; surface?: Surface;
-    questions?: SessionOptions["questions"]; cwd?: string; command?: (text: string) => Promise<boolean>; answersQueriesAfterMs?: number; agents?: () => void } = {}) {
+    questions?: SessionOptions["questions"]; cwd?: string; command?: (text: string) => Promise<boolean>; answersQueriesAfterMs?: number; agents?: () => void;
+    taskList?: boolean } = {}) {
   const faux = fauxProvider({ tokensPerSecond: extra.tokensPerSecond ?? 400 });
   faux.setResponses(script.map(scriptedReply));
   const models = createModels();
   models.setProvider(faux.provider);
-  const { cwd = folder("tesota-core-shell-"), answersQueriesAfterMs, ...options } = extra;
-  const session = createSession({ cwd, folder: folder("tesota-core-sessions-"), models, model: faux.getModel(), verifier: accepts, ...extra.questions === undefined ? {} : { questions: extra.questions } });
+  const { cwd = folder("tesota-core-shell-"), answersQueriesAfterMs, taskList, ...options } = extra;
+  const session = createSession({ cwd, folder: folder("tesota-core-sessions-"), models, model: faux.getModel(), verifier: accepts,
+    ...extra.questions === undefined ? {} : { questions: extra.questions }, ...taskList === undefined ? {} : { taskList } });
   const terminal = new VirtualTerminal(...size);
   terminal.answersQueriesAfterMs = answersQueriesAfterMs;
   const shell = startShell({ terminal, mode, fullRepaint: false, theme: shellTheme("dark", "truecolor"), session,
@@ -67,6 +69,83 @@ const choices = [{ question: "Which path should the agent take?", options: [
 ], recommended: 0 }] satisfies readonly ClarificationQuestion[];
 
 describe("the shell", () => {
+  test.each(["fullscreen", "inline"] as const)("passive warnings preserve the input position and draft (%s) (#794)", async (mode) => {
+    const { terminal, shell, session } = shellOn([], mode);
+    terminal.type("draft stays here");
+    const before = await terminal.screen();
+    shell.warn("configuration", "A retained diagnostic with a repair command.");
+    shell.warn("configuration", "A retained diagnostic with a repair command.");
+    const after = (await terminal.until("1 warning · F2 to view")).split("\n");
+    expect(after.findIndex((line) => line.includes("draft stays here"))).toBe(before.findIndex((line) => line.includes("draft stays here")));
+    expect(shown(await terminal.scrollback())).not.toContain("A retained diagnostic");
+    terminal.type("\x1bOQ");
+    await terminal.until("A retained diagnostic");
+    terminal.type("\x03");
+    await terminal.untilGone("Warnings · 1 of 1");
+    expect(await terminal.until("1 warning · F2 to view")).toContain("draft stays here");
+    expect(session.history()).toEqual([]);
+  });
+
+  test("warning dismissal cannot erase an updated diagnostic, and copy uses only the viewed entry (#794)", async () => {
+    const copied: string[] = [];
+    const { terminal, shell } = shellOn([], "fullscreen", [80, 24], { copy: async (text) => { copied.push(text); return true; } });
+    shell.warn("first", "Original first diagnostic");
+    shell.warn("second", "Second diagnostic");
+    shell.showWarnings();
+    await terminal.until("Original first diagnostic");
+    shell.warn("first", "Updated first diagnostic");
+    terminal.type("d");
+    await terminal.until("Second diagnostic");
+    terminal.type("c");
+    await terminal.until("Copied warning");
+    expect(copied).toEqual(["Second diagnostic"]);
+    terminal.type("d");
+    await terminal.until("1 warning · F2 to view");
+    shell.warn("second", "Second diagnostic");
+    expect(await terminal.until("1 warning · F2 to view")).not.toContain("2 warnings");
+    shell.showWarnings();
+    expect(await terminal.until("Updated first diagnostic")).toContain("Warnings · 1 of 1");
+    terminal.type("d");
+    await terminal.untilGone("F2 to view");
+    shell.warn("second", "New second diagnostic");
+    await terminal.until("1 warning · F2 to view");
+  });
+
+  test("F2 leaves an active question in control and warnings belong to their session (#794)", async () => {
+    const first = shellOn([]);
+    const second = shellOn([]);
+    first.shell.warn("first", "First session only");
+    const answer = first.shell.ask("Answer this question");
+    await first.terminal.until("Answer this question");
+    first.terminal.type("\x1bOQ");
+    expect(await first.terminal.until("Answer this question")).not.toContain("Warnings ·");
+    first.terminal.type("answer"); first.terminal.type(enter);
+    expect(await answer).toBe("answer");
+    first.shell.show(second.session);
+    first.shell.showWarnings();
+    expect(await first.terminal.until("No warnings in this session.")).not.toContain("First session only");
+    first.terminal.type("\x1b");
+    first.shell.show(first.session);
+    await first.terminal.until("1 warning · F2 to view");
+  });
+
+  test("warning badges fit narrow terminals and long diagnostics scroll (#794)", async () => {
+    const { terminal, shell } = shellOn([], "fullscreen", [40, 10]);
+    shell.warn("long", Array.from({ length: 30 }, (_, index) => `detail ${index}`).join("\n"));
+    await terminal.until("1 warning · F2 to view");
+    terminal.resize(18, 10);
+    const narrow = await terminal.until("⚠ 1 · F2");
+    expect(narrow.split("\n").every((line) => visibleWidth(line) <= 18)).toBe(true);
+    terminal.type("\x1bOQ");
+    await terminal.until("detail 0");
+    for (let row = 0; row < 24; row++) terminal.type("\x1b[B");
+    await terminal.until("detail 29");
+    terminal.type("\x1bOQ");
+    await terminal.untilGone("Warnings ·");
+    terminal.resize(80, 24);
+    await terminal.until("1 warning · F2 to view");
+  });
+
   test("Ctrl+V reads clipboard text as a paste into the focused input (#718)", async () => {
     let reads = 0;
     const { terminal, shell, session } = shellOn([], "fullscreen", [80, 24], {
@@ -531,7 +610,7 @@ describe("the shell", () => {
     terminal.type("first");
     terminal.type(enter);
     await settled(session);
-    expect(await terminal.until("line 79 of a long answer", 10_000)).toContain("scripted model");
+    expect(await terminal.until("line 79 of a long answer")).toContain("scripted model");
     terminal.type("second");
     terminal.type(enter);
     await terminal.until("Working");
@@ -905,7 +984,7 @@ function viewerOn(shell: Shell, terminal: VirtualTerminal, manifest = lights("co
   hide = shell.overlay(viewer);
 }
 
-/** A model that breaks a rule opens on its chart (#761); `c` shows TLC's graph, which these tests read. */
+/** A model that breaks a rule opens on its chart; `c` shows TLC's graph, which these tests read. */
 async function toGraph(terminal: VirtualTerminal): Promise<void> {
   await terminal.until("Model chart · Lights.tla");
   terminal.type("c"); await terminal.until("Model graph · Lights.tla");
@@ -1281,4 +1360,52 @@ test("inline handoff clears the welcome before another program writes", async ()
   await terminal.until(greeting);
   shell.stop();
   expect(shown(await terminal.scrollback())).not.toContain(greeting);
+});
+
+describe("the agent's task list", () => {
+  const plan = [
+    { title: "Inspect session recovery", status: "completed" },
+    { title: "Implement task restoration", status: "in_progress" },
+    { title: "Check the real terminal \u001b[31mpath\u001b[0m", status: "pending" },
+  ];
+  const update = { tool: "update_tasks", args: { tasks: plan } };
+
+  test("while the run goes, one row above the input names the focus and the claimed count", async () => {
+    const { terminal, session } = shellOn([update, "Working through the list now. ".repeat(20)], "fullscreen", [80, 24],
+      { taskList: true, tokensPerSecond: 40 });
+    void session.prompt("Restore the list.");
+    const screen = await terminal.until("now: Implement task restoration");
+    expect(screen).toContain("Agent task list · 1/3 marked done");
+    const rows = screen.split("\n");
+    expect(rows.findIndex((line) => line.includes("Agent task list"))).toBeLessThan(rows.findIndex((line) => line.includes("Working")));
+    await settled(session);
+  });
+
+  test("once the run ends the list shows as saved, Ctrl+O lists every task, and titles are drawn as text", async () => {
+    const { terminal, session } = shellOn([update, "Done for now."], "fullscreen", [80, 24], { taskList: true });
+    await session.prompt("Restore the list.");
+    const collapsed = await terminal.until("Saved agent task list · 1/3 marked done · Ctrl+O to expand");
+    expect(collapsed).not.toContain("now:");
+    terminal.type("\x0f");
+    const expanded = await terminal.until("in progress  Implement task restoration");
+    expect(expanded).toContain("completed    Inspect session recovery");
+    // The title's color codes are stripped, not drawn.
+    expect(expanded).toContain("pending      Check the real terminal path");
+    terminal.type("\x0f");
+    await terminal.untilGone("in progress  Implement task restoration");
+  });
+
+  test("a waiting question leads alone, and a new request clears the row", async () => {
+    const { terminal, session, shell } = shellOn([update, "Saved.", "A new request."], "fullscreen", [100, 30], { taskList: true });
+    await session.prompt("Restore the list.");
+    await terminal.until("Saved agent task list");
+    const answer = shell.ask("Which path should the agent take?");
+    expect(await terminal.until("Which path should the agent take?")).not.toContain("task list");
+    terminal.type("conservative");
+    terminal.type(enter);
+    expect(await answer).toBe("conservative");
+    await terminal.until("Saved agent task list");
+    await session.prompt("Something else.");
+    await terminal.untilGone("Saved agent task list");
+  });
 });

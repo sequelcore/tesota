@@ -6,25 +6,20 @@ import { type TObject, type TString, Type } from "typebox";
 import { quietOutput } from "./evidence.js";
 import { bold, expandHint, Rows, spread, wrapUnder } from "./messages.js";
 import { READING_FORMAT, readingPath } from "./model-chart.js";
-import { checkModel, HEADER_FORMAT, type ModelCheck, modelHeader, modelReport, tlaToolsJar } from "./model-check.js";
+import { checkModel, HEADER_FORMAT, type ModelCheck, modelHeader, modelReport } from "./model-check.js";
 import { linkWords, modelHolds, modelWhy } from "./receipt.js";
 
 /**
- * The working agent's own model check (#554): TLC on one TLA+ or Quint model
+ * The working agent's own model check: TLC on one TLA+ or Quint model
  * it is working on, through the gate's own check (`checkModel`), so it sees a
  * counterexample while it works. Without it, pstack's
  * `/create-formal-verification-skill` judged TLC unavailable and wrote a
  * JavaScript interleaving test instead of a model.
  */
 
-/** Whether Tesota finds TLC (`tlaToolsJar`), which turns on `check_model` and its guidance. */
-export function hasTlc(): boolean {
-  return existsSync(tlaToolsJar());
-}
-
 /** How the agent should use `check_model`: what TLC is for, where a model goes, and its header. */
 export const MODEL_GUIDELINES: readonly string[] = [
-  "TLC is installed, so a design whose steps interleave, such as concurrent or distributed code, can be model-checked: " +
+  "Tesota includes TLC for TLA+ models, so a design whose steps interleave, such as concurrent or distributed code, can be model-checked: " +
     "write a TLA+ model (a .tla with its .cfg beside it, such as under models/) or a Quint model (.qnt) in the project, " +
     "run check_model on it while you work, and work until it passes. Tesota checks it again before the run settles, " +
     "and on every later request that changes it or the code it covers.",
@@ -40,7 +35,7 @@ export const MODEL_GUIDELINES: readonly string[] = [
  * A model's check for the agent: what a pass establishes and what it does
  * not, why it did not run, or what the gate would send back (`modelReport`).
  */
-/** A captured model without a reading is asked for one once per check, as a model without a header is given the header (#761). */
+/** A captured model without a reading is asked for one once per check, as a model without a header is given the header. */
 function readingAsk(root: string, model: string): string {
   const reading = readingPath(model);
   return existsSync(resolve(root, reading)) ? ""
@@ -89,7 +84,7 @@ function renderResult(result: ToolResult<ModelCheck | undefined>, options: { exp
 const parameters: TObject<{ path: TString }> = Type.Object({ path: Type.String({ description: "The .tla or .qnt model to check, relative to the project" }) });
 
 /**
- * `check_model`, inactive until the extension finds TLC (`hasTlc`). It runs
+ * `check_model`, offered when the session starts. It runs
  * alone, since the evidence must describe the model and its code as no other
  * tool call left them mid-check.
  */
@@ -97,7 +92,8 @@ export const modelTool: ToolDefinition<typeof parameters, ModelCheck | undefined
   name: "check_model", label: "Check model",
   description: "Check a TLA+ or Quint model with TLC, as Tesota's gate does: its tesota-model header, its invariants " +
     "in every reachable state, then each planted fault, which must break one. Reports the counterexample as numbered steps.",
-  promptSnippet: "Model-check a TLA+ or Quint model with TLC, which is installed, and its planted faults",
+  promptSnippet: "Model-check a TLA+ or Quint model with TLC, which Tesota includes for TLA+, and its planted faults: for a design whose " +
+    "steps interleave, write the model in the project, then call check_model",
   promptGuidelines: [...MODEL_GUIDELINES],
   parameters,
   defaultActive: false,
@@ -114,7 +110,7 @@ export const modelTool: ToolDefinition<typeof parameters, ModelCheck | undefined
     if (modelHeader(source) === undefined) {
       return text(`${path} has no tesota-model header, so it is no model Tesota checks. Start it with:\n\n${HEADER_FORMAT}`);
     }
-    const check = await checkModel(ctx.cwd, path, [], signal ?? new AbortController().signal, undefined, undefined, ctx.env,
+    const check = await checkModel(ctx.cwd, path, [], signal ?? new AbortController().signal, undefined, ctx.env,
       ctx.sessionFile === undefined ? undefined : { sessionFile: ctx.sessionFile });
     const artifacts = ctx.sessionFile === undefined ? "" : check.capture?.manifest === undefined
       ? `\n\nGraph capture: ${check.capture?.status ?? "unavailable"}. ${check.capture?.status === "captured" ? "" : check.capture?.reason ?? ""}`

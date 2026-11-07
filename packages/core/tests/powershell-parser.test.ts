@@ -8,9 +8,8 @@ import { parsePowerShell } from "../src/powershell-parser.ts";
 import { platformShell } from "../src/tools/shell.ts";
 
 /**
- * The floor with PowerShell's own parser (#697): the commands #697 lists, as
- * the platform's PowerShell reads them. The decision for each is recorded on
- * the issue: what destroys a disk, the root or a home is refused, whatever
+ * The floor with PowerShell's own parser, as the platform's PowerShell reads
+ * each command: what destroys a disk, the root or a home is refused, whatever
  * spelling; what names no guarded folder is not the floor's to refuse.
  */
 describe.if(process.platform === "win32")("PowerShell's parser and the floor (#697)", () => {

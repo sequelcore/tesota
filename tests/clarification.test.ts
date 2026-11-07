@@ -18,11 +18,11 @@ it("keeps submitted answers in receipt context without changing verification or 
     questions: [{ question: "Which version?", options: [
       { label: "Three", description: "Use version three." }, { label: "Two", description: "Use version two." },
     ] }], answers: [{ selected: [0], text: "Explain before implementing." }] };
-  const receipt = { ...emptyReceipt, clarifications: [clarification] };
+  const receipt = { ...emptyReceipt, requestContext: { ...emptyReceipt.requestContext, clarifications: [clarification] } };
   expect(receiptStanding(receipt)).toBe(receiptStanding(emptyReceipt));
   expect(renderReceipt(receipt)).toContain("Request clarification (operator input, not evidence or acceptance)");
   expect(renderReceipt(receipt)).toContain("Operator text (verbatim):\nExplain before implementing.");
   expect(renderReceiptMessage(receipt)).toContain("Explain before implementing.");
   expect(renderReceipt({ ...receipt, stopped: "stopped" })).toContain("Explain before implementing.");
-  expect(unitReceipt({ ...receipt, units: [{ ...emptyReceipt, folder: "app" }] }, "app")?.clarifications).toEqual([clarification]);
+  expect(unitReceipt({ ...receipt, units: [{ ...emptyReceipt, folder: "app" }] }, "app")?.requestContext.clarifications).toEqual([clarification]);
 });

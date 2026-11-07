@@ -5,15 +5,16 @@ import manifest from "../package.json" with { type: "json" };
  * The `tesota` command. It answers `--version` before loading anything
  * else, so startup stays within its budget as the engine grows; each other
  * command loads only what it needs. With no argument it opens the shell in
- * the current folder (#444); `-p` runs one request without it, and
- * `receipt` writes the last receipt for a pull request (#463), and
- * `accounts` adds, lists and removes the operator's accounts (#642). The
- * `--measure-*` commands are what the budget check runs, and `__lsc` is
- * LemmaScript for the verifier in a binary (`lsc.ts`).
+ * the current folder; `-p` runs one request without it, and
+ * `receipt` writes the last receipt for a pull request, and
+ * `accounts` adds, lists and removes the operator's accounts. The
+ * `--measure-*` commands are what the budget check runs, `__lsc` is
+ * LemmaScript for the verifier in a binary (`lsc.ts`), and `__tla-ts` is
+ * tla-ts for the model check in a binary (`tla-ts.ts`).
  */
 
 /** The verifier's flags (`gate.ts`), taken wherever they come, for the shell and `-p`. */
-const verifierFlags = new Set(["claimcheck-model", "open-cases-model"]);
+const verifierFlags = new Set(["claimcheck-model", "open-cases-model", "require-model"]);
 
 /** One command list for help and argument errors; internal entry points stay out of it. */
 const usage: readonly (readonly [string, string] | string)[] = [
@@ -34,7 +35,8 @@ const usage: readonly (readonly [string, string] | string)[] = [
   "",
   "The shell and -p also take:",
   ["  --open-cases-model <provider>/<id>|off", "Override openCasesModel in settings; otherwise the session model. off disables listing."],
-  ["  --claimcheck-model <provider>/<id>", "Override claimcheckModel in settings; otherwise the session model restates contracts."],
+  ["  --claimcheck-model <provider>/<id>|off", "Override claimcheckModel in settings; otherwise the session model restates contracts. off disables comparison."],
+  ["  --require-model <path>", "Retain an existing design model and its declared fault inputs for verification."],
 ];
 const column = Math.max(...usage.map((row) => typeof row === "string" ? 0 : row[0].length)) + 2;
 const commands = usage.map((row) => typeof row === "string" ? row && `  ${row}` : `  ${row[0].padEnd(column)}${row[1]}`).join("\n");
@@ -48,6 +50,7 @@ function splitFlags(args: readonly string[]): { flags: Record<string, string>; r
     const arg = args[at] ?? "";
     const [name = "", value] = arg.startsWith("--") ? arg.slice(2).split(/=(.*)/su) : [];
     if (!verifierFlags.has(name)) rest.push(arg);
+    else if (name === "require-model" && (flags[name] !== undefined || value === "" || (value === undefined && args[at + 1]?.startsWith("-")))) rest.push(arg);
     else if (value !== undefined) flags[name] = value;
     else if (args[at + 1] !== undefined) flags[name] = args[++at] ?? "";
     else rest.push(arg);
@@ -93,7 +96,7 @@ else if (command === "--measure-loop" || command === "--measure-resume") {
 else if (command === "--measure-shell") exitWith(import("./shell/measure-shell.ts").then(({ measureShell }) => measureShell()));
 else if (command === "graph") exitWith(import("../../../src/model-view-process.ts").then(({ modelViewCommand }) => modelViewCommand(rest)));
 else if (command === "__model-view") {
-  // A chart reading is the project's code: the worker runs it only if the operator trusts it as it is now (#761).
+  // A chart reading is the project's code: the worker runs it only if the operator trusts it as it is now.
   exitWith(Promise.all([import("../../../src/model-view-worker.ts"), import("./trust.ts")])
     .then(([{ modelViewWorker }, { chartTrust, trusted }]) => modelViewWorker((root, file, hash) => trusted(root, chartTrust(file), hash))));
 }
@@ -101,6 +104,12 @@ else if (command === "__lsc") {
   import("./lsc.ts").then(({ runLsc }) => runLsc(rest)).catch((error: unknown) => {
     console.error(error);
     process.exitCode = 1;
+  });
+}
+else if (command === "__tla-ts") {
+  import("./tla-ts.ts").then(({ runTlaTs }) => runTlaTs(rest)).catch((error: unknown) => {
+    console.error(error);
+    process.exitCode = 255;
   });
 }
 else {

@@ -14,7 +14,7 @@ import { codingTools } from "../packages/core/src/tools/index.js";
 import { sessionFacts } from "./sessions.js";
 
 /**
- * The sessions the evaluation runs (#464), on Tesota's engine instead of Pi.
+ * The sessions the evaluation runs, on Tesota's engine instead of Pi.
  * A model `claude-code/<id>` runs through `claude -p` on the operator's Claude
  * sign-in, since the engine has no Claude route; any other runs on the engine
  * from the operator's Tesota sign-in. Each engine session runs in its own

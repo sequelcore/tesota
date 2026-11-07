@@ -1,5 +1,5 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
-import { entryReceipt, isReceipt, type Receipt, type ReceiptStanding, receiptStanding, renderReceipt, standingWords } from "../../../src/receipt.ts";
+import { entryReceipt, isReceipt, type ReceiptStanding, receiptStanding, renderReceipt, standingWords } from "../../../src/receipt.ts";
 import { type AgentType, agentCatalog } from "./agents.ts";
 import { admitChild, branchGuard, childMode, type GuardAdmission } from "./agent-rule.ts";
 import { branchOf } from "./branch.ts";
@@ -10,24 +10,25 @@ import { floorRefusals, peekSessionFile, type SessionEntry, type SessionHeader }
 import type { EngineTool, ToolOutput } from "./tool.ts";
 import type { AgentHost, AgentRequest } from "./tools/agent.ts";
 import { codingTools } from "./tools/index.ts";
+import type { RequestReference } from "../../../src/request-references.ts";
 import { configHooks, guardedWorktree, installedGit, newWorktree, type Workspace } from "./workspace.ts";
 
-/** How far below its top session a child may be (#525): two, as pstack's `orchestrate` playbook spawns sub-coordinators. */
+/** How far below its top session a child may be: two, as pstack's `orchestrate` playbook spawns sub-coordinators. */
 export const maxDepth = 2;
 
-/** How many children run at once across a top session's tree when the settings do not say (#525). */
+/** How many children run at once across a top session's tree when the settings do not say. */
 export const defaultAgentLimit = 4;
 
-/** The model replies a child may take, and the time it may run, before it is stopped (#525). */
+/** The model replies a child may take, and the time it may run, before it is stopped. */
 export const childLimits = { turns: 100, minutes: 60 };
 
-/** The children running across one top session's tree, counted against its limit (#525). */
+/** The children running across one top session's tree, counted against its limit. */
 export interface AgentTree {
   running: number;
   readonly limit: number;
 }
 
-/** What a child's end reports (#525): to the shell, the parent's receipt and the operator; the report itself is never evidence. */
+/** What a child's end reports: to the shell, the parent's receipt and the operator; the report itself is never evidence. */
 export interface ChildReport {
   readonly description: string;
   readonly type?: string;
@@ -43,9 +44,9 @@ export interface ChildReport {
   readonly session: string;
   /** A writing child's branch and worktree, when it changed something and they stay. */
   readonly branch?: string;
-  /** How many of its calls Tesota's floor refused (#622), when any were. */
+  /** How many of its calls Tesota's floor refused, when any were. */
   readonly floorRefusals?: number;
-  /** A writing child that ran without Git's guard on its branch (#619): this Git has none and the operator said to warn, or turned it off. */
+  /** A writing child that ran without Git's guard on its branch: this Git has none and the operator said to warn, or turned it off. */
   readonly unguarded?: true;
   readonly worktree?: string;
 }
@@ -59,6 +60,7 @@ export interface Parent {
   readonly options: Omit<SessionOptions, "cwd" | "folder">;
   readonly types: readonly AgentType[];
   readonly tree: AgentTree;
+  readonly references: () => readonly RequestReference[];
   readonly create: (options: SessionOptions) => EngineSession;
 }
 
@@ -86,27 +88,27 @@ async function modelFor(parent: Parent, request: AgentRequest, type: AgentType |
 }
 
 /** What the model reads of a child's end: its report, labeled as the child's words, then its receipt and where its work is. */
-function endText(report: ChildReport, said: string | undefined, receipt: Receipt | undefined, failure: string | undefined): string {
+function endText(report: ChildReport, said: string | undefined, receipt: unknown, failure: string | undefined): string {
   const stopped = report.limited === "turns" ? ` after ${childLimits.turns} replies, its limit`
     : report.limited === "time" ? ` after ${childLimits.minutes} minutes, its limit` : "";
   return [`Subagent "${report.description}" ended ${report.outcome}${stopped}${report.verification === undefined ? "" : `, ${standingWords[report.verification]}`}.`,
     ...failure === undefined ? [] : [`It failed: ${failure}`],
-    // What the floor refused it binds this run too: the same effect is not to be reached another way (#622).
+    // What the floor refused it binds this run too: the same effect is not to be reached another way.
     ...report.floorRefusals === undefined ? [] : [`Tesota's floor refused ${report.floorRefusals} of its calls; no one can allow `
       + "those effects, so don't reach them another way. Its session lists them."],
     ...report.unguarded === undefined ? [] : ["It ran without Git's guard on its branch, so nothing kept it off other branches: "
       + "check that no branch but its own moved."],
     `Its report, in its own words (not evidence):\n${said?.trim() || "(it said nothing)"}`,
-    ...receipt === undefined ? [] : [renderReceipt(receipt)],
+    ...receipt === undefined ? [] : [isReceipt(receipt) ? renderReceipt(receipt)
+      : "Unsupported receipt format; this Tesota reads receipt v3 only."],
     ...report.branch === undefined ? [] : [`Its work is on branch ${report.branch}, in ${report.worktree ?? "its worktree"}. `
       + "It counts toward your request only once you bring it into your workspace, where your verification checks it."],
     `Its session: ${report.session}`].join("\n\n");
 }
 
 /** The last receipt a child's session settled with, as `tesota -p` reads it, since a child records it as data. */
-function lastReceipt(entries: readonly SessionEntry[]): Receipt | undefined {
-  const found = branchOf(entries).map(entryReceipt).findLast((receipt) => receipt !== undefined);
-  return isReceipt(found) ? found : undefined;
+function lastReceipt(entries: readonly SessionEntry[]): unknown {
+  return branchOf(entries).map(entryReceipt).findLast((receipt) => receipt !== undefined);
 }
 
 /**
@@ -141,9 +143,9 @@ async function runChild(child: EngineSession, brief: string, report: ChildReport
   const written = peekSessionFile(child.file).entries;
   const receipt = lastReceipt(written);
   const outcome = child.outcome() ?? (signal.aborted ? "aborted" : "error");
-  // A run that ends in error, such as on a provider's refusal, says why in its end (#564).
+  // A run that ends in error, such as on a provider's refusal, says why in its end.
   if (outcome === "error") failure ??= written.flatMap((entry) => entry.type === "run_end" ? [entry.reason] : []).at(-1);
-  const verification = receipt === undefined ? undefined : receiptStanding(receipt);
+  const verification = isReceipt(receipt) ? receiptStanding(receipt) : undefined;
   const kept = child.kept() !== undefined && child.workspace.branch !== undefined;
   const refused = floorRefusals(written).length;
   const ended: ChildReport = { ...report, outcome, ...verification === undefined ? {} : { verification },
@@ -154,7 +156,7 @@ async function runChild(child: EngineSession, brief: string, report: ChildReport
 }
 
 /**
- * The children `parent` starts (#525). A child is a session in the same
+ * The children `parent` starts. A child is a session in the same
  * sessions folder, its parent in its header, on the call's brief: one that
  * only reads shares the parent's folder with the read tools, read only; one
  * that writes always gets a worktree of its own and the parent's mode. It
@@ -182,7 +184,7 @@ export function agentHost(parent: Parent): AgentHost {
       const runnable = await modelFor(parent, request, type);
       if (typeof runnable === "string") return refused(runnable);
       const { model, unchecked } = runnable;
-      // A model kept unchecked is named in what the call returns, so the agent knows why a refusal may follow (#567).
+      // A model kept unchecked is named in what the call returns, so the agent knows why a refusal may follow.
       const withNote = (text: string): string => unchecked === undefined ? text : `${unchecked}\n\n${text}`;
       const depth = parent.depth + 1;
       parent.tree.running += 1;
@@ -215,7 +217,7 @@ export function agentHost(parent: Parent): AgentHost {
 }
 
 /**
- * How a child of `parent` starts (#619): one that writes, with Git's guard
+ * How a child of `parent` starts: one that writes, with Git's guard
  * on its branch, which needs Git 2.54, or without it only if the operator
  * said to warn or turned it off; one that only reads needs none.
  */
@@ -231,8 +233,9 @@ const guardMissing = (): string => `a subagent that writes needs Git 2.54 or lat
 /** The options a child of `parent` opens with. */
 function childOptions(parent: Parent, child: { readonly header: NonNullable<SessionHeader["parent"]>; readonly writes: boolean;
   readonly model: Model<Api>; readonly type: AgentType | undefined; readonly guarded: boolean }): SessionOptions {
+  // A child keeps no task list: the parent's list describes delegated work as its own items.
   const { permissions, mcp, questions: _questions, surface: _surface, instructions: _instructions, tools: _tools, child: _child,
-    ...inherited } = parent.options;
+    taskList: _taskList, ...inherited } = parent.options;
   const { cwd, checkout } = parent.workspace;
   const worktree = (id: string): Workspace => newWorktree(cwd, id, `${cwd} is not a Git repository with a commit, so a subagent `
     + "that writes has no worktree of its own to work in.");
@@ -244,6 +247,7 @@ function childOptions(parent: Parent, child: { readonly header: NonNullable<Sess
   const bind = !child.writes ? (): Workspace => ({ cwd, checkout, release: () => undefined }) : child.guarded ? guarded : worktree;
   return {
     ...inherited, cwd, folder: parent.folder, model: child.model, mode: "print",
+    requestReferences: parent.references(),
     child: { parent: child.header, bind, tree: parent.tree, types: parent.types,
       instructions: (at, branch) => [instructionsText(contextFiles(at), skillCatalog(skills(at), child.model.contextWindow)),
         childInstructions(child.writes, branch), child.type?.instructions ?? ""].filter((part) => part !== "").join("\n\n") },

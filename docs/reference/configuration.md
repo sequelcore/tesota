@@ -24,7 +24,6 @@ are optional; Tesota creates state files as needed.
 | `worktrees/` | The Git worktrees of [sessions](../guides/sessions.md) that run beside another |
 | `snapshots/` | Tesota's snapshots of folders in no repository |
 | `workspaces/` | Operating-system locks reserving checkouts for sessions |
-| `tools/tla2tools.jar` | TLC for [design model checks](../guides/model-checking.md); you put it there |
 
 No tool call may read or change `auth.json` or `mcp-auth.json`.
 
@@ -43,18 +42,21 @@ No tool call may read or change `auth.json` or `mcp-auth.json`.
 | --- | --- | --- |
 | `model` | `<provider>/<id>`, including `<provider>@<account>/<id>` | `/model` |
 | `openCasesModel` | `<provider>/<id>` or `off`; the session's model by default. `--open-cases-model` overrides it for one run | You |
-| `claimcheckModel` | `<provider>/<id>` for ClaimCheck's restating pass; the session's model by default. `--claimcheck-model` overrides it for one run | You |
+| `claimcheckModel` | `<provider>/<id>` for ClaimCheck's restating pass, or `off` to disable comparison; the session's model by default. `--claimcheck-model` overrides it for one run | You |
 | `accounts` | Array of named sign-ins; user settings only. See [Models](../guides/models.md) for fields and management | Account commands or you |
 | `thinkingLevel` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` | `/settings` |
 | `permissionMode` | `read`, `ask` (default), `full` | Shift+Tab |
 | `tuiMode` | `fullscreen` (default), `inline`; takes effect on next start. Windows over SSH uses inline | `/settings` |
 | `agentLimit` | How many [subagents](../guides/subagents.md) run at once across a session and its subagents: 1 to 16, 4 by default | You |
 | `subagentBranchGuard` | Whether Git keeps a [subagent that writes](../guides/subagents.md) off every branch but its own: `require` (default), `warn`, `off` | You |
+| `taskList` | Whether the agent keeps a [task list](../guides/sessions.md#the-agents-task-list): `true` or `false` (default) | You |
 | `hooks` | See [Hooks](../guides/hooks.md); read separately from the settings above | You |
 | `deviceId` | Installation UUID used by some sign-in flows | Generated when needed |
 
 Invalid values of known settings are left out and named at startup.
-Unknown keys are silently ignored. Saving a changed setting preserves
+Keys Tesota doesn't read do nothing. The shell, print mode and
+`tesota doctor` name them, with a suggestion when one is close to a real
+setting, and leave them in the file. Saving a changed setting preserves
 other keys under a lock, so two shells keep each other's changes.
 
 ## A project's files
@@ -64,11 +66,37 @@ other keys under a lock, so two shells keep each other's changes.
 | `.tesota/settings.json` | The project's [hooks](../guides/hooks.md), which run once you trust them |
 | `.tesota/mcp.json` | The project's [MCP servers](../guides/mcp.md), which start once you trust them |
 | `.tesota/permissions.json` | The project's `ask` and `deny` [rules](../guides/permissions.md#rules) |
+| `.tesota/checks.json` | The project's declared checks, below; run only with current operator trust |
 | `AGENTS.md`, or `CLAUDE.md` | [Instructions](../guides/instructions-and-skills.md), in any folder from the root down |
 | `.agents/skills/` | The project's [skills](../guides/instructions-and-skills.md#skills) |
 | `.agents/agents/` | The project's [agent types](../guides/subagents.md#agent-types) |
 | `package.json`, `build.gradle`, `pom.xml`, `Cargo.toml`, `go.mod` | The commands Tesota [checks the change with](../guides/verification.md#test-it-your-commands) |
 | `lemmascript.json` | Where LemmaScript keeps each file's proof (`proof-dir`) |
+
+### Project checks
+
+```json
+{
+  "checks": [{
+    "command": "./scripts/check",
+    "folder": "",
+    "timeoutSeconds": 300,
+    "report": "reports/tests.xml"
+  }]
+}
+```
+
+Declarations replace discovered checks for the checkout. `folder` is the
+execution directory relative to its root, independent of changed paths.
+`report` is optional JUnit XML, relative to that folder. Paths cannot leave
+the checkout, enter `.git`, or pass through links. Reports are cleared before
+execution. Commands use the verification shell.
+
+The file permits 1–32 checks in 64 KiB; each command permits 8 KiB.
+`timeoutSeconds` is an integer from 1 to 900, default 900. Unknown keys are
+invalid. The terminal shows commands before you trust their exact contents.
+Print and child sessions use existing trust. Changed, untrusted or invalid
+declarations leave a named gap and run no discovered substitute.
 
 ## Environment
 

@@ -115,12 +115,12 @@ it("names a removed or loosened contract, an added assumption and an added preco
   expect(contractWeakened(before, undefined, kept)).toEqual(["removed //@ ensures \\result >= 0", "ensures lines fell from 2 to 0"]);
 });
 
-it("puts the base's buggy body under the contract a run left, and registers three bugs a proved contract allowed", () => {
+it("puts the base's buggy body under the contract a run left, and registers three bugs a proved contract allowed", async () => {
   const base = "//@ ensures \\result >= 0\nexport function f(a: number): number {\n  return 1;\n}\n";
   const after = "//@ ensures \\result >= 0\n//@ ensures \\result === 0\nexport function f(a: number): number {\n  return 0;\n}\n";
-  expect(withBuggyBody(base, after, "src/f.ts", "f"))
+  expect((await withBuggyBody(base, after, "src/f.ts", "f")))
     .toBe("//@ ensures \\result >= 0\n//@ ensures \\result === 0\nexport function f(a: number): number {\n  return 1;\n}\n");
-  expect(withBuggyBody(base, "export const x = 1;\n", "src/f.ts", "f")).toBeUndefined();
+  expect((await withBuggyBody(base, "export const x = 1;\n", "src/f.ts", "f"))).toBeUndefined();
   expect(STRENGTHEN_CASES.map((entry) => entry.name))
     .toEqual(["clamp below the minimum", "discount at exactly 100", "maximum returns the first item"]);
   const root = mkdtempSync(join(tmpdir(), "tesota-eval-strengthen-"));
@@ -162,7 +162,7 @@ it.runIf(dafny)("proves each weak base and its reference fix, and the reference 
     const base = testCase.base[testCase.path] ?? "";
     expect(await prove(testCase.path, base), `${testCase.name} base`).toBe("passed");
     expect(await prove(testCase.path, testCase.reference), `${testCase.name} reference`).toBe("passed");
-    expect(await prove(testCase.path, withBuggyBody(base, testCase.reference, testCase.path, testCase.function)), `${testCase.name} bug`)
+    expect(await prove(testCase.path, (await withBuggyBody(base, testCase.reference, testCase.path, testCase.function))), `${testCase.name} bug`)
       .toBe("failed");
   }
 }, 900_000);

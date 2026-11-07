@@ -1,6 +1,6 @@
 # Commands and keys
 
-Run `tesota` in your project folder to open the shell. Use slash commands
+Run `tesota` in your project folder. Use slash commands
 inside the shell; use command-line options from your terminal.
 
 ## Command line
@@ -26,6 +26,7 @@ inside the shell; use command-line options from your terminal.
 | `--model <provider>/<id>` | `-p` | The model for this run |
 | `--claimcheck-model <provider>/<id>` | the shell, `-p` | The model that restates contracts for the comparison with your request |
 | `--open-cases-model <provider>/<id>`, or `off` | the shell, `-p` | The model that lists the cases your request leaves open |
+| `--require-model <path>` | `tesota`, `-p` | [Pin inputs](../receipt-v3.md#required-model) |
 
 ## Doctor
 
@@ -34,21 +35,21 @@ tesota doctor
 tesota doctor --json
 ```
 
-Lists Dafny with LemmaScript, Java with TLC, Quint, Git, Claude Code (each
+Lists Dafny with LemmaScript, tla-ts, Quint, Git, Claude Code (each
 account) and every chat provider with a local sign-in or key: its status,
 path, version, probe result, what the receipt loses without it, and a
 repair command from [Installation](installation.md#repair-commands). Git,
-Dafny, Java with TLC and a model provider are **core**; Quint and each
+Dafny, tla-ts and a model provider are **core**; Quint and each
 single provider are **optional**. JSON has the same report:
 `capabilities` (`id`, `requirement`, `status`, `path`, `version`, `smoke`,
-`consequence`, `repair`, and `entryPoint` for LemmaScript and TLC) and
-`exitCode`.
+`consequence`, `repair`, and `entryPoint` for LemmaScript and tla-ts),
+`warnings` and `exitCode`.
 
 - **available:** the version, help or sign-in probe passed.
 - **unavailable:** not found, no provider available, or Quint on Windows,
   where Apalache can't start.
 - **failed:** found, but the probe failed, timed out, or found an
-  unsupported version (Dafny must be 4, Java at least 11).
+  unsupported version (Dafny must be 4).
 
 Each probe has five seconds and runs in turn. Doctor never installs
 anything, runs tests, proofs or model checks, or sends a model request.
@@ -77,9 +78,11 @@ A nonzero result doesn't stop you using what is available.
 | `/settings` | Terminal mode (fullscreen or inline) and thinking level |
 | `/new` | Start another session beside this one |
 | `/resume` | Open an earlier session of this folder |
-| `/agents` | Open the dashboard of sessions |
+| `/agents` | Sessions dashboard |
+| `/agents types [name]` | Inspect [definitions](../guides/subagents.md#agent-types) |
+| `/warnings` | Retained warnings |
 | `/graph [--plain] [name]` | Open a [model graph](../guides/model-checking.md) a receipt captured; press `o` in the viewer to write HTML and open the system browser; `--plain` appends its text |
-| `/compact` | Summarize the older conversation |
+| `/context`, `/compact` | What fills context; summarize the older conversation |
 | `/mcp` | MCP servers: state, reconnect, sign in and out; also `/mcp login\|logout\|reconnect <server>` |
 | `/quit` | End the shell |
 | `/<skill> [arguments]` | Run a skill on the arguments ([Starting a skill by name](../guides/instructions-and-skills.md#starting-a-skill-by-name)) |
@@ -93,8 +96,9 @@ A nonzero result doesn't stop you using what is available.
 | Alt+Up (Alt+Q on Windows) | Return all pending steers and follow-ups to the input to edit or withdraw |
 | Esc | Stop the run and return pending messages to the input |
 | Shift+Tab | Switch the permission mode: ask, full access, read only |
-| Ctrl+O | Expand or fold tool output and Tesota's cards |
-| Ctrl+T | Open the dashboard |
+| Ctrl+O | Expand or fold tool output and cards |
+| Ctrl+T | Sessions dashboard |
+| F2 | View warnings |
 | Ctrl+C | Clear the input; twice on an empty input, end the shell |
 | Ctrl+D | End the shell, on an empty input |
 
@@ -149,10 +153,10 @@ submit the batch.
 
 | Key | Action |
 | --- | --- |
-| Tab, Shift+Tab, ←, → | Switch Usage and Accounts tabs |
+| Tab, Shift+Tab, ←, → | Switch Usage, Accounts and Roles tabs |
 | `r` | Read usage again |
-| ↑ ↓ | Scroll Usage or select an account on Accounts |
-| Page Up, Page Down | Scroll Usage by five rows or select the previous or next account on Accounts |
+| ↑ ↓ | Scroll, or select an account on Accounts |
+| Page Up, Page Down | Scroll by five rows, or select the previous or next account on Accounts |
 | Enter | Manage a declared account on Accounts: sign in again or remove it |
 | `a` | Add an account on Accounts |
 | Esc | Close the panel |

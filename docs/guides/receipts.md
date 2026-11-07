@@ -9,6 +9,11 @@ as request context, separate from evidence and acceptance. The shell shows
 their count; Ctrl+O expands the questions, choices you selected and your
 text. Exported Markdown and JSON retain this context too.
 
+Receipt v3 separates code evidence, mechanical specification evidence and
+request review. The last is always labeled as a model's opinion, including
+when it was disabled or could not run. A reported mismatch can coexist with
+passing checks; acceptance remains with the reviewer.
+
 ## Model graph previews
 
 When a run checked a TLA+ [design model](model-checking.md), the receipt
@@ -46,7 +51,8 @@ tesota receipt --json
 It writes the same receipt as an unsigned
 [in-toto Statement](https://github.com/in-toto/attestation/blob/main/spec/v1/statement.md)
 about the commit `HEAD` names, with the receipt as its predicate.
-[Receipt v2](../receipt-v2.md) specifies every field.
+[Receipt v3](../receipt-v3.md) specifies every field. Older formats are
+refused explicitly; their original JSON and specifications remain intact.
 
 ## Who is accountable
 
@@ -74,4 +80,4 @@ session's own worktree, run it there.
 ## Related
 
 - [Verification](verification.md)
-- [Receipt v2](../receipt-v2.md)
+- [Receipt v3](../receipt-v3.md)

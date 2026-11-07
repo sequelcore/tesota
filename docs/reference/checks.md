@@ -1,7 +1,7 @@
 # Checks
 
 Every rule each check follows. [How verification works](../concepts/verification.md)
-explains why; [Receipt v2](../receipt-v2.md) specifies what the receipt
+explains why; [Receipt v3](../receipt-v3.md) specifies what the receipt
 records.
 
 ## When a run is verified
@@ -21,7 +21,7 @@ unanswered question ends generation; the changes are still checked.
   stay out of proof and exercise scope; commands still run with them.
 - **Attribution:** when the captures and history can't credit a change to
   the request, its files are still checked, but measurements that need a
-  reliable start are left out ([Receipt v2](../receipt-v2.md#capturestate)).
+  reliable start are left out ([Receipt v3](../receipt-v3.md#run-metadata)).
 - **Gaps:** an unreadable capture or a file too large to hash can't show
   that nothing changed. Weakening checks compare with the starting commit.
 - **Outside Git:** a private snapshot in `~/.tesota/snapshots`, without
@@ -35,12 +35,10 @@ A failure goes back unless the same one already did, compared by proof
 output, failing test names, surviving changes or counterexamples. A
 command without test reports gets one repair attempt.
 
-A failing project command runs again in a worktree of the starting commit.
-It stays from the agent only when the base fails the same way and both
-runs' test reports show each failing test failing there too; the receipt
-records it as failing before the change. Without reports, a base that
-can't run, or a request that didn't start from it, the failure goes back
-with that reason. The engine allows 32 automatic continuations per run.
+A failed project command runs on the starting commit too. A failure stays
+from the agent only when both test reports show every failing test failing
+there. Otherwise it returns with the attribution gap; the engine allows
+32 automatic continuations. A timeout stays unknown and never runs on the base.
 
 ## Proofs
 
@@ -52,7 +50,13 @@ sources, or under `proof-dir` in `lemmascript.json`; a changed `.dfy` or
 
 A proof is conditional on `//@ assume`, `//@ extern`, `//@ skip`, selective
 `//@ verify` and hand-written Dafny axioms, and is shown with those
-qualifications. It holds in LemmaScript's model of TypeScript:
+qualifications.
+
+Selection and attachment come from LemmaScript's metadata;
+[dropped specifications and abstraction limits](../receipt-v2.md#evidence)
+are gaps. Tesota's parser supplies positions only.
+
+A proof holds in LemmaScript's model of TypeScript:
 
 - Numbers are mathematical integers, or exact reals for non-integer
   literals: `0.1 + 0.2 == 0.3` proves. No 53-bit bound, no `NaN`,
@@ -87,6 +91,9 @@ members from `package.json` or `pnpm-workspace.yaml` keep their own
 commands, and the root owns files outside them. Each command has fifteen
 minutes; on Windows they run in Git's bash.
 
+[Declared checks](configuration.md#project-checks) replace discovery;
+plain test scripts receive fresh reports.
+
 Changed test files run against the starting code in a temporary worktree,
 through the owning package's `test` script: alone for plain Bun, Vitest
 and Jest scripts, otherwise as the project's whole checks. A member
@@ -101,8 +108,8 @@ change. Changed dependency manifests or lockfiles leave the result unknown.
 
 ## Design models
 
-TLC explores every reachable state of the configured model; its
-constants, constraints or a depth limit set the bounds. The `tesota-model`
+TLC explores every reachable state of the configured model with one
+worker; constants, constraints or depth limits bound it. The `tesota-model`
 header names the covered code, invariants, atomic steps, omissions and
 planted faults. A model is checked when its files, faults or covered code
 change; a passing check is reused for the same content.
@@ -133,9 +140,9 @@ reported as unchecked.
 
 - **ClaimCheck:** one request restates each contract without your request;
   another compares that with your request.
-- **Open cases:** reads your saved request, without the change or the
-  files and URLs it names, and lists inputs with more than one plausible
-  result. Two minutes; `off` turns it off.
+- **Open cases:** reads saved requests and supplied issue context, excluding
+  the change, other files and URLs; lists inputs with multiple plausible
+  results. Two minutes; `off` turns it off.
 
 Both read, before your request, the earlier unverified requests back to
 the last successful settlement, as many whole requests as fit the model's

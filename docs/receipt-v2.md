@@ -145,6 +145,21 @@ apply.
 | `clarifications` | Clarification[], optional | Explicitly submitted answers to the agent's questions, in submission order. Records request context; submitting an answer does not establish check evidence, execution permission or acceptance. Absent when no batch was submitted |
 | `children` | Child[], optional | The [subagents](guides/subagents.md) the run started, in the order they ended: who did what. Each child's receipt covers its own branch; the parent checks adopted changes in its workspace. Absent when the run started none |
 | `floorRefusals` | FloorRefusal[], optional | The calls Tesota's [floor](guides/permissions.md#the-floor) refused in the request, in order: `tool`, `subject` (what the call named, on one line and cut to 80 characters) and `reason`. Rendered without `subject`, which may be a secret's path. A refusal records that one call did not run. It does not establish what ran instead and contributes neither check evidence nor a standing decision. Absent when there were none |
+| `externalEffects` | ExternalEffect[], optional | Potentially writing MCP calls, in invocation order, including errors and interrupted calls. Explicit `readOnlyTools` declarations in `mcp.json` exclude tools; server annotations do not. These calls are unverified and prevent overall `verified` or `unchanged` standing. File evidence remains available; an established `failed` standing remains failed |
+
+### ExternalEffect
+
+Each call records `server` and the original server-side `tool`, `callId`,
+`argumentsHash` (SHA-256 of UTF-8 `JSON.stringify` of the invocation's
+arguments), and `startedAt`. Arguments themselves are not copied into the
+receipt. `outcome` is `returned`, `error`, or `unknown` when no result was
+recorded. A returned call is not evidence of persistence. Recovery retains
+unknown effects, and continuing an unresolved request retains its calls.
+
+This is an additive v2 field, approved on 2026-11-01. An absent field in an
+older receipt does not establish that no external effects occurred. These
+receipts remain subject to the existing export rule: an `incomplete` receipt
+cannot be exported as a completed in-toto Statement.
 
 ### RequestJudgment
 
@@ -159,6 +174,17 @@ entries and the shared open-cases context, in both JSON and Markdown.
 | `folder` | string | The ClaimCheck unit's folder, or the empty string for the root or shared open-cases context |
 | `requests` | { run: number, text: string[] }[] | Whole requests supplied, oldest first. `run` is the session's request number; `text` is its original text followed by operator amendments and clarifications in order. Extension input is excluded |
 | `omitted` | number[] | Earlier request numbers left out for context capacity, oldest first. Empty when all fit. No request is truncated |
+| `references` | ReferenceProvenance[], optional | Third-party issue snapshots supplied separately from operator text, and explicit unavailable references. Context only; never affects standing, repair or permissions. Historical absence means unknown reference provenance |
+
+A **ReferenceProvenance** is either `{ status: "read", source, callId, digest }`
+or `{ status: "unavailable", source, reason }`, with string fields. `source`
+identifies the issue; `digest` is SHA-256 of the exact text returned by the
+recorded tool call. It establishes neither authenticity nor correctness.
+The text stays in session context and is not duplicated here. Whole snapshots
+are bounded with their requests; a context-capacity omission records an
+unavailable reference. Terminal and Markdown name each supplied source or gap;
+JSON retains the same metadata. These fields are additive to v2 and do not
+reconstruct missing historical context.
 
 For example, `ClaimCheck context: requests 1 and 3` names the supplied
 context. `ClaimCheck left out request 2: context capacity` makes an omission
@@ -342,6 +368,7 @@ outside Git have empty `inherited` and `unmeasured` lists.
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `command` | string | The command, as a POSIX shell runs it from the project folder, such as `cd web && bun run check` |
+| `declaration` | { hash: string, index: number }, optional | A declared invocation's SHA-256 configuration identity and zero-based check index; separates repair history when command strings repeat. Absent for discovered commands |
 | `evidence` | Evidence | The command's evidence |
 | `failingTests` | string[], optional | The failing tests' names, sorted, from the JUnit XML reports the command wrote. Absent when it wrote none |
 | `origin` | CommandOrigin, optional | Why it fails, from a run on the base. Present when it failed or ran past its limit and verification compared it with the base |
@@ -379,6 +406,8 @@ request a repair, record a repeated failure or leave a limit for you.
 | `durationMs` | number | How long the run took, in milliseconds |
 | `files` | string[] | The files the run checked, in the order `contentHash` covers them: for a proof, the TypeScript file and then its `.dfy`; for a command, the changed files; for a design model, the design model, a TLA+ model's `.cfg`, each fault (with a TLA+ fault's `.cfg`), then each covered file |
 | `contentHash` | string | Lowercase hex SHA-256 of the UTF-8 JSON array `[[path, content], …]` for `files` in order, `content` being the file's text or `null` when unreadable, as `JSON.stringify` writes it |
+| `proofInfo` | object, optional | Dependency-reported proof scope: `status: "read"` with selected `functions` (name, attached `clauses` and `bodyClauses`), typed `trusted` abstractions (name, annotation), and optional `semanticGap`; or `status: "unavailable"` with `reason`. Read with `extract` and schema-1 `info --typed`, bound to the checked source hash |
+| `unreadSpecifications` | { line: number, text: string }[], optional | Source specification lines absent from LemmaScript's attached clauses. These are coverage gaps, even when another function proves. Lines are 1-based |
 
 `invalidated` records the reason final verification rejected existing evidence, not a
 second verification status. The hashes detect the content mismatch; this

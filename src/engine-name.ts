@@ -3,11 +3,11 @@ import { inBinary } from "./binary.js";
 import { gitOutput } from "./git.js";
 import { host } from "./host.js";
 
-/** Tesota's own checkout: the folder above `src/`, never the workspace Tesota works on (#639). */
+/** Tesota's own checkout: the folder above `src/`, never the workspace Tesota works on. */
 const ownFolder = fileURLToPath(new URL("..", import.meta.url));
 
 /**
- * The engine a receipt names (#639): a released binary's plain version; a build
+ * The engine a receipt names: a released binary's plain version; a build
  * from source, the version plus the commit of `folder`, Tesota's own checkout,
  * and `.dirty` when it has changes, or `+unknown` when Git can't read it.
  */
@@ -24,7 +24,7 @@ async function read(version: string, from: { released: boolean; folder: string }
 const lookupLimitMs = 10_000;
 
 export async function engineOf(version: string, from: { released: boolean; folder: string }): Promise<string> {
-  // At the limit the engine is `+unknown`, and the Git still running is stopped with every process it started (#648).
+  // At the limit the engine is `+unknown`, and the Git still running is stopped with every process it started.
   const stop = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const unknown = new Promise<string>((resolve) => { timer = setTimeout(() => { stop.abort(); resolve(`${version}+unknown`); }, lookupLimitMs); });

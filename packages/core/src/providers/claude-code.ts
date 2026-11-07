@@ -1,7 +1,8 @@
 import type { Options, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { type Api, type AssistantMessage, type AssistantMessageEventStream, calculateCost, createAssistantMessageEventStream,
-  getCurrentSystemPrompt, getCurrentTools, type ImageContent, type Message, type Model, type Provider, type SimpleStreamOptions,
-  type TextContent, type Tool, type ToolCall, type ToolResultMessage } from "@earendil-works/pi-ai";
+  getCurrentSystemPrompt, getCurrentTools, getSystemMessageText, type ImageContent, type Message, type Model, type Provider,
+  renderSystemMessageUpdate, type SimpleStreamOptions, type SystemMessage, type TextContent, type Tool, type ToolCall,
+  type ToolResultMessage } from "@earendil-works/pi-ai";
 import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, rmdirSync } from "node:fs";
@@ -10,7 +11,7 @@ import { dirname, join } from "node:path";
 import { goesOn } from "../handback-rule.ts";
 
 /**
- * Claude through the operator's own Claude Code (#546): a model provider,
+ * Claude through the operator's own Claude Code: a model provider,
  * `claude-code`, that runs the unmodified Claude Code program the Claude
  * Agent SDK bundles for the platform. Claude Code answers each step and
  * runs nothing: its built-in tools are off, and Tesota's tools are declared
@@ -70,7 +71,7 @@ export const claudeCodeSignIn = "Claude through your own Claude Code: sign in th
  * The Claude Code program to run: the one the SDK installs for this
  * platform, when Tesota runs from source, or else the operator's own
  * `claude` on the `PATH`, since a compiled `tesota` has no SDK install to
- * find it in (#570). `CLAUDE_CODE_EXECUTABLE` explicitly selects a program
+ * find it in. `CLAUDE_CODE_EXECUTABLE` explicitly selects a program
  * instead (also used by the isolated test runner). None when neither is there.
  */
 export function claudeCodeExecutable(installed: () => string | undefined = () => process.env["CLAUDE_CODE_EXECUTABLE"] ?? sdkClaudeCode()): string | undefined {
@@ -112,7 +113,7 @@ const checking = new WeakMap<typeof execFile, Map<string, Promise<ClaudeCodeStat
 /**
  * Non-secret account metadata from Claude Code itself; never reads its
  * credential files. `signal` stops Claude Code when it aborts. Checks of one
- * folder at the same time share one run (#744): `/model` asks a provider's
+ * folder at the same time share one run: `/model` asks a provider's
  * sign-in and its account label together. A check with a signal runs on its
  * own, so stopping it stops no one else's, and nothing is kept once a check
  * returns, so signing in or out elsewhere shows at the next one.
@@ -146,7 +147,7 @@ function statusOf(configDir: string | undefined, execute: typeof execFile, signa
 
 /**
  * Claude Code's own sign-in (`claude auth login`) for the account in
- * `configDir` (#642), on the operator's terminal: Tesota starts it and waits,
+ * `configDir`, on the operator's terminal: Tesota starts it and waits,
  * and never sees what it asks or stores. Settles when it ends, whether or not
  * it signed in; `claudeCodeStatus` says which.
  */
@@ -272,14 +273,16 @@ interface Transport { onmessage?: (message: Record<string, unknown>) => void; se
  * it to a transport, so it answers JSON-RPC itself, with the tools' JSON
  * Schemas as they are; a call waits for the engine's result (`answer`).
  */
-function toolServer(tools: readonly Tool[], answer: (callId: string) => Promise<McpResult>) {
+function toolServer(tools: () => readonly Tool[], answer: (callId: string) => Promise<McpResult>) {
+  let send: ((message: Record<string, unknown>) => Promise<void>) | undefined;
   const reply = async (request: Record<string, unknown>): Promise<unknown> => {
     const params = (request["params"] ?? {}) as Record<string, unknown>;
     if (request["method"] === "initialize") {
-      return { protocolVersion: params["protocolVersion"] ?? "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: server, version: "1.0.0" } };
+      return { protocolVersion: params["protocolVersion"] ?? "2025-06-18", capabilities: { tools: { listChanged: true } },
+        serverInfo: { name: server, version: "1.0.0" } };
     }
     if (request["method"] === "tools/list") {
-      return { tools: tools.map((tool) => ({ name: tool.name, description: tool.description, inputSchema: flatSchema(tool.parameters as Record<string, unknown>) })) };
+      return { tools: tools().map((tool) => ({ name: tool.name, description: tool.description, inputSchema: flatSchema(tool.parameters as Record<string, unknown>) })) };
     }
     if (request["method"] === "tools/call") {
       const callId = ((params["_meta"] ?? {}) as Record<string, unknown>)[toolUseIdKey];
@@ -291,6 +294,7 @@ function toolServer(tools: readonly Tool[], answer: (callId: string) => Promise<
   };
   const instance = {
     async connect(transport: Transport): Promise<void> {
+      send = (message) => transport.send(message);
       transport.onmessage = (request) => {
         if (request["id"] === undefined) return;
         void reply(request).then((result) => ({ jsonrpc: "2.0", id: request["id"], result }),
@@ -302,8 +306,18 @@ function toolServer(tools: readonly Tool[], answer: (callId: string) => Promise<
     },
   };
   // The SDK types the instance as the MCP SDK's server class, of which it calls only `connect`.
-  return { type: "sdk" as const, name: server, instance: instance as never };
+  return { config: { type: "sdk" as const, name: server, instance: instance as never },
+    /** Tells Claude Code the tools changed, so it lists them again. */
+    changed: (): void => { void send?.({ jsonrpc: "2.0", method: "notifications/tools/list_changed" }).catch(() => undefined); } };
 }
+
+/**
+ * What a conversation must still match to go on in its query: the
+ * transcript's leading system message, its text and tools. A later system
+ * message changes the prompt in place, so it never restarts the query.
+ */
+const leadingOf = (message: SystemMessage | undefined): string => message === undefined ? ""
+  : `${getSystemMessageText(message)}\n${toolNames(message.toolsAdded ?? [])}`;
 
 // --- The prompt Claude Code reads, kept open so a steer can reach it between a call and its result ---
 
@@ -391,19 +405,44 @@ class Conversation {
   readonly cwd: string;
   readonly configDir: string | undefined;
   readonly model: Model<Api>;
-  /** What the query was opened with, which a step must still match to go on in it. */
+  /** The prompt the query was opened with. */
   readonly system: string;
-  readonly tools: string;
-  readonly offered: ReadonlySet<string>;
+  /** The transcript's leading system message the query was opened from, which a step must still match to go on in it. */
+  readonly leading: string;
+  /** The tools Claude Code may call now, and how many of the transcript's system messages it has had. */
+  tools: readonly Tool[];
+  offered: ReadonlySet<string>;
+  systems: number;
+  /** Tells Claude Code the tools changed; set once the query opens. */
+  toolsChanged: () => void = () => undefined;
 
-  constructor(key: string | undefined, cwd: string, model: Model<Api>, system: string, tools: readonly Tool[], configDir?: string) {
+  constructor(key: string | undefined, cwd: string, model: Model<Api>, system: string, leading: string, tools: readonly Tool[],
+    systems: number, configDir?: string) {
     this.configDir = configDir;
     this.key = key;
     this.cwd = cwd;
     this.model = model;
     this.system = system;
-    this.tools = toolNames(tools);
+    this.leading = leading;
+    this.tools = tools;
     this.offered = new Set(tools.map(({ name }) => name));
+    this.systems = systems;
+  }
+
+  /**
+   * Takes in the system messages the transcript added since the query last
+   * had it: the tools as they are now, which Claude Code lists again,
+   * and each change of the prompt as a note it reads before going on.
+   */
+  update(systems: readonly SystemMessage[], tools: readonly Tool[]): TextContent[] {
+    const added = systems.slice(this.systems);
+    this.systems = systems.length;
+    if (toolNames(tools) !== toolNames(this.tools)) {
+      this.tools = tools;
+      this.offered = new Set(tools.map(({ name }) => name));
+      this.toolsChanged();
+    }
+    return added.map(renderSystemMessageUpdate).filter((text) => text !== "").map((text) => ({ type: "text", text }));
   }
 
   /** Starts a step: its reply streams to `stream`. */
@@ -602,22 +641,22 @@ class Conversation {
   }
 
   /** Whether `messages` go on from where the last step stopped: its reply, then every one of its calls' results, then maybe a steer. */
-  answers(model: Model<Api>, system: string, tools: string, messages: readonly Message[]): boolean {
+  answers(model: Model<Api>, leading: string, messages: readonly Message[]): boolean {
     const reply = messages[this.answeredAt - 1];
     const made = reply?.role === "assistant" ? reply.content.flatMap((block) => block.type === "toolCall" ? [block.id] : []) : [];
     const after = messages.slice(this.answeredAt);
     const results = after.slice(0, turnStart(after));
     const answered = this.calls.map((id) => results.some((message) => message.role === "toolResult" && message.toolCallId === id));
-    const same = !this.closed && this.stream === undefined && model.id === this.model.id && system === this.system && tools === this.tools
+    const same = !this.closed && this.stream === undefined && model.id === this.model.id && leading === this.leading
       && results.every((message) => message.role === "toolResult");
     return goesOn(same, this.calls, made, answered);
   }
 
-  /** Gives the engine's results to the MCP calls waiting on them, a steer first so Claude Code reads it before going on. */
-  async deliver(after: readonly Message[]): Promise<void> {
+  /** Gives the engine's results to the MCP calls waiting on them, a steer and the prompt's changes (`note`) first so Claude Code reads them before going on. */
+  async deliver(after: readonly Message[], note: readonly TextContent[]): Promise<void> {
     const calls = this.calls;
     this.calls = [];
-    const steer = after.slice(turnStart(after)).flatMap((message) => message.role === "user" ? userBlocks(message.content) : []);
+    const steer = [...note.length === 0 ? [] : userBlocks([...note]), ...after.slice(turnStart(after)).flatMap((message) => message.role === "user" ? userBlocks(message.content) : [])];
     if (steer.length > 0) await this.prompt.push(userMessage(steer, "next")).catch(() => undefined);
     for (const message of after) {
       if (message.role !== "toolResult" || !calls.includes(message.toolCallId)) continue;
@@ -689,8 +728,10 @@ export function claudeCodeProvider(anthropic: readonly Model<Api>[], options: Cl
     const effort = effortFor(model, options?.reasoning);
     const program = claudeCodeExecutable();
     const stderr: string[] = [];
+    const served = toolServer(() => conversation.tools, (id) => conversation.answer(id));
+    conversation.toolsChanged = served.changed;
     const query = (await sdk())({ prompt: conversation.prompt.stream, options: {
-      cwd, model: model.id, systemPrompt: conversation.system, tools: [], mcpServers: { [server]: toolServer(tools, (id) => conversation.answer(id)) },
+      cwd, model: model.id, systemPrompt: conversation.system, tools: [], mcpServers: { [server]: served.config },
       strictMcpConfig: true, settingSources: [], skills: [], settings: { autoMemoryEnabled: false },
       canUseTool: async (name, input) => name.startsWith(prefix) ? { behavior: "allow", updatedInput: input }
         : { behavior: "deny", message: "Only Tesota's tools are available." },
@@ -732,20 +773,21 @@ export function claudeCodeProvider(anthropic: readonly Model<Api>[], options: Cl
   function streamSimple(model: Model<Api>, context: { messages: Message[] }, options?: SimpleStreamOptions): AssistantMessageEventStream {
     const stream = createAssistantMessageEventStream();
     const messages = context.messages.filter((message) => message.role !== "system") as Message[];
+    const systems = context.messages.filter((message): message is SystemMessage => message.role === "system");
     const tools = getCurrentTools(context.messages);
-    const system = getCurrentSystemPrompt(context.messages);
+    const leading = leadingOf(systems[0]);
     const cwd = options?.metadata?.["cwd"];
     if (typeof cwd !== "string" || cwd === "") throw new Error("Claude Code requires the session's working folder in metadata.cwd.");
     const key = options?.sessionId;
     const parked = key === undefined ? undefined : live.get(key);
     let conversation: Conversation;
-    if (parked !== undefined && parked.cwd === cwd && parked.answers(model, system, toolNames(tools), messages)) {
+    if (parked !== undefined && parked.cwd === cwd && parked.answers(model, leading, messages)) {
       conversation = parked;
       conversation.begin(stream);
-      void conversation.deliver(messages.slice(conversation.answeredAt));
+      void conversation.deliver(messages.slice(conversation.answeredAt), conversation.update(systems, tools));
     } else {
       parked?.close();
-      conversation = new Conversation(key, cwd, model, system, tools, configDir);
+      conversation = new Conversation(key, cwd, model, getCurrentSystemPrompt(context.messages), leading, tools, systems.length, configDir);
       if (key !== undefined) live.set(key, conversation);
       conversation.begin(stream);
       open(conversation, model, messages, tools, options).catch((error: unknown) => {

@@ -11,6 +11,7 @@ import { copyFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import type { Core } from "cytoscape";
 import { runProcess } from "../src/process.js";
+import { tlaTsCommand } from "../src/model-check.js";
 
 function node<T extends Element = HTMLElement>(doc: Document, selector: string): T {
   const element = doc.querySelector<T>(selector);
@@ -108,11 +109,10 @@ it("writes a self-contained, CSP protected file beside the capture with escaped 
 it("renders the real 320-state fixture, conserves regrouped counts and shows the failing run alone, in order", async () => {
   const root = await mkdtemp(join(tmpdir(), "tesota-html-320-"));
   try {
-    const operator = JSON.parse(process.env["TESOTA_TEST_OPERATOR_HOME"] ?? "{}") as { HOME?: string; USERPROFILE?: string };
-    const jar = join(operator.USERPROFILE ?? operator.HOME ?? "", ".tesota", "tools", "tla2tools.jar");
+    const tlaTs = tlaTsCommand();
     for (const ext of ["tla", "cfg"]) await copyFile(new URL(`./fixtures/model-view/HostSessions.${ext}`, import.meta.url), join(root, `HostSessions.${ext}`));
     const chunks: Buffer[] = [];
-    const run = await runProcess("java", ["-cp", jar, "tlc2.TLC", "-workers", "1", "-continue", "-dump", "dot,actionlabels", "reached.dot", "HostSessions"], root, new AbortController().signal, 60_000, chunk => chunks.push(chunk));
+    const run = await runProcess(tlaTs.executable, [...tlaTs.args, "tlc2.TLC", "-workers", "1", "-continue", "-dump", "dot,actionlabels", "reached.dot", "HostSessions"], root, new AbortController().signal, 60_000, chunk => chunks.push(chunk));
     expect(run.exitCode).toBe(0);
     const capture = await captureGraph(join(root, "reached.dot"), Buffer.concat(chunks).toString("utf8"), {
       root, command: [], startedAt: "", finishedAt: "", processEnded: "exited", evidenceOutputHash: "", sessionFile: join(root, "s.jsonl"), model: "HostSessions.tla", config: "HostSessions.cfg", modelHash: "", configHash: "", effectiveConfigHash: "", evidenceHash: "", exitCode: 0,
@@ -163,7 +163,7 @@ it("renders the real 320-state fixture, conserves regrouped counts and shows the
       node<HTMLButtonElement>(doc, "#trace-toggle").click();
       expect(doc.querySelectorAll(".trace-step")).toHaveLength(data.view.trace.length);
       const leaves = cy.nodes().filter(n => n.isChildless());
-      expect(leaves).toHaveLength(data.view.trace.length); // #759: the run alone, not every member of its groups
+      expect(leaves).toHaveLength(data.view.trace.length); // The run alone, not every member of its groups
       expect(cy.nodes(":parent")).toHaveLength(0);
       expect(leaves.filter(n => n.hasClass("start")).map(n => n.data("members"))).toEqual([[data.view.trace[0].fingerprint]]);
       expect(leaves[0]?.data("label")).toContain("host:");

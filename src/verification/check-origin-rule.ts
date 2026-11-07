@@ -1,5 +1,17 @@
 export type CheckOutcome = "passed" | "failed" | "timed_out" | "cancelled" | "not_started" | "unconfirmed" | "changed_files";
 export type CheckOrigin = "introduced" | "preexisting" | "unknown";
+
+/** A check is fixed only when its comparable base failed and its candidate passed. */
+//@ ensures \result <==> (candidate === "passed" && base === "failed")
+export function fixedCheck(candidate: CheckOutcome, base: CheckOutcome): boolean {
+  return candidate === "passed" && base === "failed";
+}
+
+/** A source reversion is noticed only by a newly failing named assertion after a passing candidate control. */
+//@ ensures \result <==> (control === "passed" && reverted === "failed" && matchingAssertions > 0)
+export function sourceAssertion(control: CheckOutcome, reverted: CheckOutcome, matchingAssertions: number): boolean {
+  return control === "passed" && reverted === "failed" && matchingAssertions > 0;
+}
 /**
  * A test's status in the reports a check names: `absent` when every report was
  * read and none has the test, `unread` when a report could not be read.
@@ -7,6 +19,12 @@ export type CheckOrigin = "introduced" | "preexisting" | "unknown";
 export type TestStatus = "passed" | "failed" | "skipped" | "absent" | "unread";
 /** A test's result in the base's reports, or `none` when no report read there names it. */
 export type ReportedTest = "passed" | "failed" | "skipped" | "none";
+
+/** A runner's failed-test count is explained only by equally many reported failures and no unreported errors. */
+//@ ensures \result <==> (reported >= 0 && reported === failed && errors === 0)
+export function reportCoversFailures(reported: number, failed: number, errors: number): boolean {
+  return reported >= 0 && reported === failed && errors === 0;
+}
 
 /**
  * The status of a test on the base: its result there when a base
@@ -56,13 +74,13 @@ export function testOrigin(candidate: TestStatus, base: TestStatus): CheckOrigin
  * failed or timed out too and some test the command reports is introduced
  * (`testOrigin`); the failure was already there only when the base ends the
  * same way, no test is introduced, and the base's reports show each test that
- * fails with the changes failing there too (`failuresSeenOnBase`, #726).
+ * fails with the changes failing there too (`failuresSeenOnBase`).
  * Without that, an outcome alone can't tell a failure already there from one
  * the changes add to, such as a fourth lint error after three, so the cause
  * is unknown, never already there. Anything else, such as a base run that
  * could not start, was stopped or changed files, leaves the cause unknown.
  * Only a failure already there stays from the working agent. Two runs
- * compare only under the same conditions (#267): when they differed in
+ * compare only under the same conditions: when they differed in
  * something a command can depend on, such as whether its folder is a Git
  * repository, the cause is unknown.
  */

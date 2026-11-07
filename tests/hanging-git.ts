@@ -4,10 +4,10 @@ import { join } from "node:path";
 
 /**
  * A Git clean filter in the repository at `folder` that never answers, for
- * the paths `attributes` names, so Git's status of a changed one hangs
- * (#648). Its process records its parent, itself and the child it starts in
+ * the paths `attributes` names, so Git's status of a changed one hangs.
+ * Its process records its parent, itself and the child it starts in
  * `pids`. Both end on their own within a moment of `release`, or of the test's
- * process ending, so none outlives the test however it ends (#691).
+ * process ending, so none outlives the test however it ends.
  */
 export function hangingFilter(folder: string, attributes: string): { pids: string; release: () => void } {
   const pids = join(folder, ".git", "pids");

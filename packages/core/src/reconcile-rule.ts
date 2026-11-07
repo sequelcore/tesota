@@ -5,13 +5,13 @@ export const notRun = 2;
 export const noEffect = 3;
 
 /**
- * What recovery adds for each call of a session's replies (#437). Call `i`
+ * What recovery adds for each call of a session's replies. Call `i`
  * has a result the session saw (`seen[i]`), had its intent recorded before
  * it ran (`intended[i]`), or was already repaired by an earlier recovery
  * (`repaired[i]`). A call with a result or a repair gets nothing, so no
  * result is replaced and recovery run again adds nothing. Every other call
  * gets exactly one repair: "no effect" when its intent was recorded and
- * its declared access only reads (`readOnly[i]`), "outcome unknown" for
+ * the gate's rule says it cannot change files (`readOnly[i]`), "outcome unknown" for
  * other intended calls, and "not run" when it never started. No repair
  * claims the call succeeded, and none runs it again.
  */

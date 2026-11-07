@@ -12,7 +12,7 @@ import { createSession, type EngineSession } from "../src/session.ts";
 import { writeSettings } from "../src/settings.ts";
 import { accepts, scriptedReply, signInWithChatGPT } from "./scripted.ts";
 
-/** The models a session runs on (#443): pi-ai's catalog over the engine's credentials, never the operator's real ones. */
+/** The models a session runs on: pi-ai's catalog over the engine's credentials, never the operator's real ones. */
 const folder = (prefix: string): string => mkdtempSync(join(tmpdir(), prefix));
 const open: EngineSession[] = [];
 const saved = process.env["ANTHROPIC_API_KEY"];
@@ -77,6 +77,15 @@ describe("the engine's models", () => {
         expect(errors).toContain("openai-codex@print/gpt-");
       }
     } finally { await credentials.delete("openai-codex@print"); }
+  });
+
+  test("print mode names a settings key Tesota does not read, with the file (#714)", async () => {
+    const settingsPath = join(folder("tesota-print-unknown-"), "settings.json");
+    writeFileSync(settingsPath, JSON.stringify({ tlcPath: "/tools/tla2tools.jar", hooks: {} }));
+    let errors = "";
+    expect(await runPrint(["hi", "--model", "nope/none"], folder("tesota-print-cwd-"), { out: () => undefined, error: (text) => { errors += text; } },
+      {}, settingsPath)).toBe(1);
+    expect(errors).toContain(`Settings Tesota does not know, in ${settingsPath}, did nothing: tlcPath.`);
   });
 
   test("instances are labeled by signed-in identity and duplicates flagged, including defaults", async () => {
@@ -322,18 +331,20 @@ describe("the engine's models", () => {
     }
   });
 
-  test("-p names an agent type whose model it does not run, with the model it runs on instead (#568)", async () => {
+  test.each(["claude.model: opus", "model: sonnet"])("-p reports only unsupported native agent models: %s (#794)", async (field) => {
     const credentials = new InMemoryCredentialStore();
     const models = await engineModels(credentials);
     const signOut = await signInWithChatGPT(models, credentials, "offline");
     try {
       const cwd = folder("tesota-core-print-cwd-");
       mkdirSync(join(cwd, ".agents", "agents"), { recursive: true });
-      writeFileSync(join(cwd, ".agents", "agents", "advisor.md"), "---\nname: advisor\ndescription: Advises\nclaude.model: opus\n---\nAdvise.\n");
+      writeFileSync(join(cwd, ".agents", "agents", "advisor.md"), `---\nname: advisor\ndescription: Advises\n${field}\n---\nAdvise.\n`);
       let errors = "";
       await runPrint(["hi", "--model", "openai/gpt-6.1-sol"], cwd, { out: () => undefined, error: (text) => { errors += text; } },
         {}, join(folder("tesota-core-print-"), "settings.json"), models);
-      expect(errors).toContain("Agent type advisor (claude.model) runs on the session's model, openai/gpt-6.1-sol, unless the call names one");
+      expect(errors.includes("1 agent type has an unsupported model. See /agents types.")).toBe(field.startsWith("model:"));
+      expect(errors).not.toContain("claude.model");
+      expect(errors).not.toContain("takes a type's model");
     } finally {
       signOut();
     }

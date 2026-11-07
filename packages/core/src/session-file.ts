@@ -1,4 +1,5 @@
-import type { AssistantMessage, ToolResultMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage, SystemMessage, ToolResultMessage } from "@earendil-works/pi-ai";
+import type { ExternalEffect } from "../../../src/receipt.ts";
 import { closeSync, fsyncSync, ftruncateSync, openSync, readFileSync, renameSync, writeSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Base } from "./base.ts";
@@ -8,37 +9,41 @@ import type { StartedSkill } from "./instructions.ts";
 import { validateAnswers, validateQuestions } from "./questions-schema.ts";
 import { floorNotice } from "./permissions.ts";
 import type { PromptOptions, RunOutcome, SessionOutcome } from "../../../src/contract.ts";
+import { inProject } from "../../../src/model-files.ts";
 
 /**
- * Tesota's session format (#437): one JSON Lines file per session, written
+ * Tesota's session format: one JSON Lines file per session, written
  * by one writer and only appended to. Its first line is the header; the
  * rest are entries, in the order they happened. The request ledger is the
  * `request`, `amendment` and `clarification` entries: written, and synced, before the model
- * hears of them, and never rewritten. Version 2 (#439) records each run's
+ * hears of them, and never rewritten. Version 2 records each run's
  * settlement, and a run ends `completed` only after its verifier's. Version 3
- * (#520) records submitted native questions as attributed request input.
- * Version 4 (#541) records each call's declared access and keeps an interrupted call's output.
- * Version 5 (#525) records the jobs a run starts and how each ended, and a
- * child session names its parent in its header. Version 6 (#606) records
+ * records submitted native questions as attributed request input.
+ * Version 4 records each call's declared access and keeps an interrupted call's output.
+ * Version 5 records the jobs a run starts and how each ended, and a
+ * child session names its parent in its header. Version 6 records
  * withdrawal of pending amendments without erasing the original input.
+ * Version 7 records the system prompt and tools as the model has them:
+ * a leading system message, then each change appended, in place of the
+ * active tools' names.
  */
 export const sessionFormat = "tesota-session";
-export const sessionVersion = 6;
+export const sessionVersion = 7;
 
 export interface SessionHeader {
   readonly type: "session";
   readonly format: typeof sessionFormat;
   readonly version: typeof sessionVersion;
   readonly id: string;
-  /** The folder the session works in: its checkout, or the same folder inside its worktree (#453). */
+  /** The folder the session works in: its checkout, or the same folder inside its worktree. */
   readonly cwd: string;
   readonly createdAt: string;
-  /** Where the session was opened, and its worktree, branch and starting commit when it has one (#453). */
+  /** Where the session was opened, and its worktree, branch and starting commit when it has one. */
   readonly checkout?: string;
   readonly worktree?: string;
   readonly branch?: string;
   readonly base?: string;
-  /** A child session's parent (#525): its session's id, the job that started this one, and how far below the top session it is. */
+  /** A child session's parent: its session's id, the job that started this one, and how far below the top session it is. */
   readonly parent?: { readonly session: string; readonly job: string; readonly depth: number };
 }
 
@@ -57,13 +62,13 @@ export type SettlePhase = "extensions" | "verifier";
 export type SessionEntry =
   /**
    * The operator's request, which starts run `run`, and the base it is
-   * measured against. A request that starts a skill by name (#540) keeps the
+   * measured against. A request that starts a skill by name keeps the
    * line the operator typed as `text` and the skill's instructions apart, so
    * only the model reads them.
    */
   | { readonly type: "request"; readonly run: number; readonly text: string; readonly origin: Origin; readonly at: string;
     readonly base: Base; readonly skill?: StartedSkill }
-  /** Input accepted while run `run` was going; one that starts a skill by name keeps it apart, as a request does (#540). */
+  /** Input accepted while run `run` was going; one that starts a skill by name keeps it apart, as a request does. */
   | { readonly type: "amendment"; readonly run: number; readonly id: number; readonly behavior: Behavior;
     readonly origin: Origin; readonly text: string; readonly at: string; readonly skill?: StartedSkill }
   /** A submitted native answer. Its batch is immutable and belongs to one assistant reply and call. */
@@ -76,10 +81,11 @@ export type SessionEntry =
   /**
    * A call is about to run; recorded, and synced, first. `tool` is what the
    * gate is told as it starts, from which recovery decides, by the gate's
-   * rule, whether it may have changed files (#599); an older file has none.
+   * rule, whether it may have changed files; an older file has none.
    */
   | { readonly type: "call_intent"; readonly run: number; readonly callId: string; readonly access: "read" | "write" | "run";
-    readonly tool?: { readonly name: string; readonly nativeQuestion: boolean; readonly readOnly: boolean } }
+    readonly tool?: { readonly name: string; readonly nativeQuestion: boolean; readonly readOnly: boolean };
+    readonly externalEffect?: Omit<ExternalEffect, "outcome"> }
   /** A call's result: the one the model saw, of a call that ran or was refused. */
   | { readonly type: "tool_result"; readonly run: number; readonly message: ToolResultMessage }
   /** Recovery's repair of call `callId` of reply `reply` (counted from 0 in its run), which has no result. */
@@ -98,12 +104,12 @@ export type SessionEntry =
   /** Data a settle handler recorded outside the conversation. */
   | { readonly type: "custom"; readonly run: number; readonly customType: string; readonly data?: unknown }
   /**
-   * The conversation was compacted during or after run `run` (#451): from
+   * The conversation was compacted during or after run `run`: from
    * then on it holds the run's request and amendments as given, `summary` in
    * place of everything before the last `kept` messages, and those messages.
    * `read` and `changed` are the files the summarized messages touched.
    */
-  /** What a compaction's summary request used (#451), so the session's usage counts it after a resume. */
+  /** What a compaction's summary request used, so the session's usage counts it after a resume. */
   | { readonly type: "summary_usage"; readonly run: number; readonly input: number; readonly output: number; readonly total: number }
   | { readonly type: "compaction"; readonly run: number; readonly summary: string; readonly kept: number;
     readonly read: readonly string[]; readonly changed: readonly string[]; readonly tokensBefore: number;
@@ -116,17 +122,21 @@ export type SessionEntry =
   | { readonly type: "settled"; readonly run: number; readonly generation: number; readonly phase: SettlePhase;
     readonly continued: boolean; readonly errors: readonly string[]; readonly registered: boolean }
   /**
-   * Whether call `callId` of run `run` may run, and who decided it (#449):
+   * Whether call `callId` of run `run` may run, and who decided it:
    * the floor, the mode, a rule, the operator asked once or for the session,
    * or, with no one to ask, the floor's refusal of an earlier call in the
-   * same request (`after_floor`, #622).
+   * same request (`after_floor`).
    */
   | { readonly type: "permission"; readonly run: number; readonly callId: string; readonly decision: "allow" | "deny";
     readonly by: "floor" | "mode" | "rule" | "operator" | "session" | "hook" | "after_floor"; readonly reason: string }
-  /** The tools the model may call from now on, as extensions set them (#441); a resumed session restores the last. */
-  | { readonly type: "active_tools"; readonly names: readonly string[] }
   /**
-   * Job `job` of run `run` starts (#525), recorded and synced before it
+   * The system prompt and tools the model has from here on: the
+   * session's leading system message, or a change to it appended after the
+   * conversation so far. A compaction starts them over with a new leading one.
+   */
+  | { readonly type: "system"; readonly message: SystemMessage }
+  /**
+   * Job `job` of run `run` starts, recorded and synced before it
    * runs: an agent job's child session, in `session`, from call `callId`. A
    * background job's end comes as input; the call waits for one that is not.
    */
@@ -154,7 +164,14 @@ const isObject = (value: unknown): value is Record<string, unknown> => typeof va
 const isText = (value: unknown): boolean => typeof value === "string";
 const isCount = (value: unknown): boolean => Number.isInteger(value) && (value as number) >= 1;
 const isFlag = (value: unknown): boolean => typeof value === "boolean";
-/** A started skill, when the entry has one (#540). */
+/** A retained model pin is an input identity, never reconstructed from current project files. */
+const isRequiredModel = (value: unknown): boolean => value === undefined || (isObject(value)
+  && typeof value["folder"] === "string" && inProject(value["folder"])
+  && typeof value["path"] === "string" && inProject(value["path"]) && /\.(?:tla|qnt)$/u.test(value["path"])
+  && typeof value["contentHash"] === "string" && /^[a-f0-9]{64}$/u.test(value["contentHash"])
+  && Array.isArray(value["files"]) && value["files"].includes(value["path"])
+  && value["files"].every((file: unknown) => typeof file === "string" && inProject(file)));
+/** A started skill, when the entry has one. */
 const isSkill = (value: unknown): boolean => value === undefined
   || (isObject(value) && isText(value["name"]) && isText(value["path"]) && isText(value["instructions"]));
 const origins = new Set(["interactive", "rpc", "extension"]);
@@ -163,7 +180,7 @@ const phases = new Set(["extensions", "verifier"]);
 /** What each entry must hold besides its run, as far as reading it back depends on. */
 const shapes: Record<SessionEntry["type"], (entry: Record<string, unknown>) => boolean> = {
   request: (entry) => isText(entry["text"]) && origins.has(entry["origin"] as string) && isText(entry["at"])
-    && isObject(entry["base"]) && Array.isArray(entry["base"]["units"]) && isSkill(entry["skill"]),
+    && isObject(entry["base"]) && Array.isArray(entry["base"]["units"]) && isRequiredModel(entry["base"]["requiredModel"]) && isSkill(entry["skill"]),
   amendment: (entry) => isCount(entry["id"]) && (entry["behavior"] === "steer" || entry["behavior"] === "followUp")
     && origins.has(entry["origin"] as string) && isText(entry["text"]) && isText(entry["at"]) && isSkill(entry["skill"]),
   clarification: (entry) => isObject(entry["clarification"]) && Number.isInteger(entry["clarification"]["reply"])
@@ -174,7 +191,11 @@ const shapes: Record<SessionEntry["type"], (entry: Record<string, unknown>) => b
   assistant: (entry) => isObject(entry["message"]) && entry["message"]["role"] === "assistant" && Array.isArray(entry["message"]["content"]),
   call_intent: (entry) => isText(entry["callId"]) && ["read", "write", "run"].includes(entry["access"] as string)
     && (entry["tool"] === undefined || isObject(entry["tool"]) && isText(entry["tool"]["name"]) && isFlag(entry["tool"]["nativeQuestion"])
-      && isFlag(entry["tool"]["readOnly"])),
+      && isFlag(entry["tool"]["readOnly"]))
+    && (entry["externalEffect"] === undefined || isObject(entry["externalEffect"])
+      && isText(entry["externalEffect"]["server"]) && isText(entry["externalEffect"]["tool"])
+      && entry["externalEffect"]["callId"] === entry["callId"] && isText(entry["externalEffect"]["startedAt"])
+      && typeof entry["externalEffect"]["argumentsHash"] === "string" && /^[a-f0-9]{64}$/u.test(entry["externalEffect"]["argumentsHash"])),
   tool_result: (entry) => isObject(entry["message"]) && entry["message"]["role"] === "toolResult",
   reconciliation: (entry) => Number.isInteger(entry["reply"]) && isText(entry["callId"]) && isText(entry["toolName"])
     && ["outcome_unknown", "not_run", "no_effect"].includes(entry["repair"] as string)
@@ -188,7 +209,7 @@ const shapes: Record<SessionEntry["type"], (entry: Record<string, unknown>) => b
     && Number.isInteger(entry["tokensBefore"]) && Number.isInteger(entry["tokensAfter"]),
   settled: (entry) => Number.isInteger(entry["generation"]) && phases.has(entry["phase"] as string) && isFlag(entry["continued"])
     && Array.isArray(entry["errors"]) && entry["errors"].every(isText) && isFlag(entry["registered"]),
-  active_tools: (entry) => Array.isArray(entry["names"]) && entry["names"].every(isText),
+  system: (entry) => isObject(entry["message"]) && entry["message"]["role"] === "system",
   permission: (entry) => isText(entry["callId"]) && (entry["decision"] === "allow" || entry["decision"] === "deny")
     && ["floor", "mode", "rule", "operator", "session", "hook", "after_floor"].includes(entry["by"] as string) && isText(entry["reason"]),
   job_start: (entry) => isText(entry["job"]) && isText(entry["callId"]) && entry["kind"] === "agent" && isText(entry["description"])
@@ -210,9 +231,9 @@ function entryAt(value: unknown, runs: number, previous: SessionEntry | undefine
   if (!isObject(value) || typeof value["type"] !== "string" || !(value["type"] in shapes)) return undefined;
   const type = value["type"] as SessionEntry["type"];
   const run = value["run"];
-  // The active tools belong to the session, not to a run: an extension sets them before the first.
+  // The system prompt belongs to the session, not to a run: an extension may change it before the first.
   const placed = type === "request" ? run === runs + 1
-    : type === "active_tools" ? run === undefined : isCount(run) && (run as number) <= runs;
+    : type === "system" ? run === undefined : isCount(run) && (run as number) <= runs;
   const completes = type === "run_end" && value["outcome"] === "completed";
   return placed && shapes[type](value) && (!completes || (previous?.type === "settled" && verifiedBy(previous) && previous.run === run))
     ? value as unknown as SessionEntry : undefined;
@@ -291,7 +312,7 @@ export function readSessionFile(path: string): ReadSession {
 
 /**
  * A session read by someone other than its writer, as `tesota receipt`
- * reads one (#463): its whole lines only, and the file left as it is, since
+ * reads one: its whole lines only, and the file left as it is, since
  * its writer may be appending the last line now.
  */
 export function peekSessionFile(path: string): Omit<ReadSession, "tail"> {
@@ -378,7 +399,7 @@ function subjectOf(said: unknown): string {
   return subject.length > 80 ? `${subject.slice(0, 79)}…` : subject;
 }
 
-/** The calls Tesota's floor refused in run `run`, or in every run, from the session's permission entries and the calls they decided (#622). */
+/** The calls Tesota's floor refused in run `run`, or in every run, from the session's permission entries and the calls they decided. */
 export function floorRefusals(entries: readonly SessionEntry[], run?: number): FloorRefusal[] {
   const calls = new Map(entries.flatMap((entry) => entry.type !== "assistant" ? []
     : entry.message.content.flatMap((part) => part.type === "toolCall" ? [[part.id, part] as const] : [])));

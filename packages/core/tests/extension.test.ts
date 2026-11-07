@@ -31,7 +31,7 @@ const { default: tesota } = await import("../../../src/tesota.ts");
 const { entryReceipt, isReceipt } = await import("../../../src/receipt.ts");
 
 /**
- * Tesota's verification, whole, as the session's verifier (#441), so its gate
+ * Tesota's verification, whole, as the session's verifier, so its gate
  * is mandatory: it offers `prove` once the agent writes a contract, and
  * settles the run with a receipt.
  */
@@ -87,7 +87,7 @@ for (const engine of [tesotaEngine]) {
       expect(receipts).toHaveLength(1);
       const [receipt] = receipts;
       expect(isReceipt(receipt)).toBe(true);
-      expect(receipt).toMatchObject({ base, proofs: [{ path: "src/rule.ts", verdict: "proved" }] });
+      expect(receipt).toMatchObject({ base, codeEvidence: { proofs: [{ path: "src/rule.ts", verdict: "proved" }] } });
     });
   });
 }

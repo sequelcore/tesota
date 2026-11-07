@@ -6,21 +6,21 @@ import { provideHost } from "../../../src/host.ts";
 import { entryReceipt, isReceipt, type Receipt, receiptStanding, standingWords, unverifiedWhy } from "../../../src/receipt.ts";
 import tesota from "../../../src/tesota.ts";
 import { fileCredentialStore } from "./credentials.ts";
-import { branchOf } from "./branch.ts";
 import { providerError } from "./provider-error.ts";
 import { anyHooks, type Hooks, joinHooks } from "./hooks.ts";
 import type { McpServers } from "./mcp.ts";
 import { type McpServerConfig, readMcpConfig } from "./mcp-config.ts";
-import { unusedModels } from "./agents.ts";
+import { agentModelWarning } from "./agents.ts";
 import { accountLabels, engineModels, runnableModel } from "./model-access.ts";
 import { startingModel } from "./resume-model-rule.ts";
 import { loadRules } from "./permissions.ts";
 import { askedSessions, awaitingNotice, createSession, type EngineSession, openSession, type OpenOptions, pendingQuestion, sessionsFolder } from "./session.ts";
 import { lastFloorNotice, peekSessionFile, SessionFileError } from "./session-file.ts";
 import { SessionLockedError } from "./session-lock.ts";
-import { readSettings, type Settings } from "./settings.ts";
+import { readSettings, type Settings, unknownSettingsNote } from "./settings.ts";
 import { shellHost } from "./shell/surface.ts";
 import { readStandards } from "./standards.ts";
+import { trusted } from "./trust.ts";
 
 export interface PrintOutput {
   readonly out: (text: string) => void;
@@ -29,7 +29,7 @@ export interface PrintOutput {
 
 const usage = "tesota -p [-c | --resume <session>] \"<request>\" [--model <provider>/<id>]";
 
-/** The session `-c` (the folder's latest) or `--resume <id>` names (#651). */
+/** The session `-c` (the folder's latest) or `--resume <id>` names. */
 type Named = { readonly latest: true } | { readonly id: string };
 
 /** The value option `names` gives at `args[at]`, as `<name> <value>` or `--<name>=<value>`, and how many arguments it took; none when it is not there. */
@@ -67,7 +67,7 @@ function parse(args: readonly string[]): { request: string; model?: string; sess
 
 /**
  * The file of the session `named` in `cwd`'s folder, among those `/resume`
- * lists (#651): the one changed last for `-c`, the one with that id, as
+ * lists: the one changed last for `-c`, the one with that id, as
  * `tesota receipt` and `/resume` show it, for `--resume`; or why there is none.
  */
 function sessionNamed(cwd: string, named: Named | undefined): { file?: string } | { refused: string } {
@@ -82,7 +82,7 @@ function sessionNamed(cwd: string, named: Named | undefined): { file?: string } 
 }
 
 /**
- * The model the run starts on, or none, saying why (#651). A continued
+ * The model the run starts on, or none, saying why. A continued
  * session keeps the model it last ran on, account included, unless `--model`
  * says otherwise, which is said on standard error; one that cannot run now is
  * refused, not replaced.
@@ -93,7 +93,7 @@ async function modelFor(models: MutableModels, explicit: string | undefined, fil
   const lastModel = last === undefined ? "" : `${last.provider}/${last.model}`;
   const chosen = startingModel(explicit ?? "", lastModel, setting ?? "");
   if (chosen === "") { write.error("No model: run tesota, then /login and /model.\n"); return undefined; }
-  // A model the sign-in does not serve is refused here rather than at the first request (#566).
+  // A model the sign-in does not serve is refused here rather than at the first request.
   const runnable = await runnableModel(models, chosen);
   if (typeof runnable === "string") {
     write.error(explicit === undefined && lastModel !== ""
@@ -119,33 +119,42 @@ function trustedStandards(cwd: string, settingsPath: string, write: PrintOutput)
   }
   const untrusted = typeof project.hooks !== "string" && anyHooks(project.hooks) && !project.trusted;
   if (untrusted) write.error("The project's hooks do not run: trust them in the shell first.\n");
+  if (standards.checks.status === "invalid") write.error(`${standards.checks.reason}\n`);
+  if (standards.checks.status === "read" && !trusted(standards.root, "checks", standards.checks.hash)) {
+    write.error("The project's declared checks do not run: trust them in the shell first.\n");
+  }
   for (const error of standards.mcp.config.errors) write.error(`${error}\n`);
   if (!standards.mcp.trusted) write.error("The project's MCP servers do not start: trust them in the shell first.\n");
   return { hooks: typeof project.hooks !== "string" && project.trusted ? joinHooks(own, project.hooks) : own,
     mcp: { own: standards.mcp.own, ...standards.mcp.trusted ? { project: standards.mcp.project } : {} } };
 }
 
-/** How the run ended and where its verification stands, from the receipt it settled with, and what Tesota's floor refused (#622). */
+/** How the run ended and where its verification stands, from the receipt it settled with, and what Tesota's floor refused. */
 function ending(outcome: string | undefined, file: string): string {
   const { entries } = peekSessionFile(file);
-  const receipt = branchOf(entries).map(entryReceipt).findLast((found) => found !== undefined);
+  // The last request's own receipt: a follow-up never claims the standing of the run before it.
+  const run = entries.findLast((entry) => entry.type === "request")?.run;
+  const receipt = entries.filter((entry) => "run" in entry && entry.run === run).map(entryReceipt).findLast((found) => found !== undefined);
   const standing = isReceipt(receipt) ? receiptStanding(receipt) : undefined;
-  // A run that changed nothing claims no standing (#668); one that changed something unverified says why.
+  // A run that changed nothing claims no standing, and a completed one with no receipt changed no file;
+  // one that changed something unverified says why.
   const end = entries.findLast((entry) => entry.type === "run_end");
   const reason = outcome === "error" && end?.type === "run_end" && end.reason !== undefined ? `${providerError(end.reason)}\n` : "";
   return reason + `${outcome === "completed" ? "Completed" : `Ended ${outcome ?? "without a run"}`}`
-    + `${standing === undefined ? "" : standing === "unchanged" ? ` (${standingWords[standing]})`
+    + `${standing === undefined ? receipt !== undefined ? "; unsupported receipt format; this Tesota reads receipt v3 only"
+      : outcome === "completed" ? "; no file changed" : "" : standing === "unchanged" ? ` (${standingWords[standing]})`
       : `, ${standingWords[standing]}${standing === "unverified" ? `: ${unverifiedWhy(receipt as Receipt)}` : ""}; tesota receipt writes it for a pull request`}.\n`
     + (lastFloorNotice(entries) ?? "")
-    // A run that ended on its question says how to answer it (#651).
+    // A run that ended on its question says how to answer it.
     + (pendingQuestion(entries) === undefined ? "" : `${awaitingNotice(entries)}\nAwaiting your answer: tesota -p --resume ${basename(file, ".jsonl")} "<answer>"\n`);
 }
 
-/** What the operator's settings choose for a session: its thinking, how many subagents run at once, and their branch guard. */
-function chosenOptions(settings: Settings): Pick<OpenOptions, "thinkingLevel" | "agentLimit" | "branchGuard"> {
+/** What the operator's settings choose for a session: its thinking, how many subagents run at once, their branch guard, and the task list. */
+function chosenOptions(settings: Settings): Pick<OpenOptions, "thinkingLevel" | "agentLimit" | "branchGuard" | "taskList"> {
   return { ...settings.thinkingLevel === undefined ? {} : { thinkingLevel: settings.thinkingLevel },
     ...settings.agentLimit === undefined ? {} : { agentLimit: settings.agentLimit },
-    ...settings.subagentBranchGuard === undefined ? {} : { branchGuard: settings.subagentBranchGuard } };
+    ...settings.subagentBranchGuard === undefined ? {} : { branchGuard: settings.subagentBranchGuard },
+    ...settings.taskList === undefined ? {} : { taskList: settings.taskList } };
 }
 
 /**
@@ -163,7 +172,7 @@ function sessionFor(cwd: string, file: string | undefined, options: OpenOptions,
   }
 }
 
-/** The MCP servers of the folder the session works in, its worktree's when it has one, so they never act in another session's (#459). */
+/** The MCP servers of the folder the session works in, its worktree's when it has one, so they never act in another session's. */
 async function serversFor(session: EngineSession, mcp: { own: string; project?: string }): Promise<McpServers | undefined> {
   const { servers }: { servers: readonly McpServerConfig[] } = readMcpConfig(mcp.own, mcp.project, session.workspace.cwd);
   if (servers.length === 0) return undefined;
@@ -172,7 +181,7 @@ async function serversFor(session: EngineSession, mcp: { own: string; project?: 
 }
 
 /**
- * `tesota -p "<request>"` in `cwd` (#463): one request without the shell,
+ * `tesota -p "<request>"` in `cwd`: one request without the shell,
  * verified as every run is, on the chosen model or `--model`, with the
  * verifier's `flags`. The answer goes to standard output, where the
  * verification stands and how to read the receipt to standard error. It runs
@@ -189,7 +198,9 @@ export async function runPrint(args: readonly string[], cwd: string, write: Prin
   if (typeof asked === "string") { write.error(`${asked}\n`); return 2; }
   const named = sessionNamed(cwd, asked.session);
   if ("refused" in named) { write.error(`${named.refused}\n`); return 1; }
-  const { settings } = readSettings(settingsPath);
+  const { settings, unknown } = readSettings(settingsPath);
+  const unread = unknownSettingsNote(unknown, settingsPath);
+  if (unread !== undefined) write.error(`${unread}\n`);
   const accounts = settings.accounts ?? [];
   models ??= await engineModels(fileCredentialStore(), accounts);
   for (const [id, label] of await accountLabels(fileCredentialStore(), accounts)) write.error(`${id}: ${label}\n`);
@@ -206,8 +217,8 @@ export async function runPrint(args: readonly string[], cwd: string, write: Prin
     permissions: { mode: () => settings.permissionMode ?? "ask", rules }, ...chosenOptions(settings) };
   const session = sessionFor(cwd, named.file, options, write);
   if (session === undefined) return 1;
-  const unused = unusedModels(session.types, `${model.provider}/${model.id}`);
-  if (unused !== undefined) write.error(`${unused}\n`);
+  const agentWarning = agentModelWarning(session.types);
+  if (agentWarning !== undefined) write.error(`${agentWarning}\n`);
   const unsubscribe = session.subscribe((event) => {
     if (event.type === "retry" && event.delayMs > 0) write.error(`Retry ${event.attempt}/3 in ${Math.ceil(event.delayMs / 1000)}s… (Ctrl+C to cancel)\n`);
   });
@@ -218,7 +229,7 @@ export async function runPrint(args: readonly string[], cwd: string, write: Prin
   try {
     servers = await serversFor(session, mcp);
     // A request stopped before it began is refused rather than run; that is the stop, not a failure to report.
-    // In a session that ended on its question the text is the answer; otherwise a follow-up, as the shell sends one (#651).
+    // In a session that ended on its question the text is the answer; otherwise a follow-up, as the shell sends one.
     await session.reply(asked.request).catch((error: unknown) => { if (!stopped) throw error; });
     write.out(`${session.lastAssistantText() ?? ""}\n`);
   } finally {
@@ -227,7 +238,7 @@ export async function runPrint(args: readonly string[], cwd: string, write: Prin
     process.off("SIGTERM", stop);
     // Each is let go of whatever the other does, so a session that fails to close never leaves its servers running.
     await Promise.allSettled([session.dispose(), servers?.close()]);
-    // A run that throws still says how it ended and what the floor refused (#622).
+    // A run that throws still says how it ended and what the floor refused.
     write.error(ending(session.outcome(), session.file));
   }
   const kept = session.kept();

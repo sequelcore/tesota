@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFileSync, realpathSync } from "node:fs";
+import { mkdirSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
 import { withLock } from "./session-lock.ts";
@@ -8,10 +8,10 @@ import { writeWholeJson } from "./whole-file.ts";
 
 /**
  * What of a project runs its own commands, and so runs only once the
- * operator trusts it as it is now: its hooks (#457), its MCP servers (#459)
- * and each of its model charts' readings (#761).
+ * operator trusts it as it is now: its hooks, its MCP servers
+ * and each of its model charts' readings.
  */
-export type Trusted = "hooks" | "mcp" | `chart:${string}`;
+export type Trusted = "hooks" | "mcp" | "checks" | `chart:${string}`;
 
 /** The trust of one chart reading, by its path from the project root, so trusting one leaves another's as it was. */
 export const chartTrust = (file: string): Trusted => `chart:${file}`;
@@ -46,6 +46,8 @@ export function trusted(root: string, kind: Trusted, hash: string, home: string 
 /** Records that the operator trusts the `kind` of the project at `root` as it is now, keeping what else of it they trust. */
 export function trust(root: string, kind: Trusted, hash: string, home: string = tesotaHome()): void {
   // Read, changed and written under a lock, so two shells trusting at once each keep the other's.
+  // The lock is beside the file, so a first trust makes their folder.
+  mkdirSync(home, { recursive: true, mode: 0o700 });
   withLock(`${trustFile(home)}.lock`, () => {
     let file: Record<string, unknown> = {};
     try {

@@ -11,6 +11,7 @@ history, permissions and receipts. The shell runs several at once.
 | Esc | Stops the agent's run |
 | `/new` | Starts another session beside the open ones |
 | `/resume` | Opens a session this folder ran before, by its first request |
+| `/context` | Shows what fills the context, part by part |
 | `/compact` | Summarizes the older conversation to free context |
 | `/quit`, or Ctrl+C twice | Ends the shell |
 
@@ -18,7 +19,7 @@ history, permissions and receipts. The shell runs several at once.
 `/model` changes it. If that model can no longer run, Tesota says why and
 opens the session on the current model; with none, choose one first.
 
-Sessions are saved as they run, in `~/.tesota/sessions` (format version 6;
+Sessions are saved as they run, in `~/.tesota/sessions` (format version 7;
 other versions are refused untouched). A session cut off by a crash or a
 closed terminal resumes where its file ends, and nothing runs again on its
 own: reads say they changed nothing, other started calls say their outcome
@@ -66,10 +67,22 @@ Merging that branch is yours. Outside Git, one session runs at a time.
 
 `/agents`, or Ctrl+T, lists every session: its request, its state (idle,
 working, verifying, waiting for you, ended), its last receipt's
-[standing](../receipt-v2.md#standing), its workspace and how long it has
+[standing](../receipt-v3.md#presentation-and-standing), its workspace and how long it has
 run. The footer counts the sessions waiting for you.
 
 Its keys are in [Commands and keys](../reference/commands.md#dashboard).
+
+## The agent's task list
+
+With `"taskList": true` in your [settings](../reference/configuration.md),
+the agent can keep a list of the steps of a request. A row above the input
+shows how many steps it marked done and, while it works, the step it is on;
+Ctrl+O lists every step. The list is the agent's claim: a step marked done
+proves nothing, and verification checks the change either way.
+
+The list belongs to its request. It survives compaction and reopening the
+session. A reply to a question the run ended on keeps it; any other new
+request starts with none, including "continue" after you stopped a run.
 
 ## Long conversations
 

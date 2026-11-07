@@ -15,6 +15,8 @@ export interface TestResults {
   readonly tests: ReadonlyMap<string, ReportedStatus>;
   readonly sources: ReadonlyMap<string, readonly string[]>;
   readonly read: ReadonlySet<string>;
+  /** Only failures the report identifies as assertions; setup/runtime errors never give source credit. */
+  readonly assertionFailures?: ReadonlySet<string>;
 }
 
 /** Reports a check may name, and how large one may be. */
@@ -86,9 +88,10 @@ function skipped(xml: string, start: number): number | undefined {
 
 interface Reading {
   readonly tests: Map<string, ReportedStatus>;
+  readonly assertions: Map<string, boolean>;
   readonly open: string[];
   readonly suites: (string | undefined)[];
-  testcase: { name: string; status: ReportedStatus } | undefined;
+  testcase: { name: string; status: ReportedStatus; assertionOnly: boolean } | undefined;
   /** The tests the root says it holds, when it says; the report is whole only when that many were read. */
   declared: number | undefined;
   count: number;
@@ -109,10 +112,10 @@ function testcase(reading: Reading, values: ReadonlyMap<string, string>): boolea
   reading.count += 1;
   const group = values.get("classname") ?? reading.suites.findLast((suite) => suite !== undefined) ?? "";
   // Bun names the file only in `file`, as `tests\x.test.ts`, with the describe block as the class, so a test is named by
-  // its file there too (#615). Node's absolute `file` differs between the base's worktree and the checkout, so it names none.
+  // its file there too. Node's absolute `file` differs between the base's worktree and the checkout, so it names none.
   const file = normalizeReportPath(values.get("file") ?? "");
   const parts = file === undefined || file === group ? [group, test] : [file, group, test];
-  reading.testcase = { name: parts.filter((part) => part.length > 0).join(" > "), status: "passed" };
+  reading.testcase = { name: parts.filter((part) => part.length > 0).join(" > "), status: "passed", assertionOnly: true };
   return true;
 }
 
@@ -125,6 +128,7 @@ function opened(reading: Reading, name: string, attributeText: string): boolean 
     if (!testcase(reading, values)) return false;
   } else if (reading.testcase !== undefined && (name === "failure" || name === "error")) {
     reading.testcase.status = "failed";
+    reading.testcase.assertionOnly &&= name === "failure" && values.get("type") === "AssertionError";
   } else if (reading.testcase !== undefined && name === "skipped" && reading.testcase.status === "passed") {
     reading.testcase.status = "skipped";
   }
@@ -136,6 +140,8 @@ function closed(reading: Reading, name: string): boolean {
   if (name === "testsuite") reading.suites.pop();
   if (name === "testcase" && reading.testcase !== undefined) {
     record(reading.tests, reading.testcase.name, reading.testcase.status);
+    const { name: testName, status, assertionOnly } = reading.testcase;
+    reading.assertions.set(testName, (reading.assertions.get(testName) ?? true) && status === "failed" && assertionOnly);
     reading.testcase = undefined;
   }
   return true;
@@ -150,8 +156,8 @@ const tagPattern = /<(\/?)([A-Za-z_][\w.:-]*)((?:\s+[^\s=/>]+\s*=\s*(?:"[^"]*"|'
  * type, or holds fewer or more tests than its root says, so that nothing is
  * read from what could not be read whole.
  */
-export function parseJUnitReport(xml: string): Map<string, ReportedStatus> | undefined {
-  const reading: Reading = { tests: new Map(), open: [], suites: [], testcase: undefined, declared: undefined, count: 0 };
+export function parseJUnitReport(xml: string, assertions: Map<string, boolean> = new Map()): Map<string, ReportedStatus> | undefined {
+  const reading: Reading = { tests: new Map(), assertions, open: [], suites: [], testcase: undefined, declared: undefined, count: 0 };
   let position = 0;
   let root = false;
   for (;;) {
@@ -188,7 +194,7 @@ function whole(reading: Reading): Map<string, ReportedStatus> | undefined {
  * it that exists is a symbolic link or junction, which a command could have
  * pointed at files outside the checkout.
  */
-function confined(checkout: string, path: string): boolean {
+export function confinedPath(checkout: string, path: string): boolean {
   let current = checkout;
   for (const segment of path.split("/")) {
     current = join(current, segment);
@@ -201,12 +207,17 @@ function confined(checkout: string, path: string): boolean {
   return true;
 }
 
-function jestAssertion(tests: Map<string, ReportedStatus>, file: string, assertion: unknown): boolean {
+function jestAssertion(tests: Map<string, ReportedStatus>, assertions: Map<string, boolean>, file: string, assertion: unknown): boolean {
   if (typeof assertion !== "object" || assertion === null || !("fullName" in assertion) || typeof assertion.fullName !== "string" ||
     !("status" in assertion)) return false;
   const status = assertion.status;
   if (status !== "passed" && status !== "failed" && status !== "pending" && status !== "todo" && status !== "disabled") return false;
   record(tests, `${file} > ${assertion.fullName}`, status === "passed" || status === "failed" ? status : "skipped");
+  const details: unknown = "failureDetails" in assertion ? assertion.failureDetails : undefined;
+  const onlyAssertions = status === "failed" && Array.isArray(details) && details.length > 0 && details.every((detail: unknown) =>
+    typeof detail === "object" && detail !== null && "matcherResult" in detail && typeof detail.matcherResult === "object" && detail.matcherResult !== null);
+  const name = `${file} > ${assertion.fullName}`;
+  assertions.set(name, (assertions.get(name) ?? true) && onlyAssertions);
   return true;
 }
 
@@ -217,35 +228,45 @@ function jestAssertion(tests: Map<string, ReportedStatus>, file: string, asserti
  * folder behind a symlink (macOS /var) or a short name (Windows) would
  * otherwise put every suite outside it.
  */
-function parseJestReport(text: string, checkout: string): Map<string, ReportedStatus> | undefined {
+function jestSuite(tests: Map<string, ReportedStatus>, assertions: Map<string, boolean>, checkout: string, suite: unknown): number | undefined {
+  if (typeof suite !== "object" || suite === null || !("name" in suite) || typeof suite.name !== "string" ||
+    !("assertionResults" in suite) || !Array.isArray(suite.assertionResults)) return undefined;
+  if ("testExecError" in suite && suite.testExecError != null) return undefined;
+  const file = normalizeReportPath(relative(realpathSync.native(checkout), suite.name));
+  if (file === undefined) return undefined;
+  for (const assertion of suite.assertionResults as unknown[]) {
+    if (!jestAssertion(tests, assertions, file, assertion)) return undefined;
+  }
+  return suite.assertionResults.length;
+}
+
+function parseJestReport(text: string, checkout: string, assertions: Map<string, boolean>): Map<string, ReportedStatus> | undefined {
   try {
     const report: unknown = parseJson(text);
     if (typeof report !== "object" || report === null || !("testResults" in report) || !Array.isArray(report.testResults)) return undefined;
+    if ("numRuntimeErrorTestSuites" in report && report.numRuntimeErrorTestSuites !== 0) return undefined;
+    if ("snapshot" in report && typeof report.snapshot === "object" && report.snapshot !== null &&
+      "failure" in report.snapshot && report.snapshot.failure === true) return undefined;
     const tests = new Map<string, ReportedStatus>();
     let count = 0;
     for (const suite of report.testResults as unknown[]) {
-      if (typeof suite !== "object" || suite === null || !("name" in suite) || typeof suite.name !== "string" ||
-        !("assertionResults" in suite) || !Array.isArray(suite.assertionResults)) return undefined;
-      const file = normalizeReportPath(relative(realpathSync.native(checkout), suite.name));
-      if (file === undefined) return undefined;
-      for (const assertion of suite.assertionResults as unknown[]) {
-        if (!jestAssertion(tests, file, assertion)) return undefined;
-        count += 1;
-      }
+      const read = jestSuite(tests, assertions, checkout, suite);
+      if (read === undefined) return undefined;
+      count += read;
     }
     const declared = "numTotalTests" in report ? report.numTotalTests : count;
     return declared === count ? tests : undefined;
   } catch { return undefined; }
 }
 
-function readReport(checkout: string, path: string): Map<string, ReportedStatus> | undefined {
+function readReport(checkout: string, path: string, assertions: Map<string, boolean>): Map<string, ReportedStatus> | undefined {
   try {
     const file = join(checkout, path);
-    if (!confined(checkout, path)) return undefined;
+    if (!confinedPath(checkout, path)) return undefined;
     const stats = lstatSync(file);
     if (!stats.isFile() || stats.size > reportLimit) return undefined;
     const text = readFileSync(file, "utf8");
-    return path.endsWith(".json") ? parseJestReport(text, checkout) : parseJUnitReport(text);
+    return path.endsWith(".json") ? parseJestReport(text, checkout, assertions) : parseJUnitReport(text, assertions);
   } catch { return undefined; }
 }
 
@@ -257,16 +278,20 @@ export function readTestResults(checkout: string, paths: readonly string[]): Tes
   const tests = new Map<string, ReportedStatus>();
   const sources = new Map<string, string[]>();
   const read = new Set<string>();
+  const assertions = new Map<string, boolean>();
   for (const path of paths) {
-    const report = readReport(checkout, path);
+    const classified = new Map<string, boolean>();
+    const report = readReport(checkout, path, classified);
     if (report === undefined) continue;
     read.add(path);
     for (const [name, status] of report) {
       record(tests, name, status);
       sources.set(name, [...sources.get(name) ?? [], path]);
+      assertions.set(name, (assertions.get(name) ?? true) && classified.get(name) === true);
     }
   }
-  return read.size === 0 ? undefined : { tests, sources, read };
+  return read.size === 0 ? undefined : { tests, sources, read,
+    assertionFailures: new Set([...assertions].filter(([, assertion]) => assertion).map(([name]) => name)) };
 }
 
 /**
@@ -278,7 +303,7 @@ export function clearTestReports(checkout: string, paths: readonly string[]): st
   const kept: string[] = [];
   for (const path of paths) {
     try {
-      if (!confined(checkout, path)) throw new Error("The report path passes through a link");
+      if (!confinedPath(checkout, path)) throw new Error("The report path passes through a link");
       rmSync(join(checkout, path), { force: true });
     } catch { kept.push(path); }
   }
@@ -299,7 +324,7 @@ export function introducedTests(candidate: TestResults | undefined, base: TestRe
 }
 
 /**
- * Whether the reports show the failure on the base too (#726): some test
+ * Whether the reports show the failure on the base too: some test
  * fails with the changes, and each one that does fails on the base
  * (`testOrigin`). Without reports on both sides nothing shows it.
  */

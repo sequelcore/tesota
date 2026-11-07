@@ -9,7 +9,7 @@ import { statementResult } from "./verification/verdict-rule.js";
  * session in the project settled with, as Markdown for the pull request's
  * description or a comment, or as JSON for CI. The JSON is an unsigned
  * in-toto Statement shaped as the agentic process evidence proposal
- * (in-toto/attestation#600, specified in jfrog/agentic-process-evidence)
+ * (specified in jfrog/agentic-process-evidence)
  * names its fields; the receipt itself goes in the predicate's `custom`, the
  * place the proposal leaves for what one kind of process records.
  */
@@ -35,7 +35,7 @@ export async function lastReceipt(sessions: SessionStore, cwd: string): Promise<
 }
 
 /**
- * In a repository of a folder of repositories (#384), the part of the last
+ * In a repository of a folder of repositories, the part of the last
  * receipt a session in that folder settled with that covers this repository;
  * nothing when it covers none.
  */
@@ -125,9 +125,10 @@ export async function subjectOf(root: string, receipt: Receipt, sessionId: strin
   }
   const remote = await git(root, ["remote", "get-url", "origin"]);
   const repository = remote === undefined ? undefined : httpsRepository(remote);
-  const checked = [...receipt.proofs.map(({ path, evidence }) => ({ name: path, evidence })),
-    ...receipt.tests.map(({ command, evidence }) => ({ name: command, evidence })),
-    ...(receipt.models ?? []).map(({ path, evidence }) => ({ name: path, evidence }))];
+  const checked = [...receipt.codeEvidence.proofs.map(({ path, evidence }) => ({ name: path, evidence })),
+    ...receipt.codeEvidence.tests.map(({ command, evidence }) => ({ name: command, evidence })),
+    ...receipt.codeEvidence.exercises.flatMap(({ path, sourceEvidence }) => sourceEvidence === undefined ? [] : [{ name: `source exercise: ${path}`, evidence: sourceEvidence }]),
+    ...(receipt.codeEvidence.models ?? []).map(({ path, evidence }) => ({ name: path, evidence }))];
   const stale: string[] = [];
   for (const { name, evidence } of checked) if (!await current(root, evidence)) stale.push(name);
   return { commit, ...repository === undefined ? {} : { repository }, owner, sessionId, stale,
@@ -135,7 +136,7 @@ export async function subjectOf(root: string, receipt: Receipt, sessionId: strin
 }
 
 /** The page that describes the receipt's format, the Statement's `predicateType`. */
-const predicateType = "https://github.com/sequelcore/tesota/blob/main/docs/receipt-v2.md";
+const predicateType = "https://github.com/sequelcore/tesota/blob/main/docs/receipt-v3.md";
 
 /** A commit as an in-toto resource descriptor, located in its repository when it has an HTTPS URL. */
 function commitDescriptor(commit: string, repository: string | undefined): object {
@@ -150,9 +151,8 @@ function commitDescriptor(commit: string, repository: string | undefined): objec
  * omissions; those describe model context, never check evidence.
  */
 export function receiptStatement(receipt: Receipt, subject: Subject, createdAt: string, result: "CANCELLED" | "COMPLETED" | "FAILED"): object {
-  const models = [...new Set([receipt.model, ...receipt.claimcheck?.status === "judged"
-    ? [receipt.claimcheck.restatedBy, receipt.claimcheck.comparedBy] : [],
-  ...receipt.openCases?.status === "listed" ? [receipt.openCases.model] : []].filter((model) => model !== undefined))];
+  const models = [...new Set([receipt.model, ...receipt.requestReview.contractComparison.runs.flatMap((run) => [run.restatedBy, run.comparedBy]),
+    ...receipt.requestReview.openCases.model === undefined ? [] : [receipt.requestReview.openCases.model]].filter((model) => model !== undefined))];
   return {
     _type: "https://in-toto.io/Statement/v1",
     subject: [commitDescriptor(subject.commit, subject.repository)],
@@ -217,10 +217,8 @@ function refusal(found: unknown, json: boolean): string | { readonly receipt: Re
   if (isReceipt(found) && found.units !== undefined) {
     return "The last receipt here covers several repositories. Run tesota receipt in the repository of the pull request.\n";
   }
-  if (!isReceipt(found) || !found.repository) {
-    return "The last receipt here came from an earlier Tesota, or from a run outside Git; this Tesota cannot write it " +
-      "for a pull request. Run the request again.\n";
-  }
+  if (!isReceipt(found)) return "Unsupported receipt format; this Tesota reads receipt v3 only. Run the request again.\n";
+  if (!found.repository) return "The last receipt here came from a run outside Git; this Tesota cannot write it for a pull request.\n";
   const standing = receiptStanding(found);
   const result = statementResult(found.stopped !== undefined, standing);
   if (!json || result !== "none") return { receipt: found, result };

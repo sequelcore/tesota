@@ -39,8 +39,8 @@ a proved rule changed, and `git diff --check`. CI runs the root and engine
 checks in parallel on Ubuntu, Windows and macOS, the engine tests in two
 shards, the whole `formal:check` once on Ubuntu, and the engine's session
 and tool tests on musl Linux; `CI gate` passes only when all of them do.
-`bun run check` never calls a live model. Report what ran: a passing
-check, a live observation and a person's acceptance are different claims.
+`bun run check` never calls a live model. Report checks, live
+observations and human acceptance separately.
 
 ## Layout
 
@@ -54,7 +54,8 @@ check, a live observation and a person's acceptance are different claims.
 | `evaluation` | Measurements of Tesota's defaults on live models (`engine-session.ts`) |
 | `themes`, `terminal-schemes`, `grammars` | The themes, the terminal color schemes, and the tree-sitter grammars coverage reads |
 
-`lemmascript` and `web-tree-sitter` are runtime dependencies. The grammars
+`lemmascript` (with a [compiled-version patch](../patches/README.md)) and
+`web-tree-sitter` are runtime dependencies. The grammars
 are pinned development dependencies kept as `.wasm` in `grammars/`; a test
 fails when one differs from its package.
 
@@ -72,6 +73,9 @@ fails when one differs from its package.
   console still needs a person to look.
 - **Guards:** a test fails on a Pi package other than `pi-ai`, `pi-tui` or
   `pi-mcp`; lint limits cyclomatic complexity to 20.
+- **Comments:** `comment-history.test.ts` rejects issue citations except `TODO(#N)`
+  and external `owner/repo#N` workarounds. Reviewers check open status and current-state
+  wording. Literals and `//@` are excluded; no file exceptions.
 
 ## Proved rules
 
@@ -94,16 +98,16 @@ delete a `.dfy`; that discards its proof additions.
 
 ## Performance budgets
 
-The budget check compiles the engine as a release would and fails a pull
-request when a measurement exceeds its limit in
-[budgets.json](../packages/core/budgets.json) in both of two attempts:
-startup, binary size, the scripted loop's time and memory, the base, syncs
-to disk, settlement, resuming a 1,000-entry session and its size, the
+The budget check compiles the engine as a release would, and the commit it
+changes with that commit's own build, then measures both in alternating
+rounds: startup, binary size, the scripted loop's time and memory, the base,
+syncs to disk, settlement, resuming a 1,000-entry session and its size, the
 shell's first frame, and its memory with pi-ai's whole provider catalog
-loaded. On Windows the first frame is limited relative to the same
-attempt's startup, and on Linux to its resume, with a looser limit in
-milliseconds behind both. New limits come from measurements and need the
-owner's approval.
+loaded. A pull request fails when, in both of two attempts, a time exceeds
+its multiple of the base's or any measurement its absolute limit in
+[budgets.json](../packages/core/budgets.json). New limits come from
+measurements and need the owner's approval; their
+[evidence](../packages/core/budgets.md) lives beside the budget.
 
 ## Binaries
 
@@ -224,7 +228,7 @@ The docs are for people and agents alike.
 | Using a feature | [Guides](README.md#guides) |
 | How it's built, and why | [Concepts](README.md#concepts) |
 | Exact commands, keys, files and rules | [Reference](README.md#reference) |
-| The receipt's format | [Receipt v2](receipt-v2.md); keep its path, which receipts name |
+| The receipt's format | [Receipt v3](receipt-v3.md); preserve the historical [v2](receipt-v2.md) path and meanings |
 | Direction and non-goals | [Roadmap](../ROADMAP.md) |
 | How the terminal looks, and why | [DESIGN.md](../DESIGN.md) |
 | What each release changed | [Changelog](../CHANGELOG.md) |

@@ -9,7 +9,7 @@ import { createSession, type EngineSession } from "../src/session.ts";
 import { trust, trusted, trustHash } from "../src/trust.ts";
 import { accepts, scriptedReply } from "./scripted.ts";
 
-/** Command hooks as Claude Code configures them (#457): reading, matching, running, deciding, trusting, and in a session. */
+/** Command hooks as Claude Code configures them: reading, matching, running, deciding, trusting, and in a session. */
 const folder = (prefix: string): string => mkdtempSync(join(tmpdir(), prefix));
 
 /** A hook: a script, in a folder whose name has a space, run by Bun through the system's shell as an operator's hook is. */
@@ -162,6 +162,15 @@ describe("trusting a project's hooks", () => {
     trust(root, "mcp", hash, home);
     expect(trusted(root, "hooks", hash, home)).toBe(true);
     expect(trusted(root, "mcp", hash, home)).toBe(true);
+  });
+
+  test("makes the home's folder when nothing has made it yet", () => {
+    const home = join(folder("tesota-core-hooks-user-"), ".tesota");
+    const root = folder("tesota-core-hooks-project-");
+    const hash = trustHash(pre("guard"));
+    trust(root, "hooks", hash, home);
+    expect(trusted(root, "hooks", hash, home)).toBe(true);
+    expect(readFileSync(join(home, "trust.json"), "utf8")).toContain(hash);
   });
 });
 

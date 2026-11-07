@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 /**
- * A remote MCP server for the engine's MCP tests (#459), over streamable
+ * A remote MCP server for the engine's MCP tests, over streamable
  * HTTP at `/mcp`, with its own OAuth authorization server when `oauth`:
  * discovery, dynamic registration, PKCE and refresh. Adapted from Pi's
  * `test/suite/mcp-oauth-server.ts`. Without `oauth` it takes a request whose

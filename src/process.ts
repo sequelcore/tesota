@@ -11,7 +11,7 @@ export interface ProcessRun {
   readonly exitCode: number | null;
   /** The end of what it printed, or why it did not start. */
   readonly output: string;
-  /** The start of what it wrote to each stream, apart, up to 64 KiB each: a hook's answer and its reason (#457). */
+  /** The start of what it wrote to each stream, apart, up to 64 KiB each: a hook's answer and its reason. */
   readonly stdout: string;
   readonly stderr: string;
 }
@@ -39,8 +39,10 @@ const closeGraceMs = 2_000;
 
 /**
  * Stop a process and every process it started: `taskkill /T` on Windows, the
- * process group elsewhere. Resolves once `taskkill` has finished, so a
- * stopped run reports only after its processes are gone.
+ * process group elsewhere. Resolves once `taskkill` has finished, or once
+ * no process of the group is left, so a stopped run reports only after its
+ * processes are gone. A killed process can still run for a moment after
+ * the signal, and the child's streams can close before it ends.
  */
 function stopTree(pid: number): Promise<void> {
   if (process.platform === "win32") {
@@ -49,11 +51,25 @@ function stopTree(pid: number): Promise<void> {
         { stdio: "ignore", windowsHide: true }).once("error", () => { done(); }).once("exit", () => { done(); });
     });
   }
-  try { process.kill(-pid, "SIGKILL"); } catch { try { process.kill(pid, "SIGKILL"); } catch { /* already gone */ } }
-  return Promise.resolve();
+  try { process.kill(-pid, "SIGKILL"); } catch {
+    try { process.kill(pid, "SIGKILL"); } catch { /* already gone */ }
+    return Promise.resolve();
+  }
+  return groupGone(pid, performance.now() + closeGraceMs);
 }
 
-/** kernel32's job functions as Bun's FFI binds them (#490). */
+/** Resolves once process group `pid` has no process left, or at `deadline`; checks between turns of the event loop, not on a timer. */
+function groupGone(pid: number, deadline: number): Promise<void> {
+  return new Promise((done) => {
+    const check = () => {
+      try { process.kill(-pid, 0); } catch { done(); return; }
+      if (performance.now() >= deadline) done(); else setImmediate(check);
+    };
+    check();
+  });
+}
+
+/** kernel32's job functions as Bun's FFI binds them. */
 interface Kernel32Jobs {
   CreateJobObjectW(attributes: null, name: null): unknown;
   OpenProcess(access: number, inherit: number, pid: number): unknown;
@@ -95,7 +111,7 @@ function windowsJobs(): Promise<Kernel32Jobs | undefined> {
  * A Windows job holding the process `pid` and every process it starts, which
  * inherit it however their parents come and go: Git's bash runs a script
  * through a process that exits, which breaks the parent chain `taskkill /T`
- * follows (#490). Undefined when the process could not be put in one.
+ * follows. Undefined when the process could not be put in one.
  */
 function jobFor(jobs: Kernel32Jobs, pid: number): unknown {
   const job = jobs.CreateJobObjectW(null, null);

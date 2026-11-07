@@ -10,6 +10,8 @@ import tesota from "../src/tesota.js";
 import { shellTheme } from "../src/theme.js";
 import { hasContracts, proveTool } from "../src/prove-tool.js";
 import type { OnTrust } from "../src/verification-changes.js";
+import { receiptStanding, renderReceipt } from "../src/receipt.js";
+import { emptyReceipt } from "./receipts.js";
 
 let theme: Theme;
 beforeAll(async () => {
@@ -35,37 +37,84 @@ async function call(root: string, path: string): Promise<string> {
   return (await run(root, path)).content.map((part) => part.type === "text" ? part.text : "").join("");
 }
 
-/** A session started in `root`: the tools the extension leaves active, and a tool result to hand it. */
-function session(root: string): { active: () => string[]; result: (toolName: string, path: string, isError?: boolean) => void } {
+/** A session started in `root`, with a `dafny` on the PATH or none: the tools it leaves active, `prove`'s rules, and a tool result to hand it. */
+async function session(root: string, { dafny: onPath = false } = {}): Promise<{
+  active: () => string[]; rules: () => string; result: (toolName: string, path: string, isError?: boolean) => void;
+}> {
   let active = ["read", "bash"];
-  const handlers = new Map<string, (event: unknown, ctx: unknown) => void>();
-  tesota({ registerTool: () => undefined, registerFlag: () => undefined, registerMessageRenderer: () => undefined,
-    on: (name: string, handler: (event: unknown, ctx: unknown) => void) => { handlers.set(name, handler); },
+  const handlers = new Map<string, (event: unknown, ctx: unknown) => unknown>();
+  const tools = new Map<string, { name: string; promptGuidelines?: string[] | (() => readonly string[]) }>();
+  tesota({ registerTool: (tool: { name: string; promptGuidelines?: string[] | (() => readonly string[]) }) => { tools.set(tool.name, tool); }, registerFlag: () => undefined,
+    registerMessageRenderer: () => undefined,
+    on: (name: string, handler: (event: unknown, ctx: unknown) => unknown) => { handlers.set(name, handler); },
     getActiveTools: () => active, getSettings: () => ({}), setActiveTools: (names: string[]) => { active = names; } } as never);
-  handlers.get("session_start")?.({}, { cwd: root, sessionManager: { getBranch: () => [] }, ui: { setStatus: () => undefined,
-    setHeader: () => undefined, setEditorComponent: () => undefined, setFooter: () => undefined, setWorkingDetail: () => undefined } });
-  return { active: () => active, result: (toolName, path, isError = false) =>
+  const bin = folder();
+  if (onPath) writeFileSync(join(bin, process.platform === "win32" ? "dafny.exe" : "dafny"), "", { mode: 0o755 });
+  const path = process.env["PATH"];
+  process.env["PATH"] = bin;
+  try {
+    await handlers.get("session_start")?.({}, { cwd: root, sessionManager: { getBranch: () => [] }, ui: { setStatus: () => undefined,
+      setHeader: () => undefined, setEditorComponent: () => undefined, setFooter: () => undefined, setWorkingDetail: () => undefined } });
+  } finally { process.env["PATH"] = path; }
+  const rules = (): string => {
+    const guidelines = tools.get("prove")?.promptGuidelines;
+    return (typeof guidelines === "function" ? guidelines() : guidelines ?? []).join("\n");
+  };
+  return { active: () => active, rules, result: (toolName, path, isError = false) =>
     handlers.get("tool_result")?.({ type: "tool_result", toolName, input: { path }, isError }, { cwd: root }) };
 }
 
-const activeTools = (root: string): string[] => session(root).active();
+const contract = "//@ ensures \\result >= 0\nexport function f(): number { return 0; }\n";
 
-it("offers prove with its measured guidance only in a project with contracts", () => {
+it.runIf(dafny).each([
+  "//@ ensures \\result > 9\nconst n = 1;\nexport function f(): number { return n; }\n",
+  "//@ ensures \\result > 9\nexport const f = (): number => { return 1; };\n",
+  "//@ ensure \\result > 9\nexport function f(): number { return 1; }\n",
+])("warns when another function proves but f's specification was dropped (#772)", async (dropped) => {
+  const root = folder();
+  writeFileSync(join(root, "dropped.ts"), `${contract.replace("function f", "function g")}\n${dropped}`);
+  const result = await run(root, "dropped.ts");
+  const text = result.content.map((part) => part.text).join("\n");
+  expect(result.details?.evidence.outcome).toBe("passed");
+  expect(result.isError).toBe(true);
+  expect(text).toContain("//@");
+  expect(text).toContain("result > 9");
+  expect(text).not.toContain("Proved: every //@ contract");
+  if (result.details === undefined) throw new Error("No proof details");
+  const receipt = { ...emptyReceipt, changed: [{ path: "dropped.ts", blob: "checked" }],
+    codeEvidence: { ...emptyReceipt.codeEvidence, proofs: [{ path: "dropped.ts", verdict: "proved" as const, evidence: result.details.evidence }] } };
+  expect(receiptStanding(receipt)).toBe("incomplete");
+  expect(renderReceipt(receipt)).toContain("Specification not attached");
+}, 120_000);
+
+it("offers prove from the start where Dafny is on the PATH, and its rules once the agent writes a contract (#779)", async () => {
   expect(proveTool.defaultActive).toBe(false);
-  expect(proveTool.promptGuidelines?.join("\n")).toContain("never remove or loosen a contract, or add //@ assume");
-  expect(proveTool.promptGuidelines?.join("\n")).toContain("forall(j: nat, j < items.length ==> P)");
+  expect(proveTool.promptSnippet).toContain("don't look for or install a prover");
   const root = folder();
   writeFileSync(join(root, "plain.ts"), "export const a = 1;\n");
-  expect(activeTools(root)).toEqual(["read", "bash"]);
-  writeFileSync(join(root, "rule.ts"), "//@ ensures \\result >= 0\nexport function f(): number { return 0; }\n");
-  expect(activeTools(root)).toEqual(["read", "bash", "prove"]);
+  const started = await session(root, { dafny: true });
+  expect(started.active()).toEqual(["read", "bash", "prove", "check_model"]);
+  expect(started.rules()).toBe("");
+  writeFileSync(join(root, "rule.ts"), contract);
+  started.result("write", "rule.ts");
+  expect(started.rules()).toContain("never remove or loosen a contract, or add //@ assume");
+  expect(started.rules()).toContain("forall(j: nat, j < items.length ==> P)");
 });
 
-it("offers prove once the agent writes or edits a contract into a project that had none, and not before", () => {
+it("offers prove with its rules from the start in a project with contracts, and not in one without", async () => {
   const root = folder();
   writeFileSync(join(root, "plain.ts"), "export const a = 1;\n");
-  const started = session(root);
-  const contract = "//@ ensures \\result >= 0\nexport function f(): number { return 0; }\n";
+  expect((await session(root)).active()).toEqual(["read", "bash", "check_model"]);
+  writeFileSync(join(root, "rule.ts"), contract);
+  const started = await session(root);
+  expect(started.active()).toEqual(["read", "bash", "prove", "check_model"]);
+  expect(started.rules()).toContain("never remove or loosen a contract");
+});
+
+it("without Dafny, offers prove once the agent writes or edits a contract into a project that had none, and not before", async () => {
+  const root = folder();
+  writeFileSync(join(root, "plain.ts"), "export const a = 1;\n");
+  const started = await session(root);
   // Code without a contract, a //@ line outside TypeScript, a failed write and a read leave prove off.
   started.result("write", "plain.ts");
   writeFileSync(join(root, "notes.md"), contract);
@@ -73,11 +122,11 @@ it("offers prove once the agent writes or edits a contract into a project that h
   writeFileSync(join(root, "rule.ts"), contract);
   started.result("write", "rule.ts", true);
   started.result("read", "rule.ts");
-  expect(started.active()).toEqual(["read", "bash"]);
+  expect(started.active()).toEqual(["read", "bash", "check_model"]);
   started.result("write", "rule.ts");
-  expect(started.active()).toEqual(["read", "bash", "prove"]);
+  expect(started.active()).toEqual(["read", "bash", "check_model", "prove"]);
   started.result("edit", "rule.ts");
-  expect(started.active()).toEqual(["read", "bash", "prove"]);
+  expect(started.active()).toEqual(["read", "bash", "check_model", "prove"]);
 });
 
 it("proves only TypeScript files with annotations inside the project", async () => {
@@ -189,7 +238,7 @@ it("shows a proof's result in a few words, and Dafny's output only when expanded
   expect(drawn({ outcome: "passed", output: "Dafny program verifier finished with 2 verified, 0 errors" })).toEqual([
     "prove src/range.ts                                                          2.1s", "",
     "✓ Proved — every contract holds · 2 verified, 0 errors"]);
-  // #402: a pass that rests on trust says so, and names each line.
+  // A pass that rests on trust says so, and names each line.
   const trusted: OnTrust[] = [{ path: "src/range.ts", kind: "added_assume", annotation: "//@ extern", function: "lower" }];
   expect(drawn({ outcome: "passed", output: "Dafny program verifier finished with 2 verified, 0 errors", trusted }).slice(2)).toEqual([
     "✓ Proved, not outright — its contracts hold only if what it trusts is right · 2", "  verified, 0 errors",

@@ -6,6 +6,7 @@ import { runProcess } from "../../../../src/process.ts";
 import { parsePowerShell } from "../powershell-parser.ts";
 import type { EngineTool, ToolOutput } from "../tool.ts";
 import { keepTail, type Kept, maxBytes } from "../truncate.ts";
+import { issueRead, issueReadDetails } from "../issue-context.ts";
 
 /** The shell the agent's commands run in, as the model is told about it. */
 export interface Shell {
@@ -34,7 +35,7 @@ export function bash(executable: string): Shell {
 
 /**
  * Bash where `find` locates it; otherwise POSIX sh, which every Unix has at
- * `/bin/sh`, as Alpine's BusyBox ash without bash (#547). The tool keeps its
+ * `/bin/sh`, as Alpine's BusyBox ash without bash. The tool keeps its
  * name, which permission rules and hooks match; its label tells the model
  * the shell is not bash.
  */
@@ -153,6 +154,7 @@ export function shellTool(cwd: string, shell: Shell, spool: () => string, env?: 
     parameters,
     ...shell.tool === "powershell" ? { parse: (command: string) => parsePowerShell(shell.executable, command) } : {},
     async execute({ command, timeout }, signal, callId): Promise<ToolOutput> {
+      const issue = await issueRead(command, cwd, signal, env);
       const capture = new Capture(() => join(spool(), `${outputPrefix(callId)}${randomUUID().slice(0, 8)}.txt`));
       let run: Awaited<ReturnType<typeof runProcess>>;
       try {
@@ -170,7 +172,8 @@ export function shellTool(cwd: string, shell: Shell, spool: () => string, env?: 
         ending(run, timeout),
       ].filter((note) => note !== undefined);
       const text = [kept.text, ...notes].filter((part) => part !== "").join("\n\n");
-      return { text: text === "" ? "(no output)" : text, isError: run.ended !== "exited" || run.exitCode !== 0 };
+      return { text: text === "" ? "(no output)" : text, isError: run.ended !== "exited" || run.exitCode !== 0,
+        ...issue === undefined ? {} : { details: issueReadDetails(issue, text, !kept.truncated && spooled === undefined && failed === undefined) } };
     },
   };
   return tool as EngineTool;

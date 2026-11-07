@@ -181,7 +181,7 @@ it("gives work through the empty sink without recording anything", async () => {
   expect(noOperations.forUnit("x")).toBe(noOperations);
 });
 
-/** The ledger of a request that went back once and now runs its second attempt (#591). */
+/** The ledger of a request that went back once and now runs its second attempt. */
 function secondAttempt(): { ops: GateOperations; now: number } {
   const { ops, advance } = tracker();
   ops.beginRun("r");

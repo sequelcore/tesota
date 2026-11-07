@@ -11,7 +11,7 @@ The `agent` tool takes:
 
 | Argument | Meaning |
 | --- | --- |
-| `prompt` | The brief; the subagent sees nothing else of the conversation |
+| `prompt` | The brief; the rest of the conversation is excluded |
 | `description` | A few words the shell shows |
 | `type` | An [agent type](#agent-types); a general agent when not given |
 | `model` | `provider/id` its sign-in serves; else the type's, then the session's |
@@ -20,6 +20,11 @@ The `agent` tool takes:
 
 A background subagent's report arrives as a message when it ends. Several
 can run at once, and a run doesn't end while one still runs.
+
+Issues named by the request are shared separately as third-party context when
+the parent read them through a supported plain GitHub CLI issue command.
+Source and digest survive resume and compaction. Missing, truncated or oversized
+text is an explicit gap; the child gains no fetch tools or permissions.
 
 ## Reading and writing
 
@@ -36,7 +41,7 @@ A writer commits on its branch and ends with a receipt about it. Its work
 counts toward your request only once the agent merges or cherry-picks it
 into its own workspace, where your verification checks it. The report
 alone is never evidence. Your receipt lists each subagent and where its
-receipt stands ([Receipt v2](../receipt-v2.md#child)).
+receipt stands ([Receipt v3](../receipt-v3.md#run-metadata)).
 
 ### Its branch, and no other
 
@@ -76,6 +81,12 @@ type, model, depth and state; Ctrl+O shows its report. `/agents` lists
 them under the sessions. Each is a session of its own that `/resume` opens
 once it ends.
 
+Use `/agents types` to inspect the definitions loaded in the attached session,
+or `/agents types reviewer` for one type. Each entry shows its source file and
+default model, labeled **configured** or **inherited** from that session.
+An invocation's `model` overrides this default. Availability is checked when
+the subagent starts; inspecting a definition starts no subagent.
+
 ## Agent types
 
 A Markdown file with frontmatter, in Claude Code's format:
@@ -95,12 +106,18 @@ You review a change. Read the diff, then report each defect with its file and li
 | --- | --- |
 | `name` | For `type`; the file's name when not given |
 | `description` | When to use it; a file without one is left out |
-| `model` | `provider/id`; anything else, such as `sonnet` or `inherit`, leaves it to the call or session |
+| `model` | `provider/id`, or `inherit` (the default) |
 | `writes` | `true` for a writer |
 | `background` | `false` to wait for it (`is_background` too) |
 
-The body joins the subagent's instructions; other fields are ignored. A
-type whose `model` isn't `provider/id` still loads, and the shell says once
-which model it runs on instead. Tesota reads `~/.agents/agents`, then
+The body joins the subagent's instructions; other fields are ignored, including
+model keys owned by other harnesses, such as `claude.model` and `codex.model`.
+An omitted `model`, or `model: inherit`, inherits the session's model quietly.
+An unsupported native value, such as `model: sonnet`, still loads and inherits.
+The shell retains its diagnostic behind a footer warning count. F2 or
+`/warnings` opens the details; `/agents types` also shows the ignored value,
+source file and repair. Print mode writes a short warning to stderr.
+
+Tesota reads `~/.agents/agents`, then
 `~/.tesota/agents`, then each project's `.agents/agents` from the root
 down; the nearer wins by name, as with [skills](instructions-and-skills.md#skills).

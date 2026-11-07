@@ -6,7 +6,7 @@ import { below, builtIn, holds, owner, pinnedIn } from "../src/verification/proj
 import { findProjects, inFolder, owningProjects, packageTest, suggestChecks } from "../src/projects.js";
 
 /**
- * Projects found at the root or in folders below it (#318), and the checks
+ * Projects found at the root or in folders below it, and the checks
  * suggested for each, run from its own folder.
  */
 const roots: string[] = [];
@@ -15,7 +15,7 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-/** A `PATH` holding only these programs, so a package without a lockfile does not depend on the machine's (#576). */
+/** A `PATH` holding only these programs, so a package without a lockfile does not depend on the machine's. */
 async function onPath(...programs: string[]): Promise<void> {
   const bin = await mkdtemp(join(tmpdir(), "tesota-path-"));
   roots.push(bin);
@@ -41,8 +41,17 @@ async function repository(files: Record<string, string>): Promise<string> {
 
 /** Every project's suggested commands, in order. */
 function commands(root: string): string[] {
-  return suggestChecks(root).flatMap((project) => project.commands);
+  return suggestChecks(root).flatMap((project) => project.commands.map(({ command, folder }) => inFolder(folder, command)));
 }
+
+it("does not silently substitute discovered checks for untrusted declarations (#753)", async () => {
+  const root = await repository({ "package.json": JSON.stringify({ scripts: { test: "bun test" } }),
+    ".tesota/checks.json": JSON.stringify({ checks: [{ command: "python -m unittest", folder: "" }] }) });
+  const projects = suggestChecks(root);
+  expect(projects).toHaveLength(1);
+  expect(projects[0]?.unavailable).toMatch(/trust/iu);
+  expect(commands(root)).toEqual(["python -m unittest"]);
+});
 
 it("reads a package.json that begins with a byte-order mark, as Windows tools may write one (#470)", async () => {
     const root = await repository({ "package.json": `\uFEFF${JSON.stringify({ scripts: { test: "node --test" } })}`, "bun.lock": "" });
@@ -132,10 +141,10 @@ it("gives Tesota's engine tests to packages/core and root files to the root (#63
   const projects = suggestChecks(root);
   expect(findProjects(root).find(({ folder }) => folder === "packages/core")?.kinds).toContain("node");
   expect(owningProjects(projects, ["packages/core/tests/extension.test.ts", "packages/core/tests/gate.test.ts"]))
-    .toEqual([{ folder: "packages/core", commands: ["cd packages/core && npm run check"] }]);
+    .toMatchObject([{ folder: "packages/core", commands: [{ command: "npm run check", folder: "packages/core" }] }]);
   expect(owningProjects(projects, ["tests/projects.test.ts"]).map(({ folder }) => folder)).toEqual([""]);
   expect(packageTest(root, "packages/core")).toEqual({
-    command: "cd packages/core && npm run test --", script: "bun scripts/isolated.ts bun test --timeout 30000",
+    command: "cd packages/core && npm run test --", script: "bun scripts/tests.ts",
   });
 });
 
@@ -184,6 +193,6 @@ it("gives a changed file to the deepest project that holds it", async () => {
   const root = await repository({ "package.json": JSON.stringify({ scripts: { lint: "prettier" } }),
     "web/package.json": JSON.stringify({ scripts: { test: "vitest" } }), "api/go.mod": "module api\n" });
   const projects = suggestChecks(root);
-  expect(owningProjects(projects, ["web/src/a.ts"]).map(({ commands: run }) => run)).toEqual([["cd web && npm run test"]]);
+  expect(owningProjects(projects, ["web/src/a.ts"]).map(({ commands: run }) => run.map(({ command, folder }) => inFolder(folder, command)))).toEqual([["cd web && npm run test"]]);
   expect(owningProjects(projects, ["api/main.go", "README.md"]).map(({ folder }) => folder)).toEqual(["", "api"]);
 });

@@ -1,6 +1,7 @@
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, test } from "bun:test";
 import type { AccountRow } from "../src/accounts.ts";
+import type { RoleRow } from "../src/roles.ts";
 import { type UsageActions, UsagePanel, type UsageTab, type UsageView } from "../src/shell/usage-panel.ts";
 import type { AccountUsage, UsageReading } from "../src/usage.ts";
 import { bar } from "../src/usage.ts";
@@ -8,7 +9,7 @@ import { shownPercent } from "../src/usage-rule.ts";
 import { shellTheme } from "../../../src/theme.ts";
 
 /**
- * The usage panel (#184, #260): the tab each command opens, switching tabs,
+ * The usage panel: the tab each command opens, switching tabs,
  * the session's account marked, a narrow terminal, and a failed read. It is
  * given its accounts and readings, so nothing here reads one.
  */
@@ -27,8 +28,10 @@ const accounts: readonly AccountRow[] = [
 /** OpenAI not signed in with ChatGPT. */
 const noOpenAI = async (): Promise<boolean> => false;
 
-function panel({ tab = "usage", session = "claude-code@work", usage = {} as Record<string, AccountUsage>, rows = 40, list = accounts, hold = false, openai = false }:
+function panel({ tab = "usage", session = "claude-code@work", usage = {} as Record<string, AccountUsage>, rows = 40, list = accounts, hold = false, openai = false,
+  roles = [] }:
   { tab?: UsageTab; session?: string; usage?: Record<string, AccountUsage>; rows?: number; list?: readonly AccountRow[]; hold?: boolean;
+    roles?: readonly RoleRow[];
     /** OpenAI signed in with ChatGPT. */
     openai?: boolean } = {}) {
   const calls: string[] = [];
@@ -41,6 +44,7 @@ function panel({ tab = "usage", session = "claude-code@work", usage = {} as Reco
       for (const each of Object.values(usage)) onEach(each);
     },
     openaiChatGPT: async () => openai,
+    roles: () => roles,
   };
   const actions: UsageActions = { close: () => { calls.push("close"); }, manage: (id) => { calls.push(`manage ${id}`); }, add: () => { calls.push("add"); } };
   const view2 = new UsagePanel({ theme, view, actions, tab, session: () => session, rows: () => rows, redraw: () => { calls.push("redraw"); }, now: () => now });
@@ -74,10 +78,11 @@ describe("the usage panel", () => {
     }
   });
 
-  test("Tab, ← and → switch between the tabs, and Esc closes", async () => {
+  test("Tab and → go to the next tab, Shift+Tab and ← to the previous one, around the three, and Esc closes", async () => {
     const { panel: opened, calls } = panel({ usage: full });
     await opened.start();
-    for (const [key, expected] of [["\t", "accounts"], ["\t", "usage"], ["\x1b[C", "accounts"], ["\x1b[D", "usage"], ["\x1b[Z", "accounts"], ["\x1b[D", "usage"]] as const) {
+    for (const [key, expected] of [["\t", "accounts"], ["\t", "roles"], ["\t", "usage"], ["\x1b[C", "accounts"], ["\x1b[D", "usage"],
+      ["\x1b[Z", "roles"], ["\x1b[D", "accounts"], ["\x1b[Z", "usage"]] as const) {
       opened.handleInput(key);
       expect(opened.tab).toBe(expected);
     }
@@ -161,7 +166,7 @@ describe("the usage panel", () => {
     expect(screen(opened)).toContain("reading…");
     // A saved reading, as pendingUsage gives it.
     const withSaved = new UsagePanel({ theme, view: { accounts: async () => accounts.slice(0, 1), pending: () => [saved],
-      read: () => new Promise(() => undefined), openaiChatGPT: noOpenAI }, actions: { close() {}, manage() {}, add() {} }, session: () => undefined, rows: () => 40, redraw() {}, now: () => now });
+      read: () => new Promise(() => undefined), openaiChatGPT: noOpenAI, roles: () => [] }, actions: { close() {}, manage() {}, add() {} }, session: () => undefined, rows: () => 40, redraw() {}, now: () => now });
     void withSaved.start();
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(screen(withSaved)).toContain("saved 25m ago, reading…");
@@ -191,7 +196,7 @@ describe("the usage panel", () => {
     let attempts = 0;
     const opened = new UsagePanel({ theme, actions: { close() {}, manage() {}, add() {} }, session: () => undefined, rows: () => 40, redraw() {}, now: () => now,
       view: { accounts: async () => { attempts += 1; if (attempts === 1) throw new Error("settings are unreadable"); return accounts.slice(0, 1); },
-        pending: (given) => given.map(({ id }) => ({ id, state: "reading" as const })), read: async () => undefined, openaiChatGPT: noOpenAI } });
+        pending: (given) => given.map(({ id }) => ({ id, state: "reading" as const })), read: async () => undefined, openaiChatGPT: noOpenAI, roles: () => [] } });
     await opened.start();
     expect(screen(opened)).toContain("The accounts could not be read: settings are unreadable");
     opened.handleInput("r");
@@ -222,7 +227,7 @@ describe("the usage panel", () => {
         accounts: (_signal, onUpdate) => { update = onUpdate; onUpdate(checking); return new Promise((resolve) => { finish = () => { resolve(accounts); }; }); },
         // As pendingUsage does: a saved reading only for an account whose sign-in is known.
         pending: (rows) => rows.map(({ id, identity }) => id === "claude-code" && identity !== undefined ? saved : { id, state: "reading" as const }),
-        read: () => new Promise(() => undefined), openaiChatGPT: noOpenAI } });
+        read: () => new Promise(() => undefined), openaiChatGPT: noOpenAI, roles: () => [] } });
     void opened.start();
     // Before any check returns: every account is there, its sign-in being checked.
     expect(screen(opened)).not.toContain("Reading the accounts");
@@ -247,7 +252,7 @@ describe("the usage panel", () => {
       view: {
         accounts: async (signal, onUpdate) => { signals.push(signal); onUpdate(accounts.slice(0, 1)); return accounts.slice(0, 1); },
         pending: (rows) => rows.map(({ id }) => ({ id, state: "reading" as const })),
-        read: (_rows, onEach, signal) => { signals.push(signal); late.push(onEach); return new Promise(() => undefined); }, openaiChatGPT: noOpenAI } });
+        read: (_rows, onEach, signal) => { signals.push(signal); late.push(onEach); return new Promise(() => undefined); }, openaiChatGPT: noOpenAI, roles: () => [] } });
     void opened.start();
     await Bun.sleep(0);
     expect(signals.map((signal) => signal.aborted)).toEqual([false, false]);
@@ -323,6 +328,51 @@ describe("the usage panel", () => {
     expect(narrow.join("\n")).toMatch(/same account as\n? *claude-code/u);
     opened.handleInput("\t");
     for (const width of [44, 20]) for (const line of opened.render(width)) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+  });
+
+  const roles: readonly RoleRow[] = [
+    { group: "session", role: "this session", model: "claude-code@work/claude-opus-5-5", from: "/model" },
+    { group: "verification", role: "open cases", model: "off", from: "setting openCasesModel" },
+    { group: "verification", role: "ClaimCheck", model: "claude-code/claude-sonnet-5-5", from: "--claimcheck-model" },
+    { group: "agent", role: "explorer", model: "openai-codex@pro/gpt-6-luna", from: "type file" },
+    { group: "agent", role: "worker", model: "openai/gpt-6-sol", from: "inherited" },
+  ];
+
+  test("the Roles tab lists each role's model, where it is chosen, its account and that account's least-left window", async () => {
+    const { panel: opened } = panel({ tab: "roles", usage: full, roles });
+    await opened.start();
+    const lines = text(opened);
+    expect(lines[0]).toMatch(/^ +Usage +Accounts +\[ Roles \]/u);
+    expect(lineOf(opened, "Least left")).toMatch(/^ {2}Role +Model +From +Account +Least left$/u);
+    // An account on the same plan as another shows that one's reading.
+    expect(lineOf(opened, "this session")).toMatch(/claude-opus-5-5 +\/model +claude-code@work +29% week$/u);
+    expect(lineOf(opened, "ClaimCheck")).toMatch(/claude-sonnet-5-5 +--claimcheck-model +claude-code +29% week$/u);
+    expect(lineOf(opened, "open cases")).toMatch(/off +setting openCasesModel *$/u);
+    // A read that failed has no window; a provider that is not an account has no reading at all.
+    expect(lineOf(opened, "explorer")).toMatch(/gpt-6-luna +type file +openai-codex@pro +—$/u);
+    expect(lineOf(opened, "worker")).toMatch(/gpt-6-sol +inherited +openai *$/u);
+    const verification = lines.indexOf("Verification");
+    expect(verification).toBeGreaterThan(lines.findIndex((line) => line.includes("this session")));
+    expect(lines.indexOf("Agent types")).toBeGreaterThan(verification);
+    expect(screen(opened)).toContain("/agents types");
+    expect(lines.slice(-1)[0]).toMatch(/↑↓ scroll/u);
+  });
+
+  test("a role's least-left window is painted as its meter: the warning color at a quarter left", async () => {
+    const low = { "claude-code": { id: "claude-code", state: "read", reading: reading(80, 20) } } as const satisfies Record<string, AccountUsage>;
+    const { panel: opened } = panel({ tab: "roles", usage: low, roles: roles.slice(2, 3) });
+    await opened.start();
+    expect(opened.render(100).join("\n")).toContain(theme.fg("warning", "20% week"));
+  });
+
+  test("where the table does not fit, each role takes two lines, within the width", async () => {
+    const { panel: opened } = panel({ tab: "roles", usage: full, roles });
+    await opened.start();
+    for (const width of [60, 30]) for (const line of opened.render(width)) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+    const narrow = text(opened, 60);
+    const at = narrow.findIndex((line) => line.includes("this session"));
+    expect(narrow[at]).toMatch(/this session +claude-opus-5-5$/u);
+    expect(narrow[at + 1]).toMatch(/^ {4}\/model · claude-code@work · 29% week$/u);
   });
 
   test("a short terminal scrolls the body rather than growing past it", async () => {

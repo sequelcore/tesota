@@ -1,9 +1,15 @@
-/** #318: a directory is a strict descendant only across a folder boundary; the root contains every other directory. */
+/** A directory is a strict descendant only across a folder boundary; the root contains every other directory. */
 //@ ensures \result <==> (folder !== other && (folder === "" || other.startsWith(folder + "/")))
 //@ ensures folder === other ==> !\result
 //@ ensures folder === "" && other !== "" ==> \result
 export function below(folder: string, other: string): boolean {
   return folder !== other && (folder === "" || other.startsWith(folder + "/"));
+}
+
+/** Project-declared commands run only under current operator trust of unchanged declarations. */
+//@ ensures \result <==> (unchanged && trusted)
+export function declaredCheckAllowed(unchanged: boolean, trusted: boolean): boolean {
+  return unchanged && trusted;
 }
 
 /** A build is shown by an exact marker, or a filename ending in a wildcard marker's suffix. Version files are not build markers. */

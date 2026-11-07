@@ -1,3 +1,4 @@
+import { emptyReceipt } from "../../../tests/receipts.ts";
 import { createModels, fauxProvider, InMemoryCredentialStore } from "@earendil-works/pi-ai";
 import { expect, test } from "bun:test";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -25,12 +26,12 @@ test("/graph then o writes beside the selected capture, prints its path and only
     copyFileSync(join(fixture, data.artifacts.dot.file), join(root, data.artifacts.dot.file));
     const at = new Date(0).toISOString();
     writeFileSync(join(sessions, "graphs.jsonl"), [
-      { type: "session", format: "tesota-session", version: 6, id: "graphs", cwd: root, checkout: root, createdAt: at },
+      { type: "session", format: "tesota-session", version: 7, id: "graphs", cwd: root, checkout: root, createdAt: at },
       { type: "request", run: 1, text: "HTML graph request", origin: "interactive", at, base: { units: [] } },
       { type: "custom_message", run: 1, customType: "tesota-receipt-graphs", content: "HTML receipt", display: true,
-        details: { receipt: {}, graphs: [{ subject: "Lights.tla", capture: { status: "captured", manifest } }] } },
+        details: { receipt: emptyReceipt, graphs: [{ subject: "Lights.tla", capture: { status: "captured", manifest } }] } },
     ].map(v => JSON.stringify(v)).join("\n") + "\n");
-    send("/resume"); await terminal.until("HTML graph request"); terminal.type("\r"); await terminal.until("HTML receipt");
+    send("/resume"); await terminal.until("HTML graph request"); terminal.type("\r"); await terminal.until("Acceptance remains with the reviewer.");
     send("/graph --open lights-complete");
     await terminal.until("Use: /graph [--plain] [name]");
     expect(opened).toEqual([]);

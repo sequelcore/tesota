@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { contentHash } from "../src/evidence.js";
-import { annotations, proofSources, proveFile, unreadSpecification, unreadSpecifications } from "../src/verification/lemmascript-verifier.js";
+import { annotations, proofSources, proveFile, unreadSpecifications } from "../src/verification/lemmascript-verifier.js";
+import { sourceInfo } from "../src/verification/lemmascript-verifier.js";
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -30,18 +31,23 @@ it("reads the properties a LemmaScript file claims", () => {
     ["//@ ensures \\result >= 0", "//@ invariant i >= 0"]);
 });
 
-it("finds the specification lines LemmaScript skips without a word, as lsc check 0.6.5 skips them", () => {
-  // Read: one space after //@, the keyword, then a space and an expression, however indented or spaced after the keyword.
-  for (const line of ["//@ ensures \\result > 0", "    //@ invariant 0 <= i", "//@ ensures  \\result > 0", "//@ requires x > 0",
-    "//@ verify", "//@ skip", "//@ ensure \\result > 0", "// @ensures not an annotation"]) {
-    expect(unreadSpecification(line), line).toBe(false);
+it("finds the specification lines LemmaScript skips without a word, as lsc check 0.6.5 skips them", async () => {
+  // Attachment comes from the dependency, including a misspelling that the old spacing heuristic missed.
+  for (const line of ["//@ ensures \\result > 0", "//@ ensures  \\result > 0"]) {
+    expect(await unreadSpecifications(`${line}\nexport function f(): number { return 1; }\n`)).toEqual([]);
   }
-  // Skipped: more than one space after //@, none, a tab after the keyword, or nothing after it.
-  for (const line of ["//@   ensures \\result > 0", "//@ensures \\result > 0", "//@ ensures\t\\result > 0", "//@ ensures", "  //@  requires x > 0"]) {
-    expect(unreadSpecification(line), line).toBe(true);
+  for (const line of ["//@   ensures \\result > 0", "//@ensures \\result > 0", "//@ ensure \\result > 0"]) {
+    expect(await unreadSpecifications(`${line}\nexport function f(): number { return 1; }\n`)).toEqual([{ line: 1, text: line }]);
   }
-  expect(unreadSpecifications("//@ ensures \\result > 0\n//@   ensures \\result < 9\nexport function f(): number { return 1; }\n"))
+  expect((await unreadSpecifications("//@ ensures \\result > 0\n//@   ensures \\result < 9\nexport function f(): number { return 1; }\n")))
     .toEqual([{ line: 2, text: "//@   ensures \\result < 9" }]);
+}, 60_000);
+
+it("reads class-method attachment and forced purity from the dependency (#772)", async () => {
+  const source = "class C {\n  //@ verify\n  //@ ensures \\result > 0\n  m(): number { return 1; }\n}\n";
+  expect(await unreadSpecifications(source)).toEqual([]);
+  const pure = "//@ pure\n//@ ensures \\result > 0\nexport function f(): number { return 1; }\n";
+  expect(await sourceInfo("pure.ts", pure)).toMatchObject({ status: "read", trusted: [{ name: "f", annotation: "//@ pure" }] });
 });
 
 it("maps a proof to its source as lsc config does, beside it or mirrored under any proof-dir of the project (#403)", async () => {

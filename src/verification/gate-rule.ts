@@ -1,15 +1,22 @@
 import type { ProofOutcome } from "./proof-outcome-rule.js";
 
+/** A selected design check requires verification even when no tool may have changed files. */
+//@ ensures \result <==> changed || selected
+export function verificationRequired(changed: boolean, selected: boolean): boolean {
+  return changed || selected;
+}
+
 /**
- * A started tool may change files unless it is a trusted built-in reader or
- * question, or it starts in a read-only session, which changes nothing: its
- * gate never verifies edits it didn't make, such as a parent's in the folder
- * it shares (#585). `prove` regenerates the proof's files, so it makes the
- * request eligible too.
+ * A started tool may change files unless it is a trusted built-in reader,
+ * question or task list, whose name no extension may take, or it starts in
+ * a read-only session, which changes nothing: its gate never verifies edits
+ * it didn't make, such as a parent's in the folder it shares. `prove`
+ * regenerates the proof's files, so it makes the request eligible too.
  */
-//@ ensures \result <==> (!nativeQuestion && !readOnly && toolName !== "read" && toolName !== "grep" && toolName !== "find" && toolName !== "ls")
+//@ ensures \result <==> (!nativeQuestion && !readOnly && toolName !== "read" && toolName !== "grep" && toolName !== "find" && toolName !== "ls" && toolName !== "update_tasks")
 export function toolMayChangeFiles(toolName: string, nativeQuestion: boolean, readOnly: boolean): boolean {
-  return !nativeQuestion && !readOnly && toolName !== "read" && toolName !== "grep" && toolName !== "find" && toolName !== "ls";
+  return !nativeQuestion && !readOnly && toolName !== "read" && toolName !== "grep" && toolName !== "find" && toolName !== "ls"
+    && toolName !== "update_tasks";
 }
 
 /**
@@ -41,7 +48,7 @@ export function gateVerdict(outcome: ProofOutcome, failure: string, sent: readon
 }
 
 /**
- * What the gate does with one of the project's commands (#726): a failure
+ * What the gate does with one of the project's commands: a failure
  * the base already had (`checkOrigin`) is the operator's, never sent back to
  * the agent; any other is judged as a proof is (`gateVerdict`).
  */

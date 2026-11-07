@@ -1,4 +1,4 @@
-"""Run one SWE-smith instance's tests with a diff applied, for findings as evidence (#375).
+"""Run one SWE-smith instance's tests with a diff applied, for findings as evidence.
 
 Starts a container from the instance's image, whose repository is the code
 before the planted bug, applies the diff from --patch-file (the bug, a

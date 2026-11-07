@@ -1,6 +1,6 @@
 {
   "name": "@tesota/core",
-  "version": "0.1.0-alpha.9",
+  "version": "0.1.0-alpha.10",
   "private": true,
   "description": "Tesota's engine: the host contract, its conformance tests and performance budgets",
   "license": "Apache-2.0",
@@ -10,7 +10,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "bun scripts/isolated.ts bun test --timeout 30000",
+    "test": "bun scripts/tests.ts",
     "budget": "bun scripts/isolated.ts bun scripts/budget.ts",
     "screenshots": "bun scripts/screenshots.ts",
     "check": "bun run typecheck && bun run test && bun run budget"

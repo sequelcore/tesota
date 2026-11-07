@@ -46,18 +46,24 @@ Direction, without dates. The plan lives in
 - **Receipts you can share:** a page generated from its evidence, and each
   path's owners ([#661](https://github.com/sequelcore/tesota/issues/661),
   [#533](https://github.com/sequelcore/tesota/issues/533)).
-- **The agent's tools:** a task list, web pages and images, background
-  commands ([#521](https://github.com/sequelcore/tesota/issues/521)–[#524](https://github.com/sequelcore/tesota/issues/524)).
-- **Sessions and models:** a session in a new worktree, and choosing the
-  model that continues after a plan's limit
-  ([#579](https://github.com/sequelcore/tesota/issues/579),
-  [#597](https://github.com/sequelcore/tesota/issues/597)).
-- **Fewer prerequisites:** the verification toolchain offered on first use,
-  and checking models without Java
-  ([#688](https://github.com/sequelcore/tesota/issues/688),
-  [#738](https://github.com/sequelcore/tesota/issues/738)).
-- **Working from a phone** ([#467](https://github.com/sequelcore/tesota/issues/467)),
-  and open [bugs](https://github.com/sequelcore/tesota/issues?q=is%3Aissue+is%3Aopen+label%3Abug).
+- **Cases a request leaves open:** found before the work, from inputs
+  where readings of the request disagree, and measured first
+  ([#796](https://github.com/sequelcore/tesota/issues/796)).
+- **Background commands that stop before verification**
+  ([#524](https://github.com/sequelcore/tesota/issues/524)).
+- **Fewer prerequisites:** the verification toolchain offered on first use
+  ([#688](https://github.com/sequelcore/tesota/issues/688)).
+- Open [bugs](https://github.com/sequelcore/tesota/issues?q=is%3Aissue+is%3Aopen+label%3Abug).
+
+The engine gets what verification needs and fixes to its bugs. Features
+that only match other coding agents wait: a task list, web pages and images
+([#521](https://github.com/sequelcore/tesota/issues/521)–[#523](https://github.com/sequelcore/tesota/issues/523)),
+a session in a new worktree and choosing the model after a plan's limit
+([#579](https://github.com/sequelcore/tesota/issues/579),
+[#597](https://github.com/sequelcore/tesota/issues/597)), working from a
+phone ([#467](https://github.com/sequelcore/tesota/issues/467)), a terminal
+theme that follows yours ([#748](https://github.com/sequelcore/tesota/issues/748))
+and a Roles tab ([#672](https://github.com/sequelcore/tesota/issues/672)).
 
 To propose a change, open an [issue](https://github.com/sequelcore/tesota/issues/new/choose)
 first; see [CONTRIBUTING.md](CONTRIBUTING.md).

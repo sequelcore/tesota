@@ -1,27 +1,66 @@
 import { type AssistantMessage, type Context, createModels, InMemoryCredentialStore, type JsonObject, fauxAssistantMessage, fauxProvider,
-  fauxToolCall } from "@earendil-works/pi-ai";
+  fauxToolCall, getCurrentSystemPrompt } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { noEvidence, type Receipt, receiptEntry } from "../../../src/receipt.ts";
-import { agentTypes, agentTypesIn, unusedModels } from "../src/agents.ts";
+import { noEvidence, noRequestReview, type Receipt, receiptEntry } from "../../../src/receipt.ts";
+import { agentModelWarning, agentTypes, agentTypesIn } from "../src/agents.ts";
 import { engineModels } from "../src/model-access.ts";
 import { childLimits } from "../src/children.ts";
 import { configHooks, installedGit } from "../src/workspace.ts";
 import { createSession, type EngineSession, openSession, type SessionOptions } from "../src/session.ts";
 import { lastFloorNotice, readSessionFile, type SessionEntry } from "../src/session-file.ts";
 import { accepts, signInWithChatGPT } from "./scripted.ts";
+import { issueCli } from "./issue-cli.ts";
+import { compactedHead, referenceMessage } from "../src/loop.ts";
 
 /**
- * Subagents (#525): the `agent` tool starts a child session as a job of the
+ * Subagents: the `agent` tool starts a child session as a job of the
  * run, in the background or waited for; a run never settles while its jobs
  * run; children read the parent's folder or write in a worktree of their
  * own and end with their own receipt; depth, limits, permissions, stopping
  * and recovery hold.
  */
 const open: EngineSession[] = [];
+
+test("a read-only child receives the parent's exact issue read as separate third-party context (#637)", async () => {
+  const cwd = folder();
+  const issue = "title: Expected behavior\nbody: Reject equal bounds. THIRD_PARTY_637";
+  const env = await issueCli(cwd, issue);
+  const parent = session({
+    "Fix fixture/project#637.": [
+      { calls: [{ tool: process.platform === "win32" ? "powershell" : "bash", args: { command: "gh issue view 637" } }] },
+      { calls: [{ tool: "agent", args: { prompt: "Review requirement.", description: "review", wait: true } }] }, "done",
+    ],
+    "Review requirement.": [(context) => {
+      expect(context.messages.some((message) => textOf(message.content).includes(JSON.stringify(issue)))).toBe(true);
+      expect(textOf(context.messages.find((message) => message.role === "user")?.content ?? "")).toBe("Review requirement.");
+      expect(promptOf(context)).not.toContain("THIRD_PARTY_637");
+      expect(toolNames(context)).not.toContain("powershell");
+      expect(toolNames(context)).not.toContain("bash");
+      return fauxAssistantMessage("reviewed");
+    }],
+  }, { cwd, env });
+  await parent.prompt("Fix fixture/project#637.");
+  expect(parent.outcome()).toBe("completed");
+  expect(parent.messages().filter((message) => message.role === "toolResult").every((message) => !message.isError)).toBe(true);
+  expect(parent.ledger()[0]?.references).toMatchObject([{ status: "read", source: "https://github.com/fixture/project/issues/637",
+    text: issue, callId: expect.any(String), digest: expect.stringMatching(/^[a-f0-9]{64}$/u) }]);
+  const childFile = readSessionFile(parent.file).entries.find((entry) => entry.type === "job_start")?.session;
+  if (childFile === undefined) throw new Error("child did not start");
+  await parent.dispose();
+  const reopened = openSession(childFile, { ...routed({}), verifier: accepts });
+  open.push(reopened);
+  expect(reopened.ledger()[0]?.references).toEqual(parent.ledger()[0]?.references);
+  expect(reopened.messages().some((message) => message.text?.includes(JSON.stringify(issue)))).toBe(true);
+  const references = reopened.ledger()[0]?.references ?? [];
+  const compacted = compactedHead([{ role: "user", content: "Review requirement.", timestamp: 0 }, referenceMessage(references, 0)],
+    "A summary that omitted the issue.", { read: [], changed: [] }, []);
+  expect(compacted.content).toContain("Third-party reference data, separate from operator instructions:");
+  expect(compacted.content).toContain(JSON.stringify(issue));
+});
 afterEach(async () => { await Promise.all(open.splice(0).map((session) => session.dispose())); });
 
 const folder = (prefix = "tesota-agents-"): string => mkdtempSync(join(tmpdir(), prefix));
@@ -59,7 +98,8 @@ function routed(scripts: Record<string, Reply[]>): Pick<SessionOptions, "models"
 const system = (context: Context): { content?: string; toolsAdded?: { name: string; description: string }[] }[] =>
   (context.messages as unknown as { role: string }[]).filter((message) => message.role === "system") as never;
 const toolNames = (context: Context): string[] => system(context).flatMap(({ toolsAdded }) => (toolsAdded ?? []).map(({ name }) => name));
-const promptOf = (context: Context): string => system(context).map(({ content }) => content ?? "").join("\n");
+/** The system prompt the model read, its sections included. */
+const promptOf = (context: Context): string => getCurrentSystemPrompt(context.messages);
 
 function session(scripts: Record<string, Reply[]>, options: Partial<SessionOptions> = {}): EngineSession {
   const created = createSession({ cwd: options.cwd ?? folder(), folder: folder("tesota-agents-sessions-"), verifier: accepts,
@@ -196,8 +236,8 @@ describe("the agent tool", () => {
 
   test("a writing child works in a worktree of its own and its branch and receipt reach the parent", async () => {
     const cwd = repository();
-    const receipt: Receipt = { version: 2, repository: true, base: null, startedAt: "2026-10-21T00:00:00.000Z",
-      settledAt: "2026-10-21T00:00:01.000Z", engine: "test", ...noEvidence };
+    const receipt: Receipt = { version: 3, repository: true, base: null, startedAt: "2026-10-21T00:00:00.000Z",
+      settledAt: "2026-10-21T00:00:01.000Z", engine: "test", ...noEvidence, requestContext: { requests: [] }, requestReview: noRequestReview };
     const verifier: SessionOptions["verifier"] = (pi, request) => {
       pi.on("agent_before_settle", (_event, ctx) => request()?.text === "write b.txt" ? { entries: [receiptEntry(ctx.mode, receipt)] } : undefined);
     };
@@ -212,7 +252,7 @@ describe("the agent tool", () => {
     expect(childCwd).not.toBe(parent.workspace.cwd);
     expect(readFileSync(join(childCwd, "b.txt"), "utf8")).toBe("b\n");
     const [child] = parent.ledger()[0]?.children ?? [];
-    // Its receipt records no change and no evidence, so it claims no standing (#668).
+    // Its receipt records no change and no evidence, so it claims no standing.
     expect(child).toMatchObject({ description: "write b", writes: true, outcome: "completed" });
     expect(child?.verification).toBeUndefined();
     expect(child?.branch).toMatch(/^tesota\//u);
@@ -258,7 +298,7 @@ describe("the agent tool", () => {
     expect(lastFloorNotice(readSessionFile(parent.file).entries)).toContain("its subagents: 1 call, listed in their own sessions");
   });
 
-  // #619: a writing child's branch is guarded by Git's configuration hooks, which came in Git 2.54.
+  // A writing child's branch is guarded by configuration hooks, which require Git 2.54.
   const guarding = configHooks(installedGit());
   const shellTool = process.platform === "win32" ? "powershell" : "bash";
 
@@ -475,9 +515,9 @@ describe("recovery", () => {
       const resumed = openSession(file, { ...routed({}), verifier: accepts });
       open.push(resumed);
       expect(entries(file).filter((entry) => entry.type === "job_end")).toMatchObject([{ job: job.job, outcome: "unknown" }]);
-      // A subagent may change files, as the gate decides it (`toolMayChangeFiles`), so the run gets a receipt that verified nothing (#599).
+      // A subagent may change files, as the gate decides it (`toolMayChangeFiles`), so the run gets a receipt that verified nothing.
       expect(resumed.history().slice(-2)).toMatchObject([{ role: "custom", customType: "tesota.job" },
-        { role: "custom", customType: "tesota-receipt", details: { changed: "unreadable", proofs: [], tests: [] } }]);
+        { role: "custom", customType: "tesota-receipt", details: { changed: "unreadable", codeEvidence: { proofs: [], tests: [] } } }]);
       expect(entries(job.session).at(-1)).toMatchObject({ type: "run_end", outcome: "interrupted" });
       const once = [readFileSync(file, "utf8"), readFileSync(job.session, "utf8")];
       await resumed.dispose();
@@ -493,7 +533,7 @@ describe("recovery", () => {
     const cwd = folder();
     const child = join(sessions, "child.jsonl");
     const base = { units: [] };
-    const header = (id: string, extra: object) => JSON.stringify({ type: "session", format: "tesota-session", version: 6, id, cwd,
+    const header = (id: string, extra: object) => JSON.stringify({ type: "session", format: "tesota-session", version: 7, id, cwd,
       createdAt: new Date(0).toISOString(), ...extra });
     writeFileSync(child, [header("child", { parent: { session: "parent", job: "j1", depth: 1 } }),
       JSON.stringify({ type: "request", run: 1, text: "work", origin: "rpc", at: new Date(0).toISOString(), base }), ""].join("\n"));
@@ -530,11 +570,11 @@ describe("agent types", () => {
     writeFileSync(join(project, ".agents", "agents", "notes.txt"), "not a type");
     const [helper] = agentTypes(project, { user: home, tesota: folder("tesota-agents-tesota-") });
     expect(helper).toEqual({ name: "helper", description: "The project's helper", path: join(project, ".agents", "agents", "helper.md"),
-      instructions: "Project body", unusedModel: "model: sonnet", writes: true, background: false });
+      instructions: "Project body", unsupportedModel: "sonnet", writes: true, background: false });
     expect(agentTypesIn(join(home, "missing"))).toEqual([]);
   });
 
-  test("a type whose model Tesota does not run still loads, and the operator is told the model it runs on (#568)", () => {
+  test("only unsupported native model values produce a diagnostic (#794)", () => {
     const types = folder("tesota-agents-models-");
     const type = (name: string, fields: string): void => {
       writeFileSync(join(types, `${name}.md`), `---\nname: ${name}\ndescription: ${name}\n${fields}---\nBody\n`);
@@ -545,14 +585,33 @@ describe("agent types", () => {
     type("others", "claude.model: opus\ncodex.model: gpt-6-astra\ncodex.sandbox_mode: read-only\n");
     type("plain", "");
     const found = agentTypesIn(types).sort((a, b) => a.name.localeCompare(b.name));
-    expect(found.map(({ name, model, unusedModel }) => [name, model, unusedModel])).toEqual([
-      ["aliased", undefined, "model: sonnet"], ["inherits", undefined, undefined], ["others", undefined, "claude.model, codex.model"],
+    expect(found.map(({ name, model, unsupportedModel }) => [name, model, unsupportedModel])).toEqual([
+      ["aliased", undefined, "sonnet"], ["inherits", undefined, undefined], ["others", undefined, undefined],
       ["plain", undefined, undefined], ["routed", "openai/gpt-6.1-sol", undefined],
     ]);
-    expect(unusedModels(found, "openai/gpt-6.1-sol")).toBe("Agent types aliased (model: sonnet), others (claude.model, codex.model) "
-      + "run on the session's model, openai/gpt-6.1-sol, unless the call names one: Tesota takes a type's model only as provider/id.");
-    expect(unusedModels(found.filter(({ name }) => name === "others"), "openai/x")).toStartWith("Agent type others (claude.model, codex.model) runs");
-    expect(unusedModels(found.filter(({ name }) => name !== "aliased" && name !== "others"), "openai/x")).toBeUndefined();
+    expect(agentModelWarning(found)).toBe("1 agent type has an unsupported model. See /agents types.");
+    expect(agentModelWarning(found.filter(({ name }) => name !== "aliased"))).toBeUndefined();
+    expect(agentModelWarning([...found, ...found.map((type) => ({ ...type, name: `other-${type.name}` }))]))
+      .toBe("2 agent types have an unsupported model. See /agents types.");
+  });
+
+  test("native agent definitions replace shared metadata by name (#794)", () => {
+    const home = folder("tesota-agents-home-");
+    const tesota = folder("tesota-agents-native-");
+    const shared = join(home, ".agents", "agents");
+    const native = join(tesota, "agents");
+    mkdirSync(shared, { recursive: true });
+    mkdirSync(native);
+    writeFileSync(join(shared, "helper.md"), "---\nname: helper\ndescription: Shared helper\nclaude.model: opus\ntesota.model: faux/other\n---\nShared.\n");
+    const project = folder("tesota-agents-project-");
+    const [inherited] = agentTypes(project, { user: home, tesota });
+    expect(inherited?.model).toBeUndefined();
+    expect(inherited?.path).toBe(join(shared, "helper.md"));
+    writeFileSync(join(native, "helper.md"), "---\nname: helper\ndescription: Native helper\nmodel: faux/helper\n---\nNative.\n");
+    const found = agentTypes(project, { user: home, tesota });
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({ model: "faux/helper", path: join(native, "helper.md"), instructions: "Native." });
+    expect(agentModelWarning(found)).toBeUndefined();
   });
 
   test("a child started with a type reads its body, and the parent's tool lists the types", async () => {

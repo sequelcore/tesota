@@ -3,10 +3,10 @@ import { createHash, randomUUID } from "node:crypto";
 import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, realpathSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
-import { entryReceipt, type FloorRefusal, interruptedReceipt, isReceipt, type ReceiptChild, receiptEntry } from "../../../src/receipt.ts";
+import { entryReceipt, type ExternalEffect, type FloorRefusal, interruptedReceipt, isReceipt, type ReceiptChild, receiptEntry } from "../../../src/receipt.ts";
 import { toolMayChangeFiles } from "../../../src/verification/gate-rule.ts";
 import manifest from "../package.json" with { type: "json" };
-import type { Base } from "./base.ts";
+import { captureBase, type Base } from "./base.ts";
 import type { ExtensionAPI } from "../../../src/contract.ts";
 import { type AgentType, agentTypes } from "./agents.ts";
 import { branchOf } from "./branch.ts";
@@ -16,9 +16,11 @@ import { providerRetryTokens, providerRetryType } from "./provider-retry.ts";
 import type { StartedSkill } from "./instructions.ts";
 import {
   compactedHead, type Continuation, continuesType, createLoop, type HistoryMessage, jobMessage, type LoopOptions, type LoopSession, type LoopState, skillMessage,
-  toolResult,
+  toolResult, referenceMessage, checkPlanMessage,
 } from "./loop.ts";
+import type { PromptEntry } from "./prompt.ts";
 import { agentTool } from "./tools/agent.ts";
+import { taskBook } from "./tasks.ts";
 import { noEffect, notRun, outcomeUnknown, repairs } from "./reconcile-rule.ts";
 import {
   type Behavior, createSessionFile, floorRefusals, type Origin, readSessionFile, type Repair, type SessionEntry, sessionFormat, sessionVersion,
@@ -26,6 +28,8 @@ import {
 } from "./session-file.ts";
 import { lockSession, SessionLockedError } from "./session-lock.ts";
 import { unverifiedFrom } from "../../../src/verification/request-context-rule.js";
+import { readReferences, referenceType, type RequestReference } from "../../../src/request-references.ts";
+import { issueReferences } from "./issue-context.ts";
 import { outputPrefix } from "./tools/shell.ts";
 import { keepTail, maxBytes } from "./truncate.ts";
 import { bindWorkspace, outsideChange, reopenWorkspace, type Workspace } from "./workspace.ts";
@@ -53,25 +57,27 @@ export interface LedgerRequest {
   readonly amendments: readonly LedgerAmendment[];
   /** Every accepted request input in the order it entered the durable journal. */
   readonly inputs: readonly RequestInput[];
-  /** The subagents the run started and how each ended (#525), in the order they ended. */
+  /** The subagents the run started and how each ended, in the order they ended. */
   readonly children: readonly ReceiptChild[];
-  /** The calls Tesota's floor refused in the run (#622), in order. */
+  /** The calls Tesota's floor refused in the run, in order. */
   readonly refusals: readonly FloorRefusal[];
+  readonly externalEffects?: readonly ExternalEffect[];
+  readonly references?: readonly RequestReference[];
   /**
-   * The earlier run this one continues (#651), and what the verifier saved as
+   * The earlier run this one continues, and what the verifier saved as
    * that run ended on its question (`requestStartType`), for it to restore.
    */
   readonly continues?: { readonly run: number; readonly start?: unknown };
   /**
    * The earlier requests whose changes were never verified, that this one
-   * follows (#627, `unverifiedFrom`), oldest
-   * first, without one a later of them, or this one, continues (#651), whose
+   * follows (`unverifiedFrom`), oldest
+   * first, without one a later of them, or this one, continues, whose
    * text and inputs it already holds.
    */
-  readonly unverifiedRequests: readonly Pick<LedgerRequest, "run" | "text" | "inputs">[];
+  readonly unverifiedRequests: readonly Pick<LedgerRequest, "run" | "text" | "inputs" | "references">[];
 }
 
-/** What makes a session a child of another (#525): its parent, where it works, the tree it counts in, its types and instructions. */
+/** What makes a session a child of another: its parent, where it works, the tree it counts in, its types and instructions. */
 export interface ChildSession {
   readonly parent: NonNullable<SessionHeader["parent"]>;
   readonly bind: (id: string) => Workspace;
@@ -87,27 +93,27 @@ export interface EngineSession extends LoopSession {
   readonly file: string;
   /** The requests, read from the session's ledger entries alone. */
   ledger(): readonly LedgerRequest[];
-  /** Where the session works (#453): its checkout, or a worktree of it. */
+  /** Where the session works: its checkout, or a worktree of it. */
   readonly workspace: Pick<Workspace, "cwd" | "checkout" | "worktree" | "branch">;
   /** Once disposed, where its kept work is, when its worktree changed and so stays. */
   kept(): string | undefined;
-  /** The agent types its subagents start with (#525). */
+  /** The agent types its subagents start with. */
   readonly types: readonly AgentType[];
-  /** Its scratch folder (#653), removed when it is disposed; none when that place could enter its change. */
+  /** Its scratch folder, removed when it is disposed; none when that place could enter its change. */
   readonly scratch: string | undefined;
   /**
-   * The operator's reply to where the session stands (#651): when its last
+   * The operator's reply to where the session stands: when its last
    * run ended on an unresolved question, the answer to it, which starts a run
    * that continues that request (`continuation`); otherwise a follow-up, a
    * new request as the shell sends one.
    */
   reply(text: string): Promise<void>;
-  /** In plain words, the question the last run ended on and that a reply continues it (#713); none when no question is pending. */
+  /** In plain words, the question the last run ended on and that a reply continues it; none when no question is pending. */
   awaiting(): string | undefined;
 }
 
 /**
- * What verifies a session's runs (#439): it registers like an extension,
+ * What verifies a session's runs: it registers like an extension,
  * and reads the running request from the ledger, so what it verifies is
  * what was recorded before any tool ran, not what it captured itself.
  */
@@ -119,11 +125,11 @@ export type SessionOptions = Omit<LoopOptions, "writer" | "resumed" | "verifier"
   readonly folder?: string;
   /** Wraps the file's writer; tests use it to fail a write. */
   readonly writer?: (writer: SessionWriter) => SessionWriter;
-  /** How many subagents may run at once across the session's tree (#525); 4 when not given. */
+  /** How many subagents may run at once across the session's tree; 4 when not given. */
   readonly agentLimit?: number;
-  /** Whether a writing subagent's branch is guarded by Git (#619): required, warned about when this Git can't, or off. */
+  /** Whether a writing subagent's branch is guarded by Git: required, warned about when this Git can't, or off. */
   readonly branchGuard?: GuardSetting;
-  /** Given when the session is another's subagent (#525). */
+  /** Given when the session is another's subagent. */
   readonly child?: ChildSession;
 };
 
@@ -139,7 +145,7 @@ const lockOf = (file: string): string => file.replace(/\.jsonl$/u, ".lock");
 const outputOf = (file: string): string => file.replace(/\.jsonl$/u, ".output");
 
 /**
- * The scratch folder of the session in `file`, working in `cwd` (#653),
+ * The scratch folder of the session in `file`, working in `cwd`,
  * made as it opens: beside its file, so a subagent, a session of its own,
  * gets its own. A sessions folder is under Tesota's home, outside the
  * project and never the system's shared temporary folder; one inside the
@@ -162,7 +168,7 @@ function removeScratch(scratch: string | undefined): void {
   try { rmSync(scratch, { recursive: true, force: true, maxRetries: 3 }); } catch { /* what a process still holds stays, outside the change */ }
 }
 
-/** What recovery tells the model about a job the session was running when it ended (#525). */
+/** What recovery tells the model about a job the session was running when it ended. */
 const unknownJobText = (description: string, session: string): string => `Outcome unknown: the session ended while subagent `
   + `"${description}" ran. Its own session, ${session}, ended with it, and it was not run again. Anything it wrote stays in its `
   + "own worktree.";
@@ -220,7 +226,8 @@ interface Reply {
   readonly run: number;
   readonly index: number;
   readonly calls: readonly ToolCall[];
-  readonly intended: Map<string, "read" | "write" | "run">;
+  /** Whether the recorded tool is a reader under the gate's rule, never its declared access. */
+  readonly intended: Map<string, boolean>;
   readonly seen: Set<string>;
   readonly repaired: Set<string>;
   readonly clarifications: Map<string, Clarification>;
@@ -241,7 +248,8 @@ function repliesOf(entries: readonly SessionEntry[]): Reply[] {
       replies.push(reply);
       latest.set(entry.run, reply);
       byIndex.set(`${entry.run}:${index}`, reply);
-    } else if (entry.type === "call_intent") latest.get(entry.run)?.intended.set(entry.callId, entry.access);
+    } else if (entry.type === "call_intent") latest.get(entry.run)?.intended.set(entry.callId,
+      entry.tool !== undefined && !toolMayChangeFiles(entry.tool.name, entry.tool.nativeQuestion, entry.tool.readOnly));
     else if (entry.type === "tool_result") latest.get(entry.run)?.seen.add(entry.message.toolCallId);
     else if (entry.type === "clarification") byIndex.get(`${entry.run}:${entry.clarification.reply}`)?.clarifications.set(entry.clarification.callId,
       entry.clarification);
@@ -251,7 +259,7 @@ function repliesOf(entries: readonly SessionEntry[]): Reply[] {
 }
 
 /**
- * The entries recovery adds to a session read back (#437): a repair for
+ * The entries recovery adds to a session read back: a repair for
  * each call with no result (`repairs`, proved), and the end of a run the
  * process never finished, as `interrupted`. Nothing is replayed, and a run
  * already ended or a call already answered gets nothing, so recovering
@@ -268,7 +276,7 @@ export function recovery(entries: readonly SessionEntry[], output: (callId: stri
       reply.seen.add(call.id);
     }
     const kinds = repairs(reply.calls.map((call) => reply.seen.has(call.id)), reply.calls.map((call) => reply.intended.has(call.id)),
-      reply.calls.map((call) => reply.repaired.has(call.id)), reply.calls.map((call) => reply.intended.get(call.id) === "read"));
+      reply.calls.map((call) => reply.repaired.has(call.id)), reply.calls.map((call) => reply.intended.get(call.id) === true));
     reply.calls.forEach((call, at) => {
       const kind = kinds[at];
       if (kind !== outcomeUnknown && kind !== notRun && kind !== noEffect) return;
@@ -277,7 +285,7 @@ export function recovery(entries: readonly SessionEntry[], output: (callId: stri
         ...kind === outcomeUnknown ? output(call.id) : {} });
     });
   }
-  // A job the session was running when it ended (#525) ends "outcome unknown", like a call; nothing runs it again.
+  // A job the session was running when it ended ends "outcome unknown", like a call; nothing runs it again.
   const jobsEnded = new Set(entries.flatMap((entry) => entry.type === "job_end" ? [entry.job] : []));
   for (const entry of entries) {
     if (entry.type !== "job_start" || jobsEnded.has(entry.job)) continue;
@@ -294,7 +302,7 @@ export function recovery(entries: readonly SessionEntry[], output: (callId: stri
 }
 
 /**
- * The receipt of run `run`, which the process left without one (#599): once
+ * The receipt of run `run`, which the process left without one: once
  * a call that may change files was about to run, as the gate decides it
  * (`toolMayChangeFiles`), a receipt that says nothing verified it and what
  * changed is unknown, since no inventory was saved. A call an older file
@@ -314,24 +322,36 @@ function unsettledReceipt(entries: readonly SessionEntry[], run: number): Sessio
   const clarifications = request.inputs.flatMap((input) => input.kind === "clarification" ? [input.clarification] : []);
   const receipt = interruptedReceipt({ repository: units.some(({ kind }) => kind === "commit"),
     base: only === undefined || only.kind === "refused" ? null : only.commit, startedAt: request.at, settledAt: new Date().toISOString(),
-    engine: manifest.version, ...clarifications.length === 0 ? {} : { clarifications },
+    engine: manifest.version, requestContext: { requests: [{ run: request.run, text: [request.text, ...request.inputs.flatMap((input) =>
+      input.kind === "clarification" ? [clarificationText(input.clarification)] : input.origin === "extension" ? [] : [input.text])] }],
+      ...clarifications.length === 0 ? {} : { clarifications } },
     ...request.children.length === 0 ? {} : { children: request.children },
+    ...request.base.requiredModel === undefined ? {} : { requiredModel: { selection: request.base.requiredModel, state: "unchecked" } },
+    ...request.externalEffects === undefined || request.externalEffects.length === 0 ? {} : { externalEffects: request.externalEffects },
     ...request.refusals.length === 0 ? {} : { floorRefusals: request.refusals } });
   return { run, ...receiptEntry(undefined, receipt) };
 }
 
 /**
  * The conversation the entries hold: requests and delivered amendments as
- * the operator's messages, each followed by the skill it started (#540),
+ * the operator's messages, each followed by the skill it started,
  * replies, results, each repair as a failed result placed after
  * the other results of its reply, and the messages settle handlers added;
  * their data stays outside it. A compaction replaces
- * what came before its kept messages, as the loop did (#451); with the
- * conversation come the last run's request and amendments, and the last
- * compaction.
+ * what came before its kept messages, as the loop did; with the
+ * conversation come the last run's request and amendments, the last
+ * compaction, and the system messages since it, each after the
+ * message it followed.
  */
-function conversation(entries: readonly SessionEntry[]): Pick<LoopState, "history" | "ledger" | "compacted"> {
+function conversation(entries: readonly SessionEntry[]): Pick<LoopState, "history" | "ledger" | "compacted" | "prompt" | "tasks"> {
   const history: HistoryMessage[] = [];
+  /** The runs' task lists as each entry left them, so a compaction restores the list the loop restored then. */
+  const tasks = taskBook(continuesType);
+  let prompt: PromptEntry[] = [];
+  /** A system message comes after the message the conversation ended with then; the leading one after none. */
+  const system = (message: Extract<SessionEntry, { readonly type: "system" }>["message"]): void => {
+    prompt.push({ message, after: prompt.length === 0 ? undefined : history.at(-1) });
+  };
   let ledger: HistoryMessage[] = [];
   let compacted: LoopState["compacted"];
   const amendments = new Map<number, { readonly text: string; readonly order: number; readonly skill: StartedSkill | undefined }>();
@@ -379,10 +399,25 @@ function conversation(entries: readonly SessionEntry[]): Pick<LoopState, "histor
       toolResult({ id: entry.callId, name: entry.toolName }, { text: reconciliationText(entry), isError: true }, 0));
   };
   const counts = new Map<number, number>();
+  const custom = (entry: SessionEntry, order: number): void => {
+    if (entry.type === "custom" && entry.customType === referenceType) {
+      const references = readReferences(entry.data) ?? [{ status: "unavailable" as const,
+        source: "Inherited issue references", reason: "the recorded reference data is malformed" }];
+      const message = referenceMessage(references, 0);
+      history.push(message);
+      toLedger(message, order);
+    } else if (entry.type === "custom_message") {
+      const { customType, content, display, details } = entry;
+      history.push({ role: "custom", customType, content, display, ...details === undefined ? {} : { details }, timestamp: 0 });
+    }
+  };
   for (const [order, entry] of entries.entries()) {
+    tasks.apply(entry);
     if (entry.type === "request") {
       const asked: HistoryMessage = { role: "user", content: entry.text, timestamp: Date.parse(entry.at) };
       ledger = entry.skill === undefined ? [asked] : [asked, skillMessage(entry.skill, Date.parse(entry.at))];
+      const checking = checkPlanMessage(entry.base, Date.parse(entry.at));
+      if (checking !== undefined) ledger.push(checking);
       for (const message of ledger) {
         inputOrder.set(message, order);
         history.push(message);
@@ -394,45 +429,53 @@ function conversation(entries: readonly SessionEntry[]): Pick<LoopState, "histor
     else if (entry.type === "compaction") {
       const files = { read: entry.read, changed: entry.changed };
       const cut = Math.max(0, history.length - entry.kept);
-      history.splice(0, cut, compactedHead(ledger, entry.summary, files, history.slice(cut)));
+      history.splice(0, cut, compactedHead(ledger, entry.summary, files, history.slice(cut), tasks.state(entry.run)));
       compacted = { summary: entry.summary, files, counted: history.length };
-    } else if (entry.type === "assistant") {
+      prompt = [];
+    } else if (entry.type === "system") system(entry.message);
+    else if (entry.type === "assistant") {
       const index = counts.get(entry.run) ?? 0;
       counts.set(entry.run, index + 1);
       replies.set(`${entry.run}:${index}`, entry.message);
       history.push(entry.message);
     } else if (entry.type === "tool_result") result(entry);
     else if (entry.type === "job_start") background.set(entry.job, entry.background);
-    // A background job's end entered the conversation as the run took it in; a waited one's is its call's result (#525).
+    // A background job's end entered the conversation as the run took it in; a waited one's is its call's result.
     else if (entry.type === "job_end") { if (background.get(entry.job) === true) history.push(jobMessage(entry.text, entry.details, 0)); }
-    else if (entry.type === "custom_message") {
-      const { customType, content, display, details } = entry;
-      history.push({ role: "custom", customType, content, display, ...details === undefined ? {} : { details }, timestamp: 0 });
-    }
+    else custom(entry, order);
   }
-  return { history, ledger, ...compacted === undefined ? {} : { compacted } };
+  return { history, ledger, prompt, tasks, ...compacted === undefined ? {} : { compacted } };
 }
 
 /**
  * The ledger: each request with its amendments, from the ledger entries and
- * the deliveries alone. A request that continues an earlier one (#651) holds
+ * the deliveries alone. A request that continues an earlier one holds
  * that one's amendments and clarifications first, since it is the same
- * request, then its own. Each holds the earlier requests it is judged with
- * (#627): those since the last request with a non-stopped receipt.
+ * request, then its own. Each holds the earlier requests it is judged with:
+ * those since the last request with a non-stopped receipt.
  */
 function ledgerOf(entries: readonly SessionEntry[]): LedgerRequest[] {
   const ledger = ownLedgerOf(entries);
   const inputs = new Map<number, readonly RequestInput[]>();
+  const externalEffects = new Map<number, readonly ExternalEffect[]>();
+  const references = new Map<number, readonly RequestReference[]>();
   // A completed answer without a receipt verified no changes. A stopped receipt is only an inventory.
   const verified = verifiedRequests(entries);
   const merged: LedgerRequest[] = [];
   for (const request of ledger) {
     const all = [...request.continues === undefined ? [] : inputs.get(request.continues.run) ?? [], ...request.inputs];
     inputs.set(request.run, all);
+    const effects = [...request.continues === undefined ? [] : externalEffects.get(request.continues.run) ?? [], ...request.externalEffects ?? []];
+    externalEffects.set(request.run, effects);
+    const context = issueReferences(entries, request.run, [request.text, ...request.inputs.flatMap((input) => input.kind === "clarification"
+      ? [clarificationText(input.clarification)] : input.origin === "extension" ? [] : [input.text])]);
+    const shared = [...request.continues === undefined ? [] : references.get(request.continues.run) ?? [], ...context];
+    references.set(request.run, shared);
     const earlier = merged.slice(unverifiedFrom(merged.map(({ run }) => verified.has(run))));
     const continued = new Set([...earlier, request].flatMap(({ continues }) => continues === undefined ? [] : [continues.run]));
-    merged.push({ ...request, inputs: all, unverifiedRequests: earlier.filter(({ run }) => !continued.has(run))
-      .map(({ run, text, inputs: given }) => ({ run, text, inputs: given })) });
+    merged.push({ ...request, inputs: all, externalEffects: effects, ...shared.length === 0 ? {} : { references: shared },
+      unverifiedRequests: earlier.filter(({ run }) => !continued.has(run))
+      .map(({ run, text, inputs: given, references: refs }) => ({ run, text, inputs: given, ...refs === undefined ? {} : { references: refs } })) });
   }
   return merged;
 }
@@ -462,18 +505,27 @@ function ownLedgerOf(entries: readonly SessionEntry[]): Omit<LedgerRequest, "unv
       id: amendment.id, behavior: amendment.behavior, origin: amendment.origin, text: amendment.text, at: amendment.at,
       delivered: delivered.has(amendment.id), withdrawn: withdrawn.has(amendment.id),
     }]),
-    inputs: entries.flatMap((input): RequestInput[] => (input.type === "active_tools" || input.run !== entry.run) ? []
+    inputs: entries.flatMap((input): RequestInput[] => (input.type === "system" || input.run !== entry.run) ? []
       : input.type === "amendment" ? withdrawn.has(input.id) ? [] : [{ kind: "amendment", origin: input.origin, text: input.text }]
         : input.type === "clarification" ? [{ kind: "clarification", clarification: input.clarification }]
           : input.type === "custom" ? continuedFrom(input).map(({ clarification }): RequestInput => ({ kind: "clarification", clarification })) : []),
     children: entries.flatMap((ended) => ended.type === "job_end" && ended.run === entry.run ? childOf(ended.details) : []),
     refusals: floorRefusals(entries, entry.run),
+    externalEffects: externalEffectsOf(entries, entry.run),
     ...continuesOf(entries, entry.run),
   }]);
 }
 
+/** Every potentially writing MCP call recorded before execution, including calls with no recorded result. */
+function externalEffectsOf(entries: readonly SessionEntry[], run: number): ExternalEffect[] {
+  const results = new Map(entries.flatMap((entry) => entry.type === "tool_result" && entry.run === run
+    ? [[entry.message.toolCallId, entry.message.isError ? "error" as const : "returned" as const] as const] : []));
+  return entries.flatMap((entry) => entry.type === "call_intent" && entry.run === run && entry.externalEffect !== undefined
+    ? [{ ...entry.externalEffect, outcome: results.get(entry.callId) ?? "unknown" }] : []);
+}
+
 /**
- * What the gate records as a run ends on an unresolved question (#651): the
+ * What the gate records as a run ends on an unresolved question: the
  * start fingerprints it measures the request from, its own data, which the
  * run that continues it restores.
  */
@@ -481,7 +533,7 @@ const requestStartType = "tesota-request-start";
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 
-/** The run a `tesota.continues` entry names and the answer it carries (#651); none for any other entry. */
+/** The run a `tesota.continues` entry names and the answer it carries; none for any other entry. */
 function continuedFrom(entry: SessionEntry): { run: number; clarification: Clarification }[] {
   if (entry.type !== "custom" || entry.customType !== continuesType || !isRecord(entry.data)) return [];
   const { run, clarification } = entry.data;
@@ -490,7 +542,7 @@ function continuedFrom(entry: SessionEntry): { run: number; clarification: Clari
     && Array.isArray(clarification["answers"]) ? [{ run, clarification: clarification as unknown as Clarification }] : [];
 }
 
-/** The earlier run that run `run` continues, and what the gate saved as that run ended (#651); nothing for a run that continues none. */
+/** The earlier run that run `run` continues, and what the gate saved as that run ended; nothing for a run that continues none. */
 function continuesOf(entries: readonly SessionEntry[], run: number): Pick<LedgerRequest, "continues"> {
   const linked = entries.flatMap((entry) => entry.type === "custom" && entry.run === run ? continuedFrom(entry) : [])[0];
   if (linked === undefined) return {};
@@ -501,8 +553,8 @@ function continuesOf(entries: readonly SessionEntry[], run: number): Pick<Ledger
 const unresolvedPrefix = "Unresolved question: ";
 
 /**
- * The question the session's last run ended on (#599), and the batch an
- * answer settles (#651): the `ask_user` call the end reason names, or, for a
+ * The question the session's last run ended on, and the batch an
+ * answer settles: the `ask_user` call the end reason names, or, for a
  * question asked in prose, a batch of that one question, without options or
  * a call. None when the last run ended otherwise.
  */
@@ -524,7 +576,7 @@ export function pendingQuestion(entries: readonly SessionEntry[]):
   return { run, reply: Math.max(0, replies.length - 1), callId: "", questions: [{ question: reason.slice(unresolvedPrefix.length), options: [] }] };
 }
 
-/** What to tell the operator when a run ended on a question: the question itself, not its JSON, and that replying continues the work (#713). */
+/** What to tell the operator when a run ended on a question: the question itself, not its JSON, and that replying continues the work. */
 export function awaitingNotice(entries: readonly SessionEntry[]): string | undefined {
   const pending = pendingQuestion(entries);
   if (pending === undefined) return undefined;
@@ -536,7 +588,7 @@ export function awaitingNotice(entries: readonly SessionEntry[]): string | undef
 
 /**
  * The run that `answer` starts when the session's last run ended on an
- * unresolved question (#651): the earlier request's text, its base, and the
+ * unresolved question: the earlier request's text, its base, and the
  * answer as the operator's clarification of the pending batch, the same
  * text for each of its questions. It qualifies the request and grants
  * nothing: every permission and the floor stay as they are. None when no
@@ -574,7 +626,7 @@ export function askedSessions(folder: string): { readonly file: string; readonly
 }
 
 
-/** A subagent as a receipt lists it (#525), from its job's report; none when the report says too little. */
+/** A subagent as a receipt lists it, from its job's report; none when the report says too little. */
 function childOf(details: unknown): ReceiptChild[] {
   if (typeof details !== "object" || details === null) return [];
   const { description, type, model, writes, outcome, verification, session, branch, unguarded, floorRefusals: refused } =
@@ -582,7 +634,7 @@ function childOf(details: unknown): ReceiptChild[] {
   if (typeof description !== "string" || typeof outcome !== "string" || typeof session !== "string") return [];
   return [{ description, outcome, session, writes: writes === true, ...typeof type === "string" ? { type } : {},
     ...typeof model === "string" ? { model } : {},
-    // Receipt v2 stores these three only (#668): an unverified child, or one that changed nothing, claims no standing.
+    // Receipt v2 stores these three only: an unverified child, or one that changed nothing, claims no standing.
     ...verification === "verified" || verification === "incomplete" || verification === "failed" ? { verification } : {},
     ...typeof branch === "string" ? { branch } : {}, ...unguarded === true ? { unguarded } : {},
     ...typeof refused === "number" && refused > 0 ? { floorRefusals: refused } : {} }];
@@ -607,12 +659,27 @@ function stateOf(entries: readonly SessionEntry[]): LoopState {
     tokens.total += entry.message.usage.totalTokens;
   }
   const ends = entries.flatMap((entry) => entry.type === "run_end" ? [entry.outcome] : []);
-  const tools = entries.findLast((entry) => entry.type === "active_tools");
   return {
-    ...tools === undefined ? {} : { activeTools: tools.names },
     ...conversation(entries), tokens, outcome: ends.at(-1),
     runs: entries.filter((entry) => entry.type === "request").length,
     amendments: entries.filter((entry) => entry.type === "amendment").length,
+  };
+}
+
+/** Keep the first admitted model identity for this session, including resumed requests. */
+function modelAdmission(entries: readonly SessionEntry[], options: OpenOptions, cwd: string): NonNullable<LoopOptions["captureBase"]> {
+  let pinned = ledgerOf(entries).find((item) => item.base.requiredModel !== undefined)?.base.requiredModel;
+  const required = options.flags?.["require-model"];
+  if (required !== undefined && typeof required !== "string") throw new Error("--require-model takes a model path");
+  if (pinned !== undefined && required !== undefined && resolve(cwd, required) !== resolve(cwd, pinned.folder, pinned.path)) {
+    throw new Error("This session already pins another model; start a new session to select different model inputs");
+  }
+  const admission = options.captureBase ?? ((folder: string, signal: AbortSignal) => captureBase(folder, signal, pinned === undefined ? required : undefined));
+  return async (folder, signal) => {
+    const captured = await admission(folder, signal);
+    pinned ??= captured.requiredModel;
+    if (required !== undefined && pinned === undefined) throw new Error("Request admission did not retain --require-model");
+    return pinned === undefined ? captured : { ...captured, requiredModel: pinned };
   };
 }
 
@@ -644,14 +711,16 @@ function engineSession(file: string, release: () => void, entries: SessionEntry[
   const request = (): LedgerRequest | undefined => ledgerOf(entries).at(-1);
   const id = basename(file, ".jsonl");
   const scratch = scratchOf(file, workspace.cwd);
-  // A session starts subagents while it is less than two below its top session (#525), counted across the top session's tree.
+  // A session starts subagents while it is less than two below its top session, counted across the top session's tree.
   const types = options.child?.types ?? agentTypes(workspace.cwd);
   const tree = options.child?.tree ?? { running: 0, limit: options.agentLimit ?? defaultAgentLimit };
-  const host = depth < maxDepth ? agentHost({ id, folder: dirname(file), depth, workspace, options, types, tree, create: createSession })
+  const host = depth < maxDepth ? agentHost({ id, folder: dirname(file), depth, workspace, options, types, tree, create: createSession,
+    references: () => { const current = request(); return [...current?.unverifiedRequests.flatMap((item) => item.references ?? []) ?? [], ...current?.references ?? []]; } })
     : undefined;
   let loop: LoopSession;
   try {
-    loop = createLoop({ ...options, cwd: workspace.cwd, ...workspace.env === undefined ? {} : { env: workspace.env }, sessionId: id, verifier: (pi) => { options.verifier(pi, request); }, branch: () => branchOf(entries),
+    loop = createLoop({ ...options, cwd: workspace.cwd, captureBase: modelAdmission(entries, options, workspace.cwd),
+      ...workspace.env === undefined ? {} : { env: workspace.env }, sessionId: id, verifier: (pi) => { options.verifier(pi, request); }, branch: () => branchOf(entries),
       writer: options.writer?.(recording) ?? recording, outputFolder: outputOf(file), sessionFile: file, ...opened ? { resumed: stateOf(entries) } : {},
       ...scratch === undefined ? {} : { scratch },
       ...host === undefined ? {} : { jobTools: (jobs) => [agentTool(host, jobs)] },
@@ -696,7 +765,7 @@ function engineSession(file: string, release: () => void, entries: SessionEntry[
 }
 
 /**
- * A new session opened in `options.cwd`, bound to its workspace (#453),
+ * A new session opened in `options.cwd`, bound to its workspace,
  * its file created with its header and locked by this writer. Its sessions
  * folder is the checkout's, whichever workspace it works in.
  */
@@ -725,7 +794,7 @@ export function createSession(options: SessionOptions): EngineSession {
 /**
  * What recovery adds to the session in `file`, whose lock is held, synced
  * before anything runs; each child whose job it found running is recovered
- * too (#525), so it ends `interrupted` with its parent.
+ * too, so it ends `interrupted` with its parent.
  */
 function recovered(file: string, entries: readonly SessionEntry[]): SessionEntry[] {
   const added = recovery(entries, (callId) => interruptedOutput(outputOf(file), callId));

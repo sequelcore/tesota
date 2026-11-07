@@ -34,7 +34,7 @@ async function language(file: string): Promise<Language> {
   await ready;
   let loaded = languages.get(file);
   if (loaded === undefined) {
-    // A binary embeds each grammar beside its code, as it does tree-sitter's own runtime (#472).
+    // A binary embeds each grammar beside its code, as it does tree-sitter's own runtime.
     loaded = Language.load(fileURLToPath(new URL(inBinary ? `./${file}` : `../grammars/${file}`, import.meta.url)));
     languages.set(file, loaded);
   }

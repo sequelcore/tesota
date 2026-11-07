@@ -4,7 +4,7 @@ import type {
   RunOutcome, SessionStartEvent, SettleEvent, SettleResult, ShellAPI, ShellUI, ToolDefinition, ToolExecutionStartEvent, ToolResultEvent,
 } from "../../../src/contract.ts";
 
-/** Where extensions draw (#446): the shell's interface, its message renderers, and how a registered tool is drawn. */
+/** Where extensions draw: the shell's interface, its message renderers, and how a registered tool is drawn. */
 export interface DrawingSurface {
   readonly ui: ShellUI;
   readonly registerMessageRenderer: ShellAPI["registerMessageRenderer"];
@@ -32,7 +32,7 @@ export interface HostOptions {
   readonly contextUsage: () => ContextUsage | undefined;
   /** The shell extensions draw on; none draws nothing, as Pi's print mode. */
   readonly surface?: DrawingSurface;
-  /** What every process the session starts adds to Tesota's environment (#619). */
+  /** What every process the session starts adds to Tesota's environment. */
   readonly env?: Readonly<Record<string, string>>;
 }
 
@@ -91,7 +91,7 @@ const headless: ShellUI = {
 };
 
 /**
- * The engine's extension host (#439, #441): events, the handler context,
+ * The engine's extension host: events, the handler context,
  * flags, tools and what the session reports. The verifier registers
  * through the same API but into handlers of its own, so no extension can
  * add to, replace or reorder them; every event reaches the extensions first.

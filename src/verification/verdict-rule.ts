@@ -7,9 +7,36 @@ import type { ProofOutcome } from "./proof-outcome-rule.js";
  * fails, a weak contract, a change that may weaken the evidence or a test
  * that passes without the change; a gap to know about (`gap`), such as lines
  * no proof covers; evidence that holds (`holds`); or a model's opinion
- * (`opinion`), which is a candidate and never evidence (#375).
+ * (`opinion`), which is a candidate and never evidence.
  */
 export type Standing = "decide" | "gap" | "holds" | "opinion";
+
+/** A path receives exercise credit only from its own observed assertion sensitivity on current passing evidence. */
+//@ ensures \result <==> (noticed && passed && current)
+export function sourceCredit(noticed: boolean, passed: boolean, current: boolean): boolean {
+  return noticed && passed && current;
+}
+
+/** Review completeness describes model observations only; it never participates in mechanical standing. */
+//@ requires total >= 0 && completed >= 0 && partial >= 0 && disabled >= 0 && completed + partial + disabled <= total
+//@ ensures \result === "completed" <==> (total > 0 && completed === total)
+//@ ensures \result === "disabled" <==> (total > 0 && disabled === total)
+//@ ensures \result === "partial" <==> (partial > 0 || (completed > 0 && completed < total))
+//@ ensures \result === "not_run" <==> (completed === 0 && partial === 0 && (total === 0 || disabled < total))
+export function reviewStatus(total: number, completed: number, partial: number, disabled: number): "completed" | "partial" | "not_run" | "disabled" {
+  if (total > 0 && completed === total) return "completed";
+  if (total > 0 && disabled === total) return "disabled";
+  if (partial > 0 || completed > 0) return "partial";
+  return "not_run";
+}
+
+/** Unverified external effects prevent an overall verified or unchanged claim, preserving a known failure. */
+//@ ensures effects > 0 && standing !== "failed" ==> \result === "incomplete"
+//@ ensures effects <= 0 || standing === "failed" ==> \result === standing
+export function externalStanding(standing: "verified" | "incomplete" | "failed" | "unverified" | "unchanged", effects: number):
+  "verified" | "incomplete" | "failed" | "unverified" | "unchanged" {
+  return effects > 0 && standing !== "failed" ? "incomplete" : standing;
+}
 
 /**
  * How many findings need the operator: only those the checks established,
@@ -34,8 +61,8 @@ export function decisions(standings: readonly Standing[]): number {
 /**
  * Whether a summary of one check's findings must say how many of them hold,
  * as in "Contract strong (1 of 4)": some finding of that check needs the
- * operator or is a gap, so its label alone would read as if every one held
- * (#399). A model's opinion is never evidence either way.
+ * operator or is a gap, so its label alone would read as if every one held.
+ * A model's opinion is never evidence either way.
  */
 //@ ensures \result <==> exists(k: nat, k < standings.length && (standings[k] === "decide" || standings[k] === "gap"))
 export function partlyHolds(standings: readonly Standing[]): boolean {
@@ -65,7 +92,7 @@ export function verdictTone(decisions: number, failed: boolean, gaps: number): "
 }
 
 /**
- * How a method's row of the receipt sums up its `runs` (#591), of which
+ * How a method's row of the receipt sums up its `runs`, of which
  * `held` held outright, `partly` held with less than they claim, such as a
  * proof trusting what the change added, and `failed` failed: `holds` only
  * when every run held outright, so no row reads as a universal success
@@ -143,7 +170,7 @@ export function statementResult(stopped: boolean, standing: "verified" | "incomp
 }
 
 /**
- * Whether one changed path is covered (#668), in the standing and the
+ * Whether one changed path is covered, in the standing and the
  * receipt's summary alike: it proved, or it was tested and exercised, as
  * `runStanding` reads each of them from the receipt.
  */
@@ -153,7 +180,7 @@ export function pathCovered(proved: boolean, tested: boolean, exercised: boolean
 }
 
 /**
- * Where a run's verification stands (#668), one meaning on every surface:
+ * Where a run's verification stands, one meaning on every surface:
  * `failed` when it stopped or something needs the operator (`decisions`) and
  * a check failed, `incomplete` when either holds without a failed check.
  * A check failed only when it ran and showed the change wrong: a failing
@@ -170,10 +197,9 @@ export function pathCovered(proved: boolean, tested: boolean, exercised: boolean
  * One entry per changed path: `proved[k]` when the receipt does not list it
  * as unproved (it proved, or is a test or comments-only file, which its
  * `unverified` leaves out); `tested[k]` when its unit ran at least one
- * command and every one passed; `exercised[k]` read from its unit's
- * exercises: its unit lists exactly that one path as unproved, records at
- * least one exercise, and every exercise is `fails_then_passes`, so a test
- * noticed the change, and nothing else unproved could be what it noticed.
+ * command and every one passed; `exercised[k]` from a path-specific source
+ * measurement: a reported assertion noticed that path's reversion and the
+ * final candidate control passed on content that remains current (`sourceCredit`).
  * A path is covered (`pathCovered`) when it proved, or was tested and exercised. `gaps`
  * counts the receipt's other gaps, besides those unproved paths.
  */

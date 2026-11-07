@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { doctorCommand, formatDoctorReport, probe, repairCommand, type Diagnosis } from "../src/doctor.ts";
+import { tlaChecker } from "../../../src/model-check.ts";
 import { copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -68,7 +69,7 @@ test("the shared process lookup respects a run's supplied PATH", async () => {
 
 test("repair commands for all operating systems come from the install guide", () => {
   for (const platform of ["win32", "darwin", "linux"] as const) {
-    for (const id of ["dafny", "lsc", "java", "tlc", "quint", "git", "claude-code", "provider"]) {
+    for (const id of ["dafny", "lsc", "tla-ts", "quint", "git", "claude-code", "provider"]) {
       expect(repairCommand(id, platform).length).toBeGreaterThan(0);
     }
   }
@@ -78,7 +79,7 @@ test("repair commands for all operating systems come from the install guide", ()
 });
 
 test("human and JSON renderings retain the same report", () => {
-  const report = { exitCode: 0, capabilities: [{ id: "quint", requirement: "optional" as const, status: "unavailable", path: null, version: null,
+  const report = { exitCode: 0, warnings: ["Settings Tesota does not know, in /home/settings.json, did nothing: tlcPath."], capabilities: [{ id: "quint", requirement: "optional" as const, status: "unavailable", path: null, version: null,
     smoke: { ended: "not_started" as const, exitCode: null, output: "Executable not found." },
     consequence: "Model not checked: Quint models cannot be checked.", repair: "npm install -g @informalsystems/quint" }] };
   expect(JSON.parse(formatDoctorReport(report, true))).toEqual(report);
@@ -89,6 +90,7 @@ test("human and JSON renderings retain the same report", () => {
   expect(human).toContain("Model not checked: Quint models cannot be checked.");
   expect(human).toContain("npm install -g @informalsystems/quint");
   expect(human).toContain("Exit code: 0");
+  expect(human).toContain("Warning: Settings Tesota does not know, in /home/settings.json, did nothing: tlcPath.");
 });
 
 test("help and invalid arguments do not run any probe", async () => {
@@ -113,10 +115,26 @@ test("the CLI reports missing tools as JSON without writing to a fresh home or p
     expect(result.exitCode).toBe(report.exitCode);
     expect(report.capabilities.find(({ id }) => id === "dafny")?.status).toBe("unavailable");
     expect(report.capabilities.find(({ id }) => id === "git")?.path).toBeNull();
-    expect(report.capabilities.find(({ id }) => id === "tlc")?.smoke.output).toBe("TLC jar not found.");
+    expect(report.capabilities.find(({ id }) => id === "tla-ts")).toMatchObject({ status: "available", version: tlaChecker });
     expect(report.capabilities.find(({ id }) => id === "lsc")?.status).toBe("available");
     expect(report.capabilities.find(({ id }) => id === "claude-code")).toBeDefined();
     expect(readdirSync(home)).toEqual([]);
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
+test("the CLI warns about a settings key Tesota does not read, and leaves the file as written (#714)", async () => {
+  const home = mkdtempSync(join(tmpdir(), "tesota-doctor-unknown-"));
+  try {
+    const settingsPath = join(home, ".tesota", "settings.json");
+    mkdirSync(join(home, ".tesota"));
+    const written = JSON.stringify({ tlcPath: "/tools/tla2tools.jar", tuiMode: "inline" });
+    writeFileSync(settingsPath, written);
+    const result = await runProcess(process.execPath, [main, "doctor", "--json"], home, new AbortController().signal, 25_000,
+      undefined, { env: isolatedEnvironment(home) });
+    const report = JSON.parse(result.stdout) as { warnings: string[] };
+    expect(report.warnings).toEqual([`Settings Tesota does not know, in ${settingsPath}, did nothing: tlcPath. `
+      + "See https://github.com/sequelcore/tesota/blob/main/docs/reference/configuration.md#settingsjson"]);
+    expect(readFileSync(settingsPath, "utf8")).toBe(written);
   } finally { rmSync(home, { recursive: true, force: true }); }
 });
 
@@ -207,11 +225,7 @@ beforeAll(() => {
   writeFileSync(source, `import { basename } from "node:path";
 const name = basename(process.execPath).replace(/\\.exe$/u, "");
 if (name === "quint") process.exit(7);
-if (name === "java" && process.argv.includes("-help")) {
-  console.log("TLC - provides model checking - Version 2.19");
-  process.exit(1);
-}
-console.log(name === "dafny" ? "4.11.0" : name === "java" ? 'openjdk version "21.0.1"' : name + " version 1.0.0");
+console.log(name === "dafny" ? "4.11.0" : name + " version 1.0.0");
 `);
   const built = Bun.spawnSync([process.execPath, "build", "--compile", source, "--outfile", toolFixture], { stdout: "ignore", stderr: "pipe" });
   if (built.exitCode !== 0) throw new Error(built.stderr.toString());
@@ -223,11 +237,11 @@ console.log(name === "dafny" ? "4.11.0" : name === "java" ? 'openjdk version "21
 afterAll(() => { if (toolRoot) rmSync(toolRoot, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 }); });
 
 test.each([
-  { scenario: "only Quint missing gives 0", tools: ["git", "dafny", "java", "claude"], unavailable: ["quint"],
+  { scenario: "only Quint missing gives 0", tools: ["git", "dafny", "claude"], unavailable: ["quint"],
     exit: 0, git: "available", quint: "unavailable" },
-  { scenario: "missing core Git gives 2", tools: ["dafny", "java", "claude"], unavailable: ["git", "quint"],
+  { scenario: "missing core Git gives 2", tools: ["dafny", "claude"], unavailable: ["git", "quint"],
     exit: 2, git: "unavailable", quint: "unavailable" },
-  { scenario: "failed optional Quint gives 1", tools: ["git", "dafny", "java", "claude", "quint"], unavailable: [],
+  { scenario: "failed optional Quint gives 1", tools: ["git", "dafny", "claude", "quint"], unavailable: [],
     exit: 1, git: "available", quint: "failed" },
 ])("core/optional policy: $scenario", async ({ tools, unavailable, exit, git, quint }) => {
   const home = mkdtempSync(join(tmpdir(), "tesota-doctor-optional-"));
@@ -235,8 +249,6 @@ test.each([
     for (const name of tools) {
       linkSync(toolFixture, join(home, process.platform === "win32" ? `${name}.exe` : name));
     }
-    mkdirSync(join(home, ".tesota", "tools"), { recursive: true });
-    writeFileSync(join(home, ".tesota", "tools", "tla2tools.jar"), "local tool-boundary fixture");
     const result = await runProcess(process.execPath, [main, "doctor", "--json"], home, new AbortController().signal, 25_000,
       undefined, { env: { ...isolatedEnvironment(home), PATH: home } });
     const report = JSON.parse(result.stdout) as { exitCode: number; capabilities: Diagnosis[] };
@@ -245,7 +257,7 @@ test.each([
     expect(result.exitCode).toBe(exit);
     expect(report.capabilities.find(({ id }) => id === "quint")).toMatchObject({ requirement: "optional", status: quint });
     expect(report.capabilities.find(({ id }) => id === "git")).toMatchObject({ requirement: "core", status: git });
-    for (const id of ["dafny", "lsc", "java", "tlc"]) {
+    for (const id of ["dafny", "lsc", "tla-ts"]) {
       expect(report.capabilities.find((item) => item.id === id)).toMatchObject({ requirement: "core", status: "available" });
     }
   } finally { rmSync(home, { recursive: true, force: true }); }
@@ -258,12 +270,11 @@ test.each([
 ])("model provider capability: $scenario", async ({ key, exit, status, failed }) => {
   const home = mkdtempSync(join(tmpdir(), "tesota-doctor-provider-"));
   try {
-    for (const name of ["git", "dafny", "java"]) {
+    for (const name of ["git", "dafny"]) {
       linkSync(toolFixture, join(home, process.platform === "win32" ? `${name}.exe` : name));
     }
-    mkdirSync(join(home, ".tesota", "tools"), { recursive: true });
-    writeFileSync(join(home, ".tesota", "tools", "tla2tools.jar"), "local tool-boundary fixture");
     if (failed) {
+      mkdirSync(join(home, ".tesota"));
       writeFileSync(join(home, ".tesota", "auth.json"), JSON.stringify({ anthropic: { type: "api_key", key: "sk-ant-oat-fake-plan-token" } }));
     }
     const result = await runProcess(doctorBinary, ["doctor", "--json"], home, new AbortController().signal, 25_000,

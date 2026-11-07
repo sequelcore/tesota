@@ -10,7 +10,7 @@ import { lastFloorNotice, peekSessionFile } from "../src/session-file.ts";
 import type { ScriptStep } from "./engine.ts";
 import { accepts, scriptedReply } from "./scripted.ts";
 
-/** Permissions (#449): the proved rule, the floor and the rules, and the boundary every call passes in a session. */
+/** Permissions: the proved rule, the floor and the rules, and the boundary every call passes in a session. */
 const folder = (prefix: string): string => mkdtempSync(join(tmpdir(), prefix));
 const call = (name: string, args: JsonObject): ToolCall => ({ type: "toolCall", id: "c", name, arguments: args });
 const shell = process.platform === "win32" ? "powershell" : "bash";
@@ -553,7 +553,7 @@ describe("the boundary every call passes", () => {
     expect(full.asked).toEqual([]);
   });
 
-  // #622's sequence: the floor refuses, and the agent reaches for the same effect another way. The floor names what calls
+  // The floor refuses, and the agent reaches for the same effect another way. The floor names what calls
   // say, so it can't see that a later call has the same effect; what this shows is what the model is told, that the rest of
   // the request asks first, and what the operator sees at its end.
   const named = (script: string): ScriptStep => ({ tool: shell, args: { command: script } });

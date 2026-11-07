@@ -8,6 +8,36 @@ datatype TestStatus = passed | failed | skipped | absent | unread
 
 datatype ReportedTest = passed | failed | skipped | none
 
+function fixedCheck(candidate: CheckOutcome, base: CheckOutcome): bool
+{
+  (candidate.passed? && base.failed?)
+}
+
+lemma fixedCheck_ensures(candidate: CheckOutcome, base: CheckOutcome)
+  ensures (fixedCheck(candidate, base) <==> (candidate.passed? && base.failed?))
+{
+}
+
+function sourceAssertion(control: CheckOutcome, reverted: CheckOutcome, matchingAssertions: int): bool
+{
+  ((control.passed? && reverted.failed?) && (matchingAssertions > 0))
+}
+
+lemma sourceAssertion_ensures(control: CheckOutcome, reverted: CheckOutcome, matchingAssertions: int)
+  ensures (sourceAssertion(control, reverted, matchingAssertions) <==> ((control.passed? && reverted.failed?) && (matchingAssertions > 0)))
+{
+}
+
+function reportCoversFailures(reported: int, failed: int, errors: int): bool
+{
+  (((reported >= 0) && (reported == failed)) && (errors == 0))
+}
+
+lemma reportCoversFailures_ensures(reported: int, failed: int, errors: int)
+  ensures (reportCoversFailures(reported, failed, errors) <==> (((reported >= 0) && (reported == failed)) && (errors == 0)))
+{
+}
+
 function baseTestStatus(reported: ReportedTest, covered: bool): TestStatus
 {
   if reported.passed? then

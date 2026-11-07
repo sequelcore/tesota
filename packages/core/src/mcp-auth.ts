@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { type AuthProvider, McpAuthRequiredError, type McpFetch } from "@earendil-works/pi-mcp";
 import {
@@ -13,7 +13,7 @@ import { parseJson } from "../../../src/json.ts";
 import { writeWholeJson } from "./whole-file.ts";
 
 /**
- * OAuth sign-in for remote MCP servers (#459), as Pi's coding agent signs in
+ * OAuth sign-in for remote MCP servers, as Pi's coding agent signs in
  * (`extensions/mcp/oauth.ts`), smaller: no Client ID Metadata Documents and no
  * configured authorization server. A connection never opens a browser: it
  * sends the stored token and refreshes it; when it cannot, it fails as
@@ -45,9 +45,12 @@ function callbackFor(oauth: McpOAuthConfig): { host: string; redirectHost: strin
 const authFile = (home: string): string => join(home, "mcp-auth.json");
 /** A server's credentials are its name's and its URL's: servers sharing a URL keep separate accounts. */
 const keyOf = (server: string, url: string): string => `${server}|${new URL(url).href}`;
-/** The account's lock, held by whoever changes its tokens over the network or deletes them, in this shell or another (#542). */
-const accountLock = (server: string, url: string, home: string): string =>
-  `${authFile(home)}.${createHash("sha256").update(keyOf(server, url)).digest("hex").slice(0, 16)}.refresh`;
+/** The account's lock, held by whoever changes its tokens over the network or deletes them, in this shell or another. */
+const accountLock = (server: string, url: string, home: string): string => {
+  // The lock is beside the file, so a first sign-in or sign-out makes their folder.
+  mkdirSync(home, { recursive: true, mode: 0o700 });
+  return `${authFile(home)}.${createHash("sha256").update(keyOf(server, url)).digest("hex").slice(0, 16)}.refresh`;
+};
 
 function readStates(home: string): Record<string, McpOAuthState> {
   try {
@@ -60,6 +63,8 @@ function readStates(home: string): Record<string, McpOAuthState> {
 
 /** Changes the stored credentials under a lock, so two shells signing in at once each keep the other's; readable by its owner only. */
 function changeStates(home: string, change: (states: Record<string, McpOAuthState>) => void): void {
+  // The lock is beside the file, so a first save makes their folder.
+  mkdirSync(home, { recursive: true, mode: 0o700 });
   withLock(`${authFile(home)}.lock`, () => {
     const states = readStates(home);
     change(states);

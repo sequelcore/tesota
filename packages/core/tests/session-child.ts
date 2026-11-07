@@ -12,7 +12,7 @@ import { accepts } from "./scripted.ts";
 
 /**
  * A session in a process of its own, for the tests to kill hard or to race
- * for a session's lock (#437). It prints a line when it reaches the point
+ * for a session's lock. It prints a line when it reaches the point
  * a test waits for, then waits there until it is killed. A new session
  * writes its file's path to `file.txt` in its folder.
  *
@@ -21,11 +21,11 @@ import { accepts } from "./scripted.ts";
  * - `read <cwd> <folder>`: the same call, declared read-only.
  * - `shell <cwd> <folder>`: the platform's shell prints a line, then waits for `release.txt`.
  * - `stream <cwd> <folder>`: a reply streams too slowly to finish first.
- * - `verify <cwd> <folder>`: the verifier prints `verifying` and never settles (#439).
+ * - `verify <cwd> <folder>`: the verifier prints `verifying` and never settles.
  * - `receipt <cwd> <folder>`: the verifier records a receipt, and the
  *   process kills itself when the run's end is about to be written.
  * - `agent <cwd> <folder>`: the run starts a subagent in the background,
- *   which prints `child running` once its model is asked, and never ends (#525).
+ *   which prints `child running` once its model is asked, and never ends.
  * - `hold <file>`: opens the session and prints `opened`, or `locked` when
  *   another writer holds it.
  */
@@ -61,7 +61,7 @@ if (mode === "hold") {
   const command = shell.tool === "powershell" ? "Write-Output 'printed before interruption'; while (!(Test-Path 'release.txt')) { Start-Sleep -Milliseconds 20 }"
     : "echo 'printed before interruption'; while [ ! -f release.txt ]; do sleep 0.02; done";
   const faux = fauxProvider(mode === "stream" ? { tokensPerSecond: 5 } : {});
-  // A subagent the run started, which says so once its model is asked and never answers (#525).
+  // A subagent the run started, which says so once its model is asked and never answers.
   const parentReplies = [fauxAssistantMessage([fauxToolCall("agent", { prompt: "work", description: "worker" })], { stopReason: "toolUse" }),
     fauxAssistantMessage("waiting for the worker")];
   const routed = (context: { messages: readonly unknown[] }) => {

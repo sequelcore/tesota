@@ -7,10 +7,10 @@ import { type Evidence, proofSummary, quietOutput } from "./evidence.js";
 import { bold, expandHint, Rows, spread, wrapUnder } from "./messages.js";
 import { skippedWords, trustedWords } from "./receipt.js";
 import type { OnTrust } from "./verification-changes.js";
-import { annotations, projectFiles, proveFile, unreadSpecifications } from "./verification/lemmascript-verifier.js";
+import { annotations, projectFiles, proveFile } from "./verification/lemmascript-verifier.js";
 
 /**
- * The working agent's own proof run (#294): LemmaScript with Dafny on one
+ * The working agent's own proof run: LemmaScript with Dafny on one
  * TypeScript file it is working on, so it sees a failing obligation while it
  * works, as LemmaScript's loop intends, instead of after the turn.
  */
@@ -24,7 +24,7 @@ const syntaxGuidance = "LemmaScript syntax: //@ requires P and //@ ensures P abo
   "its return value; //@ invariant P as the first lines inside a loop; forall(j: nat, j < items.length ==> P) and " +
   "exists(j: nat, j < items.length && P); ==> for implication and === for equality.";
 
-/** How the agent should use `prove`, and what a pass is worth: #294's measured guidance. */
+/** How the agent should use `prove`, and what a pass is worth. */
 export const PROVE_GUIDELINES: readonly string[] = [
   "prove runs LemmaScript with Dafny on a TypeScript file with //@ annotations and reports whether its contracts " +
     "hold for every input they admit. After you change such a file, run prove and work until it passes.",
@@ -58,7 +58,7 @@ const fileLimit = 1024 * 1024;
 
 /**
  * Whether the project has a TypeScript file with `//@` annotations, which
- * turns on `prove` and its guidance (#294). It reads only the project's
+ * turns on `prove` and its guidance. It reads only the project's
  * files `projectFiles` walks to (`annotated`); a project it cannot read has
  * none.
  */
@@ -84,8 +84,8 @@ function trustLine(change: OnTrust): string {
 
 /**
  * A pass, in words that claim no more than the proof: every contract holds
- * only when the files it checked trust nothing and leave nothing out (#402);
- * otherwise each such line is named, as the receipt names them (#399).
+ * only when the files it checked trust nothing and leave nothing out;
+ * otherwise each such line is named, as the receipt names them.
  */
 function passedWords(path: string, trusted: readonly OnTrust[]): string {
   if (trusted.length === 0) return `Proved: every //@ contract in ${path} holds.`;
@@ -94,16 +94,19 @@ function passedWords(path: string, trusted: readonly OnTrust[]): string {
 }
 
 /** What the files a proof checked take on trust or leave out (`provedOnTrust`), read as the proof left them. */
-async function trustedIn(root: string, files: readonly string[]): Promise<OnTrust[]> {
+async function trustedIn(root: string, files: readonly string[], info: Evidence["proofInfo"], signal?: AbortSignal): Promise<OnTrust[]> {
   const read = async (path: string): Promise<string | undefined> => {
     try { return await readFile(join(root, path), "utf8"); } catch { return undefined; }
   };
   const found = await Promise.all(files.map(async (path) => ({ path, content: await read(path),
     generated: path.endsWith(".dfy") ? await read(`${path}.gen`) : undefined })));
-  // Loaded when a proof first passes rather than with Tesota, as the gate loads its checks (#446).
+  // Loaded when a proof first passes rather than with Tesota, as the gate loads its checks.
   const { provedOnTrust } = await import("./verification-changes.js");
-  return provedOnTrust(found.flatMap(({ path, content, generated }) => content === undefined ? []
-    : [{ path, content, ...generated === undefined ? {} : { generated } }]));
+  const existing = await provedOnTrust(found.flatMap(({ path, content, generated }) => content === undefined ? []
+    : [{ path, content, ...generated === undefined ? {} : { generated } }]), signal);
+  const source = files.find((path) => path.endsWith(".ts")) ?? "";
+  return [...existing, ...info?.status !== "read" ? [] : info.trusted.map(({ name, annotation }): OnTrust =>
+    ({ path: source, kind: "added_assume", function: name, annotation }))];
 }
 
 /**
@@ -112,12 +115,15 @@ async function trustedIn(root: string, files: readonly string[]): Promise<OnTrus
  * when the agent has it (`proveActive`); otherwise the gate proves again.
  */
 export function proofReport(path: string, proof: Evidence, proveActive: boolean, trusted: readonly OnTrust[] = [],
-  unread: readonly { line: number; text: string }[] = []): string {
+  unread: readonly { line: number; text: string }[] = proof.unreadSpecifications ?? []): string {
   const again = proveActive ? "run prove again" : "finish your turn, and Tesota will prove the file again";
+  const info = proof.proofInfo;
+  const gap = info?.status === "unavailable" ? info.reason : info?.semanticGap;
   const skipped = unread.length === 0 ? "" : `\n\nLemmaScript skips these //@ lines without a word, so the proof checked ` +
     `none of them:\n${unread.map(({ line, text: written }) => `- line ${line}: ${written}`).join("\n")}\nWrite each as ` +
     `//@ <keyword> <expression>, with one space after //@ and one after the keyword, and ${again}.`;
-  const how = proof.outcome === "passed" && unread.length > 0 ? `Proved, but not all of ${path}: LemmaScript skipped some of its //@ lines.`
+  const how = proof.outcome === "passed" && gap !== undefined ? `The proof passed, but its scope could not be fully read: ${gap}`
+    : proof.outcome === "passed" && unread.length > 0 ? `Proved, but not all of ${path}: LemmaScript skipped some of its //@ lines.`
     : proof.outcome === "passed" ? passedWords(path, trusted)
     : proof.outcome === "failed" ? `Not proved: an obligation in ${path} failed.`
     : proof.outcome === "timed_out" ? `The proof of ${path} ran past its time limit; that is not a pass.`
@@ -146,7 +152,8 @@ function text(content: string): ToolResult<ProveDetails | undefined> {
 function proved(path: string, evidence: Evidence, trusted: readonly OnTrust[], unread: readonly { line: number; text: string }[]):
   ToolResult<ProveDetails | undefined> {
   return { content: [{ type: "text", text: proofReport(path, evidence, true, trusted, unread) }], details: { path, evidence, trusted },
-    ...evidence.outcome === "passed" && unread.length === 0 ? {} : { isError: true } };
+    ...evidence.outcome === "passed" && unread.length === 0 && evidence.proofInfo?.status !== "unavailable"
+      && !(evidence.proofInfo?.status === "read" && evidence.proofInfo.semanticGap !== undefined) ? {} : { isError: true } };
 }
 
 /** `prove` and its file, with how long the proof took at the right once it has run. */
@@ -161,6 +168,13 @@ function renderCall(args: { path?: string }, theme: Theme, context: { readonly d
  * and the contract line it points at; Dafny's output when expanded. Pi draws
  * it on its error background unless the proof passed.
  */
+function proofHeading(passed: boolean, partial: boolean, trusted: number, summary: ReturnType<typeof proofSummary>, theme: Theme): string {
+  const words = trusted === 0 ? summary.words : "its contracts hold only if what it trusts is right";
+  return passed ? `${theme.fg(partial ? "warning" : "success", partial ? "◐ Proved in part" : trusted === 0 ? "✓ Proved" : "✓ Proved, not outright")}` +
+    theme.fg("muted", ` — ${words}${summary.tally === undefined ? "" : ` · ${summary.tally}`}`)
+    : `${theme.fg("error", "✗ Not proved")}${theme.fg("muted", ` — ${summary.words}`)}`;
+}
+
 function renderResult(result: ToolResult<ProveDetails | undefined>, options: { expanded: boolean; isPartial: boolean },
   theme: Theme): Rows {
   return new Rows((width) => {
@@ -172,14 +186,15 @@ function renderResult(result: ToolResult<ProveDetails | undefined>, options: { e
     }
     const summary = proofSummary(evidence);
     const passed = evidence.outcome === "passed";
+    const unread = evidence.unreadSpecifications ?? [];
+    const partial = unread.length > 0 || evidence.proofInfo?.status === "unavailable"
+      || evidence.proofInfo?.status === "read" && evidence.proofInfo.semanticGap !== undefined;
     const trusted = result.details?.trusted ?? [];
-    const words = trusted.length === 0 ? summary.words : "its contracts hold only if what it trusts is right";
-    const head = passed ? `${theme.fg("success", trusted.length === 0 ? "✓ Proved" : "✓ Proved, not outright")}` +
-      theme.fg("muted", ` — ${words}${summary.tally === undefined ? "" : ` · ${summary.tally}`}`)
-      : `${theme.fg("error", "✗ Not proved")}${theme.fg("muted", ` — ${summary.words}`)}`;
+    const head = proofHeading(passed, partial, trusted.length, summary, theme);
     const output = quietOutput(evidence.output);
     return ["", ...wrapUnder(head, width, 2), ...summary.at === undefined ? [] : [theme.fg("muted", `   at ${summary.at}`)],
       ...trusted.flatMap((change) => wrapUnder(theme.fg("warning", `  ${trustLine(change)}`), width, 4)),
+      ...unread.flatMap(({ line, text }) => wrapUnder(theme.fg("warning", `  - line ${line}: not attached: ${text}`), width, 4)),
       ...options.expanded ? ["", ...output.flatMap((line) => wrapUnder(theme.fg("toolOutput", line), width, 2))]
         : passed || output.length === 0 ? [] : ["", expandHint(theme, "for Dafny's output")]];
   });
@@ -188,16 +203,18 @@ function renderResult(result: ToolResult<ProveDetails | undefined>, options: { e
 const parameters: TObject<{ path: TString }> = Type.Object({ path: Type.String({ description: "The TypeScript file to prove, relative to the project" }) });
 
 /**
- * `prove`, inactive until the extension finds contracts (`hasContracts`). It
- * runs alone, since the evidence must describe the files as no other tool
- * call left them mid-proof.
+ * `prove`, inactive until the extension offers it: where Dafny is on
+ * the PATH or the project has contracts (`hasContracts`). It runs alone,
+ * since the evidence must describe the files as no other tool call left them
+ * mid-proof.
  */
 export const proveTool: ToolDefinition<typeof parameters, ProveDetails | undefined> = {
   name: "prove", label: "Prove",
   description: "Run LemmaScript with Dafny on one TypeScript file with //@ annotations and report whether its " +
     "contracts are proved. It first regenerates the file's .dfy proof, keeping the proof lines you added, as " +
     "lsc regen does.",
-  promptSnippet: "Prove a TypeScript file's //@ LemmaScript contracts with Dafny",
+  promptSnippet: "Prove a TypeScript file's //@ LemmaScript contracts with Dafny. Tesota runs both: write the //@ contract, " +
+    "then call prove; don't look for or install a prover",
   promptGuidelines: [...PROVE_GUIDELINES],
   parameters,
   defaultActive: false,
@@ -213,8 +230,8 @@ export const proveTool: ToolDefinition<typeof parameters, ProveDetails | undefin
     try { source = await readFile(absolute, "utf8"); } catch { return text(`${path} does not exist.`); }
     if (annotations(source).length === 0) return text(`${path} has no //@ annotations, so there is nothing to prove.`);
     const evidence = await proveFile(ctx.cwd, path, signal ?? new AbortController().signal);
-    return proved(path, evidence, evidence.outcome === "passed" ? await trustedIn(ctx.cwd, evidence.files) : [],
-      unreadSpecifications(source));
+    return proved(path, evidence, evidence.outcome === "passed" ? await trustedIn(ctx.cwd, evidence.files, evidence.proofInfo, signal) : [],
+      evidence.unreadSpecifications ?? []);
   },
   renderCall,
   renderResult,

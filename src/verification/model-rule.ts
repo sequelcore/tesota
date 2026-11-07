@@ -1,5 +1,16 @@
 import type { ProofOutcome } from "./proof-outcome-rule.js";
 
+export type ModelSelectionState = "changed" | "unchecked" | "checked";
+
+/** A selected check is fulfilled only by unchanged inputs and a complete current check. */
+//@ ensures \result === "changed" <==> !unchanged
+//@ ensures \result === "checked" <==> unchanged && checked
+//@ ensures \result === "unchecked" <==> unchanged && !checked
+export function modelSelectionState(unchanged: boolean, checked: boolean): ModelSelectionState {
+  if (!unchanged) return "changed";
+  return checked ? "checked" : "unchecked";
+}
+
 /**
  * How one TLC run of a model ended: every reachable state checked and none
  * broke a property (`passed`); TLC found no state to check (`vacuous`); a
@@ -8,12 +19,12 @@ import type { ProofOutcome } from "./proof-outcome-rule.js";
  * failed (`assumption_failed`); TLC could not read or
  * evaluate the model or its configuration (`malformed`), which the model's
  * author must fix; or it ran past its limit, was stopped, or could not run,
- * Java and TLC included.
+ * the checker included.
  */
 export type ModelRun = "assumption_failed" | "deadlocked" | "passed" | "vacuous" | "violated" | "malformed" | "timed_out" | "cancelled" | "not_started";
 
 /**
- * A TLC run from how its process ended: `started` says Java and TLC ran at
+ * A TLC run from how its process ended: `started` says the checker ran at
  * all, `exitCode` is TLC's and `states` the distinct states it reported.
  * TLC's exit status (`tlc2.output.EC.ExitStatus`) is 0 for success, 10 to 14
  * for an assumption failure, deadlock, safety, liveness or assertion respectively, 150

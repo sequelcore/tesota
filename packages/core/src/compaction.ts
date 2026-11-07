@@ -1,5 +1,6 @@
 import type { Api, Model, Models, Usage } from "@earendil-works/pi-ai";
-import { type HistoryMessage, modelContext } from "./loop.ts";
+import type { HistoryMessage } from "./loop.ts";
+import { modelContext } from "./prompt.ts";
 
 /** What the summary model needs to condense the earlier conversation. */
 export interface SummaryRequest {
@@ -25,7 +26,7 @@ export function filesTouched(history: readonly HistoryMessage[]): FilesTouched {
     if (message.role !== "assistant") continue;
     for (const part of message.content) {
       if (part.type !== "toolCall" || (part.name !== "read" && part.name !== "write" && part.name !== "edit")) continue;
-      // As the model sent them, which may be null (#664).
+      // As the model sent them, which may be null.
       const path = (part.arguments ?? {})["path"];
       if (typeof path === "string") paths.set(path, paths.get(path) === true || part.name !== "read");
     }
@@ -54,7 +55,7 @@ When a next step needs the full text of such a result, say in Open items to read
 When given a previous summary, update it with the new messages, keeping everything still true.
 Merge the new information into that summary rather than rewriting it from scratch.`;
 
-/** How much of one tool result the summary model sees; the rest is marked as omitted, never silently dropped (#623). */
+/** How much of one tool result the summary model sees; the rest is marked as omitted, never silently dropped. */
 const resultLimit = 2000;
 
 /** Renders history as text so the summary model cannot respond to earlier tool calls. */

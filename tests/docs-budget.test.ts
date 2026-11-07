@@ -6,7 +6,7 @@ import { expect, it } from "vitest";
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 
 /**
- * How many words each kind of page may hold (#751): the prose a reader reads, outside code blocks, HTML and link
+ * How many words each kind of page may hold: the prose a reader reads, outside code blocks, HTML and link
  * targets. A page that needs more is split, or its detail moves to the page that owns it.
  */
 const BUDGETS: readonly (readonly [RegExp, number])[] = [
@@ -18,10 +18,11 @@ const BUDGETS: readonly (readonly [RegExp, number])[] = [
   [/^docs\/guides\//u, 700],
   [/^docs\/concepts\//u, 1200],
   [/^docs\/reference\//u, 1200],
+  [/^docs\/decisions\//u, 2000],
   [/^docs\/development\.md$/u, 1500],
 ];
 /** The receipt's format is a specification, read field by field rather than through. */
-const EXEMPT = new Set(["docs/receipt-v2.md"]);
+const EXEMPT = new Set(["docs/receipt-v2.md", "docs/receipt-v3.md"]);
 
 /** The words a reader reads in a Markdown page: no code, fenced or inline, HTML, link targets or table rules. */
 export function proseWords(markdown: string): number {

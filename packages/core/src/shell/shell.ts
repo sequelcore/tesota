@@ -14,11 +14,13 @@ import { expandKey, type Surface } from "./surface.ts";
 import { listRow, type ShellTheme } from "../../../../src/theme.ts";
 import type { ClarificationQuestion } from "../../../../src/clarification.ts";
 import { Transcript } from "./transcript.ts";
+import { tasksRow } from "./tasks-row.ts";
 import { WorkingStatus } from "./working-status.ts";
 import type { QuestionOutcome, QuestionSubmit } from "../questions.ts";
 import { createQuestionDraft, type QuestionDraft, QuestionForm } from "./question.ts";
 import { framed, frameTitle, type FrameTone } from "./frame.ts";
 import { terminalText } from "../../../../src/terminal-text.ts";
+import { WarningsView, withWarningNotice } from "./warnings.ts";
 
 const queueReplyKey = { key: "alt+enter", label: "Alt+Enter" } as const;
 const stopRunKey = { key: "escape", label: "Esc" } as const;
@@ -32,7 +34,7 @@ class RepaintingAltScreen extends TuiAltScreen {
 export interface ShellOptions {
   readonly terminal: Terminal;
   readonly mode: TuiMode;
-  /** Draw every cell on every frame; Windows ConPTY hosts need it (#432). */
+  /** Draw every cell on every frame; Windows ConPTY hosts need it. */
   readonly fullRepaint: boolean;
   readonly theme: ShellTheme;
   readonly session: EngineSession;
@@ -46,13 +48,13 @@ export interface ShellOptions {
   readonly copy?: (text: string) => Promise<boolean>;
   /** Explicit paste's system clipboard boundary; unavailable or empty text is ignored. */
   readonly readClipboard?: () => Promise<string | null | undefined>;
-  /** What the session's extensions draw (#446): header, editor, footer, working indicator, messages and tools. */
+  /** What the session's extensions draw: header, editor, footer, working indicator, messages and tools. */
   readonly surface?: Surface;
   /** What an extension's footer reads besides the session. */
   readonly footerData?: FooterData;
-  /** Turns to the next permission mode, on Shift+Tab (#449). */
+  /** Turns to the next permission mode, on Shift+Tab. */
   readonly nextMode?: () => void;
-  /** Opens the sessions' dashboard, on Ctrl+T (#455). */
+  /** Opens the sessions' dashboard, on Ctrl+T. */
   readonly agents?: () => void;
 }
 
@@ -116,12 +118,12 @@ class NumberedList extends BandedList {
 export interface Shell {
   /** Asks the operator to choose one of `items`; undefined when they cancel. */
   pick(title: string, items: readonly SelectItem[]): Promise<string | undefined>;
-  /** Asks the operator to allow something (#449), set apart by a bar: numbered choices a digit picks; undefined when they cancel. */
+  /** Asks the operator to allow something, set apart by a bar: numbered choices a digit picks; undefined when they cancel. */
   confirm(question: Confirmation): Promise<string | undefined>;
   /** Asks the operator for a line of text, hidden when `secret`; undefined when they cancel. */
   ask(message: string, options?: { readonly secret?: boolean; readonly placeholder?: string }): Promise<string | undefined>;
   /**
-   * Shows `session` instead, its conversation drawn from its history (#455):
+   * Shows `session` instead, its conversation drawn from its history:
    * with its own surface when it has one, so its header, editor and footer
    * are its own, and as working or verifying when its run is going.
    */
@@ -139,13 +141,17 @@ export interface Shell {
     finish: (outcome: Exclude<QuestionOutcome, { readonly status: "answered" }>) => void): () => void;
   /** Tells every pending question owned by `owner` that its session can no longer accept an answer. */
   cancelQuestions(owner: EngineSession, reason: string): void;
-  /** Shows the shown session's run as working, verifying or idle, when it goes on without saying so (#455). */
+  /** Shows the shown session's run as working, verifying or idle, when it goes on without saying so. */
   busy(state: "working" | "settling" | undefined): void;
   /** Writes a line of the shell's own into the conversation. */
   note(text: string, tone?: "muted" | "error" | "warning"): void;
+  /** Retains a nonblocking diagnostic for this session, with a passive footer notice. */
+  warn(id: string, details: string): void;
+  /** Opens retained diagnostics without changing the current draft. */
+  showWarnings(): void;
   /** Draws the footer again, as `status` now says it. */
   redraw(): void;
-  /** Gives the terminal to another program for as long as `work` runs, such as Claude Code's sign-in (#642), then draws the shell again. */
+  /** Gives the terminal to another program for as long as `work` runs, such as Claude Code's sign-in, then draws the shell again. */
   handOver<T>(work: () => Promise<T>): Promise<T>;
   /** Ends the shell, leaving the conversation in the terminal's scrollback; settles once it has. */
   stop(): void;
@@ -154,20 +160,26 @@ export interface Shell {
 }
 
 /**
- * The engine's terminal shell for one session (#444): the conversation above,
+ * The engine's terminal shell for one session: the conversation above,
  * the editor, a working indicator and the footer below. Fullscreen it scrolls
  * the conversation itself, with search and in-app copy; inline it prints into
  * the terminal's scrollback. Enter sends, and steers while the agent works;
  * Alt+Enter queues a follow-up; Esc stops the run; Ctrl+C clears the editor
  * and, twice on an empty one, ends the shell, as Ctrl+D on an empty one does.
  * On ending, a fullscreen shell writes the conversation to the scrollback,
- * as Pi does. What the session's extensions draw (#446), its header, editor,
+ * as Pi does. What the session's extensions draw, its header, editor,
  * footer and working indicator, takes the shell's own place as they set it,
  * and Ctrl+O expands their messages and tool calls.
  */
 export function startShell(options: ShellOptions): Shell {
   const { theme, terminal } = options;
   let session = options.session;
+  const warnings = new WeakMap<EngineSession, { readonly active: Map<string, string>; readonly dismissed: Map<string, string> }>();
+  const warningsFor = (owner: EngineSession) => {
+    let state = warnings.get(owner);
+    if (state === undefined) { state = { active: new Map(), dismissed: new Map() }; warnings.set(owner, state); }
+    return state;
+  };
   let busy = false;
   const copy = options.copy ?? (async (text: string) => copyToClipboard(text, (data) => terminal.write(data)));
   const altOptions: TuiAltScreenOptions = {
@@ -181,14 +193,14 @@ export function startShell(options: ShellOptions): Shell {
   const tui = options.mode === "inline" ? new TuiMainScreen(terminal)
     : options.fullRepaint ? new RepaintingAltScreen(terminal, false, undefined, altOptions) : new TuiAltScreen(terminal, false, undefined, altOptions);
 
-  /** The shown session's surface: each session's extensions draw on their own (#455). */
+  /** The shown session's surface: each session's extensions draw on their own. */
   let surface = options.surface;
   let expanded = false;
   const document = new Container();
   const none = new Map();
   const transcript = new Transcript(theme, {
     get renderers() { return surface?.renderers ?? none; }, get tools() { return surface?.tools ?? none; },
-    // The shown session's folder, its worktree when it has one (#453), never the process's.
+    // The shown session's folder, its worktree when it has one, never the process's.
     expanded: () => expanded, get cwd() { return session.workspace.cwd; } });
   transcript.load(session.history());
   let activity = session.history().length > 0;
@@ -199,7 +211,7 @@ export function startShell(options: ShellOptions): Shell {
   // A blank row between the header and the conversation's first entry.
   document.addChild(new Spacer(1));
   document.addChild(transcript);
-  // Derived from the shown session, not a transient event: history reloads and session switches keep it (#713).
+  // Derived from the shown session, not a transient event: history reloads and session switches keep it.
   document.addChild({
     render: (width) => {
       const awaiting = session.awaiting();
@@ -207,7 +219,7 @@ export function startShell(options: ShellOptions): Shell {
     },
     invalidate: () => undefined,
   });
-  /** The gate's live block while it verifies (#591), after the conversation and apart from it, so a reload keeps it. */
+  /** The gate's live block while it verifies, after the conversation and apart from it, so a reload keeps it. */
   const block = new Container();
   document.addChild(block);
   // Pi uses Alt+Q on Windows, where Alt+Up is not reliably passed through by consoles.
@@ -227,7 +239,7 @@ export function startShell(options: ShellOptions): Shell {
   const loader = new WorkingStatus(tui, theme);
   const editorSlot = new VStack();
   let editor = new Editor(tui, theme.editor);
-  /** The shell's commands, then the shown session's skills (#540); a command wins over a skill of its name. */
+  /** The shell's commands, then the shown session's skills; a command wins over a skill of its name. */
   const autocomplete = (): FileAutocompleteProvider => {
     const commands = options.commands ?? [];
     const skills = session.skills().filter(({ name }) => !commands.some((command) => command.name === name))
@@ -237,14 +249,24 @@ export function startShell(options: ShellOptions): Shell {
   const footerSlot = new Container();
   const footer = new Text("", 1, 0);
   const drawFooter = (): void => { footer.setText(theme.fg("dim", options.status())); };
+  const warningFooter: Component = {
+    render: (width) => {
+      const lines = footerSlot.render(width);
+      return covering === undefined ? withWarningNotice(lines, warningsFor(session).active.size, width, theme) : lines;
+    },
+    invalidate: () => { footerSlot.invalidate(); },
+  };
   drawFooter();
   // While a question waits in the input's place the run waits for the operator, as the footer says, so it does not
   // also show as working: the question leads, directly under the conversation.
   const statusRow: Component = { render: (width) => questions.length > 0 ? [] : status.render(width), invalidate: () => { status.invalidate(); } };
+  // Read from the shown session, as the question it ended on is, so a reload or a switch keeps it; a waiting question hides it.
+  const taskRow: Component = { render: (width) => questions.length > 0 ? [] : tasksRow(session.tasks(), busy, expanded, theme, width),
+    invalidate: () => undefined };
   // A blank row always above the input, so the conversation's last card never touches it.
-  const docked: readonly Component[] = [new Spacer(1), pending, statusRow, editorSlot];
+  const docked: readonly Component[] = [new Spacer(1), pending, taskRow, statusRow, editorSlot];
   /**
-   * The empty screen (#749): the header's welcome block with the input right under it, the pair centered in the rows
+   * The empty screen: the header's welcome block with the input right under it, the pair centered in the rows
    * the document and dock leave, and the footer kept at the bottom; none once there is activity or it does not fit.
    */
   const welcome = (width: number): { readonly above: number; readonly block: readonly string[]; readonly below: number } | undefined => {
@@ -252,13 +274,13 @@ export function startShell(options: ShellOptions): Shell {
     if (activity || handedOver || stage === undefined) return undefined;
     const block = stage.block(width);
     const free = terminal.rows - document.render(width).length
-      - [...docked, footerSlot].reduce((rows, component) => rows + component.render(width).length, 0);
+      - [...docked, warningFooter].reduce((rows, component) => rows + component.render(width).length, 0);
     if (block.length === 0 || block.length > free) return undefined;
     const below = Math.floor((free - block.length) / 2);
     return { above: free - block.length - below, block, below };
   };
   const lift: Component = { render: (width) => Array<string>(welcome(width)?.below ?? 0).fill(""), invalidate: () => undefined };
-  const dock: readonly Component[] = [...docked, lift, footerSlot];
+  const dock: readonly Component[] = [...docked, lift, warningFooter];
   // This decoration belongs to the live viewport, not the document exported to scrollback.
   const liveDocument = new Container();
   liveDocument.addChild(document);
@@ -273,7 +295,7 @@ export function startShell(options: ShellOptions): Shell {
     tui.setLayoutRoot(new VStack([
       { component: new ScrollView(liveDocument, { follow: "end", primary: true, overscroll: "chain" }), basis: 0, grow: 1, shrink: 1, minSize: 1 },
       // The footer never gives up its row: what waits for the operator, and the mode, show however tall a question is.
-      { component: new VStack(dock.map((component) => ({ component, shrink: component === footerSlot ? 0 : 1, minSize: 0 }))), basis: "auto", grow: 0, shrink: 1,
+      { component: new VStack(dock.map((component) => ({ component, shrink: component === warningFooter ? 0 : 1, minSize: 0 }))), basis: "auto", grow: 0, shrink: 1,
         minSize: 1 },
     ]));
   } else {
@@ -281,11 +303,29 @@ export function startShell(options: ShellOptions): Shell {
     for (const component of dock) tui.addChild(component);
   }
 
-  /** What has the keyboard over the shell, a dialog or the dashboard (#455): the editor takes it back only when nothing does. */
+  /** What has the keyboard over the shell, a dialog or the dashboard: the editor takes it back only when nothing does. */
   let covering: Component | undefined;
   /** What `overlay` shows over the shell: while it does, a question waits in the input's place under it without the keyboard. */
   let overlayBody: (Component & { dispose?: () => void }) | undefined;
   let hideOverlay: (() => void) | undefined;
+  let warningView: WarningsView | undefined;
+  let hideWarnings: (() => void) | undefined;
+  const showWarnings = (): void => {
+    if (hideWarnings !== undefined) { hideWarnings(); return; }
+    if (covering !== undefined) return;
+    const state = warningsFor(session);
+    warningView = new WarningsView({
+      entries: [...state.active].map(([id, details]) => ({ id, details })), theme, rows: () => terminal.rows,
+      dismiss: ({ id, details }) => {
+        if (state.active.get(id) !== details) return;
+        state.active.delete(id);
+        state.dismissed.set(id, details);
+      },
+      copy, redraw: () => { tui.requestRender(); }, close: () => { hideWarnings?.(); },
+      disposed: () => { warningView = undefined; hideWarnings = undefined; },
+    });
+    hideWarnings = shell.overlay(warningView);
+  };
   /** The keyboard back to the latest question, or the editor, unless an overlay has it. */
   const refocus = (): void => {
     if (overlayBody !== undefined) return;
@@ -369,7 +409,7 @@ export function startShell(options: ShellOptions): Shell {
     const registration = registrations === undefined ? undefined : [...registrations].at(-1);
     if (registration !== undefined) mountClarification(registration);
   };
-  /** Each session's unsent text, kept while another is shown (#455). */
+  /** Each session's unsent text, kept while another is shown. */
   const drafts = new Map<EngineSession, string>();
   /** What each slot was last built from, so a change rebuilds only what changed and the editor keeps its text otherwise. */
   let mounted: { header?: unknown; editor?: unknown; footer?: unknown } = {};
@@ -418,10 +458,10 @@ export function startShell(options: ShellOptions): Shell {
     tui.requestRender();
   };
   /**
-   * While the gate verifies, the label names the work running and for how long (#590), from the shown session's
+   * While the gate verifies, the label names the work running and for how long, from the shown session's
    * surface. The listener and the clock tick last only as long as the label does: a state without verification, a
    * session switch to another surface and the shell stopping all let go of them. A detail with a block also draws
-   * it as the conversation's last block (#591), redrawn on the same changes and ticks, and gone when the label is.
+   * it as the conversation's last block, redrawn on the same changes and ticks, and gone when the label is.
    */
   let unwatchDetail: () => void = () => undefined;
   let watched: WorkingDetail | undefined;
@@ -507,7 +547,8 @@ export function startShell(options: ShellOptions): Shell {
     else if (event.type === "compacted") {
       loader.show("working", "Working…");
       note(`Compacted the conversation: about ${event.tokensBefore.toLocaleString("en")} tokens to ${event.tokensAfter.toLocaleString("en")}.`);
-    } else endedRun(event);
+    } else if (event.type === "ended") endedRun(event);
+    // The task row reads the session as it draws: a "tasks" event only redraws.
     tui.requestRender();
   };
   let unsubscribe = session.subscribe(onEvent);
@@ -528,7 +569,7 @@ export function startShell(options: ShellOptions): Shell {
       const word = trimmed.split(/\s/u)[0] ?? "";
       void options.command(trimmed).then((known) => {
         if (known) return;
-        // A skill is a request, the line typed, whose text only the model reads; during a run it waits as a follow-up (#540).
+        // A skill is a request, the line typed, whose text only the model reads; during a run it waits as a follow-up.
         if (!session.skills().some(({ name }) => `/${name}` === word)) note(`No command ${word}.`, "warning");
         else send(trimmed, busy ? "followUp" : undefined, true);
       });
@@ -582,7 +623,7 @@ export function startShell(options: ShellOptions): Shell {
     tui.stop({ preserveScreen: false });
     if (tui instanceof TuiAltScreen) {
       // The conversation stays in the terminal's scrollback, as the inline shell leaves it. Drawn without
-      // starting the terminal again: a start queries it, and the reply would reach the prompt (#574).
+      // starting the terminal again: a start queries it, and the reply would reach the prompt.
       const scrollback = new TuiMainScreen(terminal);
       scrollback.addChild(document);
       scrollback.renderNow();
@@ -616,6 +657,15 @@ export function startShell(options: ShellOptions): Shell {
     return { consume: true };
   });
   tui.addInputListener((data) => {
+    if (warningView !== undefined) {
+      warningView.handleInput(data);
+      tui.requestRender();
+      return { consume: true };
+    }
+    if (matchesKey(data, "f2") && covering === undefined) { showWarnings(); return { consume: true }; }
+    return undefined;
+  });
+  tui.addInputListener((data) => {
     if (matchesKey(data, "ctrl+c")) {
       if (visibleClarification !== undefined) { void session.abort(); return { consume: true }; }
       if (editor.getText() !== "") editor.setText("");
@@ -624,11 +674,11 @@ export function startShell(options: ShellOptions): Shell {
       tui.requestRender();
       return { consume: true };
     }
-    // Ctrl+T remains available while a clarification owns focus, so another live session can be selected (#520).
+    // Ctrl+T remains available while a clarification owns focus, so another live session can be selected.
     if (matchesKey(data, "ctrl+t") && options.agents !== undefined && dashboardAvailable()) {
       options.agents(); return { consume: true };
     }
-    // A dialog or the dashboard has the keyboard: Esc goes back there, and the shell's own keys wait (#455).
+    // A dialog or the dashboard has the keyboard: Esc goes back there, and the shell's own keys wait.
     if (covering !== undefined) return undefined;
     if (matchesKey(data, dequeueKey)) { restorePending(); return { consume: true }; }
     if (matchesKey(data, stopRunKey.key) && busy) { restorePending(); void session.abort(); return { consume: true }; }
@@ -657,7 +707,7 @@ export function startShell(options: ShellOptions): Shell {
    * Shows `body` under `heading` in the input's place until `settle` is called,
    * as Pi and Claude Code ask: nothing is drawn over the conversation, and a
    * long command wraps in full above the choices. The editor, or the question
-   * before it, comes back with the focus. It is framed (#531): `tone` says
+   * before it, comes back with the focus. It is framed: `tone` says
    * whether it asks to approve something or to answer or choose.
    */
   function dialog<T>(heading: Component, body: Component & Focusable, wire: (settle: (value: T | undefined) => void) => void,
@@ -682,7 +732,7 @@ export function startShell(options: ShellOptions): Shell {
     });
   }
 
-  return {
+  const shell: Shell = {
     pick: (title, items) => {
       const list = new BandedList([...items], Math.min(items.length, 12), theme);
       return dialog<string>(heading(title), list, (settle) => {
@@ -715,6 +765,7 @@ export function startShell(options: ShellOptions): Shell {
       });
     },
     show(next, nextSurface, state) {
+      hideWarnings?.();
       detachClarification();
       unsubscribe();
       drafts.set(session, editor.getText());
@@ -800,6 +851,15 @@ export function startShell(options: ShellOptions): Shell {
     },
     busy: (state) => { working(state); tui.requestRender(); },
     note,
+    warn(id, details) {
+      const state = warningsFor(session);
+      const text = terminalText(details);
+      if (state.dismissed.get(id) === text) return;
+      state.dismissed.delete(id);
+      state.active.set(id, text);
+      tui.requestRender();
+    },
+    showWarnings,
     redraw: () => { drawFooter(); tui.requestRender(); },
     handOver: async (work) => {
       handedOver = true;
@@ -818,4 +878,5 @@ export function startShell(options: ShellOptions): Shell {
     stop,
     stopped,
   };
+  return shell;
 }

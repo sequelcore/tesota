@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import type { ParsedCommand } from "./permissions.ts";
 
 /**
- * PowerShell's own reading of a command (#697), as Codex and Claude Code read
+ * PowerShell's own reading of a command, as Codex and Claude Code read
  * one: its parser finds every command, nested ones included; aliases and
  * module-qualified names resolve to the command they run; and its parameter
  * binder names what each word binds to, whatever prefix (`-r`), colon
@@ -241,7 +241,7 @@ function commandsOf(line: string): readonly ParsedCommand[] | undefined {
  * `command` as the PowerShell at `executable` reads it, or nothing when it
  * can't: the command doesn't parse, the parser can't start, or it doesn't
  * answer within its limit, which ends it. The floor then reads the command's
- * text as it did before (#697).
+ * text as it did before.
  */
 export function parsePowerShell(executable: string, command: string): Promise<readonly ParsedCommand[] | undefined> {
   const parser = started(executable);

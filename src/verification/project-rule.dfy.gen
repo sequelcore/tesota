@@ -12,6 +12,16 @@ lemma below_ensures(folder: string, other: string)
 {
 }
 
+function declaredCheckAllowed(unchanged_: bool, trusted: bool): bool
+{
+  (unchanged_ && trusted)
+}
+
+lemma declaredCheckAllowed_ensures(unchanged_: bool, trusted: bool)
+  ensures (declaredCheckAllowed(unchanged_, trusted) <==> (unchanged_ && trusted))
+{
+}
+
 function builtIn(markers: seq<string>, entries: seq<string>): bool
 {
   (exists marker :: marker in markers && (if (|marker| >= |"*"| && marker[..|"*"|] == "*") then (exists name :: name in entries && (|name| >= |marker[1..]| && name[|name|-|marker[1..]|..] == marker[1..])) else (marker in entries)))

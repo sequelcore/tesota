@@ -1,19 +1,12 @@
-﻿import { spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+﻿import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { KeybindingsManager, setKeybindings, stripTerminalSequences } from "@earendil-works/pi-tui";
 import { afterEach, beforeAll, expect, it } from "vitest";
 import type { Theme } from "../src/contract.js";
-import { tlaToolsJar } from "../src/model-check.js";
-import { hasTlc, modelTool } from "../src/model-tool.js";
+import { modelTool } from "../src/model-tool.js";
 import tesota from "../src/tesota.js";
 import { shellTheme } from "../src/theme.js";
-
-/** The operator's TLC, copied into this file's own home where Tesota looks for it; the runs that need it are skipped without it. */
-const operator = JSON.parse(process.env["TESOTA_TEST_OPERATOR_HOME"] ?? "{}") as { HOME?: string; USERPROFILE?: string };
-const operatorJar = join(operator.USERPROFILE ?? operator.HOME ?? "", ".tesota", "tools", "tla2tools.jar");
-const withTlc = existsSync(operatorJar) && spawnSync("java", ["-version"]).status === 0;
 
 let theme: Theme;
 beforeAll(() => {
@@ -24,7 +17,6 @@ beforeAll(() => {
 const roots: string[] = [];
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
-  rmSync(tlaToolsJar(), { force: true });
 });
 
 function folder(files: Record<string, string> = {}): string {
@@ -37,12 +29,6 @@ function folder(files: Record<string, string> = {}): string {
   return root;
 }
 
-function installTlc(): void {
-  mkdirSync(join(tlaToolsJar(), ".."), { recursive: true });
-  if (withTlc) copyFileSync(operatorJar, tlaToolsJar());
-  else writeFileSync(tlaToolsJar(), "");
-}
-
 async function run(root: string, path: string): Promise<Awaited<ReturnType<typeof modelTool.execute>>> {
   return await modelTool.execute("c", { path }, new AbortController().signal, undefined, { cwd: root } as never);
 }
@@ -50,16 +36,27 @@ async function run(root: string, path: string): Promise<Awaited<ReturnType<typeo
 const said = (result: Awaited<ReturnType<typeof modelTool.execute>>): string =>
   result.content.map((part) => part.type === "text" ? part.text : "").join("");
 
-/** The tools a session started in `root` leaves active. */
-function activeTools(root: string): string[] {
+/** A session started in `root`, with no Dafny on the PATH: the tools it leaves active, `check_model`'s rules, and a tool result to hand it. */
+async function session(root: string): Promise<{ active: () => string[]; rules: () => string; result: (toolName: string, path: string) => void }> {
   let active = ["read", "bash"];
-  const handlers = new Map<string, (event: unknown, ctx: unknown) => void>();
-  tesota({ registerTool: () => undefined, registerFlag: () => undefined, registerMessageRenderer: () => undefined,
-    on: (name: string, handler: (event: unknown, ctx: unknown) => void) => { handlers.set(name, handler); },
+  const handlers = new Map<string, (event: unknown, ctx: unknown) => unknown>();
+  const tools = new Map<string, { name: string; promptGuidelines?: string[] | (() => readonly string[]) }>();
+  tesota({ registerTool: (tool: { name: string; promptGuidelines?: string[] | (() => readonly string[]) }) => { tools.set(tool.name, tool); }, registerFlag: () => undefined,
+    registerMessageRenderer: () => undefined,
+    on: (name: string, handler: (event: unknown, ctx: unknown) => unknown) => { handlers.set(name, handler); },
     getActiveTools: () => active, getSettings: () => ({}), setActiveTools: (names: string[]) => { active = names; } } as never);
-  handlers.get("session_start")?.({}, { cwd: root, sessionManager: { getBranch: () => [] }, ui: { setStatus: () => undefined,
-    setHeader: () => undefined, setEditorComponent: () => undefined, setFooter: () => undefined, setWorkingDetail: () => undefined } });
-  return active;
+  const path = process.env["PATH"];
+  process.env["PATH"] = folder();
+  try {
+    await handlers.get("session_start")?.({}, { cwd: root, sessionManager: { getBranch: () => [] }, ui: { setStatus: () => undefined,
+      setHeader: () => undefined, setEditorComponent: () => undefined, setFooter: () => undefined, setWorkingDetail: () => undefined } });
+  } finally { process.env["PATH"] = path; }
+  const rules = (): string => {
+    const guidelines = tools.get("check_model")?.promptGuidelines;
+    return (typeof guidelines === "function" ? guidelines() : guidelines ?? []).join("\n");
+  };
+  return { active: () => active, rules, result: (toolName, path) =>
+    handlers.get("tool_result")?.({ type: "tool_result", toolName, input: { path }, isError: false }, { cwd: root }) };
 }
 
 /** Two processes adding one to a counter in two steps, read then write; the lock makes the pair atomic when `Locked`. */
@@ -90,17 +87,21 @@ NoLostUpdate == Done => count = 2
 
 const config = (locked: boolean): string => `SPECIFICATION Spec\nCONSTANT Locked = ${locked ? "TRUE" : "FALSE"}\n`;
 
-it("offers check_model, with TLC's guidance and the header, only where Tesota finds TLC", () => {
+it("offers check_model in every session, and its rules once the agent writes a model (#779)", async () => {
   expect(modelTool.defaultActive).toBe(false);
-  expect(modelTool.promptSnippet).toContain("TLC, which is installed");
-  expect(modelTool.promptGuidelines?.join("\n")).toContain("(* tesota-model");
-  expect(modelTool.promptGuidelines?.join("\n")).toContain("Never weaken an invariant");
+  expect(modelTool.promptSnippet).toContain("TLC, which Tesota includes for TLA+");
   const root = folder();
-  expect(hasTlc()).toBe(false);
-  expect(activeTools(root)).toEqual(["read", "bash"]);
-  installTlc();
-  expect(hasTlc()).toBe(true);
-  expect(activeTools(root)).toEqual(["read", "bash", "check_model"]);
+  const started = await session(root);
+  expect(started.active()).toEqual(["read", "bash", "check_model"]);
+  expect(started.rules()).toBe("");
+  started.result("write", "models/Counter.tla");
+  expect(started.rules()).toContain("(* tesota-model");
+  expect(started.rules()).toContain("Never weaken an invariant");
+});
+
+it("gives check_model's rules from the start in a project that already has a model", async () => {
+  const started = await session(folder({ "models/Counter.tla": spec("Counter", "models/CounterUnlocked.cfg") }));
+  expect(started.rules()).toContain("(* tesota-model");
 });
 
 it("checks only TLA+ and Quint models with a header inside the project", async () => {
@@ -122,17 +123,7 @@ it("sends back an incomplete header as the gate would, and asks to check again",
   expect(said(result)).toContain("Then run check_model again.");
 });
 
-it("says TLC did not run, and that this says nothing about the model, when Tesota does not find it", async () => {
-  const root = folder({ "models/Counter.tla": spec("Counter", "models/CounterNoLock.cfg the lock removed"),
-    "models/Counter.cfg": config(true), "models/CounterNoLock.cfg": config(false) });
-  const result = await run(root, "models/Counter.tla");
-  expect(result.isError).toBe(true);
-  expect(said(result)).toBe(`Not model-checked: TLC is not installed: Tesota looks for tla2tools.jar at ${tlaToolsJar()}. ` +
-    "This says nothing about the model.");
-});
-
-it.runIf(withTlc)("model-checks a model whose planted fault breaks it, and returns a counterexample as numbered steps", async () => {
-  installTlc();
+it("model-checks a model whose planted fault breaks it, and returns a counterexample as numbered steps", async () => {
   const root = folder({ "src/counter.ts": "export async function increment(): Promise<void> {}\n",
     "models/Counter.tla": spec("Counter", "models/CounterNoLock.cfg the lock removed"), "models/Counter.cfg": config(true),
     "models/CounterNoLock.cfg": config(false), "models/Racy.tla": spec("Racy", "models/Counter.cfg the lock kept"),
@@ -144,14 +135,13 @@ it.runIf(withTlc)("model-checks a model whose planted fault breaks it, and retur
   expect(shown).toContain("✓ Model-checked — NoLostUpdate holds in all 9 reachable states");
   const racy = await run(root, "models/Racy.tla");
   expect(racy.isError).toBe(true);
-  expect(said(racy)).toMatch(/Invariant NoLostUpdate is violated\.\n\n1\. initial state: .*\n2\. Read: /u);
+  expect(said(racy)).toMatch(/Invariant NoLostUpdate is violated\.\n\n1\. initial state: .*\n2\. Read\(1\): /u);
   expect(said(racy)).toContain("Then run check_model again.");
   const failed = stripTerminalSequences(modelTool.renderResult?.(racy, { expanded: false, isPartial: false }, theme).render(100).join("\n") ?? "");
   expect(failed).toContain("✗ Not model-checked — Invariant NoLostUpdate is violated.");
 }, 120_000);
 
-it.skipIf(!withTlc)("writes and reports graph artifacts beside the tool context's session file", async () => {
-  installTlc();
+it("writes and reports graph artifacts beside the tool context's session file", async () => {
   const root = folder({ "src/counter.ts": "export const count = 0;\n",
     "models/Counter.tla": spec("Counter", "models/CounterNoLock.cfg no lock"), "models/Counter.cfg": config(true),
     "models/CounterNoLock.cfg": config(false) });

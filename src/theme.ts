@@ -19,7 +19,7 @@ interface ThemeFile {
 /** The colors the shell draws with, by token; a token a theme lacks draws in the terminal's own color. */
 export type ThemeToken = ThemeColor;
 
-/** How the shell styles text (#444): Tesota's theme for the terminal's appearance, in the colors the terminal can show. */
+/** How the shell styles text: Tesota's theme for the terminal's appearance, in the colors the terminal can show. */
 export type ShellTheme = Theme;
 
 const wrap = (on: string, off: string) => (text: string): string => `\x1b[${on}m${text}\x1b[${off}m`;
