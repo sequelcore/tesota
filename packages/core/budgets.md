@@ -66,3 +66,32 @@ new size limits on 2026-11-06 with the usual headroom of under 1%:
 | Windows | 104,991,232 bytes | 134,175,744 bytes | 135,000,000 bytes |
 
 The times in the same runs stayed within 1.07 times their base.
+
+## Exception: resume on Windows, alpha.10 against alpha.9
+
+Each pull request to `dev` kept resume within 1.25 times its own base, but
+the release pull request #847, which measures 0.1.0-alpha.10 (`9c05be22`)
+against 0.1.0-alpha.9 (`74e4f0b8`), failed it on Windows. CI run
+42340843345, job `engine (windows-latest, 1)`:
+
+| Attempt | Change | Base | Ratio | Usual limit |
+| --- | --- | --- | --- | --- |
+| 1 | 22 ms | 17.1 ms | 1.29 | 1.25 |
+| 2 | 21 ms | 15.4 ms | 1.36 | 1.25 |
+
+Resume stayed under its absolute Windows limit of 35 ms, and Linux passed.
+
+On 2026-11-06 the owner approved an exception so that alpha.10 could ship
+the Bun 1.4.4 security fix before the cause is found. The `exceptions`
+entry in [budgets.json](budgets.json) allows 1.40 times the base for
+`resumeMs` only, on Windows only, only for version `0.1.0-alpha.10`
+measured against the commit
+`74e4f0b829c34a51da79007a337ec67a44153b35`. Both of the release's
+checks compare against that commit: the pull request into `main` and the
+tag. Every other measurement, platform, version and base keeps its usual
+limit, 1.25 included. When the exception applies, the check says so and
+names each measurement that passed only because of it.
+
+The exception allows no other regression. It is removed when
+[#848](https://github.com/sequelcore/tesota/issues/848), which finds and
+fixes the slowdown, closes.

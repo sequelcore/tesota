@@ -9,6 +9,12 @@
     "limits": { "startupMs": 40, "binaryBytes": 135000000, "loopMs": 690, "loopRssBytes": 74000000,
       "baseMs": 760, "syncCount": 106, "settleMs": 1.75, "resumeMs": 35, "sessionBytes": 745000,
       "firstFrameMs": 360, "shellRssBytes": 115000000 },
-    "versusBase": { "startupMs": 1.25, "loopMs": 1.25, "resumeMs": 1.25, "firstFrameMs": 1.25 }
+    "versusBase": { "startupMs": 1.25, "loopMs": 1.25, "resumeMs": 1.25, "firstFrameMs": 1.25 },
+    "exceptions": [
+      { "measurement": "resumeMs", "ratio": 1.4, "base": "74e4f0b829c34a51da79007a337ec67a44153b35",
+        "version": "0.1.0-alpha.10",
+        "reason": "Resume regressed across the releases since alpha.9; alpha.10 ships the Bun 1.4.4 security fix before the cause is found.",
+        "approved": "2026-11-06 by the owner", "issue": "#848" }
+    ]
   }
 }

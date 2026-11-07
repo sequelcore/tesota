@@ -40,10 +40,25 @@ export interface Measurements {
   readonly sessionBytes: number;
 }
 export type Limits = { readonly [Name in keyof Measurements]?: number | null };
+/**
+ * A ratio the owner approved for one comparison only: one measurement of a
+ * change at one version against one exact base commit. Each exception names
+ * the issue that removes it.
+ */
+export interface BaseException {
+  readonly measurement: keyof Measurements;
+  readonly ratio: number;
+  readonly base: string;
+  readonly version: string;
+  readonly reason: string;
+  readonly approved: string;
+  readonly issue: string;
+}
 /** A platform's budget: absolute limits, and how many times the base's median each timed measurement may take. */
 export interface Budget {
   readonly limits: Limits;
   readonly versusBase: Limits;
+  readonly exceptions?: readonly BaseException[];
 }
 /** Both binaries' measurements from one attempt. */
 export interface Attempt {
@@ -91,6 +106,30 @@ export function slowerThanBase(attempt: Attempt, limits: Limits, retry?: Attempt
     const name = line.slice(0, line.indexOf(":")) as keyof Measurements;
     return `${line} times the base (${describe(attempt, name)}${retry === undefined ? "" : `, then ${describe(retry, name)}`})`;
   });
+}
+
+/**
+ * The ratios a change at `version` is held to against the commit `base`
+ * (a full SHA): the usual ones, with each exception approved for exactly
+ * that version and base in place of its measurement's usual ratio.
+ */
+export function versusBaseFor(budget: Budget, base: string, version: string): { limits: Limits; applied: BaseException[] } {
+  const applied = (budget.exceptions ?? []).filter((exception) => exception.base === base
+    && exception.version === version && budget.versusBase[exception.measurement] !== undefined);
+  const replaced = Object.fromEntries(applied.map((exception) => [exception.measurement, exception.ratio]));
+  return { limits: { ...budget.versusBase, ...replaced }, applied };
+}
+
+/** How the check's output states each exception it applied, and each measurement over its usual ratio that only an exception allows. */
+export function exceptionLines(applied: readonly BaseException[], usual: Limits, overUsual: readonly string[]): string[] {
+  const named = new Set<string>(applied.map((exception) => exception.measurement));
+  return [
+    ...applied.map((exception) => `Exception applied: ${exception.measurement} may be ${exception.ratio} times the base `
+      + `instead of ${usual[exception.measurement]}, for ${exception.version} against ${exception.base}. ${exception.reason} `
+      + `Approved ${exception.approved}; removed by ${exception.issue}.`),
+    ...overUsual.filter((line) => named.has(line.slice(0, line.indexOf(":"))))
+      .map((line) => `Over the usual budget, allowed only by the exception: ${line}`),
+  ];
 }
 
 function started(binary: string, argument: string): string {
@@ -207,8 +246,8 @@ function printReport(attempt: Attempt, versusBase: Limits): void {
   console.log(`  change/base: ${names.map((name) => `${name} ${ratio(attempt.change[name], attempt.base[name])}`).join(", ")}`);
 }
 
-function failures(budget: Budget, attempt: Attempt, retry?: Attempt): string[] {
-  return [...overBudget(attempt.change, budget.limits, retry?.change), ...slowerThanBase(attempt, budget.versusBase, retry)];
+function failures(budget: Budget, versusBase: Limits, attempt: Attempt, retry?: Attempt): string[] {
+  return [...overBudget(attempt.change, budget.limits, retry?.change), ...slowerThanBase(attempt, versusBase, retry)];
 }
 
 if (import.meta.main) {
@@ -231,13 +270,18 @@ if (import.meta.main) {
     if (budget === undefined) {
       console.log(`No budgets for ${process.platform}; CI checks Linux and Windows.`);
     } else {
-      let over = failures(budget, first);
+      const { version } = JSON.parse(readFileSync(join(import.meta.dir, "..", "package.json"), "utf8")) as { version: string };
+      const { limits, applied } = versusBaseFor(budget, git(["rev-parse", `${revision}^{commit}`]), version);
+      let retry: Attempt | undefined;
+      let over = failures(budget, limits, first);
       if (over.length > 0 && !report) {
         console.log("Budget exceeded; measuring both binaries again before deciding.");
-        const retry = measure(change, base);
+        retry = measure(change, base);
         printReport(retry, versusBase);
-        over = failures(budget, first, retry);
+        over = failures(budget, limits, first, retry);
       }
+      const prefix = process.env["GITHUB_ACTIONS"] === "true" ? "::warning::" : "";
+      for (const line of exceptionLines(applied, versusBase, slowerThanBase(first, versusBase, retry))) console.log(`${prefix}${line}`);
       for (const line of over) console.error(`Over budget: ${line}`);
       if (over.length > 0 && !report) process.exitCode = 1;
     }
