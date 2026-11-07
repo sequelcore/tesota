@@ -139,7 +139,9 @@ reported as unchecked.
 ## Model opinions
 
 - **ClaimCheck:** one request restates each contract without your request;
-  another compares that with your request.
+  another compares that with your request. The method and its evaluation
+  are in [claimcheck: Measuring and Improving Specification
+  Faithfulness](https://arxiv.org/abs/2610.17358) (Amster et al., 2026).
 - **Open cases:** reads saved requests and supplied issue context, excluding
   the change, other files and URLs; lists inputs with multiple plausible
   results. Two minutes; `off` turns it off.
