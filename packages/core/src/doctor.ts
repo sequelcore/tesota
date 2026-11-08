@@ -89,10 +89,14 @@ export async function doctorReport(): Promise<{ capabilities: Diagnosis[]; warni
     { id: "dafny", requirement: "core" as const, executable: "dafny", args: ["--version"], consequence: proofLoss, accepts: /(?:^|\s)4\./u },
     { id: "git", requirement: "core" as const, executable: "git", args: ["--version"], consequence: "Not verified: changes cannot be measured against a Git base or snapshot." },
     { id: "quint", requirement: "optional" as const, executable: "quint", args: ["--version"], consequence: "Model not checked: Quint models cannot be checked; TLA+ is unaffected." },
-    // Quint runs TLC on Java; `java -version` prints to standard error. TLA+ models need no Java.
+    // Quint runs TLC on Java; `java -version` prints to standard error. TLA+ models need no Java, so a Java older than 21 is
+    // reported as a missing optional tool, not as a failure.
     { id: "java", requirement: "optional" as const, executable: "java", args: ["-version"], accepts: /version "(?:2[1-9]|[3-9]\d|\d{3,})[."_+-]/u,
-      consequence: "Model not checked: Quint models need Java 21 or newer to run TLC; TLA+ is unaffected." },
-  ]) capabilities.push(await probe({ ...spec, repair: repairCommand(spec.id) }));
+      consequence: "Model not checked: Quint models cannot be checked, as Quint's TLC route needs Java 21 or newer; TLA+ is unaffected." },
+  ]) {
+    const result = await probe({ ...spec, repair: repairCommand(spec.id) });
+    capabilities.push(spec.id === "java" && result.status === "failed" ? { ...result, status: "unavailable" } : result);
+  }
   try {
     const lsc = lscCommand();
     const result = await probe({ id: "lsc", requirement: "core", ...lsc, args: [...lsc.args, "version"], consequence: proofLoss, repair: repairCommand("lsc") });

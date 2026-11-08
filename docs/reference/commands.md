@@ -46,7 +46,7 @@ single provider are **optional**. JSON has the same report:
 `warnings` and `exitCode`.
 
 - **available:** the version, help or sign-in probe passed.
-- **unavailable:** not found or no provider available.
+- **unavailable:** not found, no provider available, or Java older than 21.
 - **failed:** found, but the probe failed, timed out, or found an
   unsupported version (Dafny must be 4).
 

@@ -248,8 +248,8 @@ test.each([
 test.each([
   { java: "21.0.1", status: "available", exit: 0 },
   { java: "25", status: "available", exit: 0 },
-  { java: "17.0.9", status: "failed", exit: 1 },
-  { java: "1.8.0_402", status: "failed", exit: 1 },
+  { java: "17.0.9", status: "unavailable", exit: 0 },
+  { java: "1.8.0_402", status: "unavailable", exit: 0 },
 ])("on every platform doctor starts Quint and Java without running a model check: Java $java is $status", async ({ java, status, exit }) => {
   const home = mkdtempSync(join(tmpdir(), "tesota-doctor-quint-"));
   const log = join(home, "tool.log");
