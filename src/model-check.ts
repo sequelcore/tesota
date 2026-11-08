@@ -252,6 +252,8 @@ interface CheckerRun {
   readonly trace: string;
   readonly durationMs: number;
   readonly capture?: GraphCapture;
+  /** The Quint version that ran, when it could be read. */
+  readonly quintVersion?: string;
 }
 
 function captureOf(run: CheckerRun): GraphCapture {
@@ -331,6 +333,8 @@ async function runQuint(root: string, model: string, invariants: readonly string
     return { run: tlcRun(typecheck.ended === "cancelled", typecheck.ended === "timed_out", false, -1, 0), output, trace: "", durationMs: elapsed() };
   }
   if (typecheck.exitCode !== 0) return { run: "malformed", output: typecheck.output, trace: "", durationMs: elapsed() };
+  const version = await runProcess("quint", ["--version"], root, signal, timeoutMs);
+  const quintVersion = version.ended === "exited" && version.exitCode === 0 ? version.output.trim().split(/\r?\n/u)[0] : undefined;
   const directory = await mkdtemp(join(tmpdir(), "tesota-quint-"));
   try {
     const config = join(directory, "tlc.json");
@@ -343,7 +347,7 @@ async function runQuint(root: string, model: string, invariants: readonly string
     const why = /spawn E|Apalache/u.test(ran.output) ? "Quint could not start Apalache, which it needs to translate the model for TLC"
       : "Quint could not check the model with TLC";
     return { run, output: run === "not_started" ? `${why}, so the model was not checked.\n${ran.output.trim()}` : ran.output,
-      trace: ran.stdout, durationMs: elapsed() };
+      trace: ran.stdout, durationMs: elapsed(), ...quintVersion ? { quintVersion } : {} };
   } finally { await rm(directory, { recursive: true, force: true }); }
 }
 
@@ -412,8 +416,17 @@ export interface ModelCheck {
   readonly link: ModelLink;
 }
 
-const limits = "Checks the model, not the code: it holds for what the model treats as atomic and leaves in, and only for " +
-  "the invariants it names. Unless a trace replay passes, nothing links the model to the code.";
+/** What a model's receipt says it does not establish; Quint's route runs TLC with its deadlock check off, TLA+'s does not. */
+export function modelLimits(language: ModelLanguage): string {
+  return "Checks the model, not the code: it holds for what the model treats as atomic and leaves in, and only for " +
+    "the invariants it names. Unless a trace replay passes, nothing links the model to the code." +
+    (language === "quint" ? " Quint runs TLC with deadlock checking off, so a state with no next step passes unreported." : "");
+}
+
+/** The checker a model's claim names: Quint's version is the one that ran, when known. */
+export function modelChecker(language: ModelLanguage, quintVersion?: string): string {
+  return language === "quint" ? `TLC, through Quint${quintVersion === undefined ? "" : ` ${quintVersion}`},` : `${tlaChecker}, a TLC implementation,`;
+}
 
 /** The covered files that differ from `confirmed`, or undefined when the commit is not in the repository at `root`. */
 async function changedSince(root: string, confirmed: string | undefined, covered: readonly string[]): Promise<string[] | undefined> {
@@ -458,10 +471,9 @@ export async function checkModel(root: string, path: string, changed: readonly s
   // Judged once the check ends: a model written with its code that passed is measured against the code as the request leaves it.
   const stalenessOf = (outcome: ProofOutcome): Staleness =>
     staleness(withCode, outcome, since !== undefined, covered.map((file) => since?.includes(file) ?? true));
-  const checker = language(path) === "quint" ? "TLC, through Quint," : `${tlaChecker}, a TLC implementation,`;
-  const claim = `${checker} checks that ${header.invariants.join(", ") || "the model's invariants"} hold in every reachable state of ${path}` +
+  const claimOf = (quintVersion?: string): string => `${modelChecker(language(path), quintVersion)} checks that ${header.invariants.join(", ") || "the model's invariants"} hold in every reachable state of ${path}` +
     `${header.faults.length === 0 ? "" : `, and that each of its ${header.faults.length} planted faults breaks one`}.`;
-  const evidence = (main: CheckerRun, faults: readonly FaultCheck[]): Evidence => ({ verifier: "tlc", claim, limits,
+  const evidence = (main: CheckerRun, faults: readonly FaultCheck[]): Evidence => ({ verifier: "tlc", claim: claimOf(main.quintVersion), limits: modelLimits(facts.language),
     outcome: modelOutcome(main.run, faults.map(({ verdict }) => verdict)), output: main.output, durationMs: Date.now() - started,
     files: content.map((file) => file.path), contentHash: contentHash(content) });
   const problems = headerProblems(path, header, source, facts.language);
