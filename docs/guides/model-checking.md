@@ -120,9 +120,9 @@ gets a `check_model` tool while it works. A counterexample goes back as numbered
 that passes goes back as too weak; a model written without a header goes
 back once with the format.
 
-Quint typechecks first, then needs Apalache and Java to run TLC, which
-Windows can't start; write models there in TLA+. Without them the receipt
-says why ([Installation](../reference/installation.md#tools)).
+Quint typechecks first, then needs Apalache and Java 21 or newer to run
+TLC. Quint downloads Apalache on first use. Without
+them the receipt says why ([Installation](../reference/installation.md#tools)).
 
 [Pin inputs](../receipt-v3.md#required-model): `--require-model <path>`.
 

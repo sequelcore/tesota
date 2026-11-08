@@ -2,7 +2,8 @@ import { type ChildProcess, spawn } from "node:child_process";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
-import { join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 /** How a process run ended: it exited, ran past its limit, was stopped, or could not start. */
 export interface ProcessRun {
@@ -30,6 +31,21 @@ export interface ProcessOptions {
 export function processExecutable(executable: string, cwd: string = process.cwd(), env: NodeJS.ProcessEnv = process.env): string | undefined {
   const runtime = (globalThis as { Bun?: { which: (name: string, options: { PATH: string; cwd: string }) => string | null } }).Bun;
   return runtime?.which(executable, { PATH: env["PATH"] ?? "", cwd }) ?? undefined;
+}
+
+/**
+ * What to start for `resolved`, the executable `processExecutable` found. Windows refuses to start a `.cmd` without a shell
+ * (`spawn EINVAL`), so an npm shim, which only runs `node` on a script beside it, is replaced by `node` on that script.
+ * Anything else, or a shim whose script is missing, or no `node`, is started as found.
+ */
+export function launchCommand(resolved: string, args: readonly string[], platform: NodeJS.Platform = process.platform,
+  node: string | undefined = processExecutable("node")): { readonly executable: string; readonly args: readonly string[] } {
+  if (platform !== "win32" || node === undefined || !/\.cmd$/iu.test(resolved)) return { executable: resolved, args };
+  let shim: string;
+  try { shim = readFileSync(resolved, "utf8"); } catch { return { executable: resolved, args }; }
+  const entry = /"%dp0%\\([^"]+\.js)"/u.exec(shim)?.[1];
+  const script = entry === undefined ? undefined : join(dirname(resolved), ...entry.split("\\"));
+  return script !== undefined && existsSync(script) ? { executable: node, args: [script, ...args] } : { executable: resolved, args };
 }
 
 const outputLimit = 8 * 1024;
@@ -162,7 +178,9 @@ export async function runProcess(executable: string, args: readonly string[], cw
   };
   const jobs = await windowsJobs();
   const start = Effect.sync(() => {
-    const child = spawn(processExecutable(executable, cwd, options.env) ?? executable, [...args], { cwd, windowsHide: true, detached: process.platform !== "win32",
+    const launch = launchCommand(processExecutable(executable, cwd, options.env) ?? executable, args, process.platform,
+      processExecutable("node", cwd, options.env));
+    const child = spawn(launch.executable, [...launch.args], { cwd, windowsHide: true, detached: process.platform !== "win32",
       stdio: [options.input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
       ...options.env === undefined ? {} : { env: options.env }, windowsVerbatimArguments: options.verbatim === true });
     child.stdout?.on("data", append("stdout"));

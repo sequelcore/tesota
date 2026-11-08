@@ -61,7 +61,7 @@ your project's own tools. The rest:
 | --- | --- | --- |
 | [Git](https://git-scm.com) | Measuring each change from where the request started; on Windows, its bash runs your check commands | Nothing the agent changes is verified, and the receipt says so |
 | [Dafny 4](https://dafny.org), as `dafny` | Proving contracts | The code is listed as not proved |
-| [Quint](https://quint-lang.org), as `quint`, and the Java it runs TLC with | Quint models | Quint models aren't checked; on Windows they can't be, since Quint can't start Apalache there |
+| [Quint](https://quint-lang.org), as `quint`, and Java 21 or newer, as `java` | Quint models | Quint models aren't checked |
 
 The install script installs Dafny 4.11.0 from Dafny's own release, which
 carries .NET and Z3, so nothing else is needed:
@@ -89,7 +89,8 @@ ones are for Debian and Ubuntu. Restart the terminal after changing `PATH`.
 | dafny | `& ([scriptblock]::Create((irm https://raw.githubusercontent.com/sequelcore/tesota/main/install.ps1))) dafny` | `sh -c "$(curl -fsSL https://raw.githubusercontent.com/sequelcore/tesota/main/install.sh)" -- dafny` | `sh -c "$(curl -fsSL https://raw.githubusercontent.com/sequelcore/tesota/main/install.sh)" -- dafny` |
 | lsc | `& ([scriptblock]::Create((irm https://raw.githubusercontent.com/sequelcore/tesota/main/install.ps1)))` | `sh -c "$(curl -fsSL https://raw.githubusercontent.com/sequelcore/tesota/main/install.sh)"` | `sh -c "$(curl -fsSL https://raw.githubusercontent.com/sequelcore/tesota/main/install.sh)"` |
 | tla-ts | `& ([scriptblock]::Create((irm https://raw.githubusercontent.com/sequelcore/tesota/main/install.ps1)))` | `sh -c "$(curl -fsSL https://raw.githubusercontent.com/sequelcore/tesota/main/install.sh)"` | `sh -c "$(curl -fsSL https://raw.githubusercontent.com/sequelcore/tesota/main/install.sh)"` |
-| quint | `wsl npm install -g @informalsystems/quint` | `npm install -g @informalsystems/quint` | `npm install -g @informalsystems/quint` |
+| quint | `npm install -g @informalsystems/quint` | `npm install -g @informalsystems/quint` | `npm install -g @informalsystems/quint` |
+| java | `winget install EclipseAdoptium.Temurin.21.JDK` | `brew install --cask temurin@21` | `sudo apt-get install openjdk-21-jre-headless` |
 | git | `winget install Git.Git` | `brew install git` | `sudo apt-get install git` |
 | claude-code | `& ([scriptblock]::Create((irm https://claude.ai/install.ps1)))` | `bash -c "$(curl -fsSL https://claude.ai/install.sh)"` | `bash -c "$(curl -fsSL https://claude.ai/install.sh)"` |
 | provider | `tesota` | `tesota` | `tesota` |

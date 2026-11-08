@@ -1,8 +1,8 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { runProcess } from "../src/process.js";
+import { launchCommand, runProcess } from "../src/process.js";
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -56,4 +56,41 @@ it("reports how a process ended and what it printed", async () => {
   expect(await runProcess(process.execPath, ["-e", "console.log('hi'); process.exit(3)"], root, signal, 60_000))
     .toEqual({ ended: "exited", exitCode: 3, output: "hi\n", stdout: "hi\n", stderr: "" });
   expect((await runProcess(join(root, "missing"), [], root, signal, 60_000)).ended).toBe("not_started");
+});
+
+/** npm's Windows shim for a package bin: it runs `node` on the package's entry point, found next to the shim. */
+const shim = (entry: string): string =>
+  `@ECHO off\r\nGOTO start\r\n:start\r\n\r\nendLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\${entry.replaceAll("/", "\\")}" %*\r\n`;
+
+/** An npm install on disk under a new root: the shim at `shimPath`, naming `reference` beside it, and an empty entry point at `entry`. */
+function npmLayout(shimPath: string, reference: string, entry: string): string {
+  const root = mkdtempSync(join(tmpdir(), "tesota-shim-"));
+  roots.push(root);
+  const cmd = join(root, shimPath);
+  mkdirSync(join(cmd, ".."), { recursive: true });
+  writeFileSync(cmd, shim(reference));
+  mkdirSync(join(root, entry, ".."), { recursive: true });
+  writeFileSync(join(root, entry), "");
+  return cmd;
+}
+
+it("runs the entry point of an npm .cmd shim with node on Windows, as a global or a local install lays it out", () => {
+  const entry = "node_modules/@informalsystems/quint/dist/src/cli.js";
+  const global = npmLayout("quint.cmd", entry, entry);
+  expect(launchCommand(global, ["--version"], "win32", "node.exe"))
+    .toEqual({ executable: "node.exe", args: [join(global, "..", entry), "--version"] });
+  const local = npmLayout("node_modules/.bin/quint.cmd", "../@informalsystems/quint/dist/src/cli.js", entry);
+  expect(launchCommand(local, ["verify"], "win32", "node.exe").args[0])
+    .toBe(join(local, "..", "..", "@informalsystems", "quint", "dist", "src", "cli.js"));
+});
+
+it("leaves everything else as resolved: other platforms, other files, a shim without an entry point, no node", () => {
+  const entry = "node_modules/@informalsystems/quint/dist/src/cli.js";
+  const cmd = npmLayout("quint.cmd", entry, entry);
+  expect(launchCommand(cmd, ["a"], "linux", "node")).toEqual({ executable: cmd, args: ["a"] });
+  expect(launchCommand(cmd, ["a"], "win32", undefined)).toEqual({ executable: cmd, args: ["a"] });
+  expect(launchCommand("quint.exe", ["a"], "win32", "node")).toEqual({ executable: "quint.exe", args: ["a"] });
+  const plain = join(cmd, "..", "plain.cmd");
+  writeFileSync(plain, "@echo hi\r\n");
+  expect(launchCommand(plain, ["a"], "win32", "node")).toEqual({ executable: plain, args: ["a"] });
 });

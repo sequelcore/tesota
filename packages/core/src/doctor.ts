@@ -89,12 +89,10 @@ export async function doctorReport(): Promise<{ capabilities: Diagnosis[]; warni
     { id: "dafny", requirement: "core" as const, executable: "dafny", args: ["--version"], consequence: proofLoss, accepts: /(?:^|\s)4\./u },
     { id: "git", requirement: "core" as const, executable: "git", args: ["--version"], consequence: "Not verified: changes cannot be measured against a Git base or snapshot." },
     { id: "quint", requirement: "optional" as const, executable: "quint", args: ["--version"], consequence: "Model not checked: Quint models cannot be checked; TLA+ is unaffected." },
+    // Quint runs TLC on Java; `java -version` prints to standard error. TLA+ models need no Java.
+    { id: "java", requirement: "optional" as const, executable: "java", args: ["-version"], accepts: /version "(?:2[1-9]|[3-9]\d|\d{3,})[."_+-]/u,
+      consequence: "Model not checked: Quint models need Java 21 or newer to run TLC; TLA+ is unaffected." },
   ]) capabilities.push(await probe({ ...spec, repair: repairCommand(spec.id) }));
-  const quint = capabilities.find(({ id }) => id === "quint");
-  if (process.platform === "win32" && quint?.status === "available") {
-    capabilities[capabilities.indexOf(quint)] = { ...quint, status: "unavailable",
-      smoke: { ...quint.smoke, output: `${quint.smoke.output}\nQuint's TLC backend cannot start Apalache on Windows. Use TLA+ or Linux/WSL.` } };
-  }
   try {
     const lsc = lscCommand();
     const result = await probe({ id: "lsc", requirement: "core", ...lsc, args: [...lsc.args, "version"], consequence: proofLoss, repair: repairCommand("lsc") });
