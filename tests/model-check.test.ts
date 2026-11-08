@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, readFileSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, onTestFinished } from "vitest";
-import { checkModel, modelContent, modelHeader, modelReport, plannedModels, tlcCounterexample, unheadedReport } from "../src/model-check.js";
+import { checkModel, modelChecker, modelContent, modelHeader, modelReport, plannedModels, tlcCounterexample, unheadedReport } from "../src/model-check.js";
 import { inProject } from "../src/model-files.js";
 import { GateOperations } from "../src/operations.js";
 import { counterexampleSteps, modelFinding } from "../src/receipt.js";
@@ -486,3 +486,17 @@ it.each(["configuration property", "Assert"])("catches a %s on the deadlock retr
   expect(check.faults[0]?.verdict).toBe("caught");
   expect(modelFinding({ ...check, verdict: "proved" }).more.join("\n")).toContain("a declared property broke: caught");
 }, 120_000);
+
+it("says in a Quint receipt that deadlock is not checked, and in a TLA+ receipt does not", async () => {
+  const { root } = repository(() => ({ "models/a.qnt": "module a {}\n", "models/a.tla": "---- MODULE a ----\n====\n" }));
+  const quint = await checkModel(root, "models/a.qnt", ["models/a.qnt"], new AbortController().signal);
+  const tla = await checkModel(root, "models/a.tla", ["models/a.tla"], new AbortController().signal);
+  expect(quint.evidence.limits).toContain("deadlock checking off");
+  expect(tla.evidence.limits).not.toContain("deadlock");
+});
+
+it("names the Quint version in the claim only when it is known", () => {
+  expect(modelChecker("quint", "0.25.1")).toBe("TLC, through Quint 0.25.1,");
+  expect(modelChecker("quint")).toBe("TLC, through Quint,");
+  expect(modelChecker("tla")).toContain("a TLC implementation");
+});
