@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { doctorCommand, formatDoctorReport, probe, repairCommand, type Diagnosis } from "../src/doctor.ts";
 import { tlaChecker } from "../../../src/model-check.ts";
-import { copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, linkSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -69,7 +69,7 @@ test("the shared process lookup respects a run's supplied PATH", async () => {
 
 test("repair commands for all operating systems come from the install guide", () => {
   for (const platform of ["win32", "darwin", "linux"] as const) {
-    for (const id of ["dafny", "lsc", "tla-ts", "quint", "git", "claude-code", "provider"]) {
+    for (const id of ["dafny", "lsc", "tla-ts", "quint", "java", "git", "claude-code", "provider"]) {
       expect(repairCommand(id, platform).length).toBeGreaterThan(0);
     }
   }
@@ -194,27 +194,6 @@ test("doctor excludes non-chat providers even with an ambient API key", async ()
   } finally { rmSync(home, { recursive: true, force: true }); }
 });
 
-test.skipIf(process.platform !== "win32")("working Quint on Windows is unavailable, not failed", async () => {
-  const home = mkdtempSync(join(tmpdir(), "tesota-doctor-quint-"));
-  try {
-    // A real version-printing executable at the tool boundary; no Quint installation or download.
-    copyFileSync(process.execPath, join(home, "quint.exe"));
-    const result = await runProcess(process.execPath, [main, "doctor", "--json"], home, new AbortController().signal, 25_000,
-      undefined, { env: { ...isolatedEnvironment(home), PATH: home } });
-    expect(result.ended).toBe("exited");
-    const report = JSON.parse(result.stdout) as { exitCode: number; capabilities: Diagnosis[] };
-    const quint = report.capabilities.find(({ id }) => id === "quint");
-    expect(quint?.status).toBe("unavailable");
-    expect(quint?.path).toBe(join(home, "quint.exe"));
-    expect(quint?.version).toMatch(/^\d+\.\d+/u);
-    expect(quint?.smoke.ended).toBe("exited");
-    expect(quint?.smoke.exitCode).toBe(0);
-    expect(quint?.smoke.output).toContain("TLC backend cannot start Apalache on Windows");
-    expect(report.exitCode).toBe(2);
-    expect(result.exitCode).toBe(2);
-  } finally { rmSync(home, { recursive: true, force: true }); }
-});
-
 let toolFixture = "";
 let toolRoot = "";
 let doctorBinary = "";
@@ -222,9 +201,12 @@ beforeAll(() => {
   toolRoot = mkdtempSync(join(tmpdir(), "tesota-doctor-tools-"));
   const source = join(toolRoot, "tool.ts");
   toolFixture = join(toolRoot, process.platform === "win32" ? "tool.exe" : "tool");
-  writeFileSync(source, `import { basename } from "node:path";
+  writeFileSync(source, `import { appendFileSync } from "node:fs";
+import { basename } from "node:path";
 const name = basename(process.execPath).replace(/\\.exe$/u, "");
-if (name === "quint") process.exit(7);
+if (process.env["TOOL_LOG"]) appendFileSync(process.env["TOOL_LOG"], name + " " + process.argv.slice(2).join(" ") + "\\n");
+if (name === "quint" && !process.env["QUINT_OK"]) process.exit(7);
+if (name === "java") { console.error('openjdk version "' + (process.env["JAVA_VERSION"] ?? "21.0.1") + '" 2026-01-01'); process.exit(0); }
 console.log(name === "dafny" ? "4.11.0" : name + " version 1.0.0");
 `);
   const built = Bun.spawnSync([process.execPath, "build", "--compile", source, "--outfile", toolFixture], { stdout: "ignore", stderr: "pipe" });
@@ -237,11 +219,11 @@ console.log(name === "dafny" ? "4.11.0" : name + " version 1.0.0");
 afterAll(() => { if (toolRoot) rmSync(toolRoot, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 }); });
 
 test.each([
-  { scenario: "only Quint missing gives 0", tools: ["git", "dafny", "claude"], unavailable: ["quint"],
+  { scenario: "only Quint and Java missing gives 0", tools: ["git", "dafny", "claude"], unavailable: ["quint", "java"],
     exit: 0, git: "available", quint: "unavailable" },
-  { scenario: "missing core Git gives 2", tools: ["dafny", "claude"], unavailable: ["git", "quint"],
+  { scenario: "missing core Git gives 2", tools: ["dafny", "claude"], unavailable: ["git", "quint", "java"],
     exit: 2, git: "unavailable", quint: "unavailable" },
-  { scenario: "failed optional Quint gives 1", tools: ["git", "dafny", "claude", "quint"], unavailable: [],
+  { scenario: "failed optional Quint gives 1", tools: ["git", "dafny", "claude", "quint", "java"], unavailable: [],
     exit: 1, git: "available", quint: "failed" },
 ])("core/optional policy: $scenario", async ({ tools, unavailable, exit, git, quint }) => {
   const home = mkdtempSync(join(tmpdir(), "tesota-doctor-optional-"));
@@ -261,6 +243,27 @@ test.each([
       expect(report.capabilities.find((item) => item.id === id)).toMatchObject({ requirement: "core", status: "available" });
     }
   } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
+test.each([
+  { java: "21.0.1", status: "available", exit: 0 },
+  { java: "25", status: "available", exit: 0 },
+  { java: "17.0.9", status: "unavailable", exit: 0 },
+  { java: "1.8.0_402", status: "unavailable", exit: 0 },
+])("on every platform doctor starts Quint and Java without running a model check: Java $java is $status", async ({ java, status, exit }) => {
+  const home = mkdtempSync(join(tmpdir(), "tesota-doctor-quint-"));
+  const log = join(home, "tool.log");
+  try {
+    for (const name of ["git", "dafny", "claude", "quint", "java"]) linkSync(toolFixture, join(home, process.platform === "win32" ? `${name}.exe` : name));
+    const result = await runProcess(process.execPath, [main, "doctor", "--json"], home, new AbortController().signal, 25_000,
+      undefined, { env: { ...isolatedEnvironment(home), PATH: home, TOOL_LOG: log, QUINT_OK: "1", JAVA_VERSION: java } });
+    const report = JSON.parse(result.stdout) as { exitCode: number; capabilities: Diagnosis[] };
+    expect(report.capabilities.find(({ id }) => id === "quint")).toMatchObject({ status: "available" });
+    expect(report.capabilities.find(({ id }) => id === "java")).toMatchObject({ requirement: "optional", status });
+    expect(report.exitCode).toBe(exit);
+    expect(readFileSync(log, "utf8").split("\n").filter((line) => /^(quint|java) /u.test(line)).sort())
+      .toEqual(["java -version", "quint --version"]);
+  } finally { rmSync(home, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 }); }
 });
 
 test.each([

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { KeybindingsManager, setKeybindings, stripTerminalSequences } from "@earendil-works/pi-tui";
 import { afterEach, beforeAll, expect, it } from "vitest";
 import type { Theme } from "../src/contract.js";
-import { modelTool } from "../src/model-tool.js";
+import { MODEL_GUIDELINES, modelTool } from "../src/model-tool.js";
 import tesota from "../src/tesota.js";
 import { shellTheme } from "../src/theme.js";
 
@@ -162,3 +162,7 @@ it("writes and reports graph artifacts beside the tool context's session file", 
     { cwd: root, sessionFile } as never);
   expect(said(read)).not.toContain("export function state(v)");
 }, 120_000);
+
+it("does not tell the agent to avoid Quint on any platform", () => {
+  expect(MODEL_GUIDELINES.join("\n")).not.toMatch(/Apalache|write the model in TLA\+/u);
+});

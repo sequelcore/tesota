@@ -28,7 +28,6 @@ export const MODEL_GUIDELINES: readonly string[] = [
     "removed; never the model or its own .cfg.",
   "A counterexample comes back as numbered steps in the model's names: if every step can happen in the code, fix the " +
     "code; if one cannot, fix the model. Never weaken an invariant or the model to make it pass.",
-  ...process.platform === "win32" ? ["On Windows Quint cannot start Apalache, which it needs to run TLC, so write the model in TLA+."] : [],
 ];
 
 /**

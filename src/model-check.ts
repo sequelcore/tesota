@@ -321,8 +321,7 @@ async function runTlc(root: string, spec: string, config: string, invariants: re
  * errors the model's author must fix, then `quint verify --backend=tlc` with
  * the header's invariants and a 2 GB heap for TLC. A verify that neither
  * found a violation nor passed did not run, as when Quint cannot start
- * Apalache, which it needs to translate the model for TLC; on Windows under
- * Node 24 it cannot (`spawn EINVAL`).
+ * Apalache, which it needs to translate the model for TLC.
  */
 async function runQuint(root: string, model: string, invariants: readonly string[], signal: AbortSignal): Promise<CheckerRun> {
   const started = Date.now();

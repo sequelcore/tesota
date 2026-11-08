@@ -29,7 +29,7 @@ Bun or a checkout.
 | --- | --- |
 | [Git](https://git-scm.com) | Verification. Without it the agent still works, but nothing it changes is verified |
 | [Dafny 4](https://dafny.org), which the install script adds with `dafny` ([how](../reference/installation.md#tools)) | Proving contracts |
-| [Quint](https://quint-lang.org), with Java | Quint models (not on Windows). TLA+ models need nothing: Tesota includes tla-ts |
+| [Quint](https://quint-lang.org), with Java 21 or newer | Quint models. TLA+ models need nothing: Tesota includes tla-ts |
 
 Tests run with your project's own tools. Then ask Tesota what's missing:
 
