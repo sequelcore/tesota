@@ -37,7 +37,18 @@ every run with a receipt. Keep changes scoped to the issue being worked on.
 
 - Keep one owner per behavior; introduce modules only for implemented
   consumers.
-- Add no capability without a consumer that exists today.
+- Add no capability without a consumer that exists today. That rule is for
+  capabilities, not structure: until the first stable release, refactor a
+  weak structure now instead of keeping it for compatibility, with a check
+  that proves behavior didn't change.
+- A user's own team and model choices are their configuration, not a
+  default, and need no measurement.
+- Decide from facts every Git repository has, such as ancestry, refs other
+  than the current branch and commit dates. Never assume a remote name, a
+  branch name or when people commit: users work in many ways.
+- Tesota is a local harness, even on a server. Before adding per-session
+  environments, copies or eager setup, check how local harnesses such as
+  Claude Code, Codex CLI and Gemini CLI handle the same need.
 - Keep credentials, personal state, provider routing and execution
   permissions out of instruction Markdown. Technical integration contracts
   belong in docs; effective restrictions belong in code and configuration.
