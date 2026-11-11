@@ -201,7 +201,8 @@ a short branch from `dev` and returns through a pull request and the merge
 queue; `dev` reaches `main` through a pull request with a merge commit. A
 hotfix starts from `main` and is merged back into `dev` promptly. Both
 branches require `CI gate` and resolved conversations, and forbid force
-pushes and deletion.
+pushes and deletion. `Closes #N` doesn't fire on `dev`; close issues by
+hand.
 
 ## Documentation
 
