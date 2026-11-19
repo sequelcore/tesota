@@ -81,7 +81,7 @@
                                                                                 }
                                                                             ],
                                                          "failureMessages":  [
-                                                                                 "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: -1\nReceived: 3\n    at Object.\u003canonymous\u003e (C:\\Users\\R3XED\\AppData\\Local\\Temp\\jestfix\\math.test.cjs:3:49)"
+                                                                                 "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: -1\nReceived: 3\n    at Object.\u003canonymous\u003e (<root>/math.test.cjs:3:49)"
                                                                              ],
                                                          "fullName":  "subtracts badly",
                                                          "invocations":  1,
